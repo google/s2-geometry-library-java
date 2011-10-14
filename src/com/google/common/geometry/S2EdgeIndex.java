@@ -18,19 +18,15 @@ package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-import com.google.common.collect.TreeMultimap;
 
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedMap;
 
 public abstract strictfp class S2EdgeIndex {
-
   /**
    * Thicken the edge in all directions by roughly 1% of the edge length when
    * thickenEdge is true.
@@ -44,17 +40,41 @@ public abstract strictfp class S2EdgeIndex {
   private static final double MAX_DET_ERROR = 1e-14;
 
   /**
-   * When we test a query edge against a cell, we don't recurse if there are
-   * only a few test edges in it. For testing, it is useful to always recurse to
-   * the end. NOTE: You don't want to set this to true anywhere but in tests.
+   * Associates each edge index with the cell ID that contains it. Implements
+   * Comparable to sort by the cell ID.
    */
-  private static boolean alwaysRecurseOnChildren = false;
+  private static final class Entry implements Comparable<Entry> {
+    /** The cell ID of this indexed edge. */
+    public final long cellId;
+    /** The edge index of this edge. */
+    public final int edgeIndex;
+    /** Construct a new entry with the given cell ID and edge index. */
+    public Entry(long cellId, int edgeIndex) {
+      this.cellId = cellId;
+      this.edgeIndex = edgeIndex;
+    }
+    /** Compares Entry instances by cell id and edge index. */
+    @Override
+    public int compareTo(Entry that) {
+      if (this.cellId < that.cellId) {
+        return -1;
+      } else if (this.cellId > that.cellId) {
+        return 1;
+      } else if (this.edgeIndex < that.edgeIndex) {
+        return -1;
+      } else if (this.edgeIndex > that.edgeIndex) {
+        return 1;
+      } else {
+        return 0;
+      }
+    }
+  }
 
   /**
    * Maps cell ids to covered edges; has the property that the set of all cell
    * ids mapping to a particular edge forms a covering of that edge.
    */
-  private TreeMultimap<S2CellId, Integer> mapping = TreeMultimap.create();
+  private final ArrayList<Entry> sortedMapping = Lists.newArrayList();
 
   /**
    * No cell strictly below this level appears in mapping. Initially leaf level,
@@ -79,7 +99,7 @@ public abstract strictfp class S2EdgeIndex {
     minimumS2LevelUsed = S2CellId.MAX_LEVEL;
     indexComputed = false;
     queryCount = 0;
-    mapping.clear();
+    sortedMapping.clear();
   }
 
 
@@ -91,6 +111,7 @@ public abstract strictfp class S2EdgeIndex {
       return;
     }
 
+    sortedMapping.clear();
     for (int i = 0; i < getNumEdges(); ++i) {
       S2Point from = edgeFrom(i);
       S2Point to = edgeTo(i);
@@ -98,9 +119,12 @@ public abstract strictfp class S2EdgeIndex {
       int level = getCovering(from, to, true, cover);
       minimumS2LevelUsed = Math.min(minimumS2LevelUsed, level);
       for (S2CellId cellId : cover) {
-        mapping.put(cellId, i);
+        sortedMapping.add(new Entry(cellId.id(), i));
       }
     }
+
+    sortedMapping.trimToSize();
+    Collections.sort(sortedMapping);
     indexComputed = true;
   }
 
@@ -173,7 +197,6 @@ public abstract strictfp class S2EdgeIndex {
 
   protected abstract S2Point edgeTo(int index);
 
-
   /**
    * Appends to "candidateCrossings" all edge references which may cross the
    * given edge. This is done by covering the edge and then finding all
@@ -186,29 +209,18 @@ public abstract strictfp class S2EdgeIndex {
     ArrayList<S2CellId> cover = Lists.newArrayList();
 
     getCovering(a, b, false, cover);
-    getEdgesInParentCells(cover, mapping, minimumS2LevelUsed, candidateCrossings);
+    getEdgesInParentCells(cover, sortedMapping, minimumS2LevelUsed, candidateCrossings);
 
     // TODO(user): An important optimization for long query
     // edges (Contains queries): keep a bounding cap and clip the query
     // edge to the cap before starting the descent.
-    getEdgesInChildrenCells(a, b, cover, mapping, candidateCrossings);
+    getEdgesInChildrenCells(a, b, cover, sortedMapping, candidateCrossings);
 
     // Remove duplicates: This is necessary because edge references are
     // inserted into the map once for each covering cell.
     Set<Integer> uniqueSet = new HashSet<Integer>(candidateCrossings);
     candidateCrossings.clear();
     candidateCrossings.addAll(uniqueSet);
-  }
-
-  /**
-   * Sets recursion on for testing a query edge against a cell. We don't recurse
-   * if there are only a few test edges in it. For testing, it is useful to
-   * always recurse to the end.
-   *
-   * Note: You generally don't want to set this to true anywhere but in tests.
-   */
-  public static void setAlwaysRecurseOnChildren(boolean alwaysRecurseOnChildrenValue) {
-    alwaysRecurseOnChildren = alwaysRecurseOnChildrenValue;
   }
 
   /**
@@ -348,12 +360,41 @@ public abstract strictfp class S2EdgeIndex {
   }
 
   /**
+   * Filters a list of entries down to the inclusive range defined by the given
+   * cells, in <code>O(log N)</code> time.
+   *
+   * @param entries The entries to filter.
+   * @param cell1 One side of the inclusive query range.
+   * @param cell2 The other side of the inclusive query range.
+   * @return A sublist of the given list of entries that intersect the given
+   *         range of cell IDs.
+   */
+  private static List<Entry> getSubEntries(List<Entry> entries, long cell1, long cell2) {
+    // ensure cell1 <= cell2
+    if (cell1 > cell2) {
+      long temp = cell1;
+      cell1 = cell2;
+      cell2 = temp;
+    }
+    // The binary search returns -N-1 to indicate an insertion point at index N,
+    // if an exact match cannot be found. Since the edge indices queried for are
+    // not valid edge indices, we will always get -N-1, so we immediately
+    // convert to N.
+    int start = -1 - Collections.binarySearch(entries, new Entry(cell1, Integer.MIN_VALUE));
+    int end = -1 - Collections.binarySearch(entries, new Entry(cell2, Integer.MAX_VALUE));
+    // Note that when both query cells are either before or after the cell IDs
+    // spanned by entries, the start and end indices will be equal, and in that
+    // case List.subList returns the empty list.
+    return entries.subList(start, end);
+  }
+
+  /**
    * Adds to candidateCrossings all the edges present in any ancestor of any
    * cell of cover, down to minimumS2LevelUsed. The cell->edge map is in the
    * variable mapping.
    */
   private static void getEdgesInParentCells(List<S2CellId> cover,
-      Multimap<S2CellId, Integer> mapping, int minimumS2LevelUsed,
+      List<Entry> sortedMapping, int minimumS2LevelUsed,
       List<Integer> candidateCrossings) {
     // Find all parent cells of covering cells.
     Set<S2CellId> parentCells = Sets.newHashSet();
@@ -368,8 +409,8 @@ public abstract strictfp class S2EdgeIndex {
 
     // Put parent cell edge references into result.
     for (S2CellId parentCell : parentCells) {
-      for (Integer parentCellInt : mapping.get(parentCell)) {
-        candidateCrossings.add(parentCellInt);
+      for (Entry entry : getSubEntries(sortedMapping, parentCell.id(), parentCell.id())) {
+        candidateCrossings.add(entry.edgeIndex);
       }
     }
   }
@@ -417,94 +458,51 @@ public abstract strictfp class S2EdgeIndex {
   }
 
   /**
-   * Generates an S2CellId whose identifier is one greater than the one passed
-   * to it; this is useful for when we need to pass to an iterator or filter an
-   * upper non-inclusive bound.
-   */
-  private static S2CellId generateNextSequentialId(S2CellId cellId) {
-    return new S2CellId(cellId.id() + 1);
-  }
-
-  /**
    * Appends to candidateCrossings the edges that are fully contained in an S2
    * covering of edge. The covering of edge used is initially cover, but is
    * refined to eliminate quickly subcells that contain many edges but do not
    * intersect with edge.
    */
   private static void getEdgesInChildrenCells(S2Point a, S2Point b, List<S2CellId> cover,
-      TreeMultimap<S2CellId, Integer> mapping, List<Integer> candidateCrossings) {
-    int numCells = 0;
-
+      List<Entry> entries, List<Integer> candidateCrossings) {
     // Put all edge references of (covering cells + descendant cells) into
     // result.
     // This relies on the natural ordering of S2CellIds.
+    S2Cell[] children = null;
     while (!cover.isEmpty()) {
-      int last = cover.size() - 1;
-      S2CellId cell = cover.get(last);
-      cover.remove(last);
-      ++numCells;
-      int numEdges = 0;
-      boolean rewind = alwaysRecurseOnChildren;
-
-      SortedMap<S2CellId, Collection<Integer>> sortedMap =
-          mapping.asMap().subMap(cell.rangeMin(), generateNextSequentialId(cell.rangeMax()));
-
-      // TODO(user): Maybe distinguish between edges in current cell,
-      // that
-      // are going to be added anyhow, and edges in subcells, and rewind only
-      // those.
-      if (!rewind) {
-        for (Collection<Integer> ints : sortedMap.values()) {
-          for (Integer ivalue : ints) {
-            candidateCrossings.add(ivalue);
-            ++numEdges;
-            if (numEdges == 16 && !cell.isLeaf()) {
-              rewind = true;
-              break;
-            }
-          }
-          if (rewind == true) {
-            break;
-          }
+      S2CellId cell = cover.remove(cover.size() - 1);
+      List<Entry> nearEntries = getSubEntries(entries, cell.rangeMin().id(), cell.rangeMax().id());
+      if (nearEntries.size() <= 16) {
+        for (Entry entry : nearEntries) {
+          candidateCrossings.add(entry.edgeIndex);
         }
-      }
-      // If there are too many to insert, uninsert and recurse.
-      if (rewind) {
-        for (int i = 0; i < numEdges; ++i) {
-          candidateCrossings.remove(candidateCrossings.size() - 1);
-        }
+      } else {
         // Add cells at this level
-        SortedMap<S2CellId, Collection<Integer>> sortedSmallerMap =
-            mapping.asMap().subMap(cell, generateNextSequentialId(cell));
-        for (Collection<Integer> ints : sortedSmallerMap.values()) {
-          for (Integer ivalue : ints) {
-            candidateCrossings.add(ivalue);
-          }
+        for (Entry entry : getSubEntries(entries, cell.id(), cell.id())) {
+          candidateCrossings.add(entry.edgeIndex);
         }
         // Recurse on the children -- hopefully some will be empty.
-        if (sortedSmallerMap.size() < sortedMap.size()) {
-          S2Cell[] children = new S2Cell[4];
+        if (children == null) {
+          children = new S2Cell[4];
           for (int i = 0; i < 4; ++i) {
             children[i] = new S2Cell();
           }
-          S2Cell c = new S2Cell(cell);
-          c.subdivide(children);
-          for (int i = 0; i < 4; ++i) {
-            // TODO(user): Do the check for the four cells at once,
-            // as it is enough to check the four edges between the cells. At
-            // this time, we are checking 16 edges, 4 times too many.
-            //
-            // Note that given the guarantee of AppendCovering, it is enough
-            // to check that the edge intersect with the cell boundary as it
-            // cannot be fully contained in a cell.
-            if (edgeIntersectsCellBoundary(a, b, children[i])) {
-              cover.add(children[i].id());
-            }
+        }
+        new S2Cell(cell).subdivide(children);
+        for (S2Cell child : children) {
+          // TODO(user): Do the check for the four cells at once,
+          // as it is enough to check the four edges between the cells. At
+          // this time, we are checking 16 edges, 4 times too many.
+          //
+          // Note that given the guarantee of AppendCovering, it is enough
+          // to check that the edge intersect with the cell boundary as it
+          // cannot be fully contained in a cell.
+          if (edgeIntersectsCellBoundary(a, b, child)) {
+            cover.add(child.id());
           }
         }
       }
     }
-    // log.info("Num cells traversed: " + Integer.toString(numCells));
   }
 
   /*
