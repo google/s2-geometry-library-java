@@ -25,7 +25,9 @@
     <mkdir dir="${classes.dir}" />
     <javac srcdir="${src.dir}"
            destdir="${classes.dir}"
-           includeAntRuntime="false">
+           includeAntRuntime="false"
+           deprecation="on">
+      <compilerarg value="-Werror" />
       <classpath refid="classpath.path" />
     </javac>
   </target>
@@ -44,7 +46,8 @@
     <mkdir dir="${testClasses.dir}" />
     <javac srcdir="${tests.dir}"
            destdir="${testClasses.dir}"
-           >
+           deprecation="on">
+      <compilerarg value="-Werror" />
       <classpath refid="classpath.path" />
       <classpath>
         <pathelement location="${classes.dir}" />

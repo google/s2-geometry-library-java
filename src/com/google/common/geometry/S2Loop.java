@@ -18,10 +18,12 @@ package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
+import com.google.common.geometry.S2EdgeIndex.DataEdgeIterator;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /**
@@ -54,6 +56,17 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * colinear.
    */
   public static final double MAX_INTERSECTION_ERROR = 1e-15;
+
+  /**
+   * Edge index used for performance-critical operations. For example,
+   * contains() can determine whether a point is inside a loop in nearly
+   * constant time, whereas without an edge index it is forced to compare the
+   * query point against every edge in the loop.
+   */
+  private S2EdgeIndex index;
+
+  /** Maps each S2Point to its order in the loop, from 1 to numVertices. */
+  private Map<S2Point, Integer> vertexToIndex;
 
   private S2Point[] vertices;
   private int numVertices;
@@ -123,6 +136,8 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   public S2Loop(S2Loop src) {
     this.numVertices = src.numVertices();
     this.vertices = src.vertices.clone();
+    this.vertexToIndex = src.vertexToIndex;
+    this.index = src.index;
     this.firstLogicalVertex = src.firstLogicalVertex;
     this.bound = src.getRectBound();
     this.originInside = src.originInside;
@@ -241,6 +256,8 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
       vertices[i] = vertices[last - i];
       vertices[last - i] = t;
     }
+    vertexToIndex = null;
+    index = null;
     originInside ^= true;
     if (bound.lat().lo() > -S2.M_PI_2 && bound.lat().hi() < S2.M_PI_2) {
       // The complement of this loop contains both poles.
@@ -604,11 +621,28 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
 
     boolean inside = originInside;
     S2Point origin = S2.origin();
-    S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(origin, p, vertex(0));
+    S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(origin, p,
+        vertices[numVertices - 1]);
 
-    for (int i = 1; i <= numVertices(); ++i) {
-      inside ^= crosser.edgeOrVertexCrossing(vertex(i));
+    // The s2edgeindex library is not optimized yet for long edges,
+    // so the tradeoff to using it comes with larger loops.
+    if (numVertices < 2000) {
+      for (int i = 0; i < numVertices; i++) {
+        inside ^= crosser.edgeOrVertexCrossing(vertices[i]);
+      }
+    } else {
+      DataEdgeIterator it = getEdgeIterator(numVertices);
+      int previousIndex = -2;
+      for (it.getCandidates(origin, p); it.hasNext(); it.next()) {
+        int ai = it.index();
+        if (previousIndex != ai - 1) {
+          crosser.restartAt(vertices[ai]);
+        }
+        previousIndex = ai;
+        inside ^= crosser.edgeOrVertexCrossing(vertex(ai + 1));
+      }
     }
+
     return inside;
   }
 
@@ -631,39 +665,37 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   }
 
   /**
-   * Creates an edge index over the given vertices, and if we predict sufficient
-   * calls to lookup edges in the index, then the indexing will actually happen
-   * before this method returns, otherwise index lookups will simply check every
-   * edge.
-   *
-   * @return an edge index over the given vertices.
+   * Creates an edge index over the vertices, which by itself takes no time.
+   * Then the expected number of queries is used to determine whether brute
+   * force lookups are likely to be slower than really creating an index, and if
+   * so, we do so. Finally an iterator is returned that can be used to perform
+   * edge lookups.
    */
-  private static final S2EdgeIndex index(final List<S2Point> vertex, int numCalls) {
-    S2EdgeIndex edgeIndex = new S2EdgeIndex() {
-      int numVertices = vertex.size();
-      @Override
-      protected int getNumEdges() {
-        return numVertices;
-      }
+  private final DataEdgeIterator getEdgeIterator(int expectedQueries) {
+    if (index == null) {
+      index = new S2EdgeIndex() {
+        @Override
+        protected int getNumEdges() {
+          return numVertices;
+        }
 
-      @Override
-      protected S2Point edgeFrom(int index) {
-        return vertex.get(index);
-      }
+        @Override
+        protected S2Point edgeFrom(int index) {
+          return vertex(index);
+        }
 
-      @Override
-      protected S2Point edgeTo(int index) {
-        return vertex.get((index + 1) % numVertices);
-      }
-    };
-    edgeIndex.predictAdditionalCalls(numCalls);
-    return edgeIndex;
+        @Override
+        protected S2Point edgeTo(int index) {
+          return vertex(index + 1);
+        }
+      };
+    }
+    index.predictAdditionalCalls(expectedQueries);
+    return new S2EdgeIndex.DataEdgeIterator(index);
   }
 
-  /** Return true if the given vertices form a valid loop. */
-  public static boolean isValid(final List<S2Point> vertices) {
-    // Loops must have at least 3 vertices.
-    final int numVertices = vertices.size();
+  /** Return true if this loop is valid. */
+  public boolean isValid() {
     if (numVertices < 3) {
       log.info("Degenerate loop");
       return false;
@@ -671,7 +703,7 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
 
     // All vertices must be unit length.
     for (int i = 0; i < numVertices; ++i) {
-      if (!S2.isUnitLength(vertices.get(i))) {
+      if (!S2.isUnitLength(vertex(i))) {
         log.info("Vertex " + i + " is not unit length");
         return false;
       }
@@ -680,7 +712,7 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     // Loops are not allowed to have any duplicate vertices.
     HashMap<S2Point, Integer> vmap = Maps.newHashMap();
     for (int i = 0; i < numVertices; ++i) {
-      Integer previousVertexIndex = vmap.put(vertices.get(i), i);
+      Integer previousVertexIndex = vmap.put(vertex(i), i);
       if (previousVertexIndex != null) {
         log.info("Duplicate vertices: " + previousVertexIndex + " and " + i);
         return false;
@@ -689,13 +721,12 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
 
     // Non-adjacent edges are not allowed to intersect.
     boolean crosses = false;
-    S2EdgeIndex.DataEdgeIterator it = new S2EdgeIndex.DataEdgeIterator(
-      index(vertices, numVertices));
+    DataEdgeIterator it = getEdgeIterator(numVertices);
     for (int a1 = 0; a1 < numVertices; a1++) {
       int a2 = (a1 + 1) % numVertices;
-      EdgeCrosser crosser = new EdgeCrosser(vertices.get(a1), vertices.get(a2), vertices.get(0));
+      EdgeCrosser crosser = new EdgeCrosser(vertex(a1), vertex(a2), vertex(0));
       int previousIndex = -2;
-      for (it.getCandidates(vertices.get(a1), vertices.get(a2)); it.hasNext(); it.next()) {
+      for (it.getCandidates(vertex(a1), vertex(a2)); it.hasNext(); it.next()) {
         int b1 = it.index();
         int b2 = (b1 + 1) % numVertices;
         // If either 'a' index equals either 'b' index, then these two edges
@@ -713,10 +744,10 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
           // to determine edge intersections. The workaround is to ignore
           // intersections between edge pairs where all four points are
           // nearly colinear.
-          double abc = S2.angle(vertices.get(a1), vertices.get(a2), vertices.get(b1));
+          double abc = S2.angle(vertex(a1), vertex(a2), vertex(b1));
           boolean abcNearlyLinear = S2.approxEquals(abc, 0D, MAX_INTERSECTION_ERROR) ||
               S2.approxEquals(abc, S2.M_PI, MAX_INTERSECTION_ERROR);
-          double abd = S2.angle(vertices.get(a1), vertices.get(a2), vertices.get(b2));
+          double abd = S2.angle(vertex(a1), vertex(a2), vertex(b2));
           boolean abdNearlyLinear = S2.approxEquals(abd, 0D, MAX_INTERSECTION_ERROR) ||
               S2.approxEquals(abd, S2.M_PI, MAX_INTERSECTION_ERROR);
           if (abcNearlyLinear && abdNearlyLinear) {
@@ -724,21 +755,21 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
           }
 
           if (previousIndex != b1) {
-            crosser.restartAt(vertices.get(b1));
+            crosser.restartAt(vertex(b1));
           }
 
           // Beware, this may return the loop is valid if there is a
           // "vertex crossing".
           // TODO(user): Fix that.
-          crosses = crosser.robustCrossing(vertices.get(b2)) > 0;
+          crosses = crosser.robustCrossing(vertex(b2)) > 0;
           previousIndex = b2;
           if (crosses ) {
             log.info("Edges " + a1 + " and " + b1 + " cross");
             log.info(String.format("Edge locations in degrees: " + "%s-%s and %s-%s",
-                new S2LatLng(vertices.get(a1)).toStringDegrees(),
-                new S2LatLng(vertices.get(a2)).toStringDegrees(),
-                new S2LatLng(vertices.get(b1)).toStringDegrees(),
-                new S2LatLng(vertices.get(b2)).toStringDegrees()));
+                new S2LatLng(vertex(a1)).toStringDegrees(),
+                new S2LatLng(vertex(a2)).toStringDegrees(),
+                new S2LatLng(vertex(b1)).toStringDegrees(),
+                new S2LatLng(vertex(b2)).toStringDegrees()));
             return false;
           }
         }
@@ -746,6 +777,17 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     }
 
     return true;
+  }
+
+  /**
+   * Static version of isValid(), to be used only when an S2Loop instance is not
+   * available, but validity of the points must be checked.
+   *
+   * @return true if the given loop is valid. Creates an instance of S2Loop and
+   *         defers this call to {@link #isValid()}.
+   */
+  public static boolean isValid(List<S2Point> vertices) {
+    return new S2Loop(vertices).isValid();
   }
 
   @Override
@@ -818,6 +860,8 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   private void initFromCell(S2Cell cell) {
     numVertices = 4;
     vertices = new S2Point[numVertices];
+    vertexToIndex = null;
+    index = null;
     depth = 0;
     for (int i = 0; i < 4; ++i) {
       vertices[i] = cell.getVertex(i);
@@ -831,12 +875,18 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * value is in the range 1..num_vertices_ if found.
    */
   private int findVertex(S2Point p) {
-    for (int i = 1; i <= numVertices(); ++i) {
-      if (vertex(i).equals(p)) {
-        return i;
+    if (vertexToIndex == null) {
+      vertexToIndex = new HashMap<S2Point, Integer>();
+      for (int i = 1; i <= numVertices; i++) {
+        vertexToIndex.put(vertex(i), i);
       }
     }
-    return -1;
+    Integer index = vertexToIndex.get(p);
+    if (index == null) {
+      return -1;
+    } else {
+      return index;
+    }
   }
 
   /**

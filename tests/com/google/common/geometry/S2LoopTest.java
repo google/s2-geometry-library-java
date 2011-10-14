@@ -387,7 +387,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
    * <p>
    * This test fails when it randomly chooses a cell loop with nearly colinear
    * edges. That's where S2.robustCCW provides the wrong answer. Note that there
-   * is an attempted workaround in {@link S2Loop#isValid(List)}, but it
+   * is an attempted workaround in {@link S2Loop#isValid()}, but it
    * does not cover all cases.
    */
   public void suppressedTestLoopRelations2() {
@@ -435,23 +435,12 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   /**
-   * Returns true if the loop points satisfy {@link S2Loop#isValid(List)}.
-   */
-  private boolean isValid(S2Loop loop) {
-    List<S2Point> vertices = Lists.newArrayList();
-    for (int i = 0; i < loop.numVertices(); ++i) {
-      vertices.add(loop.vertex(i));
-    }
-    return S2Loop.isValid(vertices);
-  }
-
-  /**
-   * Tests {@link S2Loop#isValid(List)}.
+   * Tests {@link S2Loop#isValid()}.
    */
   public void testIsValid() {
-    assertTrue(isValid(loopA));
-    assertTrue(isValid(loopB));
-    assertFalse(isValid(bowtie));
+    assertTrue(loopA.isValid());
+    assertTrue(loopB.isValid());
+    assertFalse(bowtie.isValid());
   }
 
   /**
