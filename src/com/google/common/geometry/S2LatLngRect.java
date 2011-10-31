@@ -23,7 +23,7 @@ import com.google.common.base.Preconditions;
  *
  */
 
-public final strictfp class S2LatLngRect implements S2Region {
+public strictfp class S2LatLngRect implements S2Region {
 
   private final R1Interval lat;
   private final S1Interval lng;
