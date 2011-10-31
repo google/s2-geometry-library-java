@@ -21,7 +21,7 @@ package com.google.common.geometry;
  *  Sometimes it is just really convenient to be able to pass a MutableInteger
  * as a parameter to a function, or for synchronization purposes (so that you
  * can guard access to an int value without creating a separate Object just to
- * syncrhonize on).
+ * synchronize on).
  *
  * NOT thread-safe
  *
@@ -41,7 +41,7 @@ public class MutableInteger {
 
   public Integer integerValue() {
     if (cachedIntegerValue == null) {
-      cachedIntegerValue = new Integer(intValue());
+      cachedIntegerValue = intValue();
     }
     return cachedIntegerValue;
   }
