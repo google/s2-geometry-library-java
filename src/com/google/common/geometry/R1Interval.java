@@ -24,9 +24,8 @@ package com.google.common.geometry;
 
 public final strictfp class R1Interval {
 
-  // TODO(dbeaumont): Make these final and make this class fully immutable.
-  private double lo;
-  private double hi;
+  private final double lo;
+  private final double hi;
 
   /** Interval constructor. If lo > hi, the interval is empty. */
   public R1Interval(double lo, double hi) {
@@ -68,14 +67,6 @@ public final strictfp class R1Interval {
 
   public double hi() {
     return hi;
-  }
-
-  public void setLo(double p) {
-    this.lo = p;
-  }
-
-  public void setHi(double p) {
-    this.hi = p;
   }
 
   /**

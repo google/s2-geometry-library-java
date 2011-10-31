@@ -38,9 +38,8 @@ package com.google.common.geometry;
 
 public final strictfp class S1Interval implements Cloneable {
 
-  // TODO(dbeaumont): Make this class immutable and fix callers.
-  private double lo;
-  private double hi;
+  private final double lo;
+  private final double hi;
 
   /**
    * Both endpoints must be in the range -Pi to Pi inclusive. The value -Pi is
@@ -121,16 +120,6 @@ public final strictfp class S1Interval implements Cloneable {
 
   public double hi() {
     return hi;
-  }
-
-  public void setLo(double lo) {
-    this.lo = lo;
-    // assert (isValid());
-  }
-
-  public void setHi(double hi) {
-    this.hi = hi;
-    // assert (isValid());
   }
 
   /**
@@ -350,8 +339,8 @@ public final strictfp class S1Interval implements Cloneable {
   }
 
   /**
-   * Return an interval that contains all points with a distance "radius" of a
-   * point in this interval. Note that the expansion of an empty interval is
+   * Return an interval that contains all points within a distance "radius" of
+   * a point in this interval. Note that the expansion of an empty interval is
    * always empty. The radius must be non-negative.
    */
   public S1Interval expanded(double radius) {
@@ -366,13 +355,13 @@ public final strictfp class S1Interval implements Cloneable {
       return full();
     }
 
-    S1Interval result =
-        new S1Interval(Math.IEEEremainder(lo() - radius, 2 * S2.M_PI),
-            Math.IEEEremainder(hi() + radius, 2 * S2.M_PI));
-    if (result.lo() == -S2.M_PI) {
-      result.setLo(S2.M_PI);
+    // NOTE(dbeaumont): Should this remainder be 2 * M_PI or just M_PI ??
+    double lo = Math.IEEEremainder(lo() - radius, 2 * S2.M_PI);
+    double hi = Math.IEEEremainder(hi() + radius, 2 * S2.M_PI);
+    if (lo == -S2.M_PI) {
+      lo = S2.M_PI;
     }
-    return result;
+    return new S1Interval(lo, hi);
   }
 
   /**
@@ -515,13 +504,5 @@ public final strictfp class S1Interval implements Cloneable {
     // We want to ensure that if b == Pi and a == (-Pi + eps),
     // the return result is approximately 2*Pi and not zero.
     return (b + S2.M_PI) - (a - S2.M_PI);
-  }
-
-  @Override
-  public Object clone() throws CloneNotSupportedException {
-    S1Interval clone = (S1Interval) super.clone();
-    clone.setLo(lo());
-    clone.setHi(hi());
-    return clone;
   }
 }

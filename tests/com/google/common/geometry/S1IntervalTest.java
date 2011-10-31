@@ -67,9 +67,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     S1Interval quad23 = new S1Interval(S2.M_PI_2, -S2.M_PI_2); // inverted
     assertEquals(quad23.lo(), S2.M_PI_2);
     assertEquals(quad23.hi(), -S2.M_PI_2);
-    S1Interval quad1 = new S1Interval(0, 0);
-    quad1.setHi(S2.M_PI_2);
-    assertEquals(quad1.hi(), S2.M_PI_2);
+    S1Interval quad1 = new S1Interval(0, S2.M_PI_2);
 
     // is_valid(), is_empty(), is_inverted()
     S1Interval zero = new S1Interval(0, 0);

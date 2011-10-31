@@ -204,12 +204,14 @@ public strictfp class S2EdgeUtil {
           // Minimum/maximum latitude occurs in the edge interior. This affects
           // the latitude bounds but not the longitude bounds.
           double absLat = Math.acos(Math.abs(aCrossB.get(2) / aCrossB.norm()));
+          R1Interval lat = bound.lat();
           if (da < 0) {
             // It's possible that absLat < lat.lo() due to numerical errors.
-            bound.lat().setHi((Math.max(absLat, bound.lat().hi())));
+            lat = new R1Interval(lat.lo(), Math.max(absLat, bound.lat().hi()));
           } else {
-            bound.lat().setLo(Math.min(-absLat, bound.lat().lo()));
+            lat = new R1Interval(Math.min(-absLat, bound.lat().lo()), lat.hi());
           }
+          bound = new S2LatLngRect(lat, bound.lng());
         }
       }
       a = b;

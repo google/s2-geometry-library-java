@@ -849,7 +849,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     // north pole in which case b.lng().isFull() due to the test above.
 
     if (b.lng().isFull() && contains(new S2Point(0, 0, -1))) {
-      b.lat().setLo(-S2.M_PI_2);
+      b = new S2LatLngRect(new R1Interval(-S2.M_PI_2, b.lat().hi()), b.lng());
     }
     bound = b;
   }
