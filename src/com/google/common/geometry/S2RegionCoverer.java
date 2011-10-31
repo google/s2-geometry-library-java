@@ -53,7 +53,7 @@ import java.util.PriorityQueue;
  * methods will conflict and produce unpredictable results.
  *
  */
-public strictfp class S2RegionCoverer {
+public final strictfp class S2RegionCoverer {
 
   /**
    * By default, the covering uses at most 8 cells at any level. This gives a

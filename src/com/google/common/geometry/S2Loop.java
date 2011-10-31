@@ -48,7 +48,7 @@ import java.util.logging.Logger;
  *
  */
 
-public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
+public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   private static final Logger log = Logger.getLogger(S2Loop.class.getCanonicalName());
 
   /**
@@ -80,9 +80,6 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   private S2LatLngRect bound;
   private boolean originInside;
   private int depth;
-
-  // TODO(kirilll): Get rid of debug mode. Turn it into tests.
-  public static boolean debugMode = false;
 
   /**
    * Initialize a loop connecting the given vertices. The last vertex is

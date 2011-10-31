@@ -30,7 +30,6 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
   @Override
   public void setUp() {
     super.setUp();
-    S2Polyline.debugMode = true;
   }
 
   public void testBasic() {

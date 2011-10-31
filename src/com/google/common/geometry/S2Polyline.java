@@ -16,7 +16,6 @@
 
 package com.google.common.geometry;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 
@@ -29,40 +28,32 @@ import java.util.logging.Logger;
  * straight edges (geodesics). Edges of length 0 and 180 degrees are not
  * allowed, i.e. adjacent vertices should not be identical or antipodal.
  *
+ * <p>Note: Polylines do not have a Contains(S2Point) method, because
+ * "containment" is not numerically well-defined except at the polyline
+ * vertices.
+ *
  */
-public strictfp class S2Polyline implements S2Region {
+public final strictfp class S2Polyline implements S2Region {
   private static final Logger log = Logger.getLogger(S2Polyline.class.getCanonicalName());
 
-  private int numVertices;
-
-  private S2Point[] vertices;
-
-  // TODO(kirilll): Get rid of debug mode. Turn it into tests.
-  @VisibleForTesting
-  static boolean debugMode = false;
+  private final int numVertices;
+  private final S2Point[] vertices;
 
   /**
    * Create a polyline that connects the given vertices. Empty polylines are
    * allowed. Adjacent vertices should not be identical or antipodal. All
    * vertices should be unit length.
-   *
-   * @param vertices
    */
   public S2Polyline(List<S2Point> vertices) {
+    // assert isValid(vertices);
     this.numVertices = vertices.size();
-    this.vertices = new S2Point[numVertices];
-
-    if (debugMode) {
-      // assert (isValid(vertices));
-    }
-
-    if (numVertices > 0) {
-      vertices.toArray(this.vertices);
-    }
+    this.vertices = vertices.toArray(new S2Point[numVertices]);
   }
 
   /**
    * Copy constructor.
+   *
+   * TODO(dbeaumont): Now that S2Polyline is immutable, remove this.
    */
   public S2Polyline(S2Polyline src) {
     this.numVertices = src.numVertices();
@@ -239,7 +230,6 @@ public strictfp class S2Polyline implements S2Region {
         minIndex = i;
       }
     }
-
     return minIndex;
   }
 
@@ -264,7 +254,6 @@ public strictfp class S2Polyline implements S2Region {
     }
 
     S2Polyline thatPolygon = (S2Polyline) that;
-
     if (numVertices != thatPolygon.numVertices) {
       return false;
     }
@@ -274,7 +263,6 @@ public strictfp class S2Polyline implements S2Region {
         return false;
       }
     }
-
     return true;
   }
 
@@ -282,8 +270,4 @@ public strictfp class S2Polyline implements S2Region {
   public int hashCode() {
     return Objects.hashCode(numVertices, Arrays.deepHashCode(vertices));
   }
-
-
-  // Polylines do not have a Contains(S2Point) method, because "containment"
-  // is not numerically well-defined except at the polyline vertices.
 }

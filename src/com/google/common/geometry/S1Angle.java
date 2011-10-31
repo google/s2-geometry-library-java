@@ -16,9 +16,9 @@
 package com.google.common.geometry;
 
 
-public strictfp class S1Angle implements Comparable<S1Angle> {
+public final strictfp class S1Angle implements Comparable<S1Angle> {
 
-  private double radians;
+  private final double radians;
 
   public double radians() {
     return radians;

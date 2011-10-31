@@ -30,17 +30,17 @@ package com.google.common.geometry;
  * h = 1 - cos(theta) = 2 sin^2(theta/2) d^2 = 2 h = a^2 + h^2
  *
  */
-public strictfp class S2Cap implements S2Region {
+public final strictfp class S2Cap implements S2Region {
 
   /**
    * Multiply a positive number by this constant to ensure that the result of a
    * floating point operation is at least as large as the true
    * infinite-precision result.
    */
-  static final double ROUND_UP = 1.0 + 1.0 / (1L << 52);
+  private static final double ROUND_UP = 1.0 + 1.0 / (1L << 52);
 
   private final S2Point axis;
-  private double height;
+  private final double height;
 
   // Caps may be constructed from either an axis and a height, or an axis and
   // an angle. To avoid ambiguity, there are no public constructors

@@ -86,5 +86,4 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
         S2LatLng.fromDegrees(47, -127).getDistance(S2LatLng.fromDegrees(-47, 53)).degrees(), 180,
         2e-6);
   }
-
 }

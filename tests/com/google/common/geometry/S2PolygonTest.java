@@ -73,13 +73,6 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private static final String TRIANGLE = "15:0, 17:0, 16:2;";
   private static final String TRIANGLE_ROT = "17:0, 16:2, 15:0;";
 
-  @Override
-  public void setUp() {
-    super.setUp();
-    S2Loop.debugMode = true;
-    S2Polygon.DEBUG = true;
-  }
-
   private void assertContains(String aStr, String bStr) {
     S2Polygon a = makePolygon(aStr);
     S2Polygon b = makePolygon(bStr);

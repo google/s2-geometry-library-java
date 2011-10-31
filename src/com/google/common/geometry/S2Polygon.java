@@ -57,7 +57,7 @@ import java.util.logging.Logger;
  * loop.
  *
  */
-public strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
+public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
   private static final Logger log = Logger.getLogger(S2Polygon.class.getCanonicalName());
 
   private List<S2Loop> loops;
@@ -65,10 +65,6 @@ public strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
   private S2LatLngRect bound;
   private boolean hasHoles;
   private int numVertices;
-
-  // TODO(kirilll): Get rid of debug mode. Turn it into tests. Should the debug
-  // mode be set to false by default, anyways?
-  public static boolean DEBUG = true;
 
   /**
    * Creates an empty polygon that should be initialized by calling Init().
@@ -147,9 +143,7 @@ public strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
    * hierarchy. (See also getParent and getLastDescendant.)
    */
   public void init(List<S2Loop> loops) {
-    if (DEBUG) {
-      // assert (isValid(loops));
-    }
+    // assert isValid(loops);
     // assert (this.loops.isEmpty());
 
     Map<S2Loop, List<S2Loop>> loopMap = Maps.newHashMap();
@@ -178,17 +172,8 @@ public strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
     // Starting at null == starting at the root
     initLoop(null, -1, loopMap);
 
-    if (DEBUG) {
-      // Check that the LoopMap is correct (this is fairly cheap).
-      for (int i = 0; i < numLoops(); ++i) {
-        for (int j = 0; j < numLoops(); ++j) {
-          if (i == j) {
-            continue;
-          }
-          // assert (containsChild(loop(i), loop(j), loopMap) == loop(i).containsNested(loop(j)));
-        }
-      }
-    }
+    // TODO(dbeaumont): Add tests or preconditions for these asserts (here and elesewhere).
+    // forall i != j : containsChild(loop(i), loop(j), loopMap) == loop(i).containsNested(loop(j)));
 
     // Compute the bounding rectangle of the entire polygon.
     hasHoles = false;

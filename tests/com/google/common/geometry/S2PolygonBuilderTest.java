@@ -238,14 +238,6 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
               + "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"},
           0)};
 
-  @Override
-  public void setUp() {
-    super.setUp();
-    S2Loop.debugMode = true;
-    S2Polygon.DEBUG = true;
-    S2Polyline.debugMode = true;
-  }
-
   private void getVertices(String str,
       S2Point x,
       S2Point y,

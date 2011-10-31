@@ -88,8 +88,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   @Override
   public void setUp() {
     super.setUp();
-    S2Loop.debugMode = true;
-
     southHemi = new S2Loop(northHemi);
     southHemi.invert();
 
