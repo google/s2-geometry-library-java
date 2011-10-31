@@ -21,11 +21,12 @@ public strictfp class S2Test extends GeometryTestCase {
 
   private static Logger logger = Logger.getLogger(S2Test.class.getName());
 
-  static int swapAxes(int ij) {
+  // Test helper methods for testing the traversal order.
+  private static int swapAxes(int ij) {
     return ((ij >> 1) & 1) + ((ij & 1) << 1);
   }
 
-  static int invertBits(int ij) {
+  private static int invertBits(int ij) {
     return ij ^ 3;
   }
 
@@ -33,18 +34,20 @@ public strictfp class S2Test extends GeometryTestCase {
     for (int r = 0; r < 4; ++r) {
       for (int i = 0; i < 4; ++i) {
         // Check consistency with respect to swapping axes.
-        assertEquals(
-            S2Projections.IJ_TO_POS[r][i], S2Projections.IJ_TO_POS[r ^ S2.SWAP_MASK][swapAxes(i)]);
-        assertEquals(S2.POS_TO_IJ[r][i], swapAxes(S2.POS_TO_IJ[r ^ S2.SWAP_MASK][i]));
+        assertEquals(S2.ijToPos(r, i),
+            S2.ijToPos(r ^ S2.SWAP_MASK, swapAxes(i)));
+        assertEquals(S2.posToIJ(r, i),
+            swapAxes(S2.posToIJ(r ^ S2.SWAP_MASK, i)));
 
         // Check consistency with respect to reversing axis directions.
-        assertEquals(S2Projections.IJ_TO_POS[r][i],
-            S2Projections.IJ_TO_POS[r ^ S2.INVERT_MASK][invertBits(i)]);
-        assertEquals(S2.POS_TO_IJ[r][i], invertBits(S2.POS_TO_IJ[r ^ S2.INVERT_MASK][i]));
+        assertEquals(S2.ijToPos(r, i),
+            S2.ijToPos(r ^ S2.INVERT_MASK, invertBits(i)));
+        assertEquals(S2.posToIJ(r, i),
+            invertBits(S2.posToIJ(r ^ S2.INVERT_MASK, i)));
 
         // Check that the two tables are inverses of each other.
-        assertEquals(S2Projections.IJ_TO_POS[r][S2.POS_TO_IJ[r][i]], i);
-        assertEquals(S2.POS_TO_IJ[r][S2Projections.IJ_TO_POS[r][i]], i);
+        assertEquals(S2.ijToPos(r, S2.posToIJ(r, i)), i);
+        assertEquals(S2.posToIJ(r, S2.ijToPos(r, i)), i);
       }
     }
   }

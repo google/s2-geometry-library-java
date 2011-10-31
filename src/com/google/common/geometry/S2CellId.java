@@ -944,15 +944,13 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
       i <<= 1;
       j <<= 1;
       pos <<= 2;
-      int[] r = S2.POS_TO_IJ[orientation];
-      initLookupCell(level, i + (r[0] >>> 1), j + (r[0] & 1), origOrientation,
-        pos, orientation ^ S2.POS_TO_ORIENTATION[0]);
-      initLookupCell(level, i + (r[1] >>> 1), j + (r[1] & 1), origOrientation,
-        pos + 1, orientation ^ S2.POS_TO_ORIENTATION[1]);
-      initLookupCell(level, i + (r[2] >>> 1), j + (r[2] & 1), origOrientation,
-        pos + 2, orientation ^ S2.POS_TO_ORIENTATION[2]);
-      initLookupCell(level, i + (r[3] >>> 1), j + (r[3] & 1), origOrientation,
-        pos + 3, orientation ^ S2.POS_TO_ORIENTATION[3]);
+      // Initialize each sub-cell recursively.
+      for (int subPos = 0; subPos < 4; subPos++) {
+        int ij = S2.posToIJ(orientation, subPos);
+        int orientationMask = S2.posToOrientation(subPos);
+        initLookupCell(level, i + (ij >>> 1), j + (ij & 1), origOrientation,
+            pos + subPos, orientation ^ orientationMask);
+      }
     }
   }
 

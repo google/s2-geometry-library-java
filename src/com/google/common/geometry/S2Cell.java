@@ -144,9 +144,9 @@ public final strictfp class S2Cell implements S2Region {
       S2Cell child = children[pos];
       child.face = face;
       child.level = (byte) (level + 1);
-      child.orientation = (byte) (orientation ^ S2.POS_TO_ORIENTATION[pos]);
+      child.orientation = (byte) (orientation ^ S2.posToOrientation(pos));
       child.cellId = id;
-      int ij = S2.POS_TO_IJ[orientation][pos];
+      int ij = S2.posToIJ(orientation, pos);
       for (int d = 0; d < 2; ++d) {
         // The dimension 0 index (i/u) is in bit 1 of ij.
         int m = 1 - ((ij >> (1 - d)) & 1);

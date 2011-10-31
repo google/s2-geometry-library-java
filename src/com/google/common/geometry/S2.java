@@ -47,8 +47,8 @@ public final strictfp class S2 {
    * {@code (0.5 <= |v|*2^(-exp) < 1)}. If v is zero, return 0.
    *
    * <p>Note that this arguably a bad definition of exponent because it makes
-   * {@code exp(9) == 4}. In decimal this would be like saying that the exponent
-   * of 1234 is 4, when in scientific 'exponent' notation 1234 is
+   * {@code exp(9) == 4}. In decimal this would be like saying that the
+   * exponent of 1234 is 4, when in scientific 'exponent' notation 1234 is
    * {@code 1.234 x 10^3}.
    *
    * TODO(dbeaumont): Replace this with "DoubleUtils.getExponent(v) - 1" ?
@@ -62,31 +62,78 @@ public final strictfp class S2 {
     return (int) ((EXPONENT_MASK & bits) >> EXPONENT_SHIFT) - 1022;
   }
 
-  /**
-   * kPosToOrientation[pos] -> orientation_modifier
-   *
-   *  Return a modifier indicating how the orientation of the child subcell with
-   * the given traversal position [0..3] is related to the orientation of the
-   * parent cell. The modifier should be XOR-ed with the parent orientation to
-   * obtain the curve orientation in the child.
-   *
-   */
-  static final int[] POS_TO_ORIENTATION = {SWAP_MASK, 0, 0, INVERT_MASK + SWAP_MASK};
+  /** Mapping Hilbert traversal order to orientation adjustment mask. */
+  private static final int[] POS_TO_ORIENTATION =
+      {SWAP_MASK, 0, 0, INVERT_MASK + SWAP_MASK};
 
   /**
+   * Returns an XOR bit mask indicating how the orientation of a child subcell
+   * is related to the orientation of its parent cell. The returned value can
+   * be XOR'd with the parent cell's orientation to give the orientation of
+   * the child cell.
    *
-   * kPosToIJ[orientation][pos] -> ij // // Return the (i,j) index of the
-   * subcell at the given position 'pos' in the // Hilbert curve traversal order
-   * with the given orientation. This is the // inverse of the previous table:
-   * kPosToIJ[r][kIJtoPos[r][ij]] == ij
+   * @param position the position of the subcell in the Hilbert traversal, in
+   *     the range [0,3].
+   * @return a bit mask containing some combination of {@link #SWAP_MASK} and
+   *     {@link #INVERT_MASK}.
+   * @throws IllegalArgumentException if position is out of bounds.
    */
-  public static final int[][] POS_TO_IJ = {
-  // 0 1 2 3
+  public static int posToOrientation(int position) {
+    Preconditions.checkArgument(0 <= position && position < 4);
+    return POS_TO_ORIENTATION[position];
+  }
+
+  /** Mapping from cell orientation + Hilbert traversal to IJ-index. */
+  private static final int[][] POS_TO_IJ = {
+      // 0 1 2 3
       {0, 1, 3, 2}, // canonical order: (0,0), (0,1), (1,1), (1,0)
       {0, 2, 3, 1}, // axes swapped: (0,0), (1,0), (1,1), (0,1)
       {3, 2, 0, 1}, // bits inverted: (1,1), (1,0), (0,0), (0,1)
       {3, 1, 0, 2}, // swapped & inverted: (1,1), (0,1), (0,0), (1,0)
   };
+
+  /**
+   * Return the IJ-index of the subcell at the given position in the Hilbert
+   * curve traversal with the given orientation. This is the inverse of
+   * {@link #ijToPos}.
+   *
+   * @param orientation the subcell orientation, in the range [0,3].
+   * @param position the position of the subcell in the Hilbert traversal, in
+   *     the range [0,3].
+   * @return the IJ-index where {@code 0->(0,0), 1->(0,1), 2->(1,0), 3->(1,1)}.
+   * @throws IllegalArgumentException if either parameter is out of bounds.
+   */
+  public static int posToIJ(int orientation, int position) {
+    Preconditions.checkArgument(0 <= orientation && orientation < 4);
+    Preconditions.checkArgument(0 <= position && position < 4);
+    return POS_TO_IJ[orientation][position];
+  }
+
+  /** Mapping from Hilbert traversal order + cell orientation to IJ-index. */
+  private static final int IJ_TO_POS[][] = {
+      // (0,0) (0,1) (1,0) (1,1)
+      {0, 1, 3, 2}, // canonical order
+      {0, 3, 1, 2}, // axes swapped
+      {2, 3, 1, 0}, // bits inverted
+      {2, 1, 3, 0}, // swapped & inverted
+  };
+
+  /**
+   * Returns the order in which a specified subcell is visited by the Hilbert
+   * curve. This is the inverse of {@link #posToIJ}.
+   *
+   * @param orientation the subcell orientation, in the range [0,3].
+   * @param ijIndex the subcell index where
+   *     {@code 0->(0,0), 1->(0,1), 2->(1,0), 3->(1,1)}.
+   * @return the position of the subcell in the Hilbert traversal, in the range
+   *     [0,3].
+   * @throws IllegalArgumentException if either parameter is out of bounds.
+   */
+  public static final int ijToPos(int orientation, int ijIndex) {
+    Preconditions.checkArgument(0 <= orientation && orientation < 4);
+    Preconditions.checkArgument(0 <= ijIndex && ijIndex < 4);
+    return IJ_TO_POS[orientation][ijIndex];
+  }
 
   /**
    * Defines an area or a length cell metric.

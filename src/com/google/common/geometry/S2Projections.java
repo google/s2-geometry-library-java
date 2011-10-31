@@ -214,25 +214,10 @@ public final strictfp class S2Projections {
       S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION ? 1.44261527445268292 : // 1.443
       0;
 
-
-  public static final double MAX_DIAG_ASPECT = Math.sqrt(3); // 1.732
   // This is the maximum diagonal aspect ratio over all cells at any level,
   // where the diagonal aspect ratio of a cell is defined as the ratio of its
   // longest diagonal length to its shortest diagonal length.
-
-
-  // IJ_TO_POS[orientation][ij] -> pos
-  //
-  // Given a cell orientation and the (i,j)-index of a subcell (0=(0,0),
-  // 1=(0,1), 2=(1,0), 3=(1,1)), return the order in which this subcell is
-  // visited by the Hilbert curve (a position in the range [0..3]).
-  public static final int IJ_TO_POS[][] = {
-  // (0,0) (0,1) (1,0) (1,1)
-      {0, 1, 3, 2}, // canonical order
-      {0, 3, 1, 2}, // axes swapped
-      {2, 3, 1, 0}, // bits inverted
-      {2, 1, 3, 0}, // swapped & inverted
-  };
+  public static final double MAX_DIAG_ASPECT = Math.sqrt(3); // 1.732
 
   public static double stToUV(double s) {
     switch (S2_PROJECTION) {

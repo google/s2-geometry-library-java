@@ -144,7 +144,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
       MutableInteger childOrientation = new MutableInteger(0);
       assertEquals(child.toFaceIJOrientation(i, j, childOrientation), face);
       assertEquals(
-          childOrientation.intValue(), orientation.intValue() ^ S2.POS_TO_ORIENTATION[pos]);
+          childOrientation.intValue(), orientation.intValue() ^ S2.posToOrientation(pos));
 
       parentMap.put(child, parent);
       expandCell(child, cells, parentMap);
