@@ -48,7 +48,7 @@ import java.util.Locale;
  *
  *
  */
-public strictfp class S2CellId implements Comparable<S2CellId> {
+public final strictfp class S2CellId implements Comparable<S2CellId> {
 
   // Although only 60 bits are needed to represent the index of a leaf
   // cell, we need an extra bit in order to represent the position of
@@ -146,8 +146,8 @@ public strictfp class S2CellId implements Comparable<S2CellId> {
    * necessarily unit length).
    */
   public static S2CellId fromPoint(S2Point p) {
-    R2Vector uv = new R2Vector();
-    int face = S2Projections.xyzToFaceUV(p, uv);
+    int face = S2Projections.xyzToFace(p);
+    R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
     int i = stToIJ(S2Projections.uvToST(uv.x));
     int j = stToIJ(S2Projections.uvToST(uv.y));
     return fromFaceIJ(face, i, j);
@@ -863,8 +863,9 @@ public strictfp class S2CellId implements Comparable<S2CellId> {
 
     // Find the leaf cell coordinates on the adjacent face, and convert
     // them to a cell id at the appropriate level.
-    R2Vector st = new R2Vector();
-    face = S2Projections.xyzToFaceUV(S2Projections.faceUvToXyz(face, s, t), st);
+    S2Point p = S2Projections.faceUvToXyz(face, s, t);
+    face = S2Projections.xyzToFace(p);
+    R2Vector st = S2Projections.validFaceXyzToUv(face, p);
     return fromFaceIJ(face, stToIJ(st.x), stToIJ(st.y));
   }
 
@@ -960,5 +961,4 @@ public strictfp class S2CellId implements Comparable<S2CellId> {
     return unsignedLongLessThan(this.id, that.id) ? -1 :
         unsignedLongGreaterThan(this.id, that.id) ? 1 : 0;
   }
-
 }

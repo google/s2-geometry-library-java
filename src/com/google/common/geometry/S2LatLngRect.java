@@ -23,7 +23,7 @@ import com.google.common.base.Preconditions;
  *
  */
 
-public strictfp class S2LatLngRect implements S2Region {
+public final strictfp class S2LatLngRect implements S2Region {
 
   private final R1Interval lat;
   private final S1Interval lng;
@@ -196,9 +196,19 @@ public strictfp class S2LatLngRect implements S2Region {
 
   /** Return the k-th vertex of the rectangle (k = 0,1,2,3) in CCW order. */
   public S2LatLng getVertex(int k) {
-    // Twiddle bits to return the points in CCW order (SW, SE, NE, NW).
-    return S2LatLng.fromRadians(lat.bound(k >> 1), lng.bound((k >> 1)
-      ^ (k & 1)));
+    // Return the points in CCW order (SW, SE, NE, NW).
+    switch (k) {
+      case 0:
+        return S2LatLng.fromRadians(lat.lo(), lng.lo());
+      case 1:
+        return S2LatLng.fromRadians(lat.lo(), lng.hi());
+      case 2:
+        return S2LatLng.fromRadians(lat.hi(), lng.hi());
+      case 3:
+        return S2LatLng.fromRadians(lat.hi(), lng.lo());
+      default:
+        throw new IllegalArgumentException("Invalid vertex index.");
+    }
   }
 
   /**

@@ -36,9 +36,11 @@ package com.google.common.geometry;
  *
  */
 
-public strictfp class S1Interval implements Cloneable {
+public final strictfp class S1Interval implements Cloneable {
 
-  private final double[] bounds = new double[2];
+  // TODO(dbeaumont): Make this class immutable and fix callers.
+  private double lo;
+  private double hi;
 
   /**
    * Both endpoints must be in the range -Pi to Pi inclusive. The value -Pi is
@@ -50,10 +52,12 @@ public strictfp class S1Interval implements Cloneable {
 
   /**
    * Copy constructor. Assumes that the given interval is valid.
+   *
+   * TODO(dbeaumont): Make this class immutable and remove this method.
    */
   public S1Interval(S1Interval interval) {
-    bounds[0] = interval.bounds[0];
-    bounds[1] = interval.bounds[1];
+    this.lo = interval.lo;
+    this.hi = interval.hi;
   }
 
   /**
@@ -61,20 +65,19 @@ public strictfp class S1Interval implements Cloneable {
    * range, i.e. normalization from -Pi to Pi is already done.
    */
   private S1Interval(double lo, double hi, boolean checked) {
-    bounds[0] = lo;
-    bounds[1] = hi;
-
+    double newLo = lo;
+    double newHi = hi;
     if (!checked) {
       if (lo == -S2.M_PI && hi != S2.M_PI) {
-        setLo(S2.M_PI);
+        newLo = S2.M_PI;
       }
       if (hi == -S2.M_PI && lo != S2.M_PI) {
-        setHi(S2.M_PI);
+        newHi = S2.M_PI;
       }
     }
-    // assert (isValid());
+    this.lo = newLo;
+    this.hi = newHi;
   }
-
 
   public static S1Interval empty() {
     return new S1Interval(S2.M_PI, -S2.M_PI, true);
@@ -112,30 +115,21 @@ public strictfp class S1Interval implements Cloneable {
     }
   }
 
-
   public double lo() {
-    return bounds[0];
+    return lo;
   }
 
   public double hi() {
-    return bounds[1];
+    return hi;
   }
 
-  public double bound(int i) {
-    return bounds[i];
-  }
-
-  public double[] bounds() {
-    return bounds;
-  }
-
-  public void setLo(double p) {
-    bounds[0] = p;
+  public void setLo(double lo) {
+    this.lo = lo;
     // assert (isValid());
   }
 
-  public void setHi(double p) {
-    bounds[1] = p;
+  public void setHi(double hi) {
+    this.hi = hi;
     // assert (isValid());
   }
 
@@ -147,7 +141,6 @@ public strictfp class S1Interval implements Cloneable {
     return (Math.abs(lo()) <= S2.M_PI && Math.abs(hi()) <= S2.M_PI
         && !(lo() == -S2.M_PI && hi() != S2.M_PI) && !(hi() == -S2.M_PI && lo() != S2.M_PI));
   }
-
 
   /** Return true if the interval contains all points on the unit circle. */
   public boolean isFull() {
@@ -165,7 +158,6 @@ public strictfp class S1Interval implements Cloneable {
   public boolean isInverted() {
     return lo() > hi();
   }
-
 
   /**
    * Return the midpoint of the interval. For full and empty intervals, the
@@ -194,7 +186,6 @@ public strictfp class S1Interval implements Cloneable {
     return (length > 0) ? length : -1;
   }
 
-
   /**
    * Return the complement of the interior of the interval. An interval and its
    * complement have the same boundary but do not share any interior values. The
@@ -221,7 +212,6 @@ public strictfp class S1Interval implements Cloneable {
     return fastContains(p);
   }
 
-
   /**
    * Return true if the interval (which is closed) contains the point 'p'. Skips
    * the normalization of 'p' from -Pi to Pi.
@@ -234,7 +224,6 @@ public strictfp class S1Interval implements Cloneable {
       return p >= lo() && p <= hi();
     }
   }
-
 
   /** Return true if the interior of the interval contains the point 'p'. */
   public boolean interiorContains(double p) {
@@ -250,7 +239,6 @@ public strictfp class S1Interval implements Cloneable {
       return (p > lo() && p < hi()) || isFull();
     }
   }
-
 
   /**
    * Return true if the interval contains the given interval 'y'. Works for
@@ -332,7 +320,6 @@ public strictfp class S1Interval implements Cloneable {
     }
   }
 
-
   /**
    * Expand the interval by the minimum amount necessary so that it contains the
    * given point "p" (an angle in the range [-Pi, Pi]).
@@ -388,7 +375,6 @@ public strictfp class S1Interval implements Cloneable {
     return result;
   }
 
-
   /**
    * Return the smallest interval that contains this interval and the given
    * interval "y".
@@ -432,7 +418,6 @@ public strictfp class S1Interval implements Cloneable {
     }
   }
 
-
   /**
    * Return the smallest interval that contains the intersection of this
    * interval with "y". Note that the region of intersection may consist of two
@@ -471,7 +456,6 @@ public strictfp class S1Interval implements Cloneable {
     // assert (!intersects(y));
     return empty();
   }
-
 
   /**
    * Return true if the length of the symmetric difference between the two

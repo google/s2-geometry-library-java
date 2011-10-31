@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import java.util.Arrays;
 
 public strictfp class S1IntervalTest extends GeometryTestCase {
 
@@ -33,15 +32,15 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
 
     // bounds() returns a const reference to a member variable, so we need to
     // make a copy when invoking it on a temporary object.
-    assertTrue(Arrays.equals(x.union(y).bounds(), expectedUnion.bounds()));
-    assertTrue(Arrays.equals(x.intersection(y).bounds(), expectedIntersection.bounds()));
+    assertEquals(expectedUnion, x.union(y));
+    assertEquals(expectedIntersection, x.intersection(y));
 
     assertEquals(x.contains(y), x.union(y) == x);
     assertEquals(x.intersects(y), !x.intersection(y).isEmpty());
 
     if (y.lo() == y.hi()) {
       S1Interval r = x.addPoint(y.lo());
-      assertTrue(Arrays.equals(r.bounds(), expectedUnion.bounds()));
+      assertEquals(expectedUnion, r);
     }
   }
 
@@ -57,8 +56,8 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertEquals(quad12.lo(), 0.0);
     assertEquals(quad12.hi(), S2.M_PI);
     S1Interval quad34 = new S1Interval(-S2.M_PI, 0);
-    assertEquals(quad34.bound(0), S2.M_PI);
-    assertEquals(quad34.bound(1), 0.0);
+    assertEquals(quad34.lo(), S2.M_PI);
+    assertEquals(quad34.hi(), 0.0);
     S1Interval pi = new S1Interval(S2.M_PI, S2.M_PI);
     assertEquals(pi.lo(), S2.M_PI);
     assertEquals(pi.hi(), S2.M_PI);

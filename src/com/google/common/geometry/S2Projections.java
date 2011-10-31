@@ -69,7 +69,7 @@ import com.google.common.geometry.S2.Metric;
  *
  */
 
-public strictfp class S2Projections {
+public final strictfp class S2Projections {
   public enum Projections {
     S2_LINEAR_PROJECTION, S2_TAN_PROJECTION, S2_QUADRATIC_PROJECTION
   }
@@ -333,31 +333,25 @@ public strictfp class S2Projections {
     return new R2Vector(pu, pv);
   }
 
-  public static int xyzToFaceUV(S2Point p, R2Vector uv) {
+  public static int xyzToFace(S2Point p) {
     int face = p.largestAbsComponent();
     if (p.get(face) < 0) {
       face += 3;
     }
-    R2Vector point = validFaceXyzToUv(face, p);
-    uv.x = point.x;
-    uv.y = point.y;
     return face;
   }
 
-  public static boolean faceXyzToUv(int face, S2Point p, R2Vector uv) {
+  public static R2Vector faceXyzToUv(int face, S2Point p) {
     if (face < 3) {
       if (p.get(face) <= 0) {
-        return false;
+        return null;
       }
     } else {
       if (p.get(face - 3) >= 0) {
-        return false;
+        return null;
       }
     }
-    R2Vector point = validFaceXyzToUv(face, p);
-    uv.x = point.x;
-    uv.y = point.y;
-    return true;
+    return validFaceXyzToUv(face, p);
   }
 
   public static S2Point getUNorm(int face, double u) {

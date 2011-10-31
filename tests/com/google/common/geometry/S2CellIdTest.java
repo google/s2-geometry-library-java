@@ -193,8 +193,9 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
 
       // Check that the ToPointRaw() returns the center of each cell
       // in (s,t) coordinates.
-      R2Vector uv = new R2Vector();
-      S2Projections.xyzToFaceUV(id.toPointRaw(), uv);
+      S2Point p = id.toPointRaw();
+      int face = S2Projections.xyzToFace(p);
+      R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
       assertDoubleNear(
           Math.IEEEremainder(S2Projections.uvToST(uv.x), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
       assertDoubleNear(

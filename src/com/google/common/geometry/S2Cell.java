@@ -23,11 +23,10 @@ package com.google.common.geometry;
  *
  */
 
-public strictfp class S2Cell implements S2Region {
+public final strictfp class S2Cell implements S2Region {
 
   private static final int MAX_CELL_SIZE = 1 << S2CellId.MAX_LEVEL;
 
-  // This structure occupies 44 bytes plus one pointer for the vtable.
   byte face;
   byte level;
   byte orientation;
@@ -182,17 +181,17 @@ public strictfp class S2Cell implements S2Region {
   public R2Vector getCenterUV() {
     MutableInteger i = new MutableInteger(0);
     MutableInteger j = new MutableInteger(0);
-    R2Vector centerUv = new R2Vector();
     cellId.toFaceIJOrientation(i, j, null);
     int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
 
-    int sij = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    centerUv.x = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sij);
+    // TODO(dbeaumont): Figure out a better naming of the variables here (and elsewhere).
+    int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    double x = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * si);
 
-    sij = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    centerUv.y = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sij);
+    int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    double y = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sj);
 
-    return centerUv;
+    return new R2Vector(x, y);
   }
 
   /**
@@ -365,8 +364,8 @@ public strictfp class S2Cell implements S2Region {
     // We can't just call XYZtoFaceUV, because for points that lie on the
     // boundary between two faces (i.e. u or v is +1/-1) we need to return
     // true for both adjacent cells.
-    R2Vector uvPoint = new R2Vector();
-    if (!S2Projections.faceXyzToUv(face, p, uvPoint)) {
+    R2Vector uvPoint = S2Projections.faceXyzToUv(face, p);
+    if (uvPoint == null) {
       return false;
     }
     return (uvPoint.x >= uv[0][0] && uvPoint.x <= uv[0][1] && uvPoint.y >= uv[1][0]

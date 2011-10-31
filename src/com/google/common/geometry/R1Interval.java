@@ -22,13 +22,16 @@ package com.google.common.geometry;
  *
  */
 
-public strictfp class R1Interval {
-  private final double[] bounds = new double[2];
+public final strictfp class R1Interval {
+
+  // TODO(dbeaumont): Make these final and make this class fully immutable.
+  private double lo;
+  private double hi;
 
   /** Interval constructor. If lo > hi, the interval is empty. */
   public R1Interval(double lo, double hi) {
-    bounds[0] = lo;
-    bounds[1] = hi;
+    this.lo = lo;
+    this.hi = hi;
   }
 
   /**
@@ -60,27 +63,19 @@ public strictfp class R1Interval {
   }
 
   public double lo() {
-    return bounds[0];
+    return lo;
   }
 
   public double hi() {
-    return bounds[1];
-  }
-
-  public double bound(int i) {
-    return bounds[i];
-  }
-
-  public double[] bounds() {
-    return bounds;
+    return hi;
   }
 
   public void setLo(double p) {
-    bounds[0] = p;
+    this.lo = p;
   }
 
   public void setHi(double p) {
-    bounds[1] = p;
+    this.hi = p;
   }
 
   /**
@@ -98,7 +93,6 @@ public strictfp class R1Interval {
     return 0.5 * (lo() + hi());
   }
 
-
   /**
    * Return the length of the interval. The length of an empty interval is
    * negative.
@@ -106,7 +100,6 @@ public strictfp class R1Interval {
   public double getLength() {
     return hi() - lo();
   }
-
 
   public boolean contains(double p) {
     return p >= lo() && p <= hi();
@@ -221,8 +214,8 @@ public strictfp class R1Interval {
     }
 
     long value = 17;
-    value = 37 * value + Double.doubleToLongBits(bounds[0]);
-    value = 37 * value + Double.doubleToLongBits(bounds[1]);
+    value = 37 * value + Double.doubleToLongBits(lo);
+    value = 37 * value + Double.doubleToLongBits(hi);
     return (int) (value ^ (value >>> 32));
   }
 

@@ -21,9 +21,13 @@ package com.google.common.geometry;
  * norm, comparison etc.
  *
  */
-public strictfp class R2Vector {
-  double x;
-  double y;
+public final strictfp class R2Vector {
+  final double x;
+  final double y;
+
+  public R2Vector() {
+    this(0, 0);
+  }
 
   public R2Vector(double x, double y) {
     this.x = x;
@@ -36,9 +40,6 @@ public strictfp class R2Vector {
     }
     x = coord[0];
     y = coord[1];
-  }
-
-  public R2Vector() {
   }
 
   public double get(int index) {
@@ -57,11 +58,11 @@ public strictfp class R2Vector {
   }
 
   public double norm2() {
-    return x * x + y * y;
+    return (x * x) + (y * y);
   }
 
   public static double dotProd(final R2Vector p1, final R2Vector p2) {
-    return p1.x * p2.x + p1.y * p2.y;
+    return (p1.x * p2.x) + (p1.y * p2.y);
   }
 
   public double dotProd(R2Vector that) {
