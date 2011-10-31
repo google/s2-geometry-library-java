@@ -894,7 +894,7 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * intersection tests. It is used in three slightly different variations to
    * implement contains(), intersects(), and containsOrCrosses().
    *
-   *  In a nutshell, this method checks all the edges of this polygon (A) for
+   *  In a nutshell, this method checks all the edges of this loop (A) for
    * intersection with all the edges of B. It returns -1 immediately if any edge
    * intersections are found. Otherwise, if there are any shared vertices, it
    * returns the minimum value of the given WedgeRelation for all such vertices
@@ -902,58 +902,21 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * intersections and no shared vertices.
    */
   private int checkEdgeCrossings(S2Loop b, S2EdgeUtil.WedgeRelation relation) {
-    if (b.numVertices() <= 6) {
-      int result = 1;
-      // For small loops (such as S2Cell boundaries), it is not worth computing
-      // longitude bounds to avoid edge tests, and it is more efficient to
-      // reverse the loop nesting.
-      for (int j = 0; j < b.numVertices(); ++j) {
-        S2EdgeUtil.EdgeCrosser crosser =
-            new S2EdgeUtil.EdgeCrosser(b.vertex(j), b.vertex(j + 1), vertex(0));
-        for (int i = 0; i < numVertices(); ++i) {
-          int crossing = crosser.robustCrossing(vertex(i + 1));
-          if (crossing < 0) {
-            continue;
-          }
-          if (crossing > 0) {
-            return -1; // There is a proper edge crossing.
-          }
-          // We only need to check each shared vertex once, so we only
-          // consider the case where vertex(i+1) == b->vertex(j+1).
-          if (vertex(i + 1).equals(b.vertex(j + 1))) {
-            result = Math.min(result, relation.test(
-                vertex(i), vertex(i + 1), vertex(i + 2), b.vertex(j), b.vertex(j + 2)));
-
-            if (result < 0) {
-              return result;
-            }
-          }
-        }
-      }
-      return result;
-    }
-
-    // For larger loops, we can save a lot of edge tests by first checking
-    // whether each edge of the outer loop intersects the xyz bounding
-    // box of the inner loop. To that end we now accumulate a bounding box
-    // in XYZ space for the inner loop.
-    S2EdgeUtil.XYZPruner pruner = new S2EdgeUtil.XYZPruner();
-    for (int i = 1; i < b.numVertices(); i++) {
-      pruner.addEdgeToBounds(b.vertex(i - 1), b.vertex(i));
-    }
-    pruner.addEdgeToBounds(b.vertex(b.numVertices() - 1), b.vertex(0));
-
-    pruner.setFirstIntersectPoint(vertex(0));
-
+    DataEdgeIterator it = getEdgeIterator(b.numVertices);
     int result = 1;
-    for (int i = 0; i < numVertices(); ++i) {
-      if (!pruner.intersects(vertex(i + 1))) {
-        continue;
-      }
+    // since 'this' usually has many more vertices than 'b', use the index on
+    // 'this' and loop over 'b'
+    for (int j = 0; j < b.numVertices(); ++j) {
       S2EdgeUtil.EdgeCrosser crosser =
-          new S2EdgeUtil.EdgeCrosser(vertex(i), vertex(i + 1), b.vertex(0));
-      for (int j = 0; j < b.numVertices(); ++j) {
-        int crossing = crosser.robustCrossing(b.vertex(j + 1));
+        new S2EdgeUtil.EdgeCrosser(b.vertex(j), b.vertex(j + 1), vertex(0));
+      int previousIndex = -2;
+      for (it.getCandidates(b.vertex(j), b.vertex(j + 1)); it.hasNext(); it.next()) {
+        int i = it.index();
+        if (previousIndex != i - 1) {
+          crosser.restartAt(vertex(i));
+        }
+        previousIndex = i;
+        int crossing = crosser.robustCrossing(vertex(i + 1));
         if (crossing < 0) {
           continue;
         }
