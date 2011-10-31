@@ -15,10 +15,12 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
-public strictfp class S2 {
-  // declare some frequently use constants
+public final strictfp class S2 {
+
+  // Declare some frequently used constants
   public static final double M_PI = Math.PI;
   public static final double M_1_PI = 1.0 / Math.PI;
   public static final double M_PI_2 = Math.PI / 2.0;
@@ -35,6 +37,30 @@ public strictfp class S2 {
   public static final int SWAP_MASK = 0x01;
   public static final int INVERT_MASK = 0x02;
 
+  // Number of bits in the mantissa of a double.
+  private static final int EXPONENT_SHIFT = 52;
+  // Mask to extract the exponent from a double.
+  private static final long EXPONENT_MASK = 0x7ff0000000000000L;
+
+  /**
+   * If v is non-zero, return an integer {@code exp} such that
+   * {@code (0.5 <= |v|*2^(-exp) < 1)}. If v is zero, return 0.
+   *
+   * <p>Note that this arguably a bad definition of exponent because it makes
+   * {@code exp(9) == 4}. In decimal this would be like saying that the exponent
+   * of 1234 is 4, when in scientific 'exponent' notation 1234 is
+   * {@code 1.234 x 10^3}.
+   *
+   * TODO(dbeaumont): Replace this with "DoubleUtils.getExponent(v) - 1" ?
+   */
+  @VisibleForTesting
+  static int exp(double v) {
+    if (v == 0) {
+      return 0;
+    }
+    long bits = Double.doubleToLongBits(v);
+    return (int) ((EXPONENT_MASK & bits) >> EXPONENT_SHIFT) - 1022;
+  }
 
   /**
    * kPosToOrientation[pos] -> orientation_modifier
@@ -114,10 +140,10 @@ public strictfp class S2 {
       }
 
       // This code is equivalent to computing a floating-point "level"
-      // value and rounding up. frexp() returns a fraction in the
-      // range [0.5,1) and the corresponding exponent.
-      int level = DoubleMath.frexp(value / ((1 << dim) * deriv)).exp;
-      level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, -((level - 1) >> (dim - 1))));
+      // value and rounding up.
+      int exponent = exp(value / ((1 << dim) * deriv));
+      int level = Math.max(0,
+          Math.min(S2CellId.MAX_LEVEL, -((exponent - 1) >> (dim - 1))));
       // assert (level == S2CellId.MAX_LEVEL || getValue(level) <= value);
       // assert (level == 0 || getValue(level - 1) > value);
       return level;
@@ -137,8 +163,9 @@ public strictfp class S2 {
 
       // This code is equivalent to computing a floating-point "level"
       // value and rounding down.
-      int level = DoubleMath.frexp((1 << dim) * deriv / value).exp;
-      level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, (level - 1) >> (dim - 1)));
+      int exponent = exp((1 << dim) * deriv / value);
+      int level = Math.max(0,
+          Math.min(S2CellId.MAX_LEVEL, ((exponent - 1) >> (dim - 1))));
       // assert (level == 0 || getValue(level) >= value);
       // assert (level == S2CellId.MAX_LEVEL || getValue(level + 1) < value);
       return level;
