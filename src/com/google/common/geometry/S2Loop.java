@@ -932,12 +932,20 @@ public strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
       }
       return result;
     }
+
     // For larger loops, we can save a lot of edge tests by first checking
-    // whether each edge of the outer loop intersects the longitude interval
-    // of the entire inner loop.
+    // whether each edge of the outer loop intersects the xyz bounding
+    // box of the inner loop. To that end we now accumulate a bounding box
+    // in XYZ space for the inner loop.
+    S2EdgeUtil.XYZPruner pruner = new S2EdgeUtil.XYZPruner();
+    for (int i = 1; i < b.numVertices(); i++) {
+      pruner.addEdgeToBounds(b.vertex(i - 1), b.vertex(i));
+    }
+    pruner.addEdgeToBounds(b.vertex(b.numVertices() - 1), b.vertex(0));
+
+    pruner.setFirstIntersectPoint(vertex(0));
+
     int result = 1;
-    S2EdgeUtil.LongitudePruner pruner =
-        new S2EdgeUtil.LongitudePruner(b.getRectBound().lng(), vertex(0));
     for (int i = 0; i < numVertices(); ++i) {
       if (!pruner.intersects(vertex(i + 1))) {
         continue;

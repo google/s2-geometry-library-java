@@ -184,25 +184,77 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         getEdgeBound(1, -1, 1, 1, 1, -1).lat().approxEquals(new R1Interval(-kCubeLat, kCubeLat)));
   }
 
+  // Produce a normalized S2Point for testing.
+  private S2Point S2NP(double x, double y, double z) {
+    return S2Point.normalize(new S2Point(x, y, z));
+  }
+
+  public void testXYZPruner() {
+    S2EdgeUtil.XYZPruner pruner = new S2EdgeUtil.XYZPruner();
+
+    // We aren't actually normalizing these points but it doesn't
+    // matter too much as long as we are reasonably close to unit vectors.
+    // This is a simple triangle on the equator.
+    pruner.addEdgeToBounds(S2NP(0, 1, 0), S2NP(0.1, 1, 0));
+    pruner.addEdgeToBounds(S2NP(0.1, 1, 0), S2NP(0.1, 1, 0.1));
+    pruner.addEdgeToBounds(S2NP(0.1, 1, 0.1), S2NP(0, 1, 0));
+
+    // try a loop around the triangle but far enough out to not overlap.
+    pruner.setFirstIntersectPoint(S2NP(-0.1, 1.0, 0.0));
+    assertFalse(pruner.intersects(S2NP(-0.1, 1.0, 0.2)));
+    assertFalse(pruner.intersects(S2NP(0.0, 1.0, 0.2)));
+    assertFalse(pruner.intersects(S2NP(0.2, 1.0, 0.2)));
+    assertFalse(pruner.intersects(S2NP(0.2, 1.0, 0.05)));
+    assertFalse(pruner.intersects(S2NP(0.2, 1.0, -0.1)));
+    assertFalse(pruner.intersects(S2NP(-0.1, 1.0, -0.1)));
+    assertFalse(pruner.intersects(S2NP(-0.1, 1.0, 0.0)));
+
+    // now we go to a point in the bounding box of the triangle but well
+    // out of the loop. This will be a hit even though it really does not
+    // need to be.
+    assertTrue(pruner.intersects(S2NP(0.02, 1.0, 0.04)));
+
+    // now we zoom out to do an edge *just* below the triangle. This should
+    // be a hit because we are within the deformation zone.
+    assertTrue(pruner.intersects(S2NP(-0.1, 1.0, -0.03)));
+    assertFalse(pruner.intersects(S2NP(0.05, 1.0, -0.03))); // not close
+    assertTrue(pruner.intersects(S2NP(0.05, 1.0, -0.01))); // close
+    assertTrue(pruner.intersects(S2NP(0.05, 1.0, 0.13)));
+    assertFalse(pruner.intersects(S2NP(0.13, 1.0, 0.14)));
+
+    // Create a new pruner with very small area and correspondingly narrow
+    // deformation tolerances.
+    S2EdgeUtil.XYZPruner spruner = new S2EdgeUtil.XYZPruner();
+    spruner.addEdgeToBounds(S2NP(0, 1, 0.000), S2NP(0.001, 1, 0));
+    spruner.addEdgeToBounds(S2NP(0.001, 1, 0.000), S2NP(0.001, 1, 0.001));
+    spruner.addEdgeToBounds(S2NP(0.001, 1, 0.001), S2NP(0.000, 1, 0));
+
+    spruner.setFirstIntersectPoint(S2NP(0, 1.0, -0.1));
+    assertFalse(spruner.intersects(S2NP(0.0005, 1.0, -0.0005)));
+    assertFalse(spruner.intersects(S2NP(0.0005, 1.0, -0.0005)));
+    assertFalse(spruner.intersects(S2NP(0.0005, 1.0, -0.00001)));
+    assertTrue(spruner.intersects(S2NP(0.0005, 1.0, -0.0000001)));
+  }
+
   public void testLongitudePruner() {
     S2EdgeUtil.LongitudePruner pruner1 = new S2EdgeUtil.LongitudePruner(
         new S1Interval(0.75 * S2.M_PI, -0.75 * S2.M_PI), new S2Point(0, 1, 2));
 
-    assertEquals(pruner1.intersects(new S2Point(1, 1, 3)), false);
-    assertEquals(pruner1.intersects(new S2Point(-1 - 1e-15, -1, 0)), true);
-    assertEquals(pruner1.intersects(new S2Point(-1, 0, 0)), true);
-    assertEquals(pruner1.intersects(new S2Point(-1, 0, 0)), true);
-    assertEquals(pruner1.intersects(new S2Point(1, -1, 8)), true);
-    assertEquals(pruner1.intersects(new S2Point(1, 0, -2)), false);
-    assertEquals(pruner1.intersects(new S2Point(-1, -1e-15, 0)), true);
+    assertFalse(pruner1.intersects(new S2Point(1, 1, 3)));
+    assertTrue(pruner1.intersects(new S2Point(-1 - 1e-15, -1, 0)));
+    assertTrue(pruner1.intersects(new S2Point(-1, 0, 0)));
+    assertTrue(pruner1.intersects(new S2Point(-1, 0, 0)));
+    assertTrue(pruner1.intersects(new S2Point(1, -1, 8)));
+    assertFalse(pruner1.intersects(new S2Point(1, 0, -2)));
+    assertTrue(pruner1.intersects(new S2Point(-1, -1e-15, 0)));
 
     S2EdgeUtil.LongitudePruner pruner2 = new S2EdgeUtil.LongitudePruner(
         new S1Interval(0.25 * S2.M_PI, 0.25 * S2.M_PI), new S2Point(1, 0, 0));
 
-    assertEquals(pruner2.intersects(new S2Point(2, 1, 2)), false);
-    assertEquals(pruner2.intersects(new S2Point(1, 2, 3)), true);
-    assertEquals(pruner2.intersects(new S2Point(0, 1, 4)), false);
-    assertEquals(pruner2.intersects(new S2Point(-1e-15, -1, -1)), false);
+    assertFalse(pruner2.intersects(new S2Point(2, 1, 2)));
+    assertTrue(pruner2.intersects(new S2Point(1, 2, 3)));
+    assertFalse(pruner2.intersects(new S2Point(0, 1, 4)));
+    assertFalse(pruner2.intersects(new S2Point(-1e-15, -1, -1)));
   }
 
   private void assertWedge(S2Point a0,

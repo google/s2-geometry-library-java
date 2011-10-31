@@ -227,11 +227,113 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
+   * The purpose of this class is to find edges that intersect a given XYZ
+   * bounding box. It can be used as an efficient rejection test when attempting to
+   * find edges that intersect a given region. It accepts a vertex chain v0, v1,
+   * v2, ... and returns a boolean value indicating whether each edge intersects
+   * the specified bounding box.
+   *
+   * We use XYZ intervals instead of something like longitude intervals because
+   * it is cheap to collect from S2Point lists and any slicing strategy should
+   * give essentially equivalent results.  See S2Loop for an example of use.
+   */
+  public static class XYZPruner {
+    private S2Point lastVertex;
+
+    // The region to be tested against.
+    private boolean boundSet;
+    private double xmin;
+    private double ymin;
+    private double zmin;
+    private double xmax;
+    private double ymax;
+    private double zmax;
+    private double maxDeformation;
+
+    public XYZPruner() {
+      boundSet = false;
+    }
+
+    /**
+     * Accumulate a bounding rectangle from provided edges.
+     *
+     * @param from start of edge
+     * @param to end of edge.
+     */
+    public void addEdgeToBounds(S2Point from, S2Point to) {
+      if (!boundSet) {
+        boundSet = true;
+        xmin = xmax = from.x;
+        ymin = ymax = from.y;
+        zmin = zmax = from.z;
+      }
+      xmin = Math.min(xmin, Math.min(to.x, from.x));
+      ymin = Math.min(ymin, Math.min(to.y, from.y));
+      zmin = Math.min(zmin, Math.min(to.z, from.z));
+      xmax = Math.max(xmax, Math.max(to.x, from.x));
+      ymax = Math.max(ymax, Math.max(to.y, from.y));
+      zmax = Math.max(zmax, Math.max(to.z, from.z));
+
+      // Because our arcs are really geodesics on the surface of the earth
+      // an edge can have intermediate points outside the xyz bounds implicit
+      // in the end points.  Based on the length of the arc we compute a
+      // generous bound for the maximum amount of deformation.  For small edges
+      // it will be very small but for some large arcs (ie. from (1N,90W) to
+      // (1N,90E) the path can be wildly deformed.  I did a bunch of
+      // experiments with geodesics to get safe bounds for the deformation.
+      double approxArcLen =
+          Math.abs(from.x - to.x) + Math.abs(from.y - to.y) + Math.abs(from.z - to.z);
+      if (approxArcLen < 0.025) { // less than 2 degrees
+        maxDeformation = Math.max(maxDeformation, approxArcLen * 0.0025);
+      } else if (approxArcLen < 1.0) { // less than 90 degrees
+        maxDeformation = Math.max(maxDeformation, approxArcLen * 0.11);
+      } else {
+        maxDeformation = approxArcLen * 0.5;
+      }
+    }
+
+    public void setFirstIntersectPoint(S2Point v0) {
+      xmin = xmin - maxDeformation;
+      ymin = ymin - maxDeformation;
+      zmin = zmin - maxDeformation;
+      xmax = xmax + maxDeformation;
+      ymax = ymax + maxDeformation;
+      zmax = zmax + maxDeformation;
+      this.lastVertex = v0;
+    }
+
+    /**
+     * Returns true if the edge going from the last point to this point passes
+     * through the pruner bounding box, otherwise returns false.  So the
+     * method returns false if we are certain there is no intersection, but it
+     * may return true when there turns out to be no intersection.
+     */
+    public boolean intersects(S2Point v1) {
+      boolean result = true;
+
+      if ((v1.x < xmin && lastVertex.x < xmin) || (v1.x > xmax && lastVertex.x > xmax)) {
+        result = false;
+      } else if ((v1.y < ymin && lastVertex.y < ymin) || (v1.y > ymax && lastVertex.y > ymax)) {
+        result = false;
+      } else if ((v1.z < zmin && lastVertex.z < zmin) || (v1.z > zmax && lastVertex.z > zmax)) {
+        result = false;
+      }
+
+      lastVertex = v1;
+      return result;
+    }
+  }
+
+  /**
    * The purpose of this class is to find edges that intersect a given longitude
    * interval. It can be used as an efficient rejection test when attempting to
    * find edges that intersect a given region. It accepts a vertex chain v0, v1,
    * v2, ... and returns a boolean value indicating whether each edge intersects
    * the specified longitude interval.
+   *
+   * This class is not currently used as the XYZPruner is preferred for
+   * S2Loop, but this should be usable in similar circumstances.  Be wary
+   * of the cost of atan2() in conversions from S2Point to longitude!
    */
   public static class LongitudePruner {
     // The interval to be tested against.
