@@ -21,7 +21,7 @@ package com.google.common.geometry;
  *
  * @author kirilll@google.com (Kirill Levin)
  */
-public class S2Edge {
+public final class S2Edge {
 
   private final S2Point start;
   private final S2Point end;
@@ -41,15 +41,15 @@ public class S2Edge {
 
   @Override
   public String toString() {
-    return "Edge: (" + start.toDegreesString() + " -> " + end.toDegreesString() + ")\n" + "   or ["
-        + start + " -> " + end + "]";
+    return String.format("Edge: (%s -> %s)\n   or [%s -> %s]",
+        start.toDegreesString(), end.toDegreesString(), start, end);
   }
 
   @Override
   public int hashCode() {
     return getStart().hashCode() - getEnd().hashCode();
   }
-  
+
   @Override
   public boolean equals(Object o) {
     if (o == null || !(o instanceof S2Edge)) {

@@ -1084,10 +1084,32 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     return sb.toString();
   }
 
-  private static class UndirectedEdge extends S2Edge {
+  private static final class UndirectedEdge {
+    // Note: An UndirectedEdge and an S2Edge can never be considered equal (in
+    // terms of the equals() method) and hence they re not be related types.
+    // If you need to convert between the types then separate conversion
+    // methods should be introduced.
 
-    public UndirectedEdge(S2Point vertexA, S2Point vertexB) {
-      super(vertexA, vertexB);
+    private final S2Point a;
+    private final S2Point b;
+
+    public UndirectedEdge(S2Point start, S2Point end) {
+      this.a = start;
+      this.b = end;
+    }
+
+    public S2Point getStart() {
+      return a;
+    }
+
+    public S2Point getEnd() {
+      return b;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("Edge: (%s <-> %s)\n   or [%s <-> %s]",
+          a.toDegreesString(), b.toDegreesString(), a, b);
     }
 
     @Override
