@@ -22,8 +22,8 @@ package com.google.common.geometry;
  *
  */
 public final strictfp class R2Vector {
-  final double x;
-  final double y;
+  private final double x;
+  private final double y;
 
   public R2Vector() {
     this(0, 0);
@@ -40,6 +40,14 @@ public final strictfp class R2Vector {
     }
     x = coord[0];
     y = coord[1];
+  }
+
+  public double x() {
+    return x;
+  }
+
+  public double y() {
+    return y;
   }
 
   public double get(int index) {

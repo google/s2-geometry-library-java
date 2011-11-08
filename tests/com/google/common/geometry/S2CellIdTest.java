@@ -196,10 +196,10 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
       S2Point p = id.toPointRaw();
       int face = S2Projections.xyzToFace(p);
       R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
-      assertDoubleNear(
-          Math.IEEEremainder(S2Projections.uvToST(uv.x), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
-      assertDoubleNear(
-          Math.IEEEremainder(S2Projections.uvToST(uv.y), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
+      assertDoubleNear(Math.IEEEremainder(
+          S2Projections.uvToST(uv.x()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
+      assertDoubleNear(Math.IEEEremainder(
+          S2Projections.uvToST(uv.y()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
     }
   }
 

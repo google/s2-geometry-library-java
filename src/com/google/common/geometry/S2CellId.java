@@ -148,8 +148,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
   public static S2CellId fromPoint(S2Point p) {
     int face = S2Projections.xyzToFace(p);
     R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
-    int i = stToIJ(S2Projections.uvToST(uv.x));
-    int j = stToIJ(S2Projections.uvToST(uv.y));
+    int i = stToIJ(S2Projections.uvToST(uv.x()));
+    int j = stToIJ(S2Projections.uvToST(uv.y()));
     return fromFaceIJ(face, i, j);
   }
 
@@ -866,7 +866,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
     S2Point p = S2Projections.faceUvToXyz(face, s, t);
     face = S2Projections.xyzToFace(p);
     R2Vector st = S2Projections.validFaceXyzToUv(face, p);
-    return fromFaceIJ(face, stToIJ(st.x), stToIJ(st.y));
+    return fromFaceIJ(face, stToIJ(st.x()), stToIJ(st.y()));
   }
 
   /**

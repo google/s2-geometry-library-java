@@ -368,8 +368,8 @@ public final strictfp class S2Cell implements S2Region {
     if (uvPoint == null) {
       return false;
     }
-    return (uvPoint.x >= uv[0][0] && uvPoint.x <= uv[0][1] && uvPoint.y >= uv[1][0]
-        && uvPoint.y <= uv[1][1]);
+    return (uvPoint.x() >= uv[0][0] && uvPoint.x() <= uv[0][1]
+        && uvPoint.y() >= uv[1][0] && uvPoint.y() <= uv[1][1]);
   }
 
   // The point 'p' does not need to be normalized.
