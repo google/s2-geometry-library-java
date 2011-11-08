@@ -521,6 +521,9 @@ public final strictfp class S2 {
    * a,b,c, except that it has additional logic to make sure that the above
    * properties hold even when the three points are coplanar, and to deal with
    * the limitations of floating-point arithmetic.
+   *
+   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * are undefined.
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c) {
     return robustCCW(a, b, c, S2Point.crossProd(a, b));
@@ -529,11 +532,12 @@ public final strictfp class S2 {
   /**
    * A more efficient version of RobustCCW that allows the precomputed
    * cross-product of A and B to be specified.
+   *
+   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * are undefined
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
-    Preconditions.checkArgument(isUnitLength(a));
-    Preconditions.checkArgument(isUnitLength(b));
-    Preconditions.checkArgument(isUnitLength(c));
+    // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
 
     // There are 14 multiplications and additions to compute the determinant
     // below. Since all three points are normalized, it is possible to show
