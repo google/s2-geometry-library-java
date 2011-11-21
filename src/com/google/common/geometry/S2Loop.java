@@ -68,10 +68,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   /** Maps each S2Point to its order in the loop, from 1 to numVertices. */
   private Map<S2Point, Integer> vertexToIndex;
 
-  private S2Point[] vertices;
-  private int numVertices;
+  private final S2Point[] vertices;
+  private final int numVertices;
 
-  /*
+  /**
    * The index (into "vertices") of the vertex that comes first in the total
    * ordering of all vertices in this loop.
    */
@@ -111,8 +111,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * Initialize a loop corresponding to the given cell.
    */
   public S2Loop(S2Cell cell) {
-    this.bound = cell.getRectBound();
-    initFromCell(cell);
+    this(cell, cell.getRectBound());
   }
 
   /**
@@ -124,7 +123,16 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    */
   public S2Loop(S2Cell cell, S2LatLngRect bound) {
     this.bound = bound;
-    initFromCell(cell);
+    numVertices = 4;
+    vertices = new S2Point[numVertices];
+    vertexToIndex = null;
+    index = null;
+    depth = 0;
+    for (int i = 0; i < 4; ++i) {
+      vertices[i] = cell.getVertex(i);
+    }
+    initOrigin();
+    initFirstLogicalVertex();
   }
 
   /**
@@ -181,9 +189,11 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * vertex(n..2*n-1) is mapped to vertex(0..n-1), where n == numVertices().
    */
   public S2Point vertex(int i) {
-    Preconditions.checkState(i >= 0 && i < 2 * numVertices, "Invalid vertex index");
-    int j = i - numVertices();
-    return vertices[(j >= 0) ? j : i];
+    try {
+      return vertices[i >= vertices.length ? i - vertices.length : i];
+    } catch (ArrayIndexOutOfBoundsException e) {
+      throw new IllegalStateException("Invalid vertex index");
+    }
   }
 
   /**
@@ -852,19 +862,6 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
       b = new S2LatLngRect(new R1Interval(-S2.M_PI_2, b.lat().hi()), b.lng());
     }
     bound = b;
-  }
-
-  private void initFromCell(S2Cell cell) {
-    numVertices = 4;
-    vertices = new S2Point[numVertices];
-    vertexToIndex = null;
-    index = null;
-    depth = 0;
-    for (int i = 0; i < 4; ++i) {
-      vertices[i] = cell.getVertex(i);
-    }
-    initOrigin();
-    initFirstLogicalVertex();
   }
 
   /**

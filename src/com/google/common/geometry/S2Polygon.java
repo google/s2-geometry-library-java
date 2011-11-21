@@ -22,9 +22,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.TreeMultimap;
-import com.google.common.collect.TreeMultiset;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -441,39 +439,53 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Indexing structure to efficiently clipEdge() of a polygon. This is an
+   *  Indexing structure to efficiently clipEdge() of a polygon. This is an
    * abstract class because we need to use if for both polygons (for
    * initToIntersection() and friends) and for sets of lists of points (for
    * initToSimplified()).
    *
-   *  Usage -- in your subclass: - Call addLoop() for each of your loops -- and
-   * keep them accessible in your subclass. - Overwrite edgeFromTo(), calling
-   * decodeIndex() and accessing your underlying data with the resulting two
-   * indices.
+   *  Usage -- in your subclass, create an array of vertex counts for each loop
+   * in the loop sequence and pass it to this constructor. Overwrite
+   * edgeFromTo(), calling decodeIndex() and use the resulting two indices to
+   * access your accessing vertices.
    */
   private abstract static class S2LoopSequenceIndex extends S2EdgeIndex {
-    public S2LoopSequenceIndex() {
-      numEdges = 0;
-      numLoops = 0;
-      indexToLoop = Lists.newArrayList();
-      loopToFirstIndex = Lists.newArrayList();
-    }
+    /** Map from the unidimensional edge index to the loop this edge belongs to. */
+    private final int[] indexToLoop;
 
-    public void addLoop(int numVertices) {
-      int verticesSoFar = numEdges;
-      loopToFirstIndex.add(verticesSoFar);
-      indexToLoop.ensureCapacity(verticesSoFar + numVertices);
-      for (int i = 0; i < numVertices; ++i) {
-        indexToLoop.add(verticesSoFar, numLoops);
-        ++verticesSoFar;
+    /**
+     * Reverse of indexToLoop: maps a loop index to the unidimensional index
+     * of the first edge in the loop.
+     */
+    private final int[] loopToFirstIndex;
+
+    /**
+     * Must be called by each subclass with the array of vertices per loop. The
+     * length of the array is the number of loops, and the <code>i</code>
+     * <sup>th</sup> loop's vertex count is in the <code>i</code>
+     * <sup>th</sup> index of the array.
+     */
+    public S2LoopSequenceIndex(int[] numVertices) {
+      int totalEdges = 0;
+      for (int edges : numVertices) {
+        totalEdges += edges;
       }
-      numEdges += numVertices;
-      ++numLoops;
+      indexToLoop = new int[totalEdges];
+      loopToFirstIndex = new int[numVertices.length];
+
+      totalEdges = 0;
+      for (int j = 0; j < numVertices.length; j++) {
+        loopToFirstIndex[j] = totalEdges;
+        for (int i = 0; i < numVertices[j]; i++) {
+          indexToLoop[totalEdges] = j;
+          totalEdges++;
+        }
+      }
     }
 
-    public LoopVertexIndexPair decodeIndex(int index) {
-      int loopIndex = indexToLoop.get(index);
-      int vertexInLoop = index - loopToFirstIndex.get(loopIndex);
+    public final LoopVertexIndexPair decodeIndex(int index) {
+      int loopIndex = indexToLoop[index];
+      int vertexInLoop = index - loopToFirstIndex[loopIndex];
       return new LoopVertexIndexPair(loopIndex, vertexInLoop);
     }
 
@@ -482,8 +494,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     public abstract S2Edge edgeFromTo(int index);
 
     @Override
-    protected int getNumEdges() {
-      return numEdges;
+    public final int getNumEdges() {
+      return indexToLoop.length;
     }
 
     @Override
@@ -499,41 +511,33 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       S2Point to = fromTo.getEnd();
       return to;
     }
-
-    // Map from the unidimensional edge index to the loop this edge belongs to.
-    ArrayList<Integer> indexToLoop;
-    // Reverse of index_to_loop_: maps a loop index to the
-    // unidimensional index of the first edge in the loop.
-    List<Integer> loopToFirstIndex;
-
-    // Total number of edges.
-    int numEdges;
-
-    // Total number of loops.
-    int numLoops;
   }
 
   // Indexing structure for an S2Polygon.
-  static class S2PolygonIndex extends S2LoopSequenceIndex {
-    private S2Polygon poly;
-    private boolean reverse;
+  private static final class S2PolygonIndex extends S2LoopSequenceIndex {
+    private final S2Polygon poly;
+    private final boolean reverse;
+
+    private static int[] getVertices(S2Polygon poly) {
+      int[] vertices = new int[poly.numLoops()];
+      for (int i = 0; i < vertices.length; i++) {
+        vertices[i] = poly.loop(i).numVertices();
+      }
+      return vertices;
+    }
 
     public S2PolygonIndex(S2Polygon poly, boolean reverse) {
+      super(getVertices(poly));
       this.poly = poly;
       this.reverse = reverse;
-      for (int i = 0; i < poly.numLoops(); ++i) {
-        addLoop(poly.loop(i).numVertices());
-      }
     }
 
     @Override
     public S2Edge edgeFromTo(int index) {
-      int loopIndex = 0;
-      int vertexInLoop = 0;
       LoopVertexIndexPair indices = decodeIndex(index);
-      loopIndex = indices.getLoopIndex();
-      vertexInLoop = indices.getVertexIndex();
-      S2Loop loop = new S2Loop(poly.loop(loopIndex));
+      int loopIndex = indices.getLoopIndex();
+      int vertexInLoop = indices.getVertexIndex();
+      S2Loop loop = poly.loop(loopIndex);
       int fromIndex;
       int toIndex;
       if (loop.isHole() ^ reverse) {
@@ -641,29 +645,15 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
           intersections.add(new ParametrizedS2Point(0.0, a0));
         }
         inside = ((intersections.size() & 0x1) == 0x1);
-        if ((b.contains(a1) ^ invertB) != inside) {
-          // TODO(andriy): do something more meaningful here.
-          // Better yet, refactor and move this check to the unit test.
-          log.severe("Internal clipBoundary error.");
-        }
+        // assert ((b.contains(a1) ^ invertB) == inside);
         if (inside) {
           intersections.add(new ParametrizedS2Point(1.0, a1));
         }
 
         // Remove duplicates and produce a list of unique intersections.
-        TreeMultiset<ParametrizedS2Point> sortedIntersections = TreeMultiset.create();
-        sortedIntersections.addAll(intersections);
-        Iterator<ParametrizedS2Point> iter = sortedIntersections.iterator();
-        while (iter.hasNext()) {
-          S2Point p0 = iter.next().getPoint();
-          if (!iter.hasNext()) {
-            break;
-          }
-          S2Point p1 = iter.next().getPoint();
-          if (p0.equals(p1)) {
-            continue;
-          }
-          builder.addEdge(p0, p1);
+        Collections.sort(intersections);
+        for (int size = intersections.size(), i = 1; i < size; i += 2) {
+          builder.addEdge(intersections.get(i - 1).getPoint(), intersections.get(i).getPoint());
         }
       }
     }
@@ -1128,8 +1118,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
-  private static class LoopVertexIndexPair {
-
+  private static final class LoopVertexIndexPair {
     private final int loopIndex;
     private final int vertexIndex;
 
@@ -1151,8 +1140,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
    * An S2Point that also has a parameter associated with it, which corresponds
    * to a time-like order on the points.
    */
-  private static class ParametrizedS2Point implements Comparable<ParametrizedS2Point> {
-
+  private static final class ParametrizedS2Point implements Comparable<ParametrizedS2Point> {
     private final double time;
     private final S2Point point;
 
@@ -1171,12 +1159,11 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
     @Override
     public int compareTo(ParametrizedS2Point o) {
-      int compareTime = Double.compare(time, o.getTime());
+      int compareTime = Double.compare(time, o.time);
       if (compareTime != 0) {
         return compareTime;
       }
-      return point.compareTo(o.getPoint());
+      return point.compareTo(o.point);
     }
-
   }
 }

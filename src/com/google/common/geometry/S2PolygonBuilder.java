@@ -486,9 +486,7 @@ public strictfp class S2PolygonBuilder {
       } else {
         // We've completed a loop. Throw away any initial vertices that
         // are not part of the loop.
-        for (int i = 0; i < index.get(v2); ++i) {
-          path.remove(0);
-        }
+        path = path.subList(index.get(v2), path.size());
 
         if (options.getValidate() && !S2Loop.isValid(path)) {
           // We've constructed a loop that crosses itself, which can only happen

@@ -21,7 +21,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,41 +41,16 @@ public abstract strictfp class S2EdgeIndex {
   private static final double MAX_DET_ERROR = 1e-14;
 
   /**
-   * Associates each edge index with the cell ID that contains it. Implements
-   * Comparable to sort by the cell ID.
+   * The cell containing each edge, as given in the parallel array
+   * <code>edges</code>.
    */
-  private static final class Entry implements Comparable<Entry> {
-    /** The cell ID of this indexed edge. */
-    public final long cellId;
-    /** The edge index of this edge. */
-    public final int edgeIndex;
-    /** Construct a new entry with the given cell ID and edge index. */
-    public Entry(long cellId, int edgeIndex) {
-      this.cellId = cellId;
-      this.edgeIndex = edgeIndex;
-    }
-    /** Compares Entry instances by cell id and edge index. */
-    @Override
-    public int compareTo(Entry that) {
-      if (this.cellId < that.cellId) {
-        return -1;
-      } else if (this.cellId > that.cellId) {
-        return 1;
-      } else if (this.edgeIndex < that.edgeIndex) {
-        return -1;
-      } else if (this.edgeIndex > that.edgeIndex) {
-        return 1;
-      } else {
-        return 0;
-      }
-    }
-  }
+  private long[] cells;
 
   /**
-   * Maps cell ids to covered edges; has the property that the set of all cell
-   * ids mapping to a particular edge forms a covering of that edge.
+   * The edge contained by each cell, as given in the parallel array
+   * <code>cells</code>.
    */
-  private final ArrayList<Entry> sortedMapping = Lists.newArrayList();
+  private int[] edges;
 
   /**
    * No cell strictly below this level appears in mapping. Initially leaf level,
@@ -99,19 +75,37 @@ public abstract strictfp class S2EdgeIndex {
     minimumS2LevelUsed = S2CellId.MAX_LEVEL;
     indexComputed = false;
     queryCount = 0;
-    sortedMapping.clear();
+    cells = null;
+    edges = null;
   }
 
-
   /**
-   * Computes the index (if it has not been previously done).
+   * Compares [cell1, edge1] to [cell2, edge2], by cell first and edge second.
+   *
+   * @return -1 if [cell1, edge1] is less than [cell2, edge2], 1 if [cell1,
+   *         edge1] is greater than [cell2, edge2], 0 otherwise.
    */
-  public void computeIndex() {
+  private static final int compare(long cell1, int edge1, long cell2, int edge2) {
+    if (cell1 < cell2) {
+      return -1;
+    } else if (cell1 > cell2) {
+      return 1;
+    } else if (edge1 < edge2) {
+      return -1;
+    } else if (edge1 > edge2) {
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
+  /** Computes the index (if it has not been previously done). */
+  public final void computeIndex() {
     if (indexComputed) {
       return;
     }
-
-    sortedMapping.clear();
+    List<Long> cellList = Lists.newArrayList();
+    List<Integer> edgeList = Lists.newArrayList();
     for (int i = 0; i < getNumEdges(); ++i) {
       S2Point from = edgeFrom(i);
       S2Point to = edgeTo(i);
@@ -119,16 +113,47 @@ public abstract strictfp class S2EdgeIndex {
       int level = getCovering(from, to, true, cover);
       minimumS2LevelUsed = Math.min(minimumS2LevelUsed, level);
       for (S2CellId cellId : cover) {
-        sortedMapping.add(new Entry(cellId.id(), i));
+        cellList.add(cellId.id());
+        edgeList.add(i);
       }
     }
-
-    sortedMapping.trimToSize();
-    Collections.sort(sortedMapping);
+    cells = new long[cellList.size()];
+    edges = new int[edgeList.size()];
+    for (int i = 0; i < cells.length; i++) {
+      cells[i] = cellList.get(i);
+      edges[i] = edgeList.get(i);
+    }
+    sortIndex();
     indexComputed = true;
   }
 
-  public boolean isIndexComputed() {
+  /** Sorts the parallel <code>cells</code> and <code>edges</code> arrays. */
+  private void sortIndex() {
+    // create an array of indices and sort based on the values in the parallel
+    // arrays at each index
+    Integer[] indices = new Integer[cells.length];
+    for (int i = 0; i < indices.length; i++) {
+      indices[i] = i;
+    }
+    Arrays.sort(indices, new Comparator<Integer>() {
+      @Override
+      public int compare(Integer index1, Integer index2) {
+        return S2EdgeIndex.compare(cells[index1], edges[index1], cells[index2], edges[index2]);
+      }
+    });
+    // copy the cells and edges in the order given by the sorted list of indices
+    long[] newCells = new long[cells.length];
+    int[] newEdges = new int[edges.length];
+    for (int i = 0; i < indices.length; i++) {
+      newCells[i] = cells[indices[i]];
+      newEdges[i] = edges[indices[i]];
+    }
+    // replace the cells and edges with the sorted arrays
+    cells = newCells;
+    edges = newEdges;
+  }
+
+  public final boolean isIndexComputed() {
     return indexComputed;
   }
 
@@ -136,7 +161,7 @@ public abstract strictfp class S2EdgeIndex {
    * Tell the index that we just received a new request for candidates. Useful
    * to compute when to switch to quad tree.
    */
-  protected void incrementQueryCount() {
+  protected final void incrementQueryCount() {
     ++queryCount;
   }
 
@@ -176,7 +201,7 @@ public abstract strictfp class S2EdgeIndex {
    * while the marginal cost to find is 3ms. Thus, this is a reasonable thing to
    * do.
    */
-  public void predictAdditionalCalls(int n) {
+  public final void predictAdditionalCalls(int n) {
     if (indexComputed) {
       return;
     }
@@ -207,18 +232,18 @@ public abstract strictfp class S2EdgeIndex {
   protected void findCandidateCrossings(S2Point a, S2Point b, List<Integer> candidateCrossings) {
     Preconditions.checkState(indexComputed);
     ArrayList<S2CellId> cover = Lists.newArrayList();
-
     getCovering(a, b, false, cover);
-    getEdgesInParentCells(cover, sortedMapping, minimumS2LevelUsed, candidateCrossings);
+
+    // Edge references are inserted into the map once for each covering cell, so
+    // absorb duplicates here
+    Set<Integer> uniqueSet = new HashSet<Integer>();
+    getEdgesInParentCells(cover, uniqueSet);
 
     // TODO(user): An important optimization for long query
     // edges (Contains queries): keep a bounding cap and clip the query
     // edge to the cap before starting the descent.
-    getEdgesInChildrenCells(a, b, cover, sortedMapping, candidateCrossings);
+    getEdgesInChildrenCells(a, b, cover, uniqueSet);
 
-    // Remove duplicates: This is necessary because edge references are
-    // inserted into the map once for each covering cell.
-    Set<Integer> uniqueSet = new HashSet<Integer>(candidateCrossings);
     candidateCrossings.clear();
     candidateCrossings.addAll(uniqueSet);
   }
@@ -281,24 +306,13 @@ public abstract strictfp class S2EdgeIndex {
       S2Point a, S2Point b, boolean thickenEdge, ArrayList<S2CellId> edgeCovering) {
     edgeCovering.clear();
 
-    // kMinWidth taken from util/geometry/s2.[h,cc], and assumes that
-    // (S2_PROJECTION == S2_QUADRATIC_PROJECTION).
-    // TODO(andriy): this should live in S2.java, but that part of the code
-    // hasn't been ported from the C++ S2 library yet, so putting our own
-    // copy here for now. Also, this Java version differs from the C++ version
-    // in that the C++ version uses a different coordinate system (in the C++
-    // version, CL 1904327 changed the definition of the (s,t) coordinate
-    // system to occupy the square [0,1]x[0,1] rather than [-1,1]x[-1,1].
-    // So, kMinWidth here reflects the old [-1,1]x[-1,1] coordinate system.
-    S2.Metric kMinWidth = new S2.Metric(1, Math.sqrt(2) / 3 /* 0.471 */);
-
     // Selects the ideal s2 level at which to cover the edge, this will be the
     // level whose S2 cells have a width roughly commensurate to the length of
     // the edge. We multiply the edge length by 2*THICKENING to guarantee the
     // thickening is honored (it's not a big deal if we honor it when we don't
     // request it) when doing the covering-by-cap trick.
     double edgeLength = a.angle(b);
-    int idealLevel = kMinWidth.getMaxLevel(edgeLength * (1 + 2 * THICKENING));
+    int idealLevel = S2Projections.MIN_WIDTH.getMaxLevel(edgeLength * (1 + 2 * THICKENING));
 
     S2CellId containingCellId;
     if (!thickenEdge) {
@@ -363,13 +377,11 @@ public abstract strictfp class S2EdgeIndex {
    * Filters a list of entries down to the inclusive range defined by the given
    * cells, in <code>O(log N)</code> time.
    *
-   * @param entries The entries to filter.
    * @param cell1 One side of the inclusive query range.
    * @param cell2 The other side of the inclusive query range.
-   * @return A sublist of the given list of entries that intersect the given
-   *         range of cell IDs.
+   * @return An array of length 2, containing the start/end indices.
    */
-  private static List<Entry> getSubEntries(List<Entry> entries, long cell1, long cell2) {
+  private int[] getEdges(long cell1, long cell2) {
     // ensure cell1 <= cell2
     if (cell1 > cell2) {
       long temp = cell1;
@@ -380,12 +392,26 @@ public abstract strictfp class S2EdgeIndex {
     // if an exact match cannot be found. Since the edge indices queried for are
     // not valid edge indices, we will always get -N-1, so we immediately
     // convert to N.
-    int start = -1 - Collections.binarySearch(entries, new Entry(cell1, Integer.MIN_VALUE));
-    int end = -1 - Collections.binarySearch(entries, new Entry(cell2, Integer.MAX_VALUE));
-    // Note that when both query cells are either before or after the cell IDs
-    // spanned by entries, the start and end indices will be equal, and in that
-    // case List.subList returns the empty list.
-    return entries.subList(start, end);
+    return new int[]{
+        -1 - binarySearch(cell1, Integer.MIN_VALUE),
+        -1 - binarySearch(cell2, Integer.MAX_VALUE)};
+  }
+
+  private int binarySearch(long cell, int edge) {
+    int low = 0;
+    int high = cells.length - 1;
+    while (low <= high) {
+      int mid = (low + high) >>> 1;
+      int cmp = compare(cells[mid], edges[mid], cell, edge);
+      if (cmp < 0) {
+        low = mid + 1;
+      } else if (cmp > 0) {
+        high = mid - 1;
+      } else {
+        return mid;
+      }
+    }
+    return -(low + 1);
   }
 
   /**
@@ -393,9 +419,7 @@ public abstract strictfp class S2EdgeIndex {
    * cell of cover, down to minimumS2LevelUsed. The cell->edge map is in the
    * variable mapping.
    */
-  private static void getEdgesInParentCells(List<S2CellId> cover,
-      List<Entry> sortedMapping, int minimumS2LevelUsed,
-      List<Integer> candidateCrossings) {
+  private void getEdgesInParentCells(List<S2CellId> cover, Set<Integer> candidateCrossings) {
     // Find all parent cells of covering cells.
     Set<S2CellId> parentCells = Sets.newHashSet();
     for (S2CellId coverCell : cover) {
@@ -409,8 +433,9 @@ public abstract strictfp class S2EdgeIndex {
 
     // Put parent cell edge references into result.
     for (S2CellId parentCell : parentCells) {
-      for (Entry entry : getSubEntries(sortedMapping, parentCell.id(), parentCell.id())) {
-        candidateCrossings.add(entry.edgeIndex);
+      int[] bounds = getEdges(parentCell.id(), parentCell.id());
+      for (int i = bounds[0]; i < bounds[1]; i++) {
+        candidateCrossings.add(edges[i]);
       }
     }
   }
@@ -419,9 +444,9 @@ public abstract strictfp class S2EdgeIndex {
    * Returns true if ab possibly crosses cd, by clipping tiny angles to zero.
    */
   private static boolean lenientCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
-    Preconditions.checkArgument(S2.isUnitLength(a));
-    Preconditions.checkArgument(S2.isUnitLength(b));
-    Preconditions.checkArgument(S2.isUnitLength(c));
+    // assert (S2.isUnitLength(a));
+    // assert (S2.isUnitLength(b));
+    // assert (S2.isUnitLength(c));
 
     double acb = S2Point.crossProd(a, c).dotProd(b);
     double bda = S2Point.crossProd(b, d).dotProd(a);
@@ -463,23 +488,24 @@ public abstract strictfp class S2EdgeIndex {
    * refined to eliminate quickly subcells that contain many edges but do not
    * intersect with edge.
    */
-  private static void getEdgesInChildrenCells(S2Point a, S2Point b, List<S2CellId> cover,
-      List<Entry> entries, List<Integer> candidateCrossings) {
+  private void getEdgesInChildrenCells(S2Point a, S2Point b, List<S2CellId> cover,
+      Set<Integer> candidateCrossings) {
     // Put all edge references of (covering cells + descendant cells) into
     // result.
     // This relies on the natural ordering of S2CellIds.
     S2Cell[] children = null;
     while (!cover.isEmpty()) {
       S2CellId cell = cover.remove(cover.size() - 1);
-      List<Entry> nearEntries = getSubEntries(entries, cell.rangeMin().id(), cell.rangeMax().id());
-      if (nearEntries.size() <= 16) {
-        for (Entry entry : nearEntries) {
-          candidateCrossings.add(entry.edgeIndex);
+      int[] bounds = getEdges(cell.rangeMin().id(), cell.rangeMax().id());
+      if (bounds[1] - bounds[0] <= 16) {
+        for (int i = bounds[0]; i < bounds[1]; i++) {
+          candidateCrossings.add(edges[i]);
         }
       } else {
         // Add cells at this level
-        for (Entry entry : getSubEntries(entries, cell.id(), cell.id())) {
-          candidateCrossings.add(entry.edgeIndex);
+        bounds = getEdges(cell.id(), cell.id());
+        for (int i = bounds[0]; i < bounds[1]; i++) {
+          candidateCrossings.add(edges[i]);
         }
         // Recurse on the children -- hopefully some will be empty.
         if (children == null) {
@@ -516,7 +542,7 @@ public abstract strictfp class S2EdgeIndex {
     /**
      * The structure containing the data edges.
      */
-    private S2EdgeIndex edgeIndex;
+    private final S2EdgeIndex edgeIndex;
 
     /**
      * Tells whether getCandidates() obtained the candidates through brute force
