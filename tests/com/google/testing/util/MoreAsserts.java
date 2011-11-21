@@ -118,62 +118,6 @@ public final class MoreAsserts {
     assertContentsAnyOrder((String) null, expected, actual, comparator);
   }
 
-
-  /**
-   * Utility for testing equals() and hashCode() results at once.
-   * Tests that lhs.equals(rhs) matches expectedResult, as well as
-   * rhs.equals(lhs).  Also tests that hashCode() return values are
-   * equal if expectedResult is true.  (hashCode() is not tested if
-   * expectedResult is false, as unequal objects can have equal hashCodes.)
-   *
-   * @param lhs An Object for which equals() and hashCode() are to be tested.
-   * @param rhs As lhs.
-   * @param expectedResult True if the objects should compare equal,
-   *   false if not.
-   */
-  public static void checkEqualsAndHashCodeMethods(
-      String message, Object lhs, Object rhs, boolean expectedResult) {
-
-    if ((lhs == null) && (rhs == null)) {
-      Assert.assertTrue(
-          "Your check is dubious...why would you expect null != null?",
-          expectedResult);
-      return;
-    }
-
-    if ((lhs == null) || (rhs == null)) {
-      Assert.assertFalse(
-          "Your check is dubious...why would you expect an object "
-          + "to be equal to null?", expectedResult);
-    }
-
-    if (lhs != null) {
-      assertEqualsImpl(message, expectedResult, lhs.equals(rhs));
-    }
-    if (rhs != null) {
-      assertEqualsImpl(message, expectedResult, rhs.equals(lhs));
-    }
-
-    if (expectedResult) {
-      String hashMessage =
-          "hashCode() values for equal objects should be the same";
-      if (message != null) {
-        hashMessage += ": " + message;
-      }
-      Assert.assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
-    }
-  }
-
-  /**
-   * Variant of
-   * {@link #checkEqualsAndHashCodeMethods(String, Object, Object, boolean)}
-   * using a generic message.
-   */
-  public static void checkEqualsAndHashCodeMethods(Object lhs, Object rhs,
-                                             boolean expectedResult) {
-    checkEqualsAndHashCodeMethods((String) null, lhs, rhs, expectedResult);
-  }
-
   private static void failNotEqual(String message, Object expected,
       Object actual) {
     if ((expected != null) && (actual != null)

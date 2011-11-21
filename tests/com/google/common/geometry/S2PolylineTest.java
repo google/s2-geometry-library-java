@@ -17,7 +17,8 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.Lists;
-import com.google.testing.util.MoreAsserts;
+
+import junit.framework.Assert;
 
 import java.util.List;
 
@@ -105,16 +106,16 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     S2Polyline line1 = new S2Polyline(vertices);
     S2Polyline line2 = new S2Polyline(vertices);
 
-    MoreAsserts.checkEqualsAndHashCodeMethods(line1, line2, true);
+    checkEqualsAndHashCodeMethods(line1, line2, true);
 
     List<S2Point> moreVertices = Lists.newLinkedList(vertices);
     moreVertices.remove(0);
 
     S2Polyline line3 = new S2Polyline(moreVertices);
 
-    MoreAsserts.checkEqualsAndHashCodeMethods(line1, line3, false);
-    MoreAsserts.checkEqualsAndHashCodeMethods(line1, null, false);
-    MoreAsserts.checkEqualsAndHashCodeMethods(line1, "", false);
+    checkEqualsAndHashCodeMethods(line1, line3, false);
+    checkEqualsAndHashCodeMethods(line1, null, false);
+    checkEqualsAndHashCodeMethods(line1, "", false);
   }
 
   public void testProject() {
@@ -159,4 +160,44 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(2, edgeIndex);
   }
 
+  /**
+   * Utility for testing equals() and hashCode() results at once.
+   * Tests that lhs.equals(rhs) matches expectedResult, as well as
+   * rhs.equals(lhs).  Also tests that hashCode() return values are
+   * equal if expectedResult is true.  (hashCode() is not tested if
+   * expectedResult is false, as unequal objects can have equal hashCodes.)
+   *
+   * @param lhs An Object for which equals() and hashCode() are to be tested.
+   * @param rhs As lhs.
+   * @param expectedResult True if the objects should compare equal,
+   *   false if not.
+   */
+  private static void checkEqualsAndHashCodeMethods(Object lhs, Object rhs,
+                                             boolean expectedResult) {
+    if ((lhs == null) && (rhs == null)) {
+      Assert.assertTrue(
+          "Your check is dubious...why would you expect null != null?",
+          expectedResult);
+      return;
+    }
+
+    if ((lhs == null) || (rhs == null)) {
+      Assert.assertFalse(
+          "Your check is dubious...why would you expect an object "
+          + "to be equal to null?", expectedResult);
+    }
+
+    if (lhs != null) {
+      assertEquals(expectedResult, lhs.equals(rhs));
+    }
+    if (rhs != null) {
+      assertEquals(expectedResult, rhs.equals(lhs));
+    }
+
+    if (expectedResult) {
+      String hashMessage =
+          "hashCode() values for equal objects should be the same";
+      Assert.assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
+    }
+  }
 }
