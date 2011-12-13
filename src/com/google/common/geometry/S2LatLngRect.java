@@ -330,9 +330,7 @@ public strictfp class S2LatLngRect implements S2Region {
    */
   public boolean contains(S2LatLng ll) {
     // assert (ll.isValid());
-    return (lat.contains(ll.lat().radians()) && lng.contains(ll.lng()
-      .radians()));
-
+    return (lat.contains(ll.latRadians()) && lng.contains(ll.lngRadians()));
   }
 
   /**
