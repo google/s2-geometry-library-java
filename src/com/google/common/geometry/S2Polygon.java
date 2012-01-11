@@ -575,8 +575,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       // duplicate edges are encountered, both are included in the output. The
       // "addSharedEdges" flag allows one of these two copies to be removed by
       // changing its intersection parameter from 0 to 1.
-      double t = (a0 == b0 || a0 == b1) ? 0 : 1;
-      if (!addSharedEdges && a1 == b1) {
+      double t = (a0.equals(b0) || a0.equals(b1)) ? 0 : 1;
+      if (!addSharedEdges && a1.equals(b1)) {
         t = 1;
       }
       intersections.add(new ParametrizedS2Point(t, t == 0 ? a0 : a1));
@@ -599,7 +599,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       S2Edge fromTo = bIndex.edgeFromTo(it.index());
       from = fromTo.getStart();
       to = fromTo.getEnd();
-      if (previousTo != from) {
+      if (previousTo == null || !previousTo.equals(from)) {
         crosser.restartAt(from);
       }
       int crossing = crosser.robustCrossing(to);
