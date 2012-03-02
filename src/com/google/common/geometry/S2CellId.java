@@ -64,13 +64,13 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
 
   // The following lookup tables are used to convert efficiently between an
   // (i,j) cell index and the corresponding position along the Hilbert curve.
-  // "lookup_pos" maps 4 bits of "i", 4 bits of "j", and 2 bits representing the
+  // "LOOKUP_POS" maps 4 bits of "i", 4 bits of "j", and 2 bits representing the
   // orientation of the current cell into 8 bits representing the order in which
   // that subcell is visited by the Hilbert curve, plus 2 bits indicating the
   // new orientation of the Hilbert curve within that subcell. (Cell
-  // orientations are represented as combination of kSwapMask and kInvertMask.)
+  // orientations are represented as combination of SWAP_MASK and INVERT_MASK.)
   //
-  // "lookup_ij" is an inverted table used for mapping in the opposite
+  // "LOOKUP_IJ" is an inverted table used for mapping in the opposite
   // direction.
   //
   // We also experimented with looking up 16 bits at a time (14 bits of position
@@ -93,7 +93,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
 
   /**
    * This is the offset required to wrap around from the beginning of the
-   * Hilbert curve to the end or vice versa; see next_wrap() and prev_wrap().
+   * Hilbert curve to the end or vice versa; see nextWrap() and prevWrap().
    */
   private static final long WRAP_OFFSET = (long) (NUM_FACES) << POS_BITS;
 
@@ -280,7 +280,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
   /**
    * Return the child position (0..3) of this cell's ancestor at the given
    * level, relative to its parent. The argument should be in the range
-   * 1..MAX_LEVEL. For example, child_position(1) returns the position of this
+   * 1..MAX_LEVEL. For example, childPosition(1) returns the position of this
    * cell's level-1 ancestor within its top-level face cell.
    */
   public int childPosition(int level) {
@@ -293,11 +293,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
   // methods are valid leaf cell ids.
   //
   // These methods should not be used for iteration. If you want to
-  // iterate through all the leaf cells, call child_begin(MAX_LEVEL) and
-  // child_end(MAX_LEVEL) instead.
+  // iterate through all the leaf cells, call childBegin(MAX_LEVEL) and
+  // childEnd(MAX_LEVEL) instead.
   //
-  // It would in fact be error-prone to define a range_end() method,
-  // because (range_max().id() + 1) is not always a valid cell id, and the
+  // It would in fact be error-prone to define a rangeEnd() method,
+  // because (rangeMax().id() + 1) is not always a valid cell id, and the
   // iterator would need to be tested using "<" rather that the usual "!=".
   public S2CellId rangeMin() {
     return new S2CellId(id - (lowestOnBit() - 1));
@@ -394,7 +394,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
   /**
    * Like next(), but wraps around from the last face to the first and vice
    * versa. Should *not* be used for iteration in conjunction with
-   * child_begin(), child_end(), Begin(), or End().
+   * childBegin(), childEnd(), Begin(), or End().
    */
   public S2CellId nextWrap() {
     S2CellId n = next();
@@ -407,7 +407,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
   /**
    * Like prev(), but wraps around from the last face to the first and vice
    * versa. Should *not* be used for iteration in conjunction with
-   * child_begin(), child_end(), Begin(), or End().
+   * childBegin(), childEnd(), Begin(), or End().
    */
   public S2CellId prevWrap() {
     S2CellId p = prev();
@@ -634,7 +634,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
    * not. In particular, two cells that intersect at a single point are
    * neighbors.
    *
-   * Requires: nbr_level >= this->level(). Note that for cells adjacent to a
+   * Requires: nbrLevel >= this->level(). Note that for cells adjacent to a
    * face vertex, the same neighbor may be appended more than once.
    */
   public void getAllNeighbors(int nbrLevel, List<S2CellId> output) {
@@ -644,7 +644,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
     int face = toFaceIJOrientation(i, j, null);
 
     // Find the coordinates of the lower left-hand leaf cell. We need to
-    // normalize (i,j) to a known position within the cell because nbr_level
+    // normalize (i,j) to a known position within the cell because nbrLevel
     // may be larger than this cell's level.
     int size = 1 << (MAX_LEVEL - level());
     i.setValue(i.intValue() & -size);
@@ -766,7 +766,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
       // just "1" and has no effect. Otherwise, it consists of "10", followed
       // by (MAX_LEVEL-n-1) repetitions of "00", followed by "0". The "10" has
       // no effect, while each occurrence of "00" has the effect of reversing
-      // the kSwapMask bit.
+      // the SWAP_MASK bit.
       // assert (S2.POS_TO_ORIENTATION[2] == 0);
       // assert (S2.POS_TO_ORIENTATION[0] == S2.SWAP_MASK);
       if ((lowestOnBit() & 0x1111111111111110L) != 0) {
@@ -784,17 +784,17 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
             ((1 << (2 * nbits)) - 1))) << 2;
     /*
      * System.out.println("id is: " + id_); System.out.println("bits is " +
-     * bits); System.out.println("lookup_ij[bits] is " + lookup_ij[bits]);
+     * bits); System.out.println("LOOKUP_IJ[bits] is " + LOOKUP_IJ[bits]);
      */
     bits = LOOKUP_IJ[bits];
     i.setValue(i.intValue()
       + ((bits >> (LOOKUP_BITS + 2)) << (k * LOOKUP_BITS)));
     /*
-     * System.out.println("left is " + ((bits >> 2) & ((1 << kLookupBits) -
-     * 1))); System.out.println("right is " + (k * kLookupBits));
+     * System.out.println("left is " + ((bits >> 2) & ((1 << LOOKUP_BITS) -
+     * 1))); System.out.println("right is " + (k * LOOKUP_BITS));
      * System.out.println("j is: " + j.intValue()); System.out.println("addition
-     * is: " + ((((bits >> 2) & ((1 << kLookupBits) - 1))) << (k *
-     * kLookupBits)));
+     * is: " + ((((bits >> 2) & ((1 << LOOKUP_BITS) - 1))) << (k *
+     * LOOKUP_BITS)));
      */
     j.setValue(j.intValue()
       + ((((bits >> 2) & ((1 << LOOKUP_BITS) - 1))) << (k * LOOKUP_BITS)));
@@ -823,10 +823,6 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
    * t-value.
    */
   private static int stToIJ(double s) {
-    // Converting from floating-point to integers via static_cast is very slow
-    // on Intel processors because it requires changing the rounding mode.
-    // Rounding to the nearest integer using FastIntRound() is much faster.
-
     final int m = MAX_SIZE / 2; // scaling multiplier
     return (int) Math
       .max(0, Math.min(2 * m - 1, Math.round(m * s + (m - 0.5))));
