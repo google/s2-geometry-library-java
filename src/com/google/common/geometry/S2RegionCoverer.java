@@ -263,7 +263,11 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * Computes a list of cell ids that is contained within the given region and
-   * satisfies the various restrictions specified above.
+   * satisfies the various restrictions specified above; note that if the max
+   * cell level is not specified very carefully this method can try to create
+   * an enormous number of cells, wasting a lot of time and memory, so care
+   * should be taken to set a max level suitable for the scale of the region
+   * being covered.
    *
    * @param region The region to fill
    * @param interior The list filled in by this method
