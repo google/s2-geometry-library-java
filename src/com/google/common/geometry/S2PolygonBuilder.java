@@ -17,7 +17,7 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.ForwardingMultimap;
-import com.google.common.collect.HashMultimap;
+import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -629,7 +629,7 @@ public strictfp class S2PolygonBuilder {
   private class PointIndex extends ForwardingMultimap<S2CellId, MarkedS2Point> {
     private double searchRadius;
     private int level;
-    private final Multimap<S2CellId, MarkedS2Point> delegate = HashMultimap.create();
+    private final Multimap<S2CellId, MarkedS2Point> delegate = LinkedHashMultimap.create();
 
     public PointIndex(double searchRadius) {
 

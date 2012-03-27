@@ -438,4 +438,59 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     }
     assertTrue(success);
   }
+
+  /**
+   * Verifies that {@link S2PolygonBuilder#assemblePolygon(S2Polygon,List)}
+   * produces an {@code S2Polygon} with consistently merged points as long as
+   * the edges are added in the same order and have the same value according to
+   * {@link S2Point#equals(Object)}, even if the {@code S2Point}s are different
+   * instances each time.  For example, when building an {@code S2Polygon} from
+   * coordinates read from a file, most applications desire the builder to
+   * always merge the same vertices, and this test verifies that it will.
+   */
+  public void testVertexMergeDeterminism() {
+    final int NUM_TESTS = 100;
+
+    // Make sure the points vary by reference.
+    S2Point[][] points = new S2Point[NUM_TESTS][5];
+    for (int i = 0; i < NUM_TESTS; i++) {
+      points[i][0] = makePoint("0.4330415572436411:0.25");
+      points[i][1] = makePoint("0.4330415572436411:0.75");
+      points[i][2] = makePoint("0:0.4999999999999999");
+      points[i][3] = makePoint("0:0.5");
+      points[i][4] = makePoint("0.8660254037844386:0.5");
+    }
+
+    // Assemble NUM_TESTS polygons, making sure each result is the same as the
+    // one before it.
+    S2Polygon last = null;
+    for (int i = 0; i < NUM_TESTS; i++) {
+      S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
+      options.setMergeDistance(S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+      S2PolygonBuilder builder = new S2PolygonBuilder(options);
+      S2Polygon result = new S2Polygon();
+
+      builder.addEdge(points[i][0], points[i][2]);
+      builder.addEdge(points[i][3], points[i][1]);
+      builder.addEdge(points[i][3], points[i][2]);
+      builder.addEdge(points[i][1], points[i][4]);
+      builder.addEdge(points[i][4], points[i][0]);
+
+      builder.assemblePolygon(result, null);
+      if (last != null) {
+        assertPolygonsExactlyEqual(last, result);
+      }
+      last = result;
+    }
+  }
+
+  private void assertPolygonsExactlyEqual(S2Polygon a, S2Polygon b) {
+    assertEquals(a.numLoops(), b.numLoops());
+    for (int i = 0; i < a.numLoops(); i++) {
+      assertEquals(a.loop(i).numVertices(), b.loop(i).numVertices());
+      for (int j = 0; j < a.loop(i).numVertices(); j++) {
+        assertEquals(a.loop(i).vertex(j), b.loop(i).vertex(j));
+      }
+    }
+  }
 }
