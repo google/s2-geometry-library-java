@@ -15,8 +15,11 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.collect.Lists;
+
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.logging.Logger;
 
 public strictfp class S2RegionCovererTest extends GeometryTestCase {
@@ -132,5 +135,17 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
       S2RegionCoverer.getSimpleCovering(cap, cap.axis(), level, covering);
       checkCovering(coverer, cap, covering, false);
     }
+  }
+
+  public void testPolylineCovering() {
+    S2RegionCoverer coverer = new S2RegionCoverer();
+    S2Polyline line = new S2Polyline(Lists.newArrayList(
+      S2LatLng.fromDegrees(0, 0).toPoint(),
+      S2LatLng.fromDegrees(0, 1).toPoint()));
+    List<String> tokens = Lists.newArrayList();
+    for (S2CellId id : coverer.getCovering(line).cellIds()) {
+      tokens.add(id.toToken());
+    }
+    assertEquals(tokens, Lists.newArrayList("0554", "0ffc", "1004", "1aac"));
   }
 }

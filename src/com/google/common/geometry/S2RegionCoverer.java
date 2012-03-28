@@ -341,7 +341,8 @@ public final strictfp class S2RegionCoverer {
           return null;
         }
       } else {
-        if (cell.level() + levelMod > maxLevel || region.contains(cell)) {
+        if (cell.level() + levelMod > maxLevel || region instanceof S2Polyline ||
+            region.contains(cell)) {
           isTerminal = true;
         }
       }
