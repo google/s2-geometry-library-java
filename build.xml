@@ -52,6 +52,7 @@
       <classpath>
         <pathelement location="${classes.dir}" />
       </classpath>
+      <include name="guava.jar"/>
     </javac>
   </target>
 

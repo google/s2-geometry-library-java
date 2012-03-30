@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.testing.SerializableTester;
+
 public strictfp class S2LatLngTest extends GeometryTestCase {
 
   public void testBasic() {
@@ -85,5 +87,11 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertDoubleNear(
         S2LatLng.fromDegrees(47, -127).getDistance(S2LatLng.fromDegrees(-47, 53)).degrees(), 180,
         2e-6);
+  }
+
+  public void testSerializable() throws Exception {
+    S2LatLng originalLatLong = S2LatLng.fromDegrees(-37, 25);
+    S2LatLng serializedLatLong = SerializableTester.reserialize(originalLatLong);
+    assertEquals(originalLatLong, serializedLatLong); // Should be equal
   }
 }

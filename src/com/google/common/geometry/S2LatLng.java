@@ -15,15 +15,19 @@
  */
 package com.google.common.geometry;
 
+import java.io.Serializable;
+
 /**
  * This class represents a point on the unit sphere as a pair of
  * latitude-longitude coordinates. Like the rest of the "geometry" package, the
  * intent is to represent spherical geometry as a mathematical abstraction, so
  * functions that are specifically related to the Earth's geometry (e.g.
- * easting/northing conversions) should be put elsewhere.
+ * easting/northing conversions) should be put elsewhere. Note that the
+ * serialized form of this class is not stable and should not be relied upon
+ * for long-term persistence.
  *
  */
-public strictfp class S2LatLng {
+public strictfp class S2LatLng implements Serializable {
 
   /**
    * Approximate "effective" radius of the Earth in meters.
