@@ -46,6 +46,16 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   // Loop around the south pole at 80 degrees.
   private S2Loop antarctic80 = makeLoop("-80:120, -80:0, -80:-120");
 
+  // A completely degenerate triangle along the equator that RobustCCW()
+  // considers to be CCW.
+  private S2Loop lineTriangle = makeLoop("0:1, 0:3, 0:2");
+
+  // A nearly-degenerate CCW chevron near the equator with very long sides
+  // (about 80 degrees).  Note that the precision is less than the C++
+  // equivalent due to Java strictfp precision issues, but it is precise
+  // enough to still have incredibly small area.
+  private S2Loop skinnyChevron = makeLoop("0:0, -1e-80:80, 0:1e-80, 1e-80:80");
+
   // The northern hemisphere, defined using two pairs of antipodal points.
   private S2Loop northHemi = makeLoop("0:-180, 0:-90, 0:0, 0:90");
 
@@ -177,7 +187,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
-  private S2Loop rotate(S2Loop loop) {
+  private static S2Loop rotate(S2Loop loop) {
     List<S2Point> vertices = Lists.newArrayList();
     for (int i = 1; i <= loop.numVertices(); ++i) {
       vertices.add(loop.vertex(i));
@@ -499,6 +509,40 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(1d, s1.getDistance(origin).degrees(), epsilon);
     assertEquals(1d, s2.getDistance(origin).degrees(), epsilon);
     assertEquals(1d, s3.getDistance(origin).degrees(), epsilon);
+  }
+
+  /**
+   * Check that the turning angle is *identical* when the vertex order is rotated, and that the
+   * sign is inverted when the vertices are reversed.
+   */
+  private static void checkTurningAngleInvariants(S2Loop loop) {
+    double expected = loop.getTurningAngle();
+    S2Loop loop_copy = new S2Loop(loop);
+    for (int i = 0; i < loop.numVertices(); ++i) {
+      loop_copy.invert();
+      assertEquals(-expected, loop_copy.getTurningAngle());
+      loop_copy.invert();
+      loop_copy = rotate(loop_copy);
+      assertEquals(expected, loop_copy.getTurningAngle());
+    }
+  }
+
+  public void testTurningAngle() {
+    assertDoubleNear(0, northHemi3.getTurningAngle(), 1e-15);
+    checkTurningAngleInvariants(northHemi3);
+
+    assertDoubleNear(0, westHemi.getTurningAngle(), 1e-15);
+    checkTurningAngleInvariants(westHemi);
+
+    // We don't have an easy way to estimate the turning angle of this loop, but
+    // we can still check that the expected invariants hold.
+    checkTurningAngleInvariants(candyCane);
+
+    assertEquals(-2 * S2.M_PI, lineTriangle.getTurningAngle());
+    checkTurningAngleInvariants(lineTriangle);
+
+    assertEquals(2 * S2.M_PI, skinnyChevron.getTurningAngle());
+    checkTurningAngleInvariants(skinnyChevron);
   }
 
   /**

@@ -234,12 +234,18 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   }
 
   /**
-   * Return true if the loop area is at most 2*Pi.
+   * Return true if the loop is generally a left-turning aka counter-clockwise
+   * loop.
    */
   public boolean isNormalized() {
-    // We allow a bit of error so that exact hemispheres are
-    // considered normalized.
-    return getArea() <= 2 * S2.M_PI + 1e-14;
+    // Optimization: if the longitude span is less than 180 degrees, then the
+    // loop covers less than half the sphere and is therefore normalized.
+    if (bound.lng().getLength() < S2.M_PI) {
+      return true;
+    }
+
+    // We allow some error so that hemispheres are always considered normalized.
+    return getTurningAngle() >= -1e-14;
   }
 
   /**
@@ -366,6 +372,36 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    */
   public S2Point getCentroid() {
     return getAreaCentroid(true).getCentroid();
+  }
+
+  public double getTurningAngle() {
+    // Don't crash even if the loop is not well-defined.
+    if (numVertices < 3) {
+      return 0;
+    }
+
+    // To ensure that we get the same result when the loop vertex order is
+    // rotated, and that we get the same result with the opposite sign when the
+    // vertices are reversed, we need to be careful to add up the individual
+    // turn angles in a consistent order.  In general, adding up a set of
+    // numbers in a different order can change the sum due to rounding errors.
+    int i = firstLogicalVertex;
+    int n = numVertices;
+    int dir;
+    if (vertex(i + 1).compareTo(vertex(i + n - 1)) < 0) {
+      dir = 1;
+      // 0 <= first <= n-1, so (first+n*dir) <= 2*n-1.
+    } else {
+      dir = -1;
+      i += n;
+      // n <= first <= 2*n-1, so (first+n*dir) >= 0.
+    }
+    double angle = S2.turnAngle(vertex((i + n - dir) % n), vertex(i), vertex((i + dir) % n));
+    while (--n > 0) {
+      i += dir;
+      angle += S2.turnAngle(vertex(i - dir), vertex(i), vertex(i + dir));
+    }
+    return dir * angle;
   }
 
   // The following are the possible relationships between two loops A and B:

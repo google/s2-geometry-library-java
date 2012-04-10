@@ -31,7 +31,7 @@ public strictfp class GeometryTestCase extends TestCase {
 
   @Override
   protected void setUp() {
-    rand = new Random(123456);
+    rand = new Random(123455);
   }
 
   public void assertDoubleNear(double a, double b) {
