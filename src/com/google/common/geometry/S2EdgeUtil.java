@@ -808,6 +808,64 @@ public strictfp class S2EdgeUtil {
     return S2Point.minus(x, a).norm2() <= S2Point.minus(x, b).norm2() ? a : b;
   }
 
+  /**
+   * A slightly more efficient version of InterpolateAtDistance() that can be
+   * used when the distance AB is already known.  Requires that all vectors
+   * have unit length.
+   */
+  public static S2Point interpolateAtDistance(S1Angle ax, S2Point a, S2Point b, S1Angle ab) {
+    // assert S2.isUnitLength(a);
+    // assert S2.isUnitLength(b);
+
+    double axRadians = ax.radians();
+    double abRadians = ab.radians();
+
+    // The result X is some linear combination X = e*A + f*B of the input
+    // points.  The fractions "e" and "f" can be derived by looking at the
+    // components of this equation that are parallel and perpendicular to A.
+    // Let E = e*A and F = f*B.  Then OEXF is a parallelogram.  You can obtain
+    // the distance f = OF by considering the similar triangles produced by
+    // dropping perpendiculars from the segments OF and OB to OA.
+    double f = Math.sin(axRadians) / Math.sin(abRadians);
+
+    // Form the dot product of the first equation with A to obtain
+    // A.X = e*A.A + f*A.B.  Since A, B, and X are all unit vectors,
+    // cos(ax) = e*1 + f*cos(ab), so
+    double e = Math.cos(axRadians) - f * Math.cos(abRadians);
+
+    // Mathematically speaking, if "a" and "b" are unit length then the result
+    // is unit length as well.  But we normalize it anyway to prevent points
+    // from drifting away from unit length when multiple interpolations are done
+    // in succession (i.e. the result of one interpolation is fed into another).
+    return S2Point.normalize(S2Point.add(S2Point.mul(a, e), S2Point.mul(b, f)));
+  }
+
+  /**
+   * Like Interpolate(), except that the parameter "ax" represents the desired
+   * distance from A to the result X rather than a fraction between 0 and 1.
+   */
+  public static S2Point interpolateAtDistance(S1Angle ax, S2Point a, S2Point b) {
+    return interpolateAtDistance(ax, a, b, new S1Angle(a, b));
+  }
+
+  /**
+   * Return the point X along the line segment AB whose distance from A is the
+   * given fraction "t" of the distance AB. Does NOT require that "t" be between
+   * 0 and 1. Note that all distances are measured on the surface of the sphere,
+   * so this is more complicated than just computing (1-t)*a + t*b and
+   * normalizing the result.
+   */
+  public static S2Point interpolate(double t, S2Point a, S2Point b) {
+    if (t == 0) {
+      return a;
+    }
+    if (t == 1) {
+      return b;
+    }
+    S1Angle ab = new S1Angle(a, b);
+    return interpolateAtDistance(S1Angle.radians(t * ab.radians()), a, b, ab);
+  }
+
   /** Constructor is private so that this class is never instantiated. */
   private S2EdgeUtil() {
   }

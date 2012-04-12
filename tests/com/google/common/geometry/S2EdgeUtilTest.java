@@ -467,6 +467,95 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         new S2Point(1, 0, 0));
   }
 
+  private static void checkInterpolate(double t, S2Point a, S2Point b, S2Point expected) {
+    a = S2Point.normalize(a);
+    b = S2Point.normalize(b);
+    expected = S2Point.normalize(expected);
+    S2Point actual = S2EdgeUtil.interpolate(t, a, b);
+
+    // We allow a bit more than the usual 1e-15 error tolerance because
+    // Interpolate() uses trig functions.
+    assertTrue(String.format("Expected: %s, actual: %s",
+        new S2LatLng(expected).toStringDegrees(),
+        new S2LatLng(actual).toStringDegrees()), S2.approxEquals(expected, actual, 3e-15));
+  }
+
+  public void testInterpolate() {
+    // A zero-length edge.
+    checkInterpolate(0, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+    checkInterpolate(1, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+
+    // Start, end, and middle of a medium-length edge.
+    checkInterpolate(0, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(1, 0, 0));
+    checkInterpolate(1, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(0, 1, 0));
+    checkInterpolate(0.5, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(1, 1, 0));
+
+    // Test that interpolation is done using distances on the sphere rather than
+    // linear distances.
+    checkInterpolate(1D / 3, new S2Point(1, 0, 0), new S2Point(0, 1, 0),
+        new S2Point(Math.sqrt(3), 1, 0));
+    checkInterpolate(2D / 3, new S2Point(1, 0, 0), new S2Point(0, 1, 0),
+        new S2Point(1, Math.sqrt(3), 0));
+
+    // Test that interpolation is accurate on a long edge (but not so long that
+    // the definition of the edge itself becomes too unstable).
+    final double kLng = S2.M_PI - 1e-2;
+    S2Point a = S2LatLng.fromRadians(0, 0).toPoint();
+    S2Point b = S2LatLng.fromRadians(0, kLng).toPoint();
+    for (double f = 0.4; f > 1e-15; f *= 0.1) {
+      checkInterpolate(f, a, b, S2LatLng.fromRadians(0, f * kLng).toPoint());
+      checkInterpolate(1 - f, a, b, S2LatLng.fromRadians(0, (1 - f) * kLng).toPoint());
+    }
+  }
+
+  public void testInterpolateCanExtrapolate() {
+    S2Point i = new S2Point(1, 0, 0);
+    S2Point j = new S2Point(0, 1, 0);
+
+    // Initial vectors at 90 degrees.
+    checkInterpolate(0, i, j, new S2Point(1, 0, 0));
+    checkInterpolate(1, i, j, new S2Point(0, 1, 0));
+    checkInterpolate(1.5, i, j, new S2Point(-1, 1, 0));
+    checkInterpolate(2, i, j, new S2Point(-1, 0, 0));
+    checkInterpolate(3, i, j, new S2Point(0, -1, 0));
+    checkInterpolate(4, i, j, new S2Point(1, 0, 0));
+
+    // Negative values of t.
+    checkInterpolate(-1, i, j, new S2Point(0, -1, 0));
+    checkInterpolate(-2, i, j, new S2Point(-1, 0, 0));
+    checkInterpolate(-3, i, j, new S2Point(0, 1, 0));
+    checkInterpolate(-4, i, j, new S2Point(1, 0, 0));
+
+    // Initial vectors at 45 degrees.
+    checkInterpolate(2, i, new S2Point(1, 1, 0), new S2Point(0, 1, 0));
+    checkInterpolate(3, i, new S2Point(1, 1, 0), new S2Point(-1, 1, 0));
+    checkInterpolate(4, i, new S2Point(1, 1, 0), new S2Point(-1, 0, 0));
+
+    // Initial vectors at 135 degrees.
+    checkInterpolate(2, i, new S2Point(-1, 1, 0), new S2Point(0, -1, 0));
+
+    // Take a small fraction along the curve.
+    S2Point p = S2EdgeUtil.interpolate(0.001, i, j);
+
+    // We should get back where we started.
+    checkInterpolate(1000, i, p, j);
+  }
+
+  /**
+   * Checks that points do not drift away from unit length when repeated
+   * interpolations are done.
+   */
+  public void testRepeatedInterpolation() {
+    for (int i = 0; i < 100; ++i) {
+      S2Point a = randomPoint();
+      S2Point b = randomPoint();
+      for (int j = 0; j < 1000; ++j) {
+        a = S2EdgeUtil.interpolate(0.01, a, b);
+      }
+      assertTrue(S2.isUnitLength(a));
+    }
+  }
+
   public void testIntersectionTolerance() {
     // We repeatedly construct two edges that cross near a random point "p",
     // and measure the distance from the actual intersection point "x" to the
