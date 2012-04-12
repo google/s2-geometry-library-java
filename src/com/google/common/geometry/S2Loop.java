@@ -16,8 +16,12 @@
 
 package com.google.common.geometry;
 
+import com.google.common.base.Pair;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.HashMultiset;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Multiset;
 import com.google.common.geometry.S2EdgeIndex.DataEdgeIterator;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
@@ -588,18 +592,98 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * purposes.
    */
   boolean boundaryApproxEquals(S2Loop b, double maxError) {
-    if (numVertices() != b.numVertices()) {
+    final S2Loop a = this;
+    if (a.numVertices() != b.numVertices()) {
       return false;
     }
-    int maxVertices = numVertices();
-    int iThis = firstLogicalVertex;
-    int iOther = b.firstLogicalVertex;
-    for (int i = 0; i < maxVertices; ++i, ++iThis, ++iOther) {
-      if (!S2.approxEquals(vertex(iThis), b.vertex(iOther), maxError)) {
-        return false;
+    for (int offset = 0; offset < a.numVertices(); ++offset) {
+      if (S2.approxEquals(a.vertex(offset), b.vertex(0), maxError)) {
+        boolean success = true;
+        for (int i = 0; i < a.numVertices(); ++i) {
+          if (!S2.approxEquals(a.vertex(i + offset), b.vertex(i), maxError)) {
+            success = false;
+            break;
+          }
+        }
+        if (success) {
+          return true;
+        }
+        // Otherwise continue looping.  There may be more than one candidate
+        // starting offset since vertices are only matched approximately.
       }
     }
-    return true;
+    return false;
+  }
+
+  /**
+   * Return true if the two loop boundaries are within "max_error" of each other
+   * along their entire lengths. The two loops may have different numbers of
+   * vertices. More precisely, this method returns true if the two loops have
+   * parameterizations {@code a:[0,1] -> S^2, b:[0,1] -> S^2} such that
+   * {@code distance(a(t), b(t)) <= max_error} for all {@code t}.
+   *
+   * <p>You can think of this as testing whether it is possible to drive two
+   * cars all the way around the two loops such that no car ever goes backward
+   * and the cars are always within "max_error" of each other. (For testing
+   * purposes.)
+   */
+  boolean matchBoundaries(S2Loop b, int a_offset, double maxError) {
+    final S2Loop a = this;
+
+    // The state consists of a pair (i,j).  A state transition consists of
+    // incrementing either "i" or "j".  "i" can be incremented only if
+    // a(i+1+a_offset) is near the edge from b(j) to b(j+1), and a similar rule
+    // applies to "j".  The function returns true iff we can proceed all the way
+    // around both loops in this way.
+    //
+    // Note that when "i" and "j" can both be incremented, sometimes only one
+    // choice leads to a solution.  We handle this using a stack and
+    // backtracking.  We also keep track of which states have already been
+    // explored to avoid duplicating work.
+
+    List<Pair<Integer, Integer>> pending = Lists.newArrayList();
+    Multiset<Pair<Integer, Integer> > done = HashMultiset.create();
+    pending.add(Pair.of(0, 0));
+    while (!pending.isEmpty()) {
+      Pair<Integer, Integer> last = pending.remove(pending.size() - 1);
+      int i = last.first;
+      int j = last.second;
+      if (i == a.numVertices() && j == b.numVertices()) {
+        return true;
+      }
+      done.add(Pair.of(i, j));
+
+      // If (i == na && offset == na-1) where na == a.numVertices(), then
+      // then (i+1+offset) overflows the [0, 2*na-1] range allowed by vertex().
+      // So we reduce the range if necessary.
+      int io = i + a_offset;
+      if (io >= a.numVertices()) {
+        io -= a.numVertices();
+      }
+
+      if (i < a.numVertices() && done.count(Pair.of(i + 1, j)) == 0 &&
+          S2EdgeUtil.getDistance(a.vertex(io + 1),
+              b.vertex(j),
+              b.vertex(j + 1)).radians() <= maxError) {
+        pending.add(Pair.of(i + 1, j));
+      }
+      if (j < b.numVertices() && done.count(Pair.of(i, j + 1)) == 0 &&
+          S2EdgeUtil.getDistance(b.vertex(j + 1),
+              a.vertex(io),
+              a.vertex(io + 1)).radians() <= maxError) {
+        pending.add(Pair.of(i, j + 1));
+      }
+    }
+    return false;
+  }
+
+  boolean boundaryNear(S2Loop b, double max_error) {
+    for (int a_offset = 0; a_offset < numVertices(); ++a_offset) {
+      if (matchBoundaries(b, a_offset, max_error)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // S2Region interface (see {@code S2Region} for details):

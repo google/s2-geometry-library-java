@@ -429,6 +429,38 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  private static void testNear(String a_str, String b_str, double max_error, boolean expected) {
+    S2Loop a = makeLoop(a_str);
+    S2Loop b = makeLoop(b_str);
+    assertEquals(expected, a.boundaryNear(b, max_error));
+    assertEquals(expected, b.boundaryNear(a, max_error));
+  }
+
+  public void testBoundaryNear() {
+    double degree = S1Angle.degrees(1).radians();
+
+    testNear("0:0, 0:10, 5:5",
+        "0:0.1, -0.1:9.9, 5:5.2",
+        0.5 * degree, true);
+    testNear("0:0, 0:3, 0:7, 0:10, 3:7, 5:5",
+        "0:0, 0:10, 2:8, 5:5, 4:4, 3:3, 1:1",
+        1e-3, true);
+
+    // All vertices close to some edge, but not equivalent.
+    testNear("0:0, 0:2, 2:2, 2:0",
+        "0:0, 1.9999:1, 0:2, 2:2, 2:0",
+        0.5 * degree, false);
+
+    // Two triangles that backtrack a bit on different edges.  A simple
+    // greedy matching algorithm would fail on this example.
+    String t1 = "0.1:0, 0.1:1, 0.1:2, 0.1:3, 0.1:4, 1:4, 2:4, 3:4, " +
+        "2:4.1, 1:4.1, 2:4.2, 3:4.2, 4:4.2, 5:4.2";
+    String t2 = "0:0, 0:1, 0:2, 0:3, 0.1:2, 0.1:1, 0.2:2, 0.2:3, " +
+        "0.2:4, 1:4.1, 2:4, 3:4, 4:4, 5:4";
+    testNear(t1, t2, 1.5 * degree, true);
+    testNear(t1, t2, 0.5 * degree, false);
+  }
+
   /**
    * Tests that nearly colinear points pass S2Loop.isValid()
    */
