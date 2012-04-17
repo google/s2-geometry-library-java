@@ -616,16 +616,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   }
 
   /**
-   * Return true if the two loop boundaries are within "max_error" of each other
-   * along their entire lengths. The two loops may have different numbers of
-   * vertices. More precisely, this method returns true if the two loops have
-   * parameterizations {@code a:[0,1] -> S^2, b:[0,1] -> S^2} such that
-   * {@code distance(a(t), b(t)) <= max_error} for all {@code t}.
-   *
-   * <p>You can think of this as testing whether it is possible to drive two
-   * cars all the way around the two loops such that no car ever goes backward
-   * and the cars are always within "max_error" of each other. (For testing
-   * purposes.)
+   * Helper method called by {@code boundaryNear()} to determine if this loop
+   * and loop {@code b} remain within {@code maxError} of each other, starting
+   * the comparison with this loop at vertex {@code a_offset} and loop
+   * {@code b} at vertex 0.
    */
   boolean matchBoundaries(S2Loop b, int a_offset, double maxError) {
     final S2Loop a = this;
@@ -677,6 +671,19 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     return false;
   }
 
+  /**
+   * Return true if the two loop boundaries are within "max_error" of each other
+   * along their entire lengths. The two loops may have different numbers of
+   * vertices. More precisely, this method returns true if the two loops have
+   * parameterizations a:[0,1] -> S^2, b:[0,1] -> S^2 such that
+   * {@code distance(a(t), b(t)) <= max_error} for all t.
+   *
+   * <p>You can think of this as testing whether it is possible to drive two
+   * cars all the way around the two loops such that no car ever goes backward
+   * and the cars are always within "max_error" of each other.
+   *
+   * <p>(Package private, only used for testing purposes.)
+   */
   boolean boundaryNear(S2Loop b, double max_error) {
     for (int a_offset = 0; a_offset < numVertices(); ++a_offset) {
       if (matchBoundaries(b, a_offset, max_error)) {
