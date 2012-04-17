@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 
@@ -583,7 +584,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
    * Requires: level < this.evel(), so that we can determine which vertex is
    * closest (in particular, level == MAX_LEVEL is not allowed).
    */
-  public void getVertexNeighbors(int level, List<S2CellId> output) {
+  public void getVertexNeighbors(int level, Collection<S2CellId> output) {
     // "level" must be strictly less than this cell's level so that we can
     // determine which vertex this cell is closest to.
     // assert (level < this.level());
