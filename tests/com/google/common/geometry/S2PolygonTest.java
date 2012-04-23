@@ -183,13 +183,6 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertRelation(nf2n2f210s210ab, n32s0b, 1, true);
   }
 
-  private void assertPointApproximatelyEquals(
-      S2Loop s2Loop, int vertexIndex, double lat, double lng, double error) {
-    S2LatLng latLng = new S2LatLng(s2Loop.vertex(vertexIndex));
-    assertDoubleNear(latLng.latDegrees(), lat, error);
-    assertDoubleNear(latLng.lngDegrees(), lng, error);
-  }
-
   private void checkEqual(S2Polygon a, S2Polygon b) {
     final double MAX_ERROR = 1e-31;
 
@@ -250,14 +243,9 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     if (s2Loop.numVertices() != 8) {
       return;
     }
-    assertPointApproximatelyEquals(s2Loop, 0, 2.0, 0.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 1, 1.0, 0.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 2, 0.0, 0.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 3, 0.0, 1.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 4, 0.0, 2.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 5, 1.0, 2.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 6, 2.0, 2.0, 0.01);
-    assertPointApproximatelyEquals(s2Loop, 7, 2.0, 1.0, 0.01);
+    S2Loop expected = makeLoop("2:0, 1:0, 0:0, 0:1, 0:2, 1:2, 2:2, 2:1");
+    double maxError = S1Angle.degrees(0.01000001).radians();
+    assertTrue(expected.boundaryApproxEquals(s2Loop, maxError));
   }
 
   public void testUnionSloppyFailure() {
