@@ -931,7 +931,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     builder.append(vertices.length).append(" points. [");
 
     for (S2Point v : vertices) {
-      builder.append(v.toString()).append(" ");
+      builder.append(v.toDegreesString()).append(" ");
     }
     builder.append("]");
 

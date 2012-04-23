@@ -270,4 +270,18 @@ public final strictfp class S2Polyline implements S2Region {
   public int hashCode() {
     return Objects.hashCode(numVertices, Arrays.deepHashCode(vertices));
   }
+
+  @Override
+  public String toString() {
+    StringBuilder builder = new StringBuilder("S2Polyline, ");
+
+    builder.append(vertices.length).append(" points. [");
+
+    for (S2Point v : vertices) {
+      builder.append(v.toDegreesString()).append(" ");
+    }
+    builder.append("]");
+
+    return builder.toString();
+  }
 }
