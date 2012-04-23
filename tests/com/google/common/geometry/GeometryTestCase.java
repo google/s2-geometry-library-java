@@ -22,6 +22,11 @@ import com.google.common.collect.Lists;
 
 import junit.framework.TestCase;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.List;
 import java.util.Random;
 
@@ -167,7 +172,7 @@ public strictfp class GeometryTestCase extends TestCase {
       return;
     }
 
-    for (String token : Splitter.on(',').split(str)) {
+    for (String token : Splitter.on(',').trimResults().omitEmptyStrings().split(str)) {
       int colon = token.indexOf(':');
       if (colon == -1) {
         throw new IllegalArgumentException(
@@ -207,5 +212,17 @@ public strictfp class GeometryTestCase extends TestCase {
     List<S2Point> vertices = Lists.newArrayList();
     parseVertices(str, vertices);
     return new S2Polyline(vertices);
+  }
+  
+
+  /**
+   * Returns the result of encoding and immediately decoding the given value.
+   */
+  @SuppressWarnings("unchecked")
+  static <E> E encodeDecode(Serializable value) throws Exception {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    new ObjectOutputStream(bytes).writeObject(value);
+    ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()));
+    return (E) in.readObject();
   }
 }

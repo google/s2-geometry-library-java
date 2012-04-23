@@ -29,7 +29,6 @@
            deprecation="on">
       <compilerarg value="-Werror" />
       <classpath refid="classpath.path" />
-      <include name="guava.jar"/>
     </javac>
   </target>
 
@@ -53,7 +52,6 @@
       <classpath>
         <pathelement location="${classes.dir}" />
       </classpath>
-      <include name="guava.jar"/>
     </javac>
   </target>
 

@@ -16,7 +16,6 @@
 
 package com.google.common.geometry;
 
-import com.google.common.base.Pair;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
@@ -616,6 +615,35 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   }
 
   /**
+   * Offsets into two loops at which a boundary distance comparison will start.
+   *
+   * <p>Used only by {@code matchBoundaries}.
+   */
+  private static final class LoopOffsets {
+    /** The offset of the first loop. */
+    public final int first;
+    /** The offset of the second loop. */
+    public final int second;
+    public LoopOffsets(int first, int second) {
+      this.first = first;
+      this.second = second;
+    }
+    @Override
+    public int hashCode() {
+      return first * 517 + second;
+    }
+    @Override
+    public boolean equals(Object o) {
+      if (o instanceof LoopOffsets) {
+        LoopOffsets that = (LoopOffsets) o;
+        return this.first == that.first && this.second == that.second;
+      } else {
+        return false;
+      }
+    }
+  }
+
+  /**
    * Helper method called by {@code boundaryNear()} to determine if this loop
    * and loop {@code b} remain within {@code maxError} of each other, starting
    * the comparison with this loop at vertex {@code a_offset} and loop
@@ -635,17 +663,17 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     // backtracking.  We also keep track of which states have already been
     // explored to avoid duplicating work.
 
-    List<Pair<Integer, Integer>> pending = Lists.newArrayList();
-    Multiset<Pair<Integer, Integer> > done = HashMultiset.create();
-    pending.add(Pair.of(0, 0));
+    List<LoopOffsets> pending = Lists.newArrayList();
+    Multiset<LoopOffsets> done = HashMultiset.create();
+    pending.add(new LoopOffsets(0, 0));
     while (!pending.isEmpty()) {
-      Pair<Integer, Integer> last = pending.remove(pending.size() - 1);
+      LoopOffsets last = pending.remove(pending.size() - 1);
       int i = last.first;
       int j = last.second;
       if (i == a.numVertices() && j == b.numVertices()) {
         return true;
       }
-      done.add(Pair.of(i, j));
+      done.add(new LoopOffsets(i, j));
 
       // If (i == na && offset == na-1) where na == a.numVertices(), then
       // then (i+1+offset) overflows the [0, 2*na-1] range allowed by vertex().
@@ -655,17 +683,17 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
         io -= a.numVertices();
       }
 
-      if (i < a.numVertices() && done.count(Pair.of(i + 1, j)) == 0 &&
+      if (i < a.numVertices() && done.count(new LoopOffsets(i + 1, j)) == 0 &&
           S2EdgeUtil.getDistance(a.vertex(io + 1),
               b.vertex(j),
               b.vertex(j + 1)).radians() <= maxError) {
-        pending.add(Pair.of(i + 1, j));
+        pending.add(new LoopOffsets(i + 1, j));
       }
-      if (j < b.numVertices() && done.count(Pair.of(i, j + 1)) == 0 &&
+      if (j < b.numVertices() && done.count(new LoopOffsets(i, j + 1)) == 0 &&
           S2EdgeUtil.getDistance(b.vertex(j + 1),
               a.vertex(io),
               a.vertex(io + 1)).radians() <= maxError) {
-        pending.add(Pair.of(i, j + 1));
+        pending.add(new LoopOffsets(i, j + 1));
       }
     }
     return false;
