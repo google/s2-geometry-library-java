@@ -16,19 +16,20 @@
 
 package com.google.common.geometry;
 
-import com.google.common.collect.ForwardingMultimap;
-import com.google.common.collect.LinkedHashMultimap;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Multiset;
+import com.google.common.collect.Sets;
+import com.google.common.collect.TreeMultimap;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Stack;
-import java.util.logging.Logger;
 
 /**
  * This is a simple class for assembling polygons out of edges. It requires that
@@ -57,15 +58,19 @@ import java.util.logging.Logger;
  *
  */
 public strictfp class S2PolygonBuilder {
-  private static final Logger log = Logger.getLogger(S2PolygonBuilder.class.getCanonicalName());
-
   private Options options;
 
   /**
    * The current set of edges, grouped by origin. The set of destination
    * vertices is a multiset so that the same edge can be present more than once.
    */
-  private Map<S2Point, Multiset<S2Point>> edges;
+  private final Map<S2Point, Multiset<S2Point>> edges = Maps.newHashMap();
+
+  /**
+   * Unique collection of the starting (first) vertex of all edges, in the order
+   * they are added to {@code edges}.
+   */
+  private final List<S2Point> startingVertices = Lists.newArrayList();
 
   /**
    * Default constructor for well-behaved polygons. Uses the DIRECTED_XOR
@@ -78,11 +83,9 @@ public strictfp class S2PolygonBuilder {
 
   public S2PolygonBuilder(Options options) {
     this.options = options;
-    this.edges = Maps.newHashMap();
   }
 
-  public enum Options {
-
+  public static class Options {
     /**
      * These are the options that should be used for assembling well-behaved
      * input data into polygons. All edges should be directed such that "shells"
@@ -90,14 +93,14 @@ public strictfp class S2PolygonBuilder {
      * clockwise holes), unless it is known that shells and holes do not share
      * any edges.
      */
-    DIRECTED_XOR(false, true),
+    public static final Options DIRECTED_XOR = new Options(false, true);
 
     /**
      * These are the options that should be used for assembling polygons that do
      * not follow the conventions above, e.g. where edge directions may vary
      * within a single loop, or shells and holes are not oppositely oriented.
      */
-    UNDIRECTED_XOR(true, true),
+    public static final Options UNDIRECTED_XOR = new Options(true, true);
 
     /**
      * These are the options that should be used for assembling edges where the
@@ -105,25 +108,32 @@ public strictfp class S2PolygonBuilder {
      * may occur more than once. Edges are treated as undirected and are not
      * XORed together, in particular, adding edge A->B also adds B->A.
      */
-    UNDIRECTED_UNION(true, false),
+    public static final Options UNDIRECTED_UNION = new Options(true, false);
 
     /**
      * Finally, select this option when the desired output is a collection of
      * loops rather than a polygon, but your input edges are directed and you do
      * not want reverse edges to be added implicitly as above.
      */
-    DIRECTED_UNION(false, false);
+    public static final Options DIRECTED_UNION = new Options(false, false);
 
     private boolean undirectedEdges;
     private boolean xorEdges;
     private boolean validate;
     private S1Angle mergeDistance;
 
-    private Options(boolean undirectedEdges, boolean xorEdges) {
+    /**
+     * If positive, this is the fraction of {@code mergeDistance} that a point
+     * can be from an edge before it will be snapped to the edge.
+     */
+    private double edgeSpliceFraction;
+
+    public Options(boolean undirectedEdges, boolean xorEdges) {
       this.undirectedEdges = undirectedEdges;
       this.xorEdges = xorEdges;
       this.validate = false;
       this.mergeDistance = S1Angle.radians(0);
+      this.edgeSpliceFraction = 0.866;
     }
 
     /**
@@ -186,16 +196,16 @@ public strictfp class S2PolygonBuilder {
     }
 
     /**
-     * If set to a positive value, all vertices that are separated by at most
-     * this distance will be merged together. In addition, vertices that are
-     * closer than this distance to a non-incident edge will be spliced into it
-     * (TODO).
+     * <p>If set to a positive value, all vertex pairs that are separated by
+     * less than this distance will be merged together. Note that vertices can
+     * move arbitrarily far if there is a long chain of vertices separated by
+     * less than this distance.
      *
-     *  The merging is done in such a way that all vertex-vertex and vertex-edge
-     * distances in the output are greater than 'merge_distance'.
-     *
-     *  This method is useful for assembling polygons out of input data where
+     * <p>
+     * This method is useful for assembling polygons out of input data where
      * vertices and/or edges may not be perfectly aligned.
+     *
+     * Default value: 0.
      */
     public void setMergeDistance(S1Angle mergeDistance) {
       this.mergeDistance = mergeDistance;
@@ -210,6 +220,48 @@ public strictfp class S2PolygonBuilder {
     void setXorEdges(boolean xorEdges) {
       this.xorEdges = xorEdges;
     }
+
+    /**
+     * Returns the edge splice fraction, which defaults to 0.866 (approximately
+     * sqrt(3)/2).
+     *
+     * <p>
+     * The edge splice radius is automatically set to this fraction of the
+     * vertex merge radius. If the edge splice radius is positive, then all
+     * vertices that are closer than this distance to an edge are spliced into
+     * that edge. Note that edges can move arbitrarily far if there is a long
+     * chain of vertices in just the right places.
+     *
+     * <p>
+     * You can turn off edge splicing by setting this value to zero. This will
+     * save some time if you don't need this feature, or you don't want vertices
+     * to be spliced into nearby edges for some reason.
+     *
+     * <p>
+     * Note that the edge splice fraction must be less than sqrt(3)/2 in order
+     * to avoid infinite loops in the merge algorithm. The default value is very
+     * close to this maximum and therefore results in the maximum amount of edge
+     * splicing for a given vertex merge radius.
+     *
+     * <p>
+     * The only reason to reduce the edge splice fraction is if you want to
+     * limit changes in edge direction due to splicing. The direction of an edge
+     * can change by up to asin(edge_splice_fraction) due to each splice. Thus
+     * by default, edges are allowed to change direction by up to 60 degrees per
+     * splice. However, note that most direction changes are much smaller than
+     * this: the worst case occurs only if the vertex being spliced is just
+     * outside the vertex merge radius from one of the edge endpoints.
+     */
+    public double getEdgeSpliceFraction() {
+      return edgeSpliceFraction;
+    }
+
+    public void setEdgeSpliceFraction(double edgeSpliceFraction) {
+      Preconditions.checkState(edgeSpliceFraction < Math.sqrt(3) / 2,
+          "Splice fraction must be at least sqrt(3)/2 to ensure termination " +
+          "of edge splicing algorithm.");
+      this.edgeSpliceFraction = edgeSpliceFraction;
+    }
   }
 
   public Options options() {
@@ -217,38 +269,40 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Add the given edge to the polygon builder. This method should be used for
-   * input data that may not follow S2 polygon conventions. Note that edges are
-   * not allowed to cross each other. Also note that as a convenience, edges
-   * where v0 == v1 are ignored.
+   * Add the given edge to the polygon builder and returns true if the edge was
+   * actually added to the edge graph.
+   *
+   * <p>This method should be used for input data that may not follow S2 polygon
+   * conventions. Note that edges are not allowed to cross each other. Also note
+   * that as a convenience, edges where v0 == v1 are ignored.
    */
-  public void addEdge(S2Point v0, S2Point v1) {
-    // If xor_edges is true, we look for an existing edge in the opposite
-    // direction. We either delete that edge or insert a new one.
-
+  public boolean addEdge(S2Point v0, S2Point v1) {
     if (v0.equals(v1)) {
-      return;
+      return false;
     }
 
-    if (options.getXorEdges()) {
-      Multiset<S2Point> candidates = edges.get(v1);
-      if (candidates != null && candidates.count(v0) > 0) {
-        eraseEdge(v1, v0);
-        return;
-      }
+    // If xor_edges is true, we look for an existing edge in the opposite
+    // direction. We either delete that edge or insert a new one.
+    if (options.getXorEdges() && hasEdge(v1, v0)) {
+      eraseEdge(v1, v0);
+      return false;
     }
 
     if (edges.get(v0) == null) {
       edges.put(v0, HashMultiset.<S2Point>create());
+      startingVertices.add(v0);
     }
 
     edges.get(v0).add(v1);
     if (options.getUndirectedEdges()) {
       if (edges.get(v1) == null) {
         edges.put(v1, HashMultiset.<S2Point>create());
+        startingVertices.add(v1);
       }
       edges.get(v1).add(v0);
     }
+
+    return true;
   }
 
   /**
@@ -294,7 +348,14 @@ public strictfp class S2PolygonBuilder {
    */
   public boolean assembleLoops(List<S2Loop> loops, List<S2Edge> unusedEdges) {
     if (options.getMergeDistance().radians() > 0) {
-      mergeVertices();
+      PointIndex index = new PointIndex(
+          options.getMergeDistance().radians(),
+          options.getEdgeSpliceFraction());
+      Map<S2Point, S2Point> mergeMap = buildMergeMap(index);
+      moveVertices(mergeMap);
+      if (options.getEdgeSpliceFraction() > 0) {
+        spliceEdges(index);
+      }
     }
 
     List<S2Edge> dummyUnusedEdges = Lists.newArrayList();
@@ -302,33 +363,26 @@ public strictfp class S2PolygonBuilder {
       unusedEdges = dummyUnusedEdges;
     }
 
-    // We repeatedly choose an arbitrary edge and attempt to assemble a loop
-    // starting from that edge. (This is always possible unless the input
-    // includes extra edges that are not part of any loop.)
-
+    // We repeatedly choose an edge and attempt to assemble a loop
+    // starting from that edge.  (This is always possible unless the
+    // input includes extra edges that are not part of any loop.)  To
+    // maintain a consistent scanning order over edges between
+    // different machine architectures (e.g. 'clovertown' vs. 'opteron'),
+    // we follow the order they were added to the builder.
     unusedEdges.clear();
-    while (!edges.isEmpty()) {
-      Map.Entry<S2Point, Multiset<S2Point>> edge = edges.entrySet().iterator().next();
-
-      S2Point v0 = edge.getKey();
-      S2Point v1 = edge.getValue().iterator().next();
-
-      S2Loop loop = assembleLoop(v0, v1, unusedEdges);
-      if (loop == null) {
+    for (int i = 0; i < startingVertices.size(); ) {
+      S2Point v0 = startingVertices.get(i);
+      Multiset<S2Point> candidates = edges.get(v0);
+      if (candidates == null) {
+        i++;
         continue;
       }
-
-      // In the case of undirected edges, we may have assembled a clockwise
-      // loop while trying to assemble a CCW loop. To fix this, we assemble
-      // a new loop starting with an arbitrary edge in the reverse direction.
-      // This is guaranteed to assemble a loop that is interior to the previous
-      // one and will therefore eventually terminate.
-
-      while (options.getUndirectedEdges() && !loop.isNormalized()) {
-        loop = assembleLoop(loop.vertex(1), loop.vertex(0), unusedEdges);
+      S2Point v1 = candidates.iterator().next();
+      S2Loop loop = assembleLoop(v0, v1, unusedEdges);
+      if (loop != null) {
+        eraseLoop(loop, loop.numVertices());
+        loops.add(loop);
       }
-      loops.add(loop);
-      eraseLoop(loop, loop.numVertices());
     }
     return unusedEdges.isEmpty();
   }
@@ -356,8 +410,8 @@ public strictfp class S2PolygonBuilder {
     // If edges are undirected, then all loops are already CCW. Otherwise we
     // need to make sure the loops are normalized.
     if (!options.getUndirectedEdges()) {
-      for (int i = 0; i < loops.size(); ++i) {
-        loops.get(i).normalize();
+      for (S2Loop loop : loops) {
+        loop.normalize();
       }
     }
     if (options.getValidate() && !S2Polygon.isValid(loops)) {
@@ -382,24 +436,6 @@ public strictfp class S2PolygonBuilder {
     assemblePolygon(polygon, unusedEdges);
 
     return polygon;
-  }
-
-  // Debugging functions:
-
-  protected void dumpEdges(S2Point v0) {
-    log.info(v0.toString());
-    Multiset<S2Point> vset = edges.get(v0);
-    if (vset != null) {
-      for (S2Point v : vset) {
-        log.info("    " + v.toString());
-      }
-    }
-  }
-
-  protected void dump() {
-    for (S2Point v : edges.keySet()) {
-      dumpEdges(v);
-    }
   }
 
   private void eraseEdge(S2Point v0, S2Point v1) {
@@ -484,18 +520,40 @@ public strictfp class S2PolygonBuilder {
         index.put(v2, path.size());
         path.add(v2);
       } else {
-        // We've completed a loop. Throw away any initial vertices that
-        // are not part of the loop.
-        path = path.subList(index.get(v2), path.size());
+        // We've completed a loop. In a simple case last edge is the same as the
+        // first one (since we did not add the very first vertex to the index we
+        // would not know that the loop is completed till the second vertex is
+        // examined). In this case we just remove the last edge to preserve the
+        // original vertex order. In a more complicated case the edge that
+        // closed the loop is different and we should remove initial vertices
+        // that are not part of the loop.
+        if (index.get(v2) == 1 && path.get(0).equals(path.get(path.size() - 1))) {
+          path.remove(path.size() - 1);
+        } else {
+          // We've completed a loop. Throw away any initial vertices that
+          // are not part of the loop.
+          path = path.subList(index.get(v2), path.size());
+        }
 
-        if (options.getValidate() && !S2Loop.isValid(path)) {
+        S2Loop loop = new S2Loop(path);
+        if (options.getValidate() && !loop.isValid()) {
           // We've constructed a loop that crosses itself, which can only happen
           // if there is bad input data. Throw away the whole loop.
           rejectLoop(path, path.size(), unusedEdges);
           eraseLoop(path, path.size());
           return null;
         }
-        return new S2Loop(path);
+
+        // In the case of undirected edges, we may have assembled a clockwise
+        // loop while trying to assemble a CCW loop.  To fix this, we assemble
+        // a new loop starting with an arbitrary edge in the reverse direction.
+        // This is guaranteed to assemble a loop that is interior to the previous
+        // one and will therefore eventually terminate.
+        if (options.getUndirectedEdges() && !loop.isNormalized()) {
+          return assembleLoop(path.get(1), path.get(0), unusedEdges);
+        }
+
+        return loop;
       }
     }
     return null;
@@ -545,74 +603,134 @@ public strictfp class S2PolygonBuilder {
       S2Point v0 = edgesCopy.get(i).getStart();
       S2Point v1 = edgesCopy.get(i).getEnd();
       eraseEdge(v0, v1);
-      if (mergeMap.get(v0) != null) {
-        v0 = mergeMap.get(v0);
+      S2Point new0 = mergeMap.get(v0);
+      if (new0 != null) {
+        v0 = new0;
       }
-      if (mergeMap.get(v1) != null) {
-        v1 = mergeMap.get(v1);
+      S2Point new1 = mergeMap.get(v1);
+      if (new1 != null) {
+        v1 = new1;
       }
       addEdge(v0, v1);
     }
   }
 
   /**
-   * Look for groups of vertices that are separated by at most merge_distance()
-   * and merge them into a single vertex.
+   * Clusters vertices that are separated by at most merge_distance() and
+   * returns a map of each one to a single representative vertex for all the
+   * vertices in the cluster.
    */
-  private void mergeVertices() {
+  private Map<S2Point, S2Point> buildMergeMap(PointIndex index) {
     // The overall strategy is to start from each vertex and grow a maximal
-    // cluster of mergable vertices. In graph theoretic terms, we find the
+    // cluster of mergeable vertices. In graph theoretic terms, we find the
     // connected components of the undirected graph whose edges connect pairs of
-    // vertices that are separated by at most merge_distance.
+    // vertices that are separated by at most vertex_merge_radius().
     //
     // We then choose a single representative vertex for each cluster, and
-    // update all the edges appropriately. We choose an arbitrary existing
+    // update "merge_map" appropriately. We choose an arbitrary existing
     // vertex rather than computing the centroid of all the vertices to avoid
     // creating new vertex pairs that need to be merged. (We guarantee that all
-    // vertex pairs are separated by at least merge_distance in the output.)
+    // vertex pairs are separated by at least the merge radius in the output.)
 
-    PointIndex index = new PointIndex(options.getMergeDistance().radians());
-
+    // First, we build the set of all the distinct vertices in the input.
+    // We need to include the source and destination of every edge.
+    Set<S2Point> vertices = Sets.newHashSet();
     for (Map.Entry<S2Point, Multiset<S2Point>> edge : edges.entrySet()) {
-      index.add(edge.getKey());
-      Multiset<S2Point> vset = edge.getValue();
-      for (S2Point v : vset) {
-        index.add(v);
+      vertices.add(edge.getKey());
+      for (S2Point v : edge.getValue().elementSet()) {
+        vertices.add(v);
       }
     }
 
-    // Next, we loop through all the vertices and attempt to grow a maximial
-    // mergeable group starting from each vertex.
+    // Build a spatial index containing all the distinct vertices.
+    for (S2Point p : vertices) {
+      index.add(p);
+    }
 
+    // Next, we loop through all the vertices and attempt to grow a maximal
+    // mergeable group starting from each vertex.
     Map<S2Point, S2Point> mergeMap = Maps.newHashMap();
     Stack<S2Point> frontier = new Stack<S2Point>();
     List<S2Point> mergeable = Lists.newArrayList();
-
-    for (Map.Entry<S2CellId, MarkedS2Point> entry : index.entries()) {
-      MarkedS2Point point = entry.getValue();
-      if (point.isMarked()) {
-        continue; // Already processed.
+    for (S2Point vstart : vertices) {
+      // Skip any vertices that have already been merged with another vertex.
+      if (mergeMap.containsKey(vstart)) {
+        continue;
       }
-
-      point.mark();
 
       // Grow a maximal mergeable component starting from "vstart", the
       // canonical representative of the mergeable group.
-      S2Point vstart = point.getPoint();
-      frontier.push(vstart);
+      frontier.add(vstart);
       while (!frontier.isEmpty()) {
-        S2Point v0 = frontier.pop();
-
-        index.query(v0, mergeable);
-        for (S2Point v1 : mergeable) {
-          frontier.push(v1);
-          mergeMap.put(v1, vstart);
+        // Pop the top frontier point and get all points nearby
+        index.queryCap(frontier.pop(), mergeable);
+        for (S2Point vnear : mergeable) {
+          if (!vstart.equals(vnear)) {
+            // Erase from the index any vertices that will be merged.  This
+            // ensures that we won't try to merge the same vertex twice.
+            index.remove(vnear);
+            frontier.push(vnear);
+            mergeMap.put(vnear, vstart);
+          }
         }
       }
     }
 
-    // Finally, we need to replace vertices according to the merge_map.
-    moveVertices(mergeMap);
+    return mergeMap;
+  }
+
+  /**
+   * Returns true if the given directed edge [v0 -> v1] is present in the
+   * directed edge graph.
+   */
+  public boolean hasEdge(S2Point v0, S2Point v1) {
+    Multiset<S2Point> vset = edges.get(v0);
+    return vset == null ? false : vset.count(v1) > 0;
+  }
+
+  /** Uses the point index to help splice vertices that are near an edge onto the edge. */
+  private void spliceEdges(PointIndex index) {
+    // We keep a stack of unprocessed edges.  Initially all edges are
+    // pushed onto the stack.
+    List<S2Edge> pendingEdges = Lists.newArrayList();
+    for (Map.Entry<S2Point, Multiset<S2Point>> edge : edges.entrySet()) {
+      S2Point v0 = edge.getKey();
+      for (S2Point v1 : edge.getValue().elementSet()) {
+        // We only need to modify one copy of each undirected edge.
+        if (!options.getUndirectedEdges() || v0.compareTo(v1) < 0) {
+          pendingEdges.add(new S2Edge(v0, v1));
+        }
+      }
+    }
+
+    // For each edge, we check whether there are any nearby vertices that should
+    // be spliced into it.  If there are, we choose one such vertex, split
+    // the edge into two pieces, and iterate on each piece.
+    while (!pendingEdges.isEmpty()) {
+      // Must remove last edge before pushing new edges.
+      S2Edge lastPair = pendingEdges.remove(pendingEdges.size() - 1);
+      S2Point v0 = lastPair.getStart();
+      S2Point v1 = lastPair.getEnd();
+
+      // If we are XORing, edges may be erased before we get to them.
+      if (options.getXorEdges() && !hasEdge(v0, v1)) {
+        continue;
+      }
+
+      // Find nearest point to [v0,v1], or null if no point is within range.
+      S2Point vmid = index.findNearbyPoint(v0, v1);
+      if (vmid != null) {
+        // Replace [v0,v1] with [v0,vmid] and [vmid,v1], and then add the new
+        // edges to the set of edges to test for adjacent points.
+        eraseEdge(v0, v1);
+        if (addEdge(v0, vmid)) {
+          pendingEdges.add(new S2Edge(v0, vmid));
+        }
+        if (addEdge(vmid, v1)) {
+          pendingEdges.add(new S2Edge(vmid, v1));
+        }
+      }
+    }
   }
 
   /**
@@ -622,18 +740,22 @@ public strictfp class S2PolygonBuilder {
    * a hash map from cell ids at a given fixed level to the set of points
    * contained by that cell id.
    *
-   *  This class is not suitable for general use because it only supports
+   * <p>This class is not suitable for general use because it only supports
    * fixed-radius queries and has various special-purpose operations to avoid
    * the need for additional data structures.
+   *
+   * <p>This class is <strong>not thread-safe</strong>.
    */
-  private class PointIndex extends ForwardingMultimap<S2CellId, MarkedS2Point> {
-    private double searchRadius;
+  private class PointIndex {
+    private double vertexRadius;
+    private double edgeFraction;
     private int level;
-    private final Multimap<S2CellId, MarkedS2Point> delegate = LinkedHashMultimap.create();
+    private final TreeMultimap<S2CellId, S2Point> delegate = TreeMultimap.create();
+    private final List<S2CellId> ids = Lists.newArrayList();
 
-    public PointIndex(double searchRadius) {
-
-      this.searchRadius = searchRadius;
+    public PointIndex(double searchRadius, double edgeFraction) {
+      this.vertexRadius = searchRadius;
+      this.edgeFraction = edgeFraction;
 
       // We choose a cell level such that if dist(A,B) <= search_radius, the
       // S2CellId at that level containing A is a vertex neighbor of B (see
@@ -644,73 +766,90 @@ public strictfp class S2PolygonBuilder {
           Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * searchRadius), S2CellId.MAX_LEVEL - 1);
     }
 
-    @Override
-    protected Multimap<S2CellId, MarkedS2Point> delegate() {
-      return delegate;
+    /** Add a point to the index in each cell neighbor at the index level. */
+    public void add(S2Point p) {
+      S2CellId.fromPoint(p).getVertexNeighbors(level, ids);
+      for (S2CellId id : ids) {
+        delegate.put(id, p);
+      }
+      ids.clear();
     }
 
-    /** Add a point to the index if it does not already exist. */
-    public void add(S2Point p) {
-      S2CellId id = S2CellId.fromPoint(p).parent(level);
-      Collection<MarkedS2Point> pointSet = get(id);
-      for (MarkedS2Point point : pointSet) {
-        if (point.getPoint().equals(p)) {
-          return;
-        }
+    public void remove(S2Point p) {
+      S2CellId.fromPoint(p).getVertexNeighbors(level, ids);
+      for (S2CellId id : ids) {
+        delegate.remove(id, p);
       }
-      put(id, new MarkedS2Point(p));
+      ids.clear();
     }
 
     /**
-     * Return the set the unmarked points whose distance to "center" is less
-     * than search_radius_, and mark these points. By construction, these points
-     * will be contained by one of the vertex neighbors of "center".
+     * Return the set of points whose distance to "axis" is less than
+     * {@code searchRadius}.
      */
-    public void query(S2Point center, List<S2Point> output) {
+    public void queryCap(S2Point axis, List<S2Point> output) {
       output.clear();
-
-      List<S2CellId> neighbors = Lists.newArrayList();
-      S2CellId.fromPoint(center).getVertexNeighbors(level, neighbors);
-      for (S2CellId id : neighbors) {
-        // Iterate over the points contained by each vertex neighbor.
-        for (MarkedS2Point mp : get(id)) {
-          if (mp.isMarked()) {
-            continue;
-          }
-          S2Point p = mp.getPoint();
-
-          if (center.angle(p) <= searchRadius) {
+      S2CellId id = S2CellId.fromPoint(axis).parent(level);
+      for (Map.Entry<S2CellId, Collection<S2Point>> entry :
+          delegate.asMap().tailMap(id).entrySet()) {
+        if (entry.getKey().id() != id.id()) {
+          break;
+        }
+        for (S2Point p : entry.getValue()) {
+          if (axis.angle(p) < vertexRadius) {
             output.add(p);
-            mp.mark();
           }
         }
       }
     }
-  }
 
-  /**
-   * An S2Point that can be marked. Used in PointIndex.
-   */
-  private class MarkedS2Point {
-    private S2Point point;
-    private boolean mark;
-
-    public MarkedS2Point(S2Point point) {
-      this.point = point;
-      this.mark = false;
-    }
-
-    public boolean isMarked() {
-      return mark;
-    }
-
-    public S2Point getPoint() {
-      return point;
-    }
-
-    public void mark() {
-      // assert (!isMarked());
-      this.mark = true;
+    /**
+     * Return a point whose distance from the edge (v0,v1) is less than
+     * searchRadius, and which is not equal to v0 or v1. The current
+     * implementation returns the closest such point.
+     */
+    public S2Point findNearbyPoint(S2Point v0, S2Point v1) {
+      // Strategy: we compute a very cheap covering by approximating the edge as
+      // two spherical caps, one around each endpoint, and then computing a
+      // 4-cell covering of each one. We could improve the quality of the
+      // covering by using some intermediate points along the edge as well.
+      double length = v0.angle(v1);
+      S2Point normal = S2.robustCrossProd(v0, v1);
+      int queryLevel = Math.min(level, S2Projections.MIN_WIDTH.getMaxLevel(length));
+      S2CellId.fromPoint(v0).getVertexNeighbors(queryLevel, ids);
+      S2CellId.fromPoint(v1).getVertexNeighbors(queryLevel, ids);
+      // Sort the cell ids so that we can skip duplicates in the loop below.
+      Collections.sort(ids);
+      double bestDistance = 2 * vertexRadius;
+      S2Point nearby = null;
+      for (int i = ids.size(); --i >= 0; ) {
+        // Skip duplicates.
+        if (i > 0 && ids.get(i - 1).id() == ids.get(i).id()) {
+          continue;
+        }
+        S2CellId maxId = ids.get(i).rangeMax();
+        for (Map.Entry<S2CellId, Collection<S2Point>> cellPoints :
+            delegate.asMap().tailMap(ids.get(i).rangeMin()).entrySet()) {
+          if (cellPoints.getKey().compareTo(maxId) > 0) {
+            break;
+          }
+          for (S2Point p : cellPoints.getValue()) {
+            if (!p.equals(v0) && !p.equals(v1)) {
+              double dist = S2EdgeUtil.getDistance(p, v0, v1, normal).radians();
+              if (dist < bestDistance) {
+                bestDistance = dist;
+                nearby = p;
+              }
+            }
+          }
+        }
+      }
+      ids.clear();
+      if (bestDistance < edgeFraction * vertexRadius) {
+        return nearby;
+      } else {
+        return null;
+      }
     }
   }
 }

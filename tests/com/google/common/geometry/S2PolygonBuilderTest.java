@@ -16,85 +16,130 @@
 
 package com.google.common.geometry;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 
+import org.ejml.simple.SimpleMatrix;
+
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Tests for {@link S2Loop}.
+ * Tests for {@link S2PolygonBuilder}.
  *
  */
 public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   private static final Logger log = Logger.getLogger(S2PolygonBuilderTest.class.getCanonicalName());
 
-  // A chain represents either a polyline or a loop, depending
-  // on whether "closed" is true.
-  private class Chain {
-    String str;
-    boolean closed;
+  /** Holds the original S2Loop loglevel. */
+  private Level oldLoopLevel;
+  /** Holds the original S2Polygon loglevel. */
+  private Level oldPolygonLevel;
 
+  @Override
+  protected void setUp() {
+    super.setUp();
+
+    // Disable the logging done by S2Loop and S2Polygon, since it will get in
+    // the way of the logging we need to see from S2PolygonBuilder*java, and
+    // save the levels to restore when we teardown the test.
+    Logger loopLogger = Logger.getLogger(S2Loop.class.getCanonicalName());
+    oldLoopLevel = loopLogger.getLevel();
+    loopLogger.setLevel(Level.OFF);
+    Logger polyLogger = Logger.getLogger(S2Polygon.class.getCanonicalName());
+    oldPolygonLevel = polyLogger.getLevel();
+    polyLogger.setLevel(Level.OFF);
+  }
+
+  @Override
+  protected void tearDown() {
+    // Restore the logging done by S2Loop and S2Polygon to the prior settings.
+    Logger.getLogger(S2Loop.class.getCanonicalName()).setLevel(oldLoopLevel);
+    Logger.getLogger(S2Polygon.class.getCanonicalName()).setLevel(oldPolygonLevel);
+  }
+
+  /**
+   * A chain represents either a polyline or a loop, depending on whether
+   * "closed" is true.
+   */
+  private static final class Chain {
+    public final String str;
+    public final boolean closed;
     public Chain(String str, boolean closed) {
       this.str = str;
       this.closed = closed;
     }
   }
 
-  private class TestCase {
-    // +1 = undirected, -1 = directed, 0 = either one
-    int undirectedEdges;
+  /** A single test case to execute. */
+  private static final class TestCase {
+    /** +1 = undirected, -1 = directed, 0 = either one. */
+    public final int undirectedEdges;
 
-    // +1 = XOR, -1 = don't XOR, 0 = either one
-    int xorEdges;
+    /** +1 = XOR, -1 = don't XOR, 0 = either one. */
+    public final int xorEdges;
 
-    // Minimum and maximum merge distances for this test case in degrees.
-    double minMerge;
-    double maxMerge;
+    /** Can edges be split for this test case. */
+    public final boolean canSplit;
 
-    // Each test case consists of a set of input loops and polylines.
-    Chain[] chainsIn;
+    /** Minimum merge distance for this test case in degrees. */
+    public final double minMerge;
 
-    // The expected set of output loops, directed appropriately.
-    String[] loopsOut;
+    /** Maximum merge distance for this test case in degrees. */
+    public final double maxMerge;
 
-    // The expected number of unused edges.
-    int numUnusedEdges;
+    /** Minimum angle in degrees between any two edges *after* vertex merging. */
+    public final double minVertexAngle;
+
+    /** Each test case consists of a set of input loops and polylines. */
+    public final Chain[] chainsIn;
+
+    /** The expected set of output loops, directed appropriately. */
+    public final String[] loopsOut;
+
+    /** The expected number of unused edges. */
+    public final int numUnusedEdges;
 
     public TestCase(int undirectedEdges,
         int xorEdges,
+        boolean canSplit,
         double minMerge,
         double maxMerge,
+        double minVertexAngle,
         Chain[] chainsIn,
         String[] loopsOut,
         int numUnusedEdges) {
       this.undirectedEdges = undirectedEdges;
       this.xorEdges = xorEdges;
+      this.canSplit = canSplit;
       this.minMerge = minMerge;
       this.maxMerge = maxMerge;
+      this.minVertexAngle = minVertexAngle;
       this.chainsIn = chainsIn;
       this.loopsOut = loopsOut;
       this.numUnusedEdges = numUnusedEdges;
     }
   }
 
-  TestCase[] testCases = new TestCase[] {
-  // 0: No loops.
-  new TestCase(0, 0, 0.0, 10.0, new Chain[] {new Chain(null, false)}, new String[] {}, 0),
+  private static final TestCase[] testCases = {
+      // 0: No loops.
+      new TestCase(0, 0, true, 0.0, 10.0, 90.0,
+          new Chain[]{new Chain(null, false)},
+          new String[]{}, 0),
 
       // 1: One loop with some extra edges.
-      new TestCase(0,
-          0,
-          0.0,
-          4.0,
-          new Chain[] {new Chain("0:0, 0:10, 10:5", true), new Chain("0:0, 5:5", false),
+      new TestCase(0, 0, true, 0.0, 4.0, 15.0,
+          new Chain[]{
+              new Chain("0:0, 0:10, 10:5", true),
+              new Chain("0:0, 5:5", false),
               new Chain("10:5, 20:7, 30:10, 40:15, 50:3, 60:-20", false)},
-          new String[] {"0:0, 0:10, 10:5"},
-          6),
+        new String[]{"0:0, 0:10, 10:5"}, 6),
 
-      // 2: One loop that has an edge removed by XORing, plus lots of
-      // extra edges.
-      new TestCase(0, 1, 0.0, 1.0, // XOR
-          new Chain[] {new Chain("0:0, 0:10, 5:15, 10:10, 10:0", true),
+      // 2: One loop that has an edge removed by XORing, plus lots of extra edges.
+      new TestCase(0, 1, true, 0.0, 1.0, 45.0,
+          new Chain[]{
+              new Chain("0:0, 0:10, 5:15, 10:10, 10:0", true),
               new Chain("10:10, 12:12, 14:14, 16:16, 18:18", false),
               new Chain("14:14, 14:16, 14:18, 14:20", false),
               new Chain("14:18, 16:20, 18:22", false),
@@ -102,126 +147,130 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
               new Chain("20:18, 18:16, 16:14, 14:12", false),
               new Chain("20:14, 18:14, 16:14", false),
               new Chain("5:15, 0:10", false)},
-          new String[] {},
-          21),
+          new String[]{}, 21),
 
       // 3: Three loops (two shells and one hole) that combine into one.
-      new TestCase(0, 1, 0.0, 4.0, // XOR
-          new Chain[] {new Chain("0:0, 0:10, 5:10, 10:10, 10:5, 10:0", true),
+      new TestCase(0, 1, true, 0.0, 4.0, 90.0,  // XOR
+          new Chain[]{
+              new Chain("0:0, 0:10, 5:10, 10:10, 10:5, 10:0", true),
               new Chain("0:10, 0:15, 5:15, 5:10", true),
-              new Chain("10:10, 5:10, 5:5, 10:5", true), },
-          new String[] {"0:0, 0:10, 0:15, 5:15, 5:10, 5:5, 10:5, 10:0"},
-          0),
+              new Chain("10:10, 5:10, 5:5, 10:5", true)},
+          new String[]{"0:0, 0:10, 0:15, 5:15, 5:10, 5:5, 10:5, 10:0"}, 0),
 
-      // 4: A big CCW triangle contained 3 CW triangular holes. The whole thing
+      // 4: A big CCW triangle contain 3 CW triangular holes.  The whole thing
       // looks like a pyramid of nine small triangles (with two extra edges).
-      new TestCase(-1, 0, 0.0, 0.9, // Directed edges required for unique result.
-          new Chain[] {new Chain("0:0, 0:2, 0:4, 0:6, 1:5, 2:4, 3:3, 2:2, 1:1", true),
+      new TestCase(-1, 0, true, 0.0, 0.9, 30.0,  // Directed edges required for unique result.
+          new Chain[]{
+              new Chain("0:0, 0:2, 0:4, 0:6, 1:5, 2:4, 3:3, 2:2, 1:1", true),
               new Chain("0:2, 1:1, 1:3", true),
               new Chain("0:4, 1:3, 1:5", true),
               new Chain("1:3, 2:2, 2:4", true),
-              new Chain("0:0, 0:1", false),
-              new Chain("1:3, 5:7", false)},
-          new String[] {"0:0, 0:2, 1:1",
+              new Chain("0:0, -1:1", false),
+              new Chain("3:3, 5:5", false)},
+          new String[]{"0:0, 0:2, 1:1",
               "0:2, 0:4, 1:3",
               "0:4, 0:6, 1:5",
               "1:1, 1:3, 2:2",
               "1:3, 1:5, 2:4",
-              "2:2, 2:4, 3:3"},
-          2),
+              "2:2, 2:4, 3:3"}, 2),
 
-      // 5: A square divided into four subsquares. In this case we want
+      // 5: A square divided into four subsquares.  In this case we want
       // to extract the four loops rather than taking their union.
       // There are four extra edges as well.
-      new TestCase(0, -1, 0.0, 4.0, // Don't XOR
-          new Chain[] {new Chain("0:0, 0:5, 5:5, 5:0", true),
+      new TestCase(0, -1, true, 0.0, 4.0, 90.0,  // Don't XOR
+          new Chain[]{
+              new Chain("0:0, 0:5, 5:5, 5:0", true),
               new Chain("0:5, 0:10, 5:10, 5:5", true),
               new Chain("5:0, 5:5, 10:5, 10:0", true),
               new Chain("5:5, 5:10, 10:10, 10:5", true),
               new Chain("0:10, 0:15, 0:20", false),
               new Chain("20:0, 15:0, 10:0", false)},
-          new String[] {"0:0, 0:5, 5:5, 5:0", "0:5, 0:10, 5:10, 5:5", "5:0, 5:5, 10:5, 10:0",
-              "5:5, 5:10, 10:10, 10:5"},
-          4),
+          new String[]{
+              "0:0, 0:5, 5:5, 5:0",
+              "0:5, 0:10, 5:10, 5:5",
+              "5:0, 5:5, 10:5, 10:0",
+              "5:5, 5:10, 10:10, 10:5"}, 4),
 
       // 6: Five nested loops that touch at a point.
-      new TestCase(0,
-          0,
-          0.0,
-          0.8,
-          new Chain[] {new Chain("0:0, 0:10, 10:10, 10:0", true),
-              new Chain("0:0, 1:9, 9:9, 9:1", true), new Chain("0:0, 2:8, 8:8, 8:2", true),
-              new Chain("0:0, 3:7, 7:7, 7:3", true), new Chain("0:0, 4:6, 6:6, 6:4", true)},
-          new String[] {"0:0, 0:10, 10:10, 10:0", "0:0, 1:9, 9:9, 9:1", "0:0, 2:8, 8:8, 8:2",
-              "0:0, 3:7, 7:7, 7:3", "0:0, 4:6, 6:6, 6:4"},
-          0),
-
+      new TestCase(0, 0, true, 0.0, 0.8, 5.0,
+          new Chain[]{
+              new Chain("0:0, 0:10, 10:10, 10:0", true),
+              new Chain("0:0, 1:9, 9:9, 9:1", true),
+              new Chain("0:0, 2:8, 8:8, 8:2", true),
+              new Chain("0:0, 3:7, 7:7, 7:3", true),
+              new Chain("0:0, 4:6, 6:6, 6:4", true)},
+          new String[]{
+              "0:0, 0:10, 10:10, 10:0",
+              "0:0, 1:9, 9:9, 9:1",
+              "0:0, 2:8, 8:8, 8:2",
+              "0:0, 3:7, 7:7, 7:3",
+              "0:0, 4:6, 6:6, 6:4"}, 0),
 
       // 7: Four diamonds nested within each other touching at two points.
-      new TestCase(-1, 0, 0.0, 4.0, // Directed edges required for unique result.
-          new Chain[] {new Chain("0:-20, -10:0, 0:20, 10:0", true),
+      new TestCase(-1, 0, true, 0.0, 4.0, 15.0,  // Directed edges required for unique result.
+          new Chain[]{
+              new Chain("0:-20, -10:0, 0:20, 10:0", true),
               new Chain("0:10, -10:0, 0:-10, 10:0", true),
-              new Chain("0:-10, -5:0, 0:10, 5:0", true), new Chain("0:5, -5:0, 0:-5, 5:0", true)},
-          new String[] {"0:-20, -10:0, 0:-10, 10:0", "0:-10, -5:0, 0:-5, 5:0",
-              "0:5, -5:0, 0:10, 5:0", "0:10, -10:0, 0:20, 10:0"},
-          0),
+              new Chain("0:-10, -5:0, 0:10, 5:0", true),
+              new Chain("0:5, -5:0, 0:-5, 5:0", true)},
+          new String[]{
+              "0:-20, -10:0, 0:-10, 10:0",
+              "0:-10, -5:0, 0:-5, 5:0",
+              "0:5, -5:0, 0:10, 5:0",
+              "0:10, -10:0, 0:20, 10:0"}, 0),
 
       // 8: Seven diamonds nested within each other touching at one
       // point between each nested pair.
-      new TestCase(0,
-          0,
-          0.0,
-          9.0,
-          new Chain[] {new Chain("0:-70, -70:0, 0:70, 70:0", true),
+      new TestCase(0, 0, true, 0.0, 9.0, 4.0,
+          new Chain[]{
+              new Chain("0:-70, -70:0, 0:70, 70:0", true),
               new Chain("0:-70, -60:0, 0:60, 60:0", true),
               new Chain("0:-50, -60:0, 0:50, 50:0", true),
               new Chain("0:-40, -40:0, 0:50, 40:0", true),
               new Chain("0:-30, -30:0, 0:30, 40:0", true),
               new Chain("0:-20, -20:0, 0:30, 20:0", true),
               new Chain("0:-10, -20:0, 0:10, 10:0", true)},
-          new String[] {"0:-70, -70:0, 0:70, 70:0",
+          new String[]{
+              "0:-70, -70:0, 0:70, 70:0",
               "0:-70, -60:0, 0:60, 60:0",
               "0:-50, -60:0, 0:50, 50:0",
               "0:-40, -40:0, 0:50, 40:0",
               "0:-30, -30:0, 0:30, 40:0",
               "0:-20, -20:0, 0:30, 20:0",
-              "0:-10, -20:0, 0:10, 10:0"},
-          0),
+              "0:-10, -20:0, 0:10, 10:0"}, 0),
 
       // 9: A triangle and a self-intersecting bowtie.
-      new TestCase(0,
-          0,
-          0.0,
-          4.0,
-          new Chain[] {new Chain("0:0, 0:10, 5:5", true), new Chain("0:20, 0:30, 10:20", false),
+      new TestCase(0, 0, false, 0.0, 4.0, 45.0,
+          new Chain[]{
+              new Chain("0:0, 0:10, 5:5", true),
+              new Chain("0:20, 0:30, 10:20", false),
               new Chain("10:20, 10:30, 0:20", false)},
-          new String[] {"0:0, 0:10, 5:5"},
-          4),
+          new String[]{"0:0, 0:10, 5:5"}, 4),
 
       // 10: Two triangles that intersect each other.
-      new TestCase(0,
-          0,
-          0.0,
-          2.0,
-          new Chain[] {new Chain("0:0, 0:10, 5:5", true), new Chain("2:2, 2:12, 7:7", true)},
-          new String[] {},
-          6),
+      new TestCase(0, 0, false, 0.0, 2.0, 45.0,
+          new Chain[]{
+              new Chain("0:0, 0:12, 6:6", true),
+              new Chain("3:6, 3:18, 9:12", true)},
+          new String[]{}, 6),
 
-      // 11: Four squares that combine to make a big square. The nominal
-      // edges of the square are at +/-8.5 degrees in latitude and longitude.
-      // All vertices except the center vertex are perturbed by up to 0.5
-      // degrees in latitude and/or longitude. The various copies of the
-      // center vertex are misaligned by more than this (i.e. they are
-      // structured as a tree where adjacent vertices are separated by at
-      // most 1 degree in latitude and/or longitude) so that the clustering
-      // algorithm needs more than one iteration to find them all. Note that
-      // the merged position of this vertex doesn't matter because it is XORed
-      // away in the output.
-      new TestCase(0, 1, 1.5, 5.8, // XOR, min_merge > sqrt(2), max_merge < 6.
-          new Chain[] {new Chain("-8:-8, -8:0", false),
+      // 11: Four squares that combine to make a big square.  The nominal edges of
+      // the square are at +/-8.5 degrees in latitude and longitude.  All vertices
+      // except the center vertex are perturbed by up to 0.5 degrees in latitude
+      // and/or longitude.  The various copies of the center vertex are misaligned
+      // by more than this (i.e. they are structured as a tree where adjacent
+      // vertices are separated by at most 1 degree in latitude and/or longitude)
+      // so that the clustering algorithm needs more than one iteration to find
+      // them all.  Note that the merged position of this vertex doesn't matter
+      // because it is XORed away in the output.  However, it's important that
+      // all edge pairs that need to be XORed are separated by no more than
+      // 'min_merge' below.
+      new TestCase(0, 1, true, 1.7, 5.8, 70.0,  // XOR, min_merge > sqrt(2), max_merge < 6.
+          new Chain[]{
+              new Chain("-8:-8, -8:0", false),
               new Chain("-8:1, -8:8", false),
-              new Chain("0:-9, -2:0", false),
-              new Chain("-1:1, 1:9", false),
+              new Chain("0:-9, 1:-1", false),
+              new Chain("1:2, 1:9", false),
               new Chain("0:8, 2:2", false),
               new Chain("0:-2, 1:-8", false),
               new Chain("8:9, 9:1", false),
@@ -229,162 +278,318 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
               new Chain("9:-9, 0:-8", false),
               new Chain("1:-9, -9:-9", false),
               new Chain("8:0, 1:0", false),
-              new Chain("1:2, -8:0", false),
-              new Chain("-8:1, 1:-1", false),
+              new Chain("-1:1, -8:0", false),
+              new Chain("-8:1, -2:0", false),
               new Chain("0:1, 8:1", false),
               new Chain("-9:8, 1:8", false),
               new Chain("0:9, 8:8", false)},
-          new String[] {"8.5:8.5, 8.5:0.5, 8.5:-8.5, 0.5:-8.5, "
-              + "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"},
-          0)};
+          new String[]{
+              "8.5:8.5, 8.5:0.5, 8.5:-8.5, 0.5:-8.5, " +
+              "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"}, 0)
+  };
 
-  private void getVertices(String str,
-      S2Point x,
-      S2Point y,
-      S2Point z,
-      double maxPerturbation,
-      List<S2Point> vertices) {
-
-    // Parse the vertices, perturb them if desired, and transform them into the
-    // given frame.
+  /**
+   * Parse the vertices in {@code str}, transforms them into the given
+   * {@code basis}, and adds the resulting points to {@code vertices}.
+   */
+  private static void getVertices(String str, SimpleMatrix basis, List<S2Point> vertices) {
     S2Polyline line = makePolyline(str);
-
     for (int i = 0; i < line.numVertices(); ++i) {
-      S2Point p = line.vertex(i);
-      // (p[0]*x + p[1]*y + p[2]*z).Normalize()
-      S2Point axis = S2Point.normalize(
-          S2Point.add(S2Point.add(S2Point.mul(x, p.x), S2Point.mul(y, p.y)), S2Point.mul(z, p.z)));
-      S2Cap cap = S2Cap.fromAxisAngle(axis, S1Angle.radians(maxPerturbation));
-      vertices.add(samplePoint(cap));
+      vertices.add(S2Point.normalize(rotate(line.vertex(i), basis)));
     }
   }
 
-  private boolean loopsEqual(S2Loop a, S2Loop b, double maxError) {
-    // Return true if two loops have the same cyclic vertex sequence.
-
-    if (a.numVertices() != b.numVertices()) {
-      return false;
+  /**
+   * Returns a fraction between 0 and 1 where small values are more likely. In
+   * particular it often returns exactly 0, and often returns a fraction whose
+   * logarithm is uniformly distributed over some interval.
+   */
+  private double smallFraction() {
+    double r = rand.nextDouble();
+    double u = rand.nextDouble();
+    if (r < 0.3) {
+      return 0.0;
     }
-    for (int offset = 0; offset < a.numVertices(); ++offset) {
-      if (S2.approxEquals(a.vertex(offset), b.vertex(0), maxError)) {
-        boolean success = true;
-        for (int i = 0; i < a.numVertices(); ++i) {
-          if (!S2.approxEquals(a.vertex(i + offset), b.vertex(i), maxError)) {
-            success = false;
-            break;
-          }
-        }
-        if (success) {
+    if (r < 0.6) {
+      return u;
+    }
+    return Math.pow(1e-10, u);
+  }
+
+  /**
+   * Returns a copy of the given point {@code p} after rotating it by the
+   * rotation matrix {@code r}.
+   */
+  private static S2Point rotate(S2Point p, SimpleMatrix r) {
+    SimpleMatrix rotated = r.mult(new SimpleMatrix(3, 1, true, p.x, p.y, p.z));
+    return new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0));
+  }
+
+  /** Returns a random rotation matrix. */
+  private SimpleMatrix getRotationMatrix() {
+    final int k = 3;
+    List<S2Point> points = getRandomFrame();
+    double[] coordinates = new double[points.size() * k];
+    for (int col = 0; col < points.size(); col++) {
+      for (int row = 0; row < 3; row++) {
+        coordinates[row * 3 + col] = points.get(col).get(row);
+      }
+    }
+    return new SimpleMatrix(3, 3, true, coordinates);
+  }
+
+  /** Returns the point "x" randomly perturbed within a radius of maxPerturb. */
+  private S2Point perturb(S2Point x, double maxPerturb) {
+    if (maxPerturb == 0) {
+      return x;
+    } else {
+      return samplePoint(S2Cap.fromAxisAngle(S2Point.normalize(x), S1Angle.radians(maxPerturb)));
+    }
+  }
+
+  /**
+   * Adds an edge from {@code v0} to {@code v1}, possibly splitting it
+   * recursively up to {@code maxSplits} times, and perturbing each vertex up to
+   * a distance of {@code maxPerturb}. No edge shorter than {@code minEdge} will
+   * be created due to splitting.
+   */
+  private void addEdge(S2Point v0, S2Point v1, int maxSplits, double maxPerturb,
+      double minEdge, S2PolygonBuilder builder) {
+    double length = v0.angle(v1);
+    if (maxSplits > 0 && rand.nextInt(2) == 0 && length >= 2 * minEdge) {
+      // Choose an interpolation parameter such that the length of each
+      // piece is at least minEdge.
+      double f = minEdge / length;
+      double t = f + (1 - 2 * f) * rand.nextDouble();
+
+      // Now add the two sub-edges recursively.
+      S2Point vmid = S2EdgeUtil.interpolate(t, v0, v1);
+      addEdge(v0, vmid, maxSplits - 1, maxPerturb, minEdge, builder);
+      addEdge(vmid, v1, maxSplits - 1, maxPerturb, minEdge, builder);
+    } else {
+      builder.addEdge(perturb(v0, maxPerturb), perturb(v1, maxPerturb));
+    }
+  }
+
+  /**
+   * Return true if "loop" matches any of the given candidates. The type of
+   * matching depends on whether any edge splitting was done.
+   */
+  private static boolean findLoop(S2Loop loop, List<S2Loop> candidates, int maxSplits,
+      double maxError) {
+    for (S2Loop candidate : candidates) {
+      if (maxSplits == 0) {
+        // The two loops should match except for vertex perturbations.
+        if (loop.boundaryApproxEquals(candidate, maxError)) {
           return true;
         }
-        // Otherwise continue looping. There may be more than one candidate
-        // starting offset since vertices are only matched approximately.
+      } else {
+        // The two loops may have different numbers of vertices.
+        if (loop.boundaryNear(candidate, maxError)) {
+          return true;
+        }
       }
     }
     return false;
   }
 
-  private boolean findLoop(S2Loop loop, List<S2Loop> candidates, double maxError) {
-    for (int i = 0; i < candidates.size(); ++i) {
-      if (loopsEqual(loop, candidates.get(i), maxError)) {
+  /**
+   * Returns true if any loops in {@code actual} are missing from
+   * {@code expected}, and log any loops from "actual" that are not present in
+   * "expected".
+   */
+  private static boolean findMissingLoops(List<S2Loop> actual, List<S2Loop> expected,
+      SimpleMatrix m, int maxSplits, double maxError, String label) {
+    for (int i = 0; i < actual.size(); ++i) {
+      if (!findLoop(actual.get(i), expected, maxSplits, maxError)) {
         return true;
       }
     }
     return false;
   }
 
-  boolean findMissingLoops(
-      List<S2Loop> actual, List<S2Loop> expected, double maxError, String label) {
-    // Dump any loops from "actual" that are not present in "expected".
-    boolean found = false;
-    for (int i = 0; i < actual.size(); ++i) {
-      if (findLoop(actual.get(i), expected, maxError)) {
-        continue;
-      }
-      System.err.print(label + " loop " + i + ":\n");
-      S2Loop loop = actual.get(i);
-      for (int j = 0; j < loop.numVertices(); ++j) {
-        S2Point p = loop.vertex(j);
-        System.err.print("   [" + p.x + ", " + p.y + ", " + p.z + "]\n");
-      }
-      found = true;
-    }
-    return found;
-  }
-
-  void addChain(Chain chain,
-      S2Point x,
-      S2Point y,
-      S2Point z,
-      double maxPerturbation,
-      S2PolygonBuilder builder) {
-
-    // Transform the given edge chain to the frame (x,y,z), perturb each vertex
-    // up to the given distance, and add it to the builder.
-
+  /**
+   * Transform the given edge chain to the reference frame given by
+   * {@code basis}, optionally split each edge into pieces and/or perturb the
+   * vertices up to the given radius, and add them to the builder.
+   */
+  private void addChain(Chain chain, SimpleMatrix basis, int maxSplits, double maxPerturb,
+      double minEdge, S2PolygonBuilder builder) {
     List<S2Point> vertices = Lists.newArrayList();
-    getVertices(chain.str, x, y, z, maxPerturbation, vertices);
+    getVertices(chain.str, basis, vertices);
     if (chain.closed) {
       vertices.add(vertices.get(0));
     }
     for (int i = 1; i < vertices.size(); ++i) {
-      builder.addEdge(vertices.get(i - 1), vertices.get(i));
+      addEdge(vertices.get(i - 1), vertices.get(i), maxSplits, maxPerturb, minEdge, builder);
     }
   }
 
-  boolean evalTristate(int state) {
+  private boolean evalTristate(int state) {
     return (state > 0) ? true : (state < 0) ? false : (rand.nextDouble() > 0.5);
   }
 
-  boolean testBuilder(TestCase test) {
-    for (int iter = 0; iter < 200; ++iter) {
-      // Initialize to the default options, which are changed below
-      S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
+  /**
+   * Returns true if the actual number of unused edges is inconsistent with the
+   * expected number of unused edges. If there are no splits, the number of
+   * unused edges should match exactly. Otherwise, both values should be zero or
+   * both should be non-zero.
+   */
+  private static boolean unexpectedUnusedEdgeCount(int numActual, int numExpected, int maxSplits) {
+    if (maxSplits == 0) {
+      return numActual != numExpected;
+    } else {
+      return (numActual > 0) != (numExpected > 0);
+    }
+  }
 
+  /**
+   * Print the unused edges, transformed back into their original
+   * latitude-longitude space in degrees.
+   */
+  private static String dumpUnusedEdges(List<S2Edge> unusedEdges, SimpleMatrix m, int numExpected) {
+    if (unusedEdges.size() == numExpected) {
+      return "";
+    }
+    List<String> lines = Lists.newArrayList();
+    // Get inverse to rotate coordinates back to starting location.
+    SimpleMatrix inverse = m.transpose();
+    lines.add(String.format("Wrong number of unused edges (%d expected, %d actual):",
+        numExpected, unusedEdges.size()));
+    for (int i = 0; i < unusedEdges.size(); ++i) {
+      S2LatLng p0 = new S2LatLng(rotate(unusedEdges.get(i).getStart(), inverse));
+      S2LatLng p1 = new S2LatLng(rotate(unusedEdges.get(i).getEnd(), inverse));
+      lines.add(String.format("  [%.6f, %.6f] -> [%.6f, %.5f]",
+          p0.lat().degrees(), p0.lng().degrees(),
+          p1.lat().degrees(), p1.lng().degrees()));
+    }
+    return Joiner.on("\n").join(lines) + "\n";
+  }
+
+  private boolean testBuilder(TestCase test) {
+    for (int iter = 0; iter < 500; ++iter) {
+      // Initialize to the default options, which are changed below
+      S2PolygonBuilder.Options options = new S2PolygonBuilder.Options(false, true);
       options.setUndirectedEdges(evalTristate(test.undirectedEdges));
       options.setXorEdges(evalTristate(test.xorEdges));
 
-      // Each test has a minimum and a maximum merge distance. The merge
-      // distance must be at least the given minimum to ensure that all expected
+      // Each test has a minimum and a maximum merge radius.  The merge
+      // radius must be at least the given minimum to ensure that all expected
       // merging will take place, and it must be at most the given maximum to
       // ensure that no unexpected merging takes place.
       //
       // If the minimum and maximum values are different, we have some latitude
-      // to perturb the vertices as long as the merge distance is adjusted
-      // appropriately. If "p" is the maximum perturbation distance, "min" and
-      // "max" are the min/max merge distances, and "m" is the actual merge
-      // distance for this test, we require that
+      // to perturb the vertices as long as the merge radius is adjusted
+      // appropriately.  If "p" is the maximum perturbation radius, "m" and
+      // "M" are the min/max merge radii, and "v" is the vertex merge radius
+      // for this test, we require that
       //
-      // x >= min + 2*p and x <= max - 2*p .
+      //       v >= m + 2*p    and    v <= M - 2*p .
       //
-      // This implies that p <= 0.25 * (max - min). We choose "p" so that it is
-      // zero half of the time, and otherwise chosen randomly up to this limit.
+      // This implies that we can choose "v" in the range [m,M], and then choose
+      //
+      //       p <= 0.5 * min(v - m, M - v) .
+      //
+      // Things get more complicated when we turn on edge splicing.  Since the
+      // min/max merge radii apply to vertices, we need to adjust them to ensure
+      // that vertices are not accidentally spliced into nearby edges.  Recall
+      // that the edge splice radius is defined as (e = v * f) where "f" is the
+      // edge splice fraction.  Letting "a" be the minimum angle between two
+      // edges at a vertex, we need to ensure that
+      //
+      //     e <= M * sin(a) - 2*p .
+      //
+      // The right-hand side is a lower bound on the distance from a vertex to a
+      // non-incident edge.  (To simplify things, we ignore this case and fold
+      // it into the case below.)
+      //
+      // If we also split edges by introducing new vertices, things get even
+      // more complicated.  First, the vertex merge radius "v" must be chosen
+      // such that
+      //
+      //      e >= m + 2*p    and  v <= M * sin(a) - 2*p .
+      //
+      // Note that the right-hand inequality now applies to "v" rather than "e",
+      // since a new vertex can be introduced anywhere along a split edge.
+      //
+      // Finally, we need to ensure that the new edges created by splitting an
+      // edge are not too short, otherwise unbounded vertex merging and/or edge
+      // splicing can occur.  Letting "g" be the minimum distance (gap) between
+      // vertices along a split edge, we require that
+      //
+      //      2 * sin(a/2) * (g - m) - 2*p >= v
+      //
+      // which is satisfied whenever
+      //
+      //      g >= m + (v + 2*p) / sin(a)
+      //
+      // This inequality is derived by considering two edges of length "g"
+      // meeting at an angle "a", where both vertices are perturbed by distance
+      // "p" toward each other, and the shared vertex is perturbed by the
+      // minimum merge radius "m" along one of the two edges.
 
       double minMerge = S1Angle.degrees(test.minMerge).radians();
       double maxMerge = S1Angle.degrees(test.maxMerge).radians();
-      double r = Math.max(0.0, 2 * rand.nextDouble() - 1);
-      double maxPerturbation = r * 0.25 * (maxMerge - minMerge);
+      double minSin = Math.sin(S1Angle.degrees(test.minVertexAngle).radians());
 
-      // Now we set the merge distance chosen randomly within the limits above
-      // (min + 2*p and max - 2*p). Half of the time we set the merge distance
-      // to the minimum value.
+      // Half of the time we allow edges to be split into smaller pieces
+      // (up to 5 levels, i.e. up to 32 pieces).
+      int maxSplits = Math.max(0, rand.nextInt(10) - 4);
+      if (!test.canSplit) {
+        maxSplits = 0;
+      }
 
-      r = Math.max(0.0, 2 * rand.nextDouble() - 1);
-      options.setMergeDistance(S1Angle.radians(
-          minMerge + 2 * maxPerturbation + r * (maxMerge - minMerge - 4 * maxPerturbation)));
+      // We choose randomly among two different values for the edge fraction,
+      // just to exercise that code.
+      double edgeFraction = options.getEdgeSpliceFraction();
+      double vertexMerge, maxPerturb;
+      if (minSin < edgeFraction && rand.nextInt(2) == 0) {
+        edgeFraction = minSin;
+      }
+      if (maxSplits == 0 && rand.nextInt(2) == 0) {
+        // Turn off edge splicing completely.
+        edgeFraction = 0;
+        vertexMerge = minMerge + smallFraction() * (maxMerge - minMerge);
+        maxPerturb = 0.5 * Math.min(vertexMerge - minMerge,
+                                maxMerge - vertexMerge);
+      } else {
+        // Splice edges.  These bounds also assume that edges may be split
+        // (see detailed comments above).
+        //
+        // If edges are actually split, need to bump up the minimum merge radius
+        // to ensure that split edges in opposite directions are unified.
+        // Otherwise there will be tiny degenerate loops created.
+        if (maxSplits > 0) {
+          minMerge += 1e-15;
+        }
+        minMerge /= edgeFraction;
+        maxMerge *= minSin;
+        assertTrue(maxMerge >= minMerge);
 
+        vertexMerge = minMerge + smallFraction() * (maxMerge - minMerge);
+        maxPerturb = 0.5 * Math.min(edgeFraction * (vertexMerge - minMerge),
+                                maxMerge - vertexMerge);
+      }
+
+      // We can perturb by any amount up to the maximum, but choosing a
+      // lower maximum decreases the error bounds when checking the output.
+      maxPerturb *= smallFraction();
+
+      // This is the minimum length of a split edge to prevent unexpected
+      // merging and/or splicing (the "g" value mentioned above).
+      double minEdge = minMerge + (vertexMerge + 2 * maxPerturb) / minSin;
+
+      options.setMergeDistance(S1Angle.radians(vertexMerge));
+      options.setEdgeSpliceFraction(edgeFraction);
       options.setValidate(true);
       S2PolygonBuilder builder = new S2PolygonBuilder(options);
 
       // On each iteration we randomly rotate the test case around the sphere.
       // This causes the S2PolygonBuilder to choose different first edges when
       // trying to build loops.
-      S2Point x = randomPoint();
-      S2Point y = S2Point.normalize(S2Point.crossProd(x, randomPoint()));
-      S2Point z = S2Point.normalize(S2Point.crossProd(x, y));
-
+      SimpleMatrix m = getRotationMatrix();
       for (Chain chain : test.chainsIn) {
-        addChain(chain, x, y, z, maxPerturbation, builder);
+        addChain(chain, m, maxSplits, maxPerturb, minEdge, builder);
       }
       List<S2Loop> loops = Lists.newArrayList();
       List<S2Edge> unusedEdges = Lists.newArrayList();
@@ -398,31 +603,68 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       List<S2Loop> expected = Lists.newArrayList();
       for (String loop : test.loopsOut) {
         List<S2Point> vertices = Lists.newArrayList();
-        getVertices(loop, x, y, z, 0, vertices);
+        getVertices(loop, m, vertices);
         expected.add(new S2Loop(vertices));
       }
+
       // We assume that the vertex locations in the expected output polygon
       // are separated from the corresponding vertex locations in the input
-      // edges by at most half of the minimum merge distance. Essentially
+      // edges by at most half of the minimum merge radius.  Essentially
       // this means that the expected output vertices should be near the
       // centroid of the various input vertices.
-      double maxError = 0.5 * minMerge + maxPerturbation;
+      //
+      // If any edges were split, we need to allow a bit more error due to
+      // inaccuracies in the interpolated positions.  Similarly, if any vertices
+      // were perturbed, we need to bump up the error to allow for numerical
+      // errors in the actual perturbation.
+      double maxError = 0.5 * minMerge + maxPerturb;
+      if (maxSplits > 0 || maxPerturb > 0) {
+        maxError += 1e-15;
+      }
 
-      // Note single "|" below so that we print both sets of loops.
-      if (findMissingLoops(loops, expected, maxError, "Actual")
-          | findMissingLoops(expected, loops, maxError, "Expected")) {
-        System.err.print(
-            "During iteration " + iter + ", undirected: " + options.getUndirectedEdges() + ", xor: "
-                + options.getXorEdges() + "\n\n");
+      if (findMissingLoops(loops, expected, m, maxSplits, maxError, "Actual") ||
+          findMissingLoops(expected, loops, m, maxSplits, maxError, "Expected") ||
+          unexpectedUnusedEdgeCount(unusedEdges.size(), test.numUnusedEdges, maxSplits)) {
+        // We found a problem.  Print out the relevant info.
+        log.severe(String.format(
+            "During iteration %d:\n  undirected: %b\n  xor: %b\n" +
+                "  maxSplits: %d\n  maxPerturb: %.6g\n" +
+                "  vertexMerge_radius: %.6g\n  edgeSpliceFraction: %.6g\n" +
+                "  minEdge: %.6g\n  maxError: %.6g\n%s%s%s",
+            iter, options.getUndirectedEdges(), options.getXorEdges(),
+            maxSplits, S1Angle.radians(maxPerturb).degrees(),
+            options.getMergeDistance().degrees(),
+            options.getEdgeSpliceFraction(),
+            S1Angle.radians(minEdge).degrees(),
+            S1Angle.radians(maxError).degrees(),
+            loopsToString("Expected", m, expected),
+            loopsToString("Actual", m, loops),
+            dumpUnusedEdges(unusedEdges, m, test.numUnusedEdges)));
+        loops.clear();
+        expected.clear();
         return false;
       }
-      if (unusedEdges.size() != test.numUnusedEdges) {
-        System.err.print("Wrong number of unused edges: " + unusedEdges.size() + "%d (should be "
-            + test.numUnusedEdges + ")\n");
-        return false;
+
+      loops.clear();
+      expected.clear();
+    }
+
+    return true;
+  }
+
+  private static String loopsToString(String label, SimpleMatrix m, List<S2Loop> actual) {
+    List<String> lines = Lists.newArrayList();
+    for (int i = 0; i < actual.size(); i++) {
+      lines.add(String.format("%s loop %d:", label, i));
+      S2Loop loop = actual.get(i);
+      SimpleMatrix inverse = m.transpose();
+      for (int j = 0; j < loop.numVertices(); ++j) {
+        S2LatLng ll = new S2LatLng(rotate(loop.vertex(j), inverse));
+        lines.add(String.format("  [%.6f, %.6f]",
+            ll.lat().degrees(), ll.lng().degrees()));
       }
     }
-    return true;
+    return Joiner.on("\n").join(lines) + "\n";
   }
 
   public void testAssembleLoops() {
