@@ -729,6 +729,28 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
+  public void initToDifference(final S2Polygon a, final S2Polygon b) {
+    initToDifferenceSloppy(a, b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+  }
+
+  public void initToDifferenceSloppy(
+      final S2Polygon a, final S2Polygon b, S1Angle vertexMergeRadius) {
+    Preconditions.checkState(numLoops() == 0);
+
+    // We want the boundary of A clipped to the exterior of B,
+    // plus the reversed boundary of B clipped to the interior of A,
+    // plus one copy of any edge in A that is also a reverse edge in B.
+
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
+    options.setMergeDistance(vertexMergeRadius);
+    S2PolygonBuilder builder = new S2PolygonBuilder(options);
+    clipBoundary(a, false, b, true, true, true, builder);
+    clipBoundary(b, true, a, false, false, false, builder);
+    if (!builder.assemblePolygon(this, null)) {
+      log.severe("Bad directed edges");
+    }
+  }
+
   /**
    * Return a polygon which is the union of the given polygons. Note: clears the
    * List!

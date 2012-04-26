@@ -19,12 +19,14 @@ package com.google.common.geometry;
 import com.google.common.collect.Lists;
 
 import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * Tests for {@link S2Polygon}.
  *
  */
 public strictfp class S2PolygonTest extends GeometryTestCase {
+  private static Logger logger = Logger.getLogger(S2PolygonTest.class.getName());
 
   // A set of nested loops around the point 0:0 (lat:lng).
   // Every vertex of NEAR0 is a vertex of NEAR1.
@@ -59,6 +61,9 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
       "-1:-9, -9:-9, -9:9, 9:9, 9:-9, 1:-9, " + "1:-175, 9:-175, 9:175, -9:175, -9:-175, -1:-175;";
   private static final String NEAR_FAR2 =
       "-8:-4, 8:-4, 2:15, 2:170, 8:-175, -8:-175, -2:170, -2:15;";
+
+  // Loops that result from intersection of other loops.
+  private static final String FAR_SOUTH_H = "0:-180, 0:90, -60:90, 0:-90;";
 
   // Two rectangles that are "adjacent", but rather than having common edges,
   // those edges are slighly off. A third rectangle that is not adjacent to
@@ -130,6 +135,10 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   S2Polygon adj1 = makePolygon(ADJACENT1);
   S2Polygon unAdj = makePolygon(UN_ADJACENT);
 
+  S2Polygon farH = makePolygon(FAR_HEMI);
+  S2Polygon southH = makePolygon(SOUTH_HEMI);
+  S2Polygon farHSouthH = makePolygon(FAR_SOUTH_H);
+
   private void assertRelation(S2Polygon a, S2Polygon b, int contains, boolean intersects) {
     assertEquals(a.contains(b), contains > 0);
     assertEquals(b.contains(a), contains < 0);
@@ -183,11 +192,125 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertRelation(nf2n2f210s210ab, n32s0b, 1, true);
   }
 
-  private void checkEqual(S2Polygon a, S2Polygon b) {
-    final double MAX_ERROR = 1e-31;
+  private static class TestCase {
+    final String a;
+    final String b;
+    final String a_and_b;
+    final String a_or_b;
+    final String a_minus_b;
 
+    TestCase(
+        String a, String b, String a_and_b, String a_or_b, String a_minus_b) {
+      this.a = a;
+      this.b = b;
+      this.a_and_b = a_and_b;
+      this.a_or_b = a_or_b;
+      this.a_minus_b = a_minus_b;
+    }
+  };
+
+  private static TestCase[] testCases = {
+    // Two triangles that share an edge.
+    new TestCase(
+        "4:2, 3:1, 3:3;",
+        "3:1, 2:2, 3:3;",
+        "",
+        "4:2, 3:1, 2:2, 3:3;",
+        "4:2, 3:1, 3:3;"),
+    // Two vertical bars and a horizontal bar connecting them.
+    new TestCase(
+        "0:0, 0:2, 3:2, 3:0;   0:3, 0:5, 3:5, 3:3;",
+        "1:1, 1:4, 2:4, 2:1;",
+        "1:1, 1:2, 2:2, 2:1;   1:3, 1:4, 2:4, 2:3;",
+        "0:0, 0:2, 1:2, 1:3, 0:3, 0:5, 3:5, 3:3, 2:3, 2:2, 3:2, 3:0;",
+        "0:0, 0:2, 1:2, 1:1, 2:1, 2:2, 3:2, 3:0;   " +
+            "0:3, 0:5, 3:5, 3:3, 2:3, 2:4, 1:4, 1:3;"),
+    // Two vertical bars and two horizontal bars centered around S2.origin().
+    new TestCase(
+        "1:88, 1:93, 2:93, 2:88;   -1:88, -1:93, 0:93, 0:88;",
+        "-2:89, -2:90, 3:90, 3:89;   -2:91, -2:92, 3:92, 3:91;",
+        "1:89, 1:90, 2:90, 2:89;   1:91, 1:92, 2:92, 2:91;   " +
+            "-1:89, -1:90, 0:90, 0:89;   -1:91, -1:92, 0:92, 0:91;",
+        "-1:88, -1:89, -2:89, -2:90, -1:90, -1:91, -2:91, -2:92, -1:92," +
+            "-1:93, 0:93, 0:92, 1:92, 1:93, 2:93, 2:92, 3:92, 3:91, 2:91," +
+            "2:90, 3:90, 3:89, 2:89, 2:88, 1:88, 1:89, 0:89, 0:88;   " +
+            "0:90, 0:91, 1:91, 1:90;",
+        "1:88, 1:89, 2:89, 2:88;   1:90, 1:91, 2:91, 2:90;   " +
+            "1:92, 1:93, 2:93, 2:92;   -1:88, -1:89, 0:89, 0:88;   " +
+            "-1:90, -1:91, 0:91, 0:90;   -1:92, -1:93, 0:93, 0:92;"),
+    // Two interlocking square doughnuts centered around -S2.origin().
+    new TestCase(
+        "-1:-93, -1:-89, 3:-89, 3:-93;   0:-92, 0:-90, 2:-90, 2:-92;",
+        "-3:-91, -3:-87, 1:-87, 1:-91;   -2:-90, -2:-88, 0:-88, 0:-90;",
+        "-1:-91, -1:-90, 0:-90, 0:-91;   0:-90, 0:-89, 1:-89, 1:-90;",
+        "-1:-93, -1:-91, -3:-91, -3:-87, 1:-87, 1:-89, 3:-89, 3:-93;   " +
+            "0:-92, 0:-91, 1:-91, 1:-90, 2:-90, 2:-92;   " +
+            "-2:-90, -2:-88, 0:-88, 0:-89, -1:-89, -1:-90;",
+        "-1:-93, -1:-91, 0:-91, 0:-92, 2:-92, 2:-90, 1:-90, 1:-89, 3:-89," +
+            "3:-93;   -1:-90, -1:-89, 0:-89, 0:-90;"),
+    // An incredibly thin triangle intersecting a square, such that the two
+    // intersection points of the triangle with the square are identical.
+    // This results in a degenerate loop that needs to be handled correctly.
+    new TestCase(
+        "10:44, 10:46, 12:46, 12:44;",
+        "11:45, 89:45.00000000000001, 90:45;",
+        "",  // Empty intersection!
+        // Original square with extra vertex, and triangle disappears (due to
+        // default vertex_merge_radius of
+        // S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE).
+        "10:44, 10:46, 12:46, 12:45, 12:44;",
+        "10:44, 10:46, 12:46, 12:45, 12:44;")
+  };
+
+  public void testOperations() {
+    S2Polygon farSouth = new S2Polygon();
+    farSouth.initToIntersection(farH, southH);
+    checkEqual(farSouth, farHSouthH);
+
+    int testNumber = 0;
+    for (TestCase test : testCases) {
+      logger.info("Polygon operation test case " + testNumber++);
+      S2Polygon a = makePolygon(test.a);
+      S2Polygon b = makePolygon(test.b);
+      S2Polygon expected_a_and_b = makePolygon(test.a_and_b);
+      S2Polygon expected_a_or_b = makePolygon(test.a_or_b);
+      S2Polygon expected_a_minus_b = makePolygon(test.a_minus_b);
+
+      // The intersections in the "expected" data were computed in lat-lng
+      // space, while the actual intersections are computed using geodesics.
+      // The error due to this depends on the length and direction of the line
+      // segment being intersected, and how close the intersection is to the
+      // endpoints of the segment.  The worst case is for a line segment between
+      // two points at the same latitude, where the intersection point is in the
+      // middle of the segment.  In this case the error is approximately
+      // (p * t^2) / 8, where "p" is the absolute latitude in radians, "t" is
+      // the longitude difference in radians, and both "p" and "t" are small.
+      // The test cases all have small latitude and longitude differences.
+      // If "p" and "t" are converted to degrees, the following error bound is
+      // valid as long as (p * t^2 < 150).
+
+      final double maxError = 1e-4;
+
+      S2Polygon a_and_b = new S2Polygon();
+      S2Polygon a_or_b = new S2Polygon();
+      S2Polygon a_minus_b = new S2Polygon();
+      a_and_b.initToIntersection(a, b);
+      checkEqual(a_and_b, expected_a_and_b, maxError);
+      a_or_b.initToUnion(a, b);
+      tryUnion(a, b);
+      checkEqual(a_or_b, expected_a_or_b, maxError);
+      a_minus_b.initToDifference(a, b);
+      checkEqual(a_minus_b, expected_a_minus_b, maxError);
+    }
+  }
+
+  private void checkEqual(S2Polygon a, S2Polygon b) {
+    checkEqual(a, b, 1e-31);
+  }
+
+  private void checkEqual(S2Polygon a, S2Polygon b, final double maxError) {
     if (a.isNormalized() && b.isNormalized()) {
-      boolean r = a.boundaryApproxEquals(b, MAX_ERROR);
+      boolean r = a.boundaryApproxEquals(b, maxError);
       assertTrue(r);
     } else {
       S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.UNDIRECTED_XOR);
@@ -197,7 +320,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
       assertTrue(builder.assemblePolygon(a2, null));
       builder.addPolygon(b);
       assertTrue(builder.assemblePolygon(b2, null));
-      assertTrue(a2.boundaryApproxEquals(b2, MAX_ERROR));
+      assertTrue(a2.boundaryApproxEquals(b2, maxError));
     }
   }
 
