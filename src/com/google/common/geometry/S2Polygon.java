@@ -812,6 +812,124 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
+  /**
+   * Intersect this polygon with the polyline {@code in} and returns the
+   * resulting zero or more polylines. The polylines are ordered in the order
+   * they would be encountered by traversing {@code in} from beginning to end.
+   * Note that the output may include polylines with only one vertex, but
+   * there will not be any zero-vertex polylines.
+   *
+   * <p>This is equivalent to calling intersectWithPolylineSloppy() with the
+   * "vertexMergeRadius" set to S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE.
+   */
+  public List<S2Polyline> intersectWithPolyline(S2Polyline in) {
+    return intersectWithPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+  }
+
+  /**
+   * Similar to {@code intersectWithPolyline}, except that vertices will be
+   * dropped as necessary to ensure that all adjacent vertices in the
+   * sequence obtained by concatenating the output polylines will be
+   * farther than {@code vertexMergeRadius} apart.  Note that this can change
+   * the number of output polylines and/or yield single-vertex polylines.
+   */
+  public List<S2Polyline> intersectWithPolylineSloppy(
+      S2Polyline in, S1Angle vertexMergeRadius) {
+    return internalClipPolyline(false, in, vertexMergeRadius);
+  }
+
+  /**
+   * Same as {@code intersectWithPolyline}, but subtracts this polygon from
+   * the given polyline.
+   */
+  public List<S2Polyline> subtractFromPolyline(S2Polyline in) {
+    return subtractFromPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+  }
+
+  /**
+   * Same as {@code intersectWithPolylineSloppy}, but subtracts this polygon
+   * from the given polyline.
+   */
+  public List<S2Polyline> subtractFromPolylineSloppy(
+      S2Polyline in, S1Angle vertexMergeRadius) {
+    return internalClipPolyline(true, in, vertexMergeRadius);
+  }
+
+  /**
+  * Clip the polyline {@code a} to the interior of this polygon.
+  * The resulting polyline(s) will be returned. If {@code invert} is
+  * {@code true}, we clip {@code a} to the exterior of this polygon instead.
+  * Vertices will be dropped such that adjacent vertices will not be closer
+  * than {@code mergeRadius}.
+  *
+  * <p>We do the intersection/subtraction by walking the polyline edges.
+  * For each edge, we compute all intersections with the polygon boundary
+  * and sort them in increasing order of distance along that edge.
+  * We then divide the intersection points into pairs, and output a
+  * clipped polyline segment for each one. We keep track of whether we're
+  * inside or outside of the polygon at all times to decide which segments
+  * to output.
+  */
+  private List<S2Polyline> internalClipPolyline(
+      boolean invert, S2Polyline a, S1Angle mergeRadius) {
+
+    List<S2Polyline> out = Lists.newArrayList();
+    List<ParametrizedS2Point> intersections = Lists.newArrayList();
+    List<S2Point> vertices = Lists.newArrayList();
+    S2PolygonIndex polyIndex = new S2PolygonIndex(this, false);
+    int n = a.numVertices();
+    boolean inside = contains(a.vertex(0)) ^ invert;
+
+    for (int j = 0; j < n - 1; j++) {
+      S2Point a0 = a.vertex(j);
+      S2Point a1 = a.vertex(j + 1);
+      clipEdge(a0, a1, polyIndex, true, intersections);
+      if (inside) {
+        intersections.add(new ParametrizedS2Point(0, a0));
+      }
+      inside = (intersections.size() & 1) != 0;
+      // assert ((contains(a1) ^ invert) == inside);
+      if (inside) {
+        intersections.add(new ParametrizedS2Point(1, a1));
+      }
+      Collections.sort(intersections);
+      // At this point we have a sorted array of vertex pairs representing
+      // the edge(s) obtained after clipping (a0,a1) against the polygon.
+      for (int k = 0; k < intersections.size(); k += 2) {
+        if (intersections.get(k).equals(intersections.get(k + 1))) {
+          continue;
+        }
+        S2Point v0 = intersections.get(k).getPoint();
+        S2Point v1 = intersections.get(k + 1).getPoint();
+        // If the gap from the previous vertex to this one is large
+        // enough, start a new polyline.
+        if (!vertices.isEmpty()) {
+          S2Point back = vertices.get(vertices.size() - 1);
+          if (back.angle(v0) > mergeRadius.radians()) {
+            out.add(new S2Polyline(vertices));
+            vertices.clear();
+          }
+        }
+        // Append this segment to the current polyline, ignoring any
+        // vertices that are too close to the previous vertex.
+        if (vertices.isEmpty()) {
+          vertices.add(v0);
+        }
+        S2Point back2 = vertices.get(vertices.size() - 1);
+        if (back2.angle(v1) > mergeRadius.radians()) {
+          vertices.add(v1);
+        }
+      }
+      intersections.clear();
+    }
+
+    if (!vertices.isEmpty()) {
+      out.add(new S2Polyline(vertices));
+    }
+
+    return out;
+  }
+
   public boolean isNormalized() {
     Multiset<S2Point> vertices = HashMultiset.<S2Point>create();
     S2Loop lastParent = null;
@@ -1186,6 +1304,16 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         return compareTime;
       }
       return point.compareTo(o.point);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (other instanceof ParametrizedS2Point) {
+        ParametrizedS2Point x = (ParametrizedS2Point) other;
+        return time == x.time && point.equals(x.point);
+      } else {
+        return false;
+      }
     }
   }
 }

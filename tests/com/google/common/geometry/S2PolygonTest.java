@@ -28,6 +28,25 @@ import java.util.logging.Logger;
 public strictfp class S2PolygonTest extends GeometryTestCase {
   private static Logger logger = Logger.getLogger(S2PolygonTest.class.getName());
 
+  /**
+   * The error margin used when comparing the actual and expected results of
+   * constructive geometry operations.
+   * The intersections in the expected data were computed in lat-lng
+   * space, while the actual intersections are computed using geodesics.
+   * The error due to this depends on the length and direction of the line
+   * segment being intersected, and how close the intersection is to the
+   * endpoints of the segment. The worst case is for a line segment between
+   * two points at the same latitude, where the intersection point is in the
+   * middle of the segment.  In this case the error is approximately
+   * {@code (p * t^2) / 8}, where {@code p} is the absolute latitude in
+   * radians, {@code t} is the longitude difference in radians, and both
+   * {@code p} and {@code t} are small. The test cases all have small latitude
+   * and longitude differences. If {@code p} and {@code t} are converted to
+   * degrees, the following error bound is valid as long as
+   * {@code (p * t^2 < 150)}.
+   */
+  private static final double OPERATIONS_MAX_ERROR = 1e-4;
+
   // A set of nested loops around the point 0:0 (lat:lng).
   // Every vertex of NEAR0 is a vertex of NEAR1.
   private static final String NEAR0 = "-1:0, 0:1, 1:0, 0:-1;";
@@ -64,6 +83,13 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   // Loops that result from intersection of other loops.
   private static final String FAR_SOUTH_H = "0:-180, 0:90, -60:90, 0:-90;";
+
+  // Rectangles that form a cross, with only shared vertices, no crossing edges.
+  private static final String CROSS1 =
+      "-2:1, -1:1, 1:1, 2:1, 2:-1, 1:-1, -1:-1, -2:-1;";
+  // A hole outside the intersecting region.
+  private static final String CROSS1_SIDE_HOLE =
+      "-1.5:0.5, -1.2:0.5, -1.2:-0.5, -1.5:-0.5;";
 
   // Two rectangles that are "adjacent", but rather than having common edges,
   // those edges are slighly off. A third rectangle that is not adjacent to
@@ -138,6 +164,9 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   S2Polygon farH = makePolygon(FAR_HEMI);
   S2Polygon southH = makePolygon(SOUTH_HEMI);
   S2Polygon farHSouthH = makePolygon(FAR_SOUTH_H);
+
+  S2Polygon cross1 = makePolygon(CROSS1);
+  S2Polygon cross1SideHole = makePolygon(CROSS1_SIDE_HOLE);
 
   private void assertRelation(S2Polygon a, S2Polygon b, int contains, boolean intersects) {
     assertEquals(a.contains(b), contains > 0);
@@ -267,40 +296,116 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     farSouth.initToIntersection(farH, southH);
     checkEqual(farSouth, farHSouthH);
 
-    int testNumber = 0;
-    for (TestCase test : testCases) {
-      logger.info("Polygon operation test case " + testNumber++);
+    for(int testNumber = 0; testNumber < testCases.length; testNumber++) {
+      TestCase test = testCases[testNumber];
+      logger.info("Polygon operation test case " + testNumber);
       S2Polygon a = makePolygon(test.a);
       S2Polygon b = makePolygon(test.b);
       S2Polygon expected_a_and_b = makePolygon(test.a_and_b);
       S2Polygon expected_a_or_b = makePolygon(test.a_or_b);
       S2Polygon expected_a_minus_b = makePolygon(test.a_minus_b);
 
-      // The intersections in the "expected" data were computed in lat-lng
-      // space, while the actual intersections are computed using geodesics.
-      // The error due to this depends on the length and direction of the line
-      // segment being intersected, and how close the intersection is to the
-      // endpoints of the segment.  The worst case is for a line segment between
-      // two points at the same latitude, where the intersection point is in the
-      // middle of the segment.  In this case the error is approximately
-      // (p * t^2) / 8, where "p" is the absolute latitude in radians, "t" is
-      // the longitude difference in radians, and both "p" and "t" are small.
-      // The test cases all have small latitude and longitude differences.
-      // If "p" and "t" are converted to degrees, the following error bound is
-      // valid as long as (p * t^2 < 150).
-
-      final double maxError = 1e-4;
-
       S2Polygon a_and_b = new S2Polygon();
       S2Polygon a_or_b = new S2Polygon();
       S2Polygon a_minus_b = new S2Polygon();
       a_and_b.initToIntersection(a, b);
-      checkEqual(a_and_b, expected_a_and_b, maxError);
+      checkEqual(a_and_b, expected_a_and_b, OPERATIONS_MAX_ERROR);
       a_or_b.initToUnion(a, b);
       tryUnion(a, b);
-      checkEqual(a_or_b, expected_a_or_b, maxError);
+      checkEqual(a_or_b, expected_a_or_b, OPERATIONS_MAX_ERROR);
       a_minus_b.initToDifference(a, b);
-      checkEqual(a_minus_b, expected_a_minus_b, maxError);
+      checkEqual(a_minus_b, expected_a_minus_b, OPERATIONS_MAX_ERROR);
+    }
+  }
+
+  private void polylineIntersectionSharedEdgeTest(
+      S2Polygon p, int startVertex, int direction) {
+    logger.info("Polyline intersection shared edge test start=" +
+                startVertex + " direction=" + direction);
+    List<S2Point> points = Lists.newArrayList();
+    points.add(p.loop(0).vertex(startVertex));
+    points.add(p.loop(0).vertex(startVertex + direction));
+    S2Polyline polyline = new S2Polyline(points);
+    List<S2Polyline> polylines;
+    if (direction < 0) {
+      polylines = p.intersectWithPolyline(polyline);
+      assertEquals(0, polylines.size());
+      polylines = p.subtractFromPolyline(polyline);
+      assertEquals(1, polylines.size());
+      assertEquals(2, polylines.get(0).numVertices());
+      assertEquals(points.get(0), polylines.get(0).vertex(0));
+      assertEquals(points.get(1), polylines.get(0).vertex(1));
+    } else {
+      polylines = p.intersectWithPolyline(polyline);
+      assertEquals(1, polylines.size());
+      assertEquals(2, polylines.get(0).numVertices());
+      assertEquals(points.get(0), polylines.get(0).vertex(0));
+      assertEquals(points.get(1), polylines.get(0).vertex(1));
+      polylines = p.subtractFromPolyline(polyline);
+      assertEquals(0, polylines.size());
+    }
+  }
+
+  /**
+   * This tests polyline-polyline intersections.
+   * It covers the same edge cases as {@code testOperations} and also adds some
+   * extra tests for shared edges.
+   */
+  public void testPolylineIntersection() {
+    for (int v = 0; v < 3; ++v) {
+      polylineIntersectionSharedEdgeTest(cross1, v, 1);
+      polylineIntersectionSharedEdgeTest(cross1, v + 1, -1);
+      polylineIntersectionSharedEdgeTest(cross1SideHole, v, 1);
+      polylineIntersectionSharedEdgeTest(cross1SideHole, v + 1, -1);
+    }
+
+    // This duplicates some of the tests in testOperations by
+    // converting the outline of polygon A to a polyline then intersecting
+    // it with the polygon B. It then converts B to a polyline and intersects
+    // it with A. It then feeds all of the results into a polygon builder and
+    // tests that the output is equal to doing an intersection between A and B.
+
+    for(int testNumber = 0; testNumber < testCases.length; testNumber++) {
+      TestCase test = testCases[testNumber];
+      logger.info("Polyline intersection test case " + testNumber);
+      S2Polygon a = makePolygon(test.a);
+      S2Polygon b = makePolygon(test.b);
+      S2Polygon expected_a_and_b = makePolygon(test.a_and_b);
+
+      List<S2Point> points = Lists.newArrayList();
+      List<S2Polyline> polylines = Lists.newArrayList();
+      for (int ab = 0; ab < 2; ab++) {
+        S2Polygon tmp = (ab == 1) ? a : b;
+        S2Polygon tmp2 = (ab == 1) ? b : a;
+        for (int l = 0; l < tmp.numLoops(); l++) {
+          points.clear();
+          if (tmp.loop(l).isHole()) {
+            for (int v = tmp.loop(l).numVertices(); v >= 0; v--) {
+              points.add(tmp.loop(l).vertex(v));
+            }
+          } else {
+            for (int v = 0; v <= tmp.loop(l).numVertices(); v++) {
+              points.add(tmp.loop(l).vertex(v));
+            }
+          }
+          polylines.addAll(tmp2.intersectWithPolyline(new S2Polyline(points)));
+        }
+      }
+
+      S2PolygonBuilder builder = new S2PolygonBuilder(
+          S2PolygonBuilder.Options.DIRECTED_XOR);
+      for (int i = 0; i < polylines.size(); i++) {
+        for (int j = 0; j < polylines.get(i).numVertices() - 1; j++) {
+          builder.addEdge(polylines.get(i).vertex(j),
+                          polylines.get(i).vertex(j + 1));
+          logger.info(" ... Adding edge: " + polylines.get(i).vertex(j) +
+                      " - " + polylines.get(i).vertex(j + 1));
+        }
+      }
+
+      S2Polygon a_and_b = new S2Polygon();
+      assertTrue(builder.assemblePolygon(a_and_b, null));
+      checkEqual(a_and_b, expected_a_and_b, OPERATIONS_MAX_ERROR);
     }
   }
 
