@@ -161,6 +161,9 @@ public strictfp class S2EdgeUtil {
    * of its endpoints, e.g. consider an edge that passes through the north pole.
    */
   public static class RectBounder {
+    /** Max error in calculating lat values of edge interiors. */
+    private static final double LAT_ERROR = 1.0E-15;
+
     // The previous vertex in the chain.
     private S2Point a;
 
@@ -206,9 +209,11 @@ public strictfp class S2EdgeUtil {
           double absLat = Math.acos(Math.abs(aCrossB.get(2) / aCrossB.norm()));
           R1Interval lat = bound.lat();
           if (da < 0) {
+            absLat = Math.min(S2.M_PI_2, absLat + LAT_ERROR);
             // It's possible that absLat < lat.lo() due to numerical errors.
             lat = new R1Interval(lat.lo(), Math.max(absLat, bound.lat().hi()));
           } else {
+            absLat = Math.max(-S2.M_PI_2, absLat - LAT_ERROR);
             lat = new R1Interval(Math.min(-absLat, bound.lat().lo()), lat.hi());
           }
           bound = new S2LatLngRect(lat, bound.lng());
@@ -225,7 +230,6 @@ public strictfp class S2EdgeUtil {
     public S2LatLngRect getBound() {
       return bound;
     }
-
   }
 
   /**
