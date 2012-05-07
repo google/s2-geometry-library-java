@@ -30,8 +30,6 @@ import java.util.logging.Logger;
  *
  */
 public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
-  private static final Logger log = Logger.getLogger(S2PolygonBuilderTest.class.getCanonicalName());
-
   /** Holds the original S2Loop loglevel. */
   private Level oldLoopLevel;
   /** Holds the original S2Polygon loglevel. */
@@ -72,221 +70,211 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     }
   }
 
-  /** A single test case to execute. */
-  private static final class TestCase {
-    /** +1 = undirected, -1 = directed, 0 = either one. */
-    public final int undirectedEdges;
-
-    /** +1 = XOR, -1 = don't XOR, 0 = either one. */
-    public final int xorEdges;
-
-    /** Can edges be split for this test case. */
-    public final boolean canSplit;
-
-    /** Minimum merge distance for this test case in degrees. */
-    public final double minMerge;
-
-    /** Maximum merge distance for this test case in degrees. */
-    public final double maxMerge;
-
-    /** Minimum angle in degrees between any two edges *after* vertex merging. */
-    public final double minVertexAngle;
-
-    /** Each test case consists of a set of input loops and polylines. */
-    public final Chain[] chainsIn;
-
-    /** The expected set of output loops, directed appropriately. */
-    public final String[] loopsOut;
-
-    /** The expected number of unused edges. */
-    public final int numUnusedEdges;
-
-    public TestCase(int undirectedEdges,
-        int xorEdges,
-        boolean canSplit,
-        double minMerge,
-        double maxMerge,
-        double minVertexAngle,
-        Chain[] chainsIn,
-        String[] loopsOut,
-        int numUnusedEdges) {
-      this.undirectedEdges = undirectedEdges;
-      this.xorEdges = xorEdges;
-      this.canSplit = canSplit;
-      this.minMerge = minMerge;
-      this.maxMerge = maxMerge;
-      this.minVertexAngle = minVertexAngle;
-      this.chainsIn = chainsIn;
-      this.loopsOut = loopsOut;
-      this.numUnusedEdges = numUnusedEdges;
-    }
+  /** Test 0: No loops. */
+  public void testNoLoops() {
+    Chain[] chainsIn = {new Chain(null, false)};
+    String[] loopsOut = {};
+    runTest(0, 0, true, 0.0, 10.0, 90.0, chainsIn, loopsOut, 0);
   }
 
-  private static final TestCase[] testCases = {
-      // 0: No loops.
-      new TestCase(0, 0, true, 0.0, 10.0, 90.0,
-          new Chain[]{new Chain(null, false)},
-          new String[]{}, 0),
+  /** Test 1: One loop with some extra edges. */
+  public void testLoopWithExtras() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:10, 10:5", true),
+        new Chain("0:0, 5:5", false),
+        new Chain("10:5, 20:7, 30:10, 40:15, 50:3, 60:-20", false)};
+    String[] loopsOut = {"0:0, 0:10, 10:5"};
+    runTest(0, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 6);
+  }
 
-      // 1: One loop with some extra edges.
-      new TestCase(0, 0, true, 0.0, 4.0, 15.0,
-          new Chain[]{
-              new Chain("0:0, 0:10, 10:5", true),
-              new Chain("0:0, 5:5", false),
-              new Chain("10:5, 20:7, 30:10, 40:15, 50:3, 60:-20", false)},
-        new String[]{"0:0, 0:10, 10:5"}, 6),
+  /**
+   * Test 2: One loop that has an edge removed by XORing, plus lots of extra
+   * edges.
+   */
+  public void testLoopEdgeXorWithExtras() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:10, 5:15, 10:10, 10:0", true),
+        new Chain("10:10, 12:12, 14:14, 16:16, 18:18", false),
+        new Chain("14:14, 14:16, 14:18, 14:20", false),
+        new Chain("14:18, 16:20, 18:22", false),
+        new Chain("18:12, 16:12, 14:12, 12:12", false),
+        new Chain("20:18, 18:16, 16:14, 14:12", false),
+        new Chain("20:14, 18:14, 16:14", false),
+        new Chain("5:15, 0:10", false)};
+    String[] loopsOut = {};
+    runTest(0, 1, true, 0.0, 1.0, 45.0, chainsIn, loopsOut, 21);
+  }
 
-      // 2: One loop that has an edge removed by XORing, plus lots of extra edges.
-      new TestCase(0, 1, true, 0.0, 1.0, 45.0,
-          new Chain[]{
-              new Chain("0:0, 0:10, 5:15, 10:10, 10:0", true),
-              new Chain("10:10, 12:12, 14:14, 16:16, 18:18", false),
-              new Chain("14:14, 14:16, 14:18, 14:20", false),
-              new Chain("14:18, 16:20, 18:22", false),
-              new Chain("18:12, 16:12, 14:12, 12:12", false),
-              new Chain("20:18, 18:16, 16:14, 14:12", false),
-              new Chain("20:14, 18:14, 16:14", false),
-              new Chain("5:15, 0:10", false)},
-          new String[]{}, 21),
+  /** Test 3: Three loops (two shells and one hole) that combine into one. */
+  public void testOneShellTwoHoles() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:10, 5:10, 10:10, 10:5, 10:0", true),
+        new Chain("0:10, 0:15, 5:15, 5:10", true),
+        new Chain("10:10, 5:10, 5:5, 10:5", true)};
+    String[] loopsOut = {"0:0, 0:10, 0:15, 5:15, 5:10, 5:5, 10:5, 10:0"};
+    // XOR.
+    runTest(0, 1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 0);
+  }
 
-      // 3: Three loops (two shells and one hole) that combine into one.
-      new TestCase(0, 1, true, 0.0, 4.0, 90.0,  // XOR
-          new Chain[]{
-              new Chain("0:0, 0:10, 5:10, 10:10, 10:5, 10:0", true),
-              new Chain("0:10, 0:15, 5:15, 5:10", true),
-              new Chain("10:10, 5:10, 5:5, 10:5", true)},
-          new String[]{"0:0, 0:10, 0:15, 5:15, 5:10, 5:5, 10:5, 10:0"}, 0),
+  /**
+   * Test 4: A big CCW triangle contain 3 CW triangular holes. The whole thing
+   * looks like a pyramid of nine small triangles (with two extra edges).
+   */
+  public void testTriangleWithHoles() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:2, 0:4, 0:6, 1:5, 2:4, 3:3, 2:2, 1:1", true),
+        new Chain("0:2, 1:1, 1:3", true),
+        new Chain("0:4, 1:3, 1:5", true),
+        new Chain("1:3, 2:2, 2:4", true),
+        new Chain("0:0, -1:1", false),
+        new Chain("3:3, 5:5", false)};
+    String[] loopsOut = {
+        "0:0, 0:2, 1:1",
+        "0:2, 0:4, 1:3",
+        "0:4, 0:6, 1:5",
+        "1:1, 1:3, 2:2",
+        "1:3, 1:5, 2:4",
+        "2:2, 2:4, 3:3"};
+    // Directed edges required for unique result.
+    runTest(-1, 0, true, 0.0, 0.9, 30.0, chainsIn, loopsOut, 2);
+  }
 
-      // 4: A big CCW triangle contain 3 CW triangular holes.  The whole thing
-      // looks like a pyramid of nine small triangles (with two extra edges).
-      new TestCase(-1, 0, true, 0.0, 0.9, 30.0,  // Directed edges required for unique result.
-          new Chain[]{
-              new Chain("0:0, 0:2, 0:4, 0:6, 1:5, 2:4, 3:3, 2:2, 1:1", true),
-              new Chain("0:2, 1:1, 1:3", true),
-              new Chain("0:4, 1:3, 1:5", true),
-              new Chain("1:3, 2:2, 2:4", true),
-              new Chain("0:0, -1:1", false),
-              new Chain("3:3, 5:5", false)},
-          new String[]{"0:0, 0:2, 1:1",
-              "0:2, 0:4, 1:3",
-              "0:4, 0:6, 1:5",
-              "1:1, 1:3, 2:2",
-              "1:3, 1:5, 2:4",
-              "2:2, 2:4, 3:3"}, 2),
+  /**
+   * Test 5: A square divided into four subsquares. In this case we want to
+   * extract the four loops rather than taking their union. There are four extra
+   * edges as well.
+   */
+  public void testFourSubsquaresLoops() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:5, 5:5, 5:0", true),
+        new Chain("0:5, 0:10, 5:10, 5:5", true),
+        new Chain("5:0, 5:5, 10:5, 10:0", true),
+        new Chain("5:5, 5:10, 10:10, 10:5", true),
+        new Chain("0:10, 0:15, 0:20", false),
+        new Chain("20:0, 15:0, 10:0", false)};
+    String[] loopsOut = {
+        "0:0, 0:5, 5:5, 5:0",
+        "0:5, 0:10, 5:10, 5:5",
+        "5:0, 5:5, 10:5, 10:0",
+        "5:5, 5:10, 10:10, 10:5"};
+    // Don't XOR.
+    runTest(0, -1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 4);
+  }
 
-      // 5: A square divided into four subsquares.  In this case we want
-      // to extract the four loops rather than taking their union.
-      // There are four extra edges as well.
-      new TestCase(0, -1, true, 0.0, 4.0, 90.0,  // Don't XOR
-          new Chain[]{
-              new Chain("0:0, 0:5, 5:5, 5:0", true),
-              new Chain("0:5, 0:10, 5:10, 5:5", true),
-              new Chain("5:0, 5:5, 10:5, 10:0", true),
-              new Chain("5:5, 5:10, 10:10, 10:5", true),
-              new Chain("0:10, 0:15, 0:20", false),
-              new Chain("20:0, 15:0, 10:0", false)},
-          new String[]{
-              "0:0, 0:5, 5:5, 5:0",
-              "0:5, 0:10, 5:10, 5:5",
-              "5:0, 5:5, 10:5, 10:0",
-              "5:5, 5:10, 10:10, 10:5"}, 4),
+  /** Test 6: Five nested loops that touch at a point. */
+  public void testFiveNestedLoops() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:10, 10:10, 10:0", true),
+        new Chain("0:0, 1:9, 9:9, 9:1", true),
+        new Chain("0:0, 2:8, 8:8, 8:2", true),
+        new Chain("0:0, 3:7, 7:7, 7:3", true),
+        new Chain("0:0, 4:6, 6:6, 6:4", true)};
+    String[] loopsOut = {
+        "0:0, 0:10, 10:10, 10:0",
+        "0:0, 1:9, 9:9, 9:1",
+        "0:0, 2:8, 8:8, 8:2",
+        "0:0, 3:7, 7:7, 7:3",
+        "0:0, 4:6, 6:6, 6:4"};
+    runTest(0, 0, true, 0.0, 0.8, 5.0, chainsIn, loopsOut, 0);
+  }
 
-      // 6: Five nested loops that touch at a point.
-      new TestCase(0, 0, true, 0.0, 0.8, 5.0,
-          new Chain[]{
-              new Chain("0:0, 0:10, 10:10, 10:0", true),
-              new Chain("0:0, 1:9, 9:9, 9:1", true),
-              new Chain("0:0, 2:8, 8:8, 8:2", true),
-              new Chain("0:0, 3:7, 7:7, 7:3", true),
-              new Chain("0:0, 4:6, 6:6, 6:4", true)},
-          new String[]{
-              "0:0, 0:10, 10:10, 10:0",
-              "0:0, 1:9, 9:9, 9:1",
-              "0:0, 2:8, 8:8, 8:2",
-              "0:0, 3:7, 7:7, 7:3",
-              "0:0, 4:6, 6:6, 6:4"}, 0),
+  /** Test 7: Four diamonds nested within each other touching at two points. */
+  public void testFourNestedDiamonds() {
+    Chain[] chainsIn = {
+        new Chain("0:-20, -10:0, 0:20, 10:0", true),
+        new Chain("0:10, -10:0, 0:-10, 10:0", true),
+        new Chain("0:-10, -5:0, 0:10, 5:0", true),
+        new Chain("0:5, -5:0, 0:-5, 5:0", true)};
+    String[] loopsOut = {
+        "0:-20, -10:0, 0:-10, 10:0",
+        "0:-10, -5:0, 0:-5, 5:0",
+        "0:5, -5:0, 0:10, 5:0",
+        "0:10, -10:0, 0:20, 10:0"};
+    // Directed edges required for unique result.
+    runTest(-1, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 0);
+  }
 
-      // 7: Four diamonds nested within each other touching at two points.
-      new TestCase(-1, 0, true, 0.0, 4.0, 15.0,  // Directed edges required for unique result.
-          new Chain[]{
-              new Chain("0:-20, -10:0, 0:20, 10:0", true),
-              new Chain("0:10, -10:0, 0:-10, 10:0", true),
-              new Chain("0:-10, -5:0, 0:10, 5:0", true),
-              new Chain("0:5, -5:0, 0:-5, 5:0", true)},
-          new String[]{
-              "0:-20, -10:0, 0:-10, 10:0",
-              "0:-10, -5:0, 0:-5, 5:0",
-              "0:5, -5:0, 0:10, 5:0",
-              "0:10, -10:0, 0:20, 10:0"}, 0),
+  /**
+   * Test 8: Seven diamonds nested within each other touching at one point
+   * between each nested pair.
+   */
+  public void testSevenDiamonds() {
+    Chain[] chainsIn = {
+        new Chain("0:-70, -70:0, 0:70, 70:0", true),
+        new Chain("0:-70, -60:0, 0:60, 60:0", true),
+        new Chain("0:-50, -60:0, 0:50, 50:0", true),
+        new Chain("0:-40, -40:0, 0:50, 40:0", true),
+        new Chain("0:-30, -30:0, 0:30, 40:0", true),
+        new Chain("0:-20, -20:0, 0:30, 20:0", true),
+        new Chain("0:-10, -20:0, 0:10, 10:0", true)};
+    String[] loopsOut = {
+        "0:-70, -70:0, 0:70, 70:0",
+        "0:-70, -60:0, 0:60, 60:0",
+        "0:-50, -60:0, 0:50, 50:0",
+        "0:-40, -40:0, 0:50, 40:0",
+        "0:-30, -30:0, 0:30, 40:0",
+        "0:-20, -20:0, 0:30, 20:0",
+        "0:-10, -20:0, 0:10, 10:0"};
+    runTest(0, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0);
+  }
 
-      // 8: Seven diamonds nested within each other touching at one
-      // point between each nested pair.
-      new TestCase(0, 0, true, 0.0, 9.0, 4.0,
-          new Chain[]{
-              new Chain("0:-70, -70:0, 0:70, 70:0", true),
-              new Chain("0:-70, -60:0, 0:60, 60:0", true),
-              new Chain("0:-50, -60:0, 0:50, 50:0", true),
-              new Chain("0:-40, -40:0, 0:50, 40:0", true),
-              new Chain("0:-30, -30:0, 0:30, 40:0", true),
-              new Chain("0:-20, -20:0, 0:30, 20:0", true),
-              new Chain("0:-10, -20:0, 0:10, 10:0", true)},
-          new String[]{
-              "0:-70, -70:0, 0:70, 70:0",
-              "0:-70, -60:0, 0:60, 60:0",
-              "0:-50, -60:0, 0:50, 50:0",
-              "0:-40, -40:0, 0:50, 40:0",
-              "0:-30, -30:0, 0:30, 40:0",
-              "0:-20, -20:0, 0:30, 20:0",
-              "0:-10, -20:0, 0:10, 10:0"}, 0),
+  /** Test 9: A triangle and a self-intersecting bowtie. */
+  public void testTriangleAndBowtie() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:10, 5:5", true),
+        new Chain("0:20, 0:30, 10:20", false),
+        new Chain("10:20, 10:30, 0:20", false)};
+    String[] loopsOut = {"0:0, 0:10, 5:5"};
+    runTest(0, 0, false, 0.0, 4.0, 45.0, chainsIn, loopsOut, 4);
+  }
 
-      // 9: A triangle and a self-intersecting bowtie.
-      new TestCase(0, 0, false, 0.0, 4.0, 45.0,
-          new Chain[]{
-              new Chain("0:0, 0:10, 5:5", true),
-              new Chain("0:20, 0:30, 10:20", false),
-              new Chain("10:20, 10:30, 0:20", false)},
-          new String[]{"0:0, 0:10, 5:5"}, 4),
+  /** Test 10: Two triangles that intersect each other. */
+  public void testTwoIntersectingTriangles() {
+    Chain[] chainsIn = {
+        new Chain("0:0, 0:12, 6:6", true),
+        new Chain("3:6, 3:18, 9:12", true)};
+    String[] loopsOut = {};
+    runTest(0, 0, false, 0.0, 2.0, 45.0, chainsIn, loopsOut, 6);
+  }
 
-      // 10: Two triangles that intersect each other.
-      new TestCase(0, 0, false, 0.0, 2.0, 45.0,
-          new Chain[]{
-              new Chain("0:0, 0:12, 6:6", true),
-              new Chain("3:6, 3:18, 9:12", true)},
-          new String[]{}, 6),
-
-      // 11: Four squares that combine to make a big square.  The nominal edges of
-      // the square are at +/-8.5 degrees in latitude and longitude.  All vertices
-      // except the center vertex are perturbed by up to 0.5 degrees in latitude
-      // and/or longitude.  The various copies of the center vertex are misaligned
-      // by more than this (i.e. they are structured as a tree where adjacent
-      // vertices are separated by at most 1 degree in latitude and/or longitude)
-      // so that the clustering algorithm needs more than one iteration to find
-      // them all.  Note that the merged position of this vertex doesn't matter
-      // because it is XORed away in the output.  However, it's important that
-      // all edge pairs that need to be XORed are separated by no more than
-      // 'min_merge' below.
-      new TestCase(0, 1, true, 1.7, 5.8, 70.0,  // XOR, min_merge > sqrt(2), max_merge < 6.
-          new Chain[]{
-              new Chain("-8:-8, -8:0", false),
-              new Chain("-8:1, -8:8", false),
-              new Chain("0:-9, 1:-1", false),
-              new Chain("1:2, 1:9", false),
-              new Chain("0:8, 2:2", false),
-              new Chain("0:-2, 1:-8", false),
-              new Chain("8:9, 9:1", false),
-              new Chain("9:0, 8:-9", false),
-              new Chain("9:-9, 0:-8", false),
-              new Chain("1:-9, -9:-9", false),
-              new Chain("8:0, 1:0", false),
-              new Chain("-1:1, -8:0", false),
-              new Chain("-8:1, -2:0", false),
-              new Chain("0:1, 8:1", false),
-              new Chain("-9:8, 1:8", false),
-              new Chain("0:9, 8:8", false)},
-          new String[]{
-              "8.5:8.5, 8.5:0.5, 8.5:-8.5, 0.5:-8.5, " +
-              "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"}, 0)
-  };
+  /**
+   * Test 11: Four squares that combine to make a big square. The nominal edges
+   * of the square are at +/-8.5 degrees in latitude and longitude. All vertices
+   * except the center vertex are perturbed by up to 0.5 degrees in latitude
+   * and/or longitude.
+   *
+   * <p>The various copies of the center vertex are misaligned by more than this
+   * (i.e. they are structured as a tree where adjacent vertices are separated
+   * by at most 1 degree in latitude and/or longitude) so that the clustering
+   * algorithm needs more than one iteration to find them all. Note that the
+   * merged position of this vertex doesn't matter because it is XORed away in
+   * the output. However, it's important that all edge pairs that need to be
+   * XORed are separated by no more than 'min_merge' below.
+   */
+  public void testFourSubsquaresUnion() {
+    Chain[] chainsIn = {
+        new Chain("-8:-8, -8:0", false),
+        new Chain("-8:1, -8:8", false),
+        new Chain("0:-9, 1:-1", false),
+        new Chain("1:2, 1:9", false),
+        new Chain("0:8, 2:2", false),
+        new Chain("0:-2, 1:-8", false),
+        new Chain("8:9, 9:1", false),
+        new Chain("9:0, 8:-9", false),
+        new Chain("9:-9, 0:-8", false),
+        new Chain("1:-9, -9:-9", false),
+        new Chain("8:0, 1:0", false),
+        new Chain("-1:1, -8:0", false),
+        new Chain("-8:1, -2:0", false),
+        new Chain("0:1, 8:1", false),
+        new Chain("-9:8, 1:8", false),
+        new Chain("0:9, 8:8", false)};
+    String[] loopsOut = {
+        "8.5:8.5, 8.5:0.5, 8.5:-8.5, 0.5:-8.5, " +
+        "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"};
+    // XOR, min_merge > sqrt(2), max_merge < 6.
+    runTest(0, 1, true, 1.7, 5.8, 70.0, chainsIn, loopsOut, 0);
+  }
 
   /**
    * Parse the vertices in {@code str}, transforms them into the given
@@ -466,12 +454,36 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     return Joiner.on("\n").join(lines) + "\n";
   }
 
-  private boolean testBuilder(TestCase test) {
+  /**
+   * Runs a test with the given arguments.
+   *
+   * @param undirectedEdges +1 = undirected, -1 = directed, 0 = either one.
+   * @param xorEdges +1 = XOR, -1 = don't XOR, 0 = either one.
+   * @param canSplit Can edges be split for this test case.
+   * @param minMerge Minimum merge distance for this test case in degrees.
+   * @param maxMerge Maximum merge distance for this test case in degrees.
+   * @param minVertexAngle Minimum angle in degrees between any two edges
+   * <strong>after</strong> vertex merging.
+   * @param chainsIn Each test case consists of a set of input loops and
+   * polylines.
+   * @param loopsOut The expected set of output loops, directed appropriately.
+   * @param numUnusedEdges The expected number of unused edges.
+   */
+  private void runTest(
+      final int undirectedEdges,
+      final int xorEdges,
+      final boolean canSplit,
+      final double minMerge,
+      final double maxMerge,
+      final double minVertexAngle,
+      final Chain[] chainsIn,
+      final String[] loopsOut,
+      final int numUnusedEdges) {
     for (int iter = 0; iter < 500; ++iter) {
       // Initialize to the default options, which are changed below
       S2PolygonBuilder.Options options = new S2PolygonBuilder.Options(false, true);
-      options.setUndirectedEdges(evalTristate(test.undirectedEdges));
-      options.setXorEdges(evalTristate(test.xorEdges));
+      options.setUndirectedEdges(evalTristate(undirectedEdges));
+      options.setXorEdges(evalTristate(xorEdges));
 
       // Each test has a minimum and a maximum merge radius.  The merge
       // radius must be at least the given minimum to ensure that all expected
@@ -528,14 +540,14 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // "p" toward each other, and the shared vertex is perturbed by the
       // minimum merge radius "m" along one of the two edges.
 
-      double minMerge = S1Angle.degrees(test.minMerge).radians();
-      double maxMerge = S1Angle.degrees(test.maxMerge).radians();
-      double minSin = Math.sin(S1Angle.degrees(test.minVertexAngle).radians());
+      double minMergeRadians = S1Angle.degrees(minMerge).radians();
+      double maxMergeRadians = S1Angle.degrees(maxMerge).radians();
+      double minSin = Math.sin(S1Angle.degrees(minVertexAngle).radians());
 
       // Half of the time we allow edges to be split into smaller pieces
       // (up to 5 levels, i.e. up to 32 pieces).
       int maxSplits = Math.max(0, rand.nextInt(10) - 4);
-      if (!test.canSplit) {
+      if (!canSplit) {
         maxSplits = 0;
       }
 
@@ -549,9 +561,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       if (maxSplits == 0 && rand.nextInt(2) == 0) {
         // Turn off edge splicing completely.
         edgeFraction = 0;
-        vertexMerge = minMerge + smallFraction() * (maxMerge - minMerge);
-        maxPerturb = 0.5 * Math.min(vertexMerge - minMerge,
-                                maxMerge - vertexMerge);
+        vertexMerge = minMergeRadians + smallFraction() * (maxMergeRadians - minMergeRadians);
+        maxPerturb = 0.5 * Math.min(vertexMerge - minMergeRadians,
+                                maxMergeRadians - vertexMerge);
       } else {
         // Splice edges.  These bounds also assume that edges may be split
         // (see detailed comments above).
@@ -560,15 +572,15 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         // to ensure that split edges in opposite directions are unified.
         // Otherwise there will be tiny degenerate loops created.
         if (maxSplits > 0) {
-          minMerge += 1e-15;
+          minMergeRadians += 1e-15;
         }
-        minMerge /= edgeFraction;
-        maxMerge *= minSin;
-        assertTrue(maxMerge >= minMerge);
+        minMergeRadians /= edgeFraction;
+        maxMergeRadians *= minSin;
+        assertTrue(maxMergeRadians >= minMergeRadians);
 
-        vertexMerge = minMerge + smallFraction() * (maxMerge - minMerge);
-        maxPerturb = 0.5 * Math.min(edgeFraction * (vertexMerge - minMerge),
-                                maxMerge - vertexMerge);
+        vertexMerge = minMergeRadians + smallFraction() * (maxMergeRadians - minMergeRadians);
+        maxPerturb = 0.5 * Math.min(edgeFraction * (vertexMerge - minMergeRadians),
+                                maxMergeRadians - vertexMerge);
       }
 
       // We can perturb by any amount up to the maximum, but choosing a
@@ -577,7 +589,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
 
       // This is the minimum length of a split edge to prevent unexpected
       // merging and/or splicing (the "g" value mentioned above).
-      double minEdge = minMerge + (vertexMerge + 2 * maxPerturb) / minSin;
+      double minEdge = minMergeRadians + (vertexMerge + 2 * maxPerturb) / minSin;
 
       options.setMergeDistance(S1Angle.radians(vertexMerge));
       options.setEdgeSpliceFraction(edgeFraction);
@@ -588,12 +600,12 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // This causes the S2PolygonBuilder to choose different first edges when
       // trying to build loops.
       SimpleMatrix m = getRotationMatrix();
-      for (Chain chain : test.chainsIn) {
+      for (Chain chain : chainsIn) {
         addChain(chain, m, maxSplits, maxPerturb, minEdge, builder);
       }
       List<S2Loop> loops = Lists.newArrayList();
       List<S2Edge> unusedEdges = Lists.newArrayList();
-      if (test.xorEdges < 0) {
+      if (xorEdges < 0) {
         builder.assembleLoops(loops, unusedEdges);
       } else {
         S2Polygon polygon = new S2Polygon();
@@ -601,7 +613,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         polygon.release(loops);
       }
       List<S2Loop> expected = Lists.newArrayList();
-      for (String loop : test.loopsOut) {
+      for (String loop : loopsOut) {
         List<S2Point> vertices = Lists.newArrayList();
         getVertices(loop, m, vertices);
         expected.add(new S2Loop(vertices));
@@ -617,39 +629,30 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // inaccuracies in the interpolated positions.  Similarly, if any vertices
       // were perturbed, we need to bump up the error to allow for numerical
       // errors in the actual perturbation.
-      double maxError = 0.5 * minMerge + maxPerturb;
+      double maxError = 0.5 * minMergeRadians + maxPerturb;
       if (maxSplits > 0 || maxPerturb > 0) {
         maxError += 1e-15;
       }
 
-      if (findMissingLoops(loops, expected, m, maxSplits, maxError, "Actual") ||
-          findMissingLoops(expected, loops, m, maxSplits, maxError, "Expected") ||
-          unexpectedUnusedEdgeCount(unusedEdges.size(), test.numUnusedEdges, maxSplits)) {
-        // We found a problem.  Print out the relevant info.
-        log.severe(String.format(
-            "During iteration %d:\n  undirected: %b\n  xor: %b\n" +
-                "  maxSplits: %d\n  maxPerturb: %.6g\n" +
-                "  vertexMerge_radius: %.6g\n  edgeSpliceFraction: %.6g\n" +
-                "  minEdge: %.6g\n  maxError: %.6g\n%s%s%s",
-            iter, options.getUndirectedEdges(), options.getXorEdges(),
-            maxSplits, S1Angle.radians(maxPerturb).degrees(),
-            options.getMergeDistance().degrees(),
-            options.getEdgeSpliceFraction(),
-            S1Angle.radians(minEdge).degrees(),
-            S1Angle.radians(maxError).degrees(),
-            loopsToString("Expected", m, expected),
-            loopsToString("Actual", m, loops),
-            dumpUnusedEdges(unusedEdges, m, test.numUnusedEdges)));
-        loops.clear();
-        expected.clear();
-        return false;
-      }
-
-      loops.clear();
-      expected.clear();
+      assertTrue(
+          String.format(
+              "During iteration %d:\n  undirected: %b\n  xor: %b\n" +
+                  "  maxSplits: %d\n  maxPerturb: %.6g\n" +
+                  "  vertexMerge_radius: %.6g\n  edgeSpliceFraction: %.6g\n" +
+                  "  minEdge: %.6g\n  maxError: %.6g\n%s%s%s",
+              iter, options.getUndirectedEdges(), options.getXorEdges(),
+              maxSplits, S1Angle.radians(maxPerturb).degrees(),
+              options.getMergeDistance().degrees(),
+              options.getEdgeSpliceFraction(),
+              S1Angle.radians(minEdge).degrees(),
+              S1Angle.radians(maxError).degrees(),
+              loopsToString("Expected", m, expected),
+              loopsToString("Actual", m, loops),
+              dumpUnusedEdges(unusedEdges, m, numUnusedEdges)),
+          !findMissingLoops(loops, expected, m, maxSplits, maxError, "Actual") &&
+              !findMissingLoops(expected, loops, m, maxSplits, maxError, "Expected") &&
+              !unexpectedUnusedEdgeCount(unusedEdges.size(), numUnusedEdges, maxSplits));
     }
-
-    return true;
   }
 
   private static String loopsToString(String label, SimpleMatrix m, List<S2Loop> actual) {
@@ -665,20 +668,6 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       }
     }
     return Joiner.on("\n").join(lines) + "\n";
-  }
-
-  public void testAssembleLoops() {
-    boolean success = true;
-    for (int i = 0; i < testCases.length; ++i) {
-      log.info("Starting test case " + i);
-
-      boolean caseSuccess = testBuilder(testCases[i]);
-
-      log.info("Test case " + i + " finished: " + ((caseSuccess) ? "SUCCESS" : "FAILED"));
-
-      success &= caseSuccess;
-    }
-    assertTrue(success);
   }
 
   /**
