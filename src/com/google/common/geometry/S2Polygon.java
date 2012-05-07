@@ -198,6 +198,24 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
+   * Returns true if each loop on this polygon is valid, and if the
+   * relationships between all loops are valid.
+   *
+   * <p>
+   * Specifically this verifies that {@code S2Loop.isValid()} is true for each
+   * S2Loop, and that {@code S2Polygon.isValid(loops)} is true for the whole
+   * list of loops.
+   */
+  public boolean isValid() {
+    for (S2Loop loop : loops) {
+      if (!loop.isValid()) {
+        return false;
+      }
+    }
+    return S2Polygon.isValid(loops);
+  }
+
+  /**
    * Return true if the given loops form a valid polygon. Assumes that that all
    * of the given loops have already been validated.
    */

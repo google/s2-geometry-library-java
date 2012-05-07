@@ -74,7 +74,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   public void testNoLoops() {
     Chain[] chainsIn = {new Chain(null, false)};
     String[] loopsOut = {};
-    runTest(0, 0, true, 0.0, 10.0, 90.0, chainsIn, loopsOut, 0);
+    runTest(0, 0, true, 0.0, 10.0, 90.0, chainsIn, loopsOut, 0, true);
   }
 
   /** Test 1: One loop with some extra edges. */
@@ -84,7 +84,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         new Chain("0:0, 5:5", false),
         new Chain("10:5, 20:7, 30:10, 40:15, 50:3, 60:-20", false)};
     String[] loopsOut = {"0:0, 0:10, 10:5"};
-    runTest(0, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 6);
+    runTest(0, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 6, true);
   }
 
   /**
@@ -102,7 +102,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         new Chain("20:14, 18:14, 16:14", false),
         new Chain("5:15, 0:10", false)};
     String[] loopsOut = {};
-    runTest(0, 1, true, 0.0, 1.0, 45.0, chainsIn, loopsOut, 21);
+    runTest(0, 1, true, 0.0, 1.0, 45.0, chainsIn, loopsOut, 21, true);
   }
 
   /** Test 3: Three loops (two shells and one hole) that combine into one. */
@@ -113,7 +113,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         new Chain("10:10, 5:10, 5:5, 10:5", true)};
     String[] loopsOut = {"0:0, 0:10, 0:15, 5:15, 5:10, 5:5, 10:5, 10:0"};
     // XOR.
-    runTest(0, 1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 0);
+    runTest(0, 1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 0, true);
   }
 
   /**
@@ -136,7 +136,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "1:3, 1:5, 2:4",
         "2:2, 2:4, 3:3"};
     // Directed edges required for unique result.
-    runTest(-1, 0, true, 0.0, 0.9, 30.0, chainsIn, loopsOut, 2);
+    runTest(-1, 0, true, 0.0, 0.9, 30.0, chainsIn, loopsOut, 2, true);
   }
 
   /**
@@ -158,7 +158,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "5:0, 5:5, 10:5, 10:0",
         "5:5, 5:10, 10:10, 10:5"};
     // Don't XOR.
-    runTest(0, -1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 4);
+    runTest(0, -1, true, 0.0, 4.0, 90.0, chainsIn, loopsOut, 4, false);
   }
 
   /** Test 6: Five nested loops that touch at a point. */
@@ -175,7 +175,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "0:0, 2:8, 8:8, 8:2",
         "0:0, 3:7, 7:7, 7:3",
         "0:0, 4:6, 6:6, 6:4"};
-    runTest(0, 0, true, 0.0, 0.8, 5.0, chainsIn, loopsOut, 0);
+    runTest(0, 0, true, 0.0, 0.8, 5.0, chainsIn, loopsOut, 0, true);
   }
 
   /** Test 7: Four diamonds nested within each other touching at two points. */
@@ -191,7 +191,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "0:5, -5:0, 0:10, 5:0",
         "0:10, -10:0, 0:20, 10:0"};
     // Directed edges required for unique result.
-    runTest(-1, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 0);
+    runTest(-1, 0, true, 0.0, 4.0, 15.0, chainsIn, loopsOut, 0, true);
   }
 
   /**
@@ -215,7 +215,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "0:-30, -30:0, 0:30, 40:0",
         "0:-20, -20:0, 0:30, 20:0",
         "0:-10, -20:0, 0:10, 10:0"};
-    runTest(0, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0);
+    runTest(0, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0, true);
   }
 
   /** Test 9: A triangle and a self-intersecting bowtie. */
@@ -225,7 +225,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         new Chain("0:20, 0:30, 10:20", false),
         new Chain("10:20, 10:30, 0:20", false)};
     String[] loopsOut = {"0:0, 0:10, 5:5"};
-    runTest(0, 0, false, 0.0, 4.0, 45.0, chainsIn, loopsOut, 4);
+    runTest(0, 0, false, 0.0, 4.0, 45.0, chainsIn, loopsOut, 4, true);
   }
 
   /** Test 10: Two triangles that intersect each other. */
@@ -234,7 +234,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         new Chain("0:0, 0:12, 6:6", true),
         new Chain("3:6, 3:18, 9:12", true)};
     String[] loopsOut = {};
-    runTest(0, 0, false, 0.0, 2.0, 45.0, chainsIn, loopsOut, 6);
+    runTest(0, 0, false, 0.0, 2.0, 45.0, chainsIn, loopsOut, 6, true);
   }
 
   /**
@@ -273,7 +273,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "8.5:8.5, 8.5:0.5, 8.5:-8.5, 0.5:-8.5, " +
         "-8.5:-8.5, -8.5:0.5, -8.5:8.5, 0.5:8.5"};
     // XOR, min_merge > sqrt(2), max_merge < 6.
-    runTest(0, 1, true, 1.7, 5.8, 70.0, chainsIn, loopsOut, 0);
+    runTest(0, 1, true, 1.7, 5.8, 70.0, chainsIn, loopsOut, 0, true);
   }
 
   /**
@@ -468,6 +468,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * polylines.
    * @param loopsOut The expected set of output loops, directed appropriately.
    * @param numUnusedEdges The expected number of unused edges.
+   * @param makesPolygon If true, we expect a valid polygon from the loops.
    */
   private void runTest(
       final int undirectedEdges,
@@ -478,7 +479,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       final double minVertexAngle,
       final Chain[] chainsIn,
       final String[] loopsOut,
-      final int numUnusedEdges) {
+      final int numUnusedEdges,
+      final boolean makesPolygon) {
     for (int iter = 0; iter < 500; ++iter) {
       // Initialize to the default options, which are changed below
       S2PolygonBuilder.Options options = new S2PolygonBuilder.Options(false, true);
@@ -651,7 +653,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
               dumpUnusedEdges(unusedEdges, m, numUnusedEdges)),
           !findMissingLoops(loops, expected, m, maxSplits, maxError, "Actual") &&
               !findMissingLoops(expected, loops, m, maxSplits, maxError, "Expected") &&
-              !unexpectedUnusedEdgeCount(unusedEdges.size(), numUnusedEdges, maxSplits));
+              !unexpectedUnusedEdgeCount(unusedEdges.size(), numUnusedEdges, maxSplits) &&
+              makesPolygon == new S2Polygon(loops).isValid());
     }
   }
 
