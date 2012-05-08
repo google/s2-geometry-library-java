@@ -22,6 +22,27 @@ package com.google.common.geometry;
  *
  */
 public strictfp class S2Point implements Comparable<S2Point> {
+  /** Origin of the coordinate system, [0,0,0]. */
+  public static final S2Point ORIGIN = new S2Point(0, 0, 0);
+
+  /** Direction of the x-axis. */
+  public static final S2Point X_POS = new S2Point(1, 0, 0);
+
+  /** Opposite direction of the x-axis. */
+  public static final S2Point X_NEG = new S2Point(-1, 0, 0);
+
+  /** Direction of the y-axis. */
+  public static final S2Point Y_POS = new S2Point(0, 1, 0);
+
+  /** Opposite direction of the y-axis. */
+  public static final S2Point Y_NEG = new S2Point(0, -1, 0);
+
+  /** Direction of the z-axis. */
+  public static final S2Point Z_POS = new S2Point(0, 0, 1);
+
+  /** Opposite direction of the z-axis. */
+  public static final S2Point Z_NEG = new S2Point(0, 0, -1);
+
   // coordinates of the points
   final double x;
   final double y;
@@ -83,11 +104,11 @@ public strictfp class S2Point implements Comparable<S2Point> {
     int k = largestAbsComponent();
     S2Point temp;
     if (k == 1) {
-      temp = new S2Point(1, 0, 0);
+      temp = X_POS;
     } else if (k == 2) {
-      temp = new S2Point(0, 1, 0);
+      temp = Y_POS;
     } else {
-      temp = new S2Point(0, 0, 1);
+      temp = Z_POS;
     }
     return S2Point.normalize(crossProd(this, temp));
   }

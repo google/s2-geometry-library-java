@@ -304,7 +304,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
   private S2AreaCentroid getAreaCentroid(boolean doCentroid) {
     double areaSum = 0;
-    S2Point centroidSum = new S2Point(0, 0, 0);
+    S2Point centroidSum = S2Point.ORIGIN;
     for (int i = 0; i < numLoops(); ++i) {
       S2AreaCentroid areaCentroid = doCentroid ? loop(i).getAreaAndCentroid() : null;
       double loopArea = doCentroid ? areaCentroid.getArea() : loop(i).getArea();

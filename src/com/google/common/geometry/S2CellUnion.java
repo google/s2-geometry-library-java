@@ -419,13 +419,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
     if (cellIds.isEmpty()) {
       return S2Cap.empty();
     }
-    S2Point centroid = new S2Point(0, 0, 0);
+    S2Point centroid = S2Point.ORIGIN;
     for (S2CellId id : this) {
       double area = S2Cell.averageArea(id.level());
       centroid = S2Point.add(centroid, S2Point.mul(id.toPoint(), area));
     }
-    if (centroid.equals(new S2Point(0, 0, 0))) {
-      centroid = new S2Point(1, 0, 0);
+    if (centroid.equals(S2Point.ORIGIN)) {
+      centroid = S2Point.X_POS;
     } else {
       centroid = S2Point.normalize(centroid);
     }

@@ -227,7 +227,7 @@ public final strictfp class S2 {
    * rules out the north and south poles.)
    */
   public static S2Point origin() {
-    return new S2Point(0, 1, 0);
+    return S2Point.Y_POS;
   }
 
   /**
@@ -287,7 +287,7 @@ public final strictfp class S2 {
 
     // assert (isUnitLength(a) && isUnitLength(b));
     S2Point x = S2Point.crossProd(S2Point.add(b, a), S2Point.sub(b, a));
-    if (!x.equals(new S2Point(0, 0, 0))) {
+    if (!x.equals(S2Point.ORIGIN)) {
       return x;
     }
 

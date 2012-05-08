@@ -92,12 +92,12 @@ public final strictfp class S2Cap implements S2Region {
 
   /** Return an empty cap, i.e. a cap that contains no points. */
   public static S2Cap empty() {
-    return new S2Cap(new S2Point(1, 0, 0), -1);
+    return new S2Cap(S2Point.X_POS, -1);
   }
 
   /** Return a full cap, i.e. a cap that contains all points. */
   public static S2Cap full() {
-    return new S2Cap(new S2Point(1, 0, 0), 2);
+    return new S2Cap(S2Point.X_POS, 2);
   }
 
 

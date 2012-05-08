@@ -112,7 +112,7 @@ public strictfp class S2LatLngRect implements S2Region {
     // to ensure that the edge normal is accurate even when the two points are
     // very close together.
     S2Point ab = S2.robustCrossProd(a, b);
-    S2Point dir = S2Point.crossProd(ab, new S2Point(0, 0, 1));
+    S2Point dir = S2Point.crossProd(ab, S2Point.Z_POS);
     double da = dir.dotProd(a);
     double db = dir.dotProd(b);
     if (da * db >= 0) {
@@ -522,7 +522,7 @@ public strictfp class S2LatLngRect implements S2Region {
     // original rectangle; this is necessary for very large rectangles).
 
     // Optimization: convert the angle to a height exactly once.
-    S2Cap cap = S2Cap.fromAxisAngle(new S2Point(1, 0, 0), angle);
+    S2Cap cap = S2Cap.fromAxisAngle(S2Point.X_POS, angle);
 
     S2LatLngRect r = this;
     for (int k = 0; k < 4; ++k) {
@@ -686,7 +686,7 @@ public strictfp class S2LatLngRect implements S2Region {
 
     // Extend this to an orthonormal frame (x,y,z) where x is the direction
     // where the great circle through AB achieves its maximium latitude.
-    S2Point y = S2Point.normalize(S2.robustCrossProd(z, new S2Point(0, 0, 1)));
+    S2Point y = S2Point.normalize(S2.robustCrossProd(z, S2Point.Z_POS));
     S2Point x = S2Point.crossProd(y, z);
     // assert (S2.isUnitLength(x) && x.z >= 0);
 

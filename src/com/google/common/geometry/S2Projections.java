@@ -380,34 +380,34 @@ public final strictfp class S2Projections {
   public static S2Point getUAxis(int face) {
     switch (face) {
       case 0:
-        return new S2Point(0, 1, 0);
+        return S2Point.Y_POS;
       case 1:
-        return new S2Point(-1, 0, 0);
+        return S2Point.X_NEG;
       case 2:
-        return new S2Point(-1, 0, 0);
+        return S2Point.X_NEG;
       case 3:
-        return new S2Point(0, 0, -1);
+        return S2Point.Z_NEG;
       case 4:
-        return new S2Point(0, 0, -1);
+        return S2Point.Z_NEG;
       default:
-        return new S2Point(0, 1, 0);
+        return S2Point.Y_POS;
     }
   }
 
   public static S2Point getVAxis(int face) {
     switch (face) {
       case 0:
-        return new S2Point(0, 0, 1);
+        return S2Point.Z_POS;
       case 1:
-        return new S2Point(0, 0, 1);
+        return S2Point.Z_POS;
       case 2:
-        return new S2Point(0, -1, 0);
+        return S2Point.Y_NEG;
       case 3:
-        return new S2Point(0, -1, 0);
+        return S2Point.Y_NEG;
       case 4:
-        return new S2Point(1, 0, 0);
+        return S2Point.X_POS;
       default:
-        return new S2Point(1, 0, 0);
+        return S2Point.X_POS;
     }
   }
 

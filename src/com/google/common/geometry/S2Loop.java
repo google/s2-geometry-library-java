@@ -319,7 +319,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     origin = S2Point.normalize(origin);
 
     double areaSum = 0;
-    S2Point centroidSum = new S2Point(0, 0, 0);
+    S2Point centroidSum = S2Point.ORIGIN;
     for (int i = 1; i <= numVertices(); ++i) {
       areaSum += S2.signedArea(origin, vertex(i - 1), vertex(i));
       if (doCentroid) {
@@ -1006,14 +1006,14 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     // Note that we need to initialize bound with a temporary value since
     // contains() does a bounding rectangle check before doing anything else.
     bound = S2LatLngRect.full();
-    if (contains(new S2Point(0, 0, 1))) {
+    if (contains(S2Point.Z_POS)) {
       b = new S2LatLngRect(new R1Interval(b.lat().lo(), S2.M_PI_2), S1Interval.full());
     }
     // If a loop contains the south pole, then either it wraps entirely
     // around the sphere (full longitude range), or it also contains the
     // north pole in which case b.lng().isFull() due to the test above.
 
-    if (b.lng().isFull() && contains(new S2Point(0, 0, -1))) {
+    if (b.lng().isFull() && contains(S2Point.Z_NEG)) {
       b = new S2LatLngRect(new R1Interval(-S2.M_PI_2, b.lat().hi()), b.lng());
     }
     bound = b;
