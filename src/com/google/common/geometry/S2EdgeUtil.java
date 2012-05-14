@@ -165,7 +165,7 @@ public strictfp class S2EdgeUtil {
     private static final double LAT_ERROR = 1.0E-15;
 
     // The previous vertex in the chain.
-    private S2Point a;
+    private S2Point aPoint;
 
     // The corresponding latitude-longitude.
     private S2LatLng aLatLng;
@@ -178,13 +178,25 @@ public strictfp class S2EdgeUtil {
     }
 
     /**
-     * This method is called to add each vertex to the chain. 'b' must point to
-     * fixed storage that persists for the lifetime of the RectBounder.
+     * This method is called to add each vertex to the chain. This method is much faster than
+     * {@link #addPoint(S2Point)}, since converting S2LatLng to an S2Point is much faster than the
+     * other way around..
+     */
+    public void addPoint(S2LatLng b) {
+      addPoint(b.toPoint(), b);
+    }
+
+    /**
+     * This method is called to add each vertex to the chain. Prefer calling
+     * {@link #addPoint(S2LatLng)} if you have that type available.
      */
     public void addPoint(S2Point b) {
-      // assert (S2.isUnitLength(b));
+      addPoint(b, new S2LatLng(b));
+    }
 
-      S2LatLng bLatLng = new S2LatLng(b);
+    private void addPoint(S2Point bPoint, S2LatLng bLatLng) {
+      // assert (S2.isUnitLength(b));
+      // assert (bLatLng.equals(new S2LatLng(bPoint)) || bPoint.equals(bLatLng.toPoint()));
 
       if (bound.isEmpty()) {
         bound = bound.addPoint(bLatLng);
@@ -198,10 +210,10 @@ public strictfp class S2EdgeUtil {
         // "dir" in this plane that also passes through the equator. We use
         // RobustCrossProd to ensure that the edge normal is accurate even
         // when the two points are very close together.
-        S2Point aCrossB = S2.robustCrossProd(a, b);
+        S2Point aCrossB = S2.robustCrossProd(aPoint, bPoint);
         S2Point dir = S2Point.crossProd(aCrossB, new S2Point(0, 0, 1));
-        double da = dir.dotProd(a);
-        double db = dir.dotProd(b);
+        double da = dir.dotProd(aPoint);
+        double db = dir.dotProd(bPoint);
 
         if (da * db < 0) {
           // Minimum/maximum latitude occurs in the edge interior. This affects
@@ -219,7 +231,7 @@ public strictfp class S2EdgeUtil {
           bound = new S2LatLngRect(lat, bound.lng());
         }
       }
-      a = b;
+      aPoint = bPoint;
       aLatLng = bLatLng;
     }
 
