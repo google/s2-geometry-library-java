@@ -22,6 +22,7 @@ import com.google.common.collect.Sets;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -221,6 +222,15 @@ public abstract strictfp class S2EdgeIndex {
   protected abstract S2Point edgeFrom(int index);
 
   protected abstract S2Point edgeTo(int index);
+
+  /**
+   * Return both vertices of the given {@code index} in one call. Can be overridden by some
+   * subclasses to more efficiently retrieve both edge points at once, which makes a difference in
+   * performance, especially for small loops.
+   */
+  public S2Edge edgeFromTo(int index) {
+    return new S2Edge(edgeFrom(index), edgeTo(index));
+  }
 
   /**
    * Appends to "candidateCrossings" all edge references which may cross the
@@ -531,7 +541,61 @@ public abstract strictfp class S2EdgeIndex {
     }
   }
 
-  /*
+  /**
+   * Adds points where the edge index intersects the edge {@code [a0, a1]} to
+   * {@code intersections}. Each intersection is paired with a {@code t}-value
+   * indicating the fractional geodesic rotation of the intersection from 0 (at
+   * {@code a0}) to 1 (at {@code a1}).
+   *
+   * @param a0 First vertex of the edge to clip.
+   * @param a1 Second vertex of the edge to clip.
+   * @param addSharedEdges Whether an exact duplicate of {@code [a0, a1]} in the
+   * index should count as an intersection or not.
+   * @param intersections The resulting list of intersections.
+   */
+  public void clipEdge(final S2Point a0, final S2Point a1, boolean addSharedEdges,
+      Collection<ParametrizedS2Point> intersections) {
+    S2EdgeIndex.DataEdgeIterator it = new S2EdgeIndex.DataEdgeIterator(this);
+    S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(a0, a1, a0);
+    S2Point b0 = null;
+    S2Point b1 = null;
+    for (it.getCandidates(a0, a1); it.hasNext(); it.next()) {
+      S2Point previous = b1;
+      S2Edge bEdge = edgeFromTo(it.index());
+      b0 = bEdge.getStart();
+      b1 = bEdge.getEnd();
+      if (previous == null || !previous.equals(b0)) {
+        crosser.restartAt(b0);
+      }
+      int crossing = crosser.robustCrossing(b1);
+      if (crossing < 0) {
+        continue;
+      }
+      if (crossing > 0) {
+        // There is a proper edge crossing.
+        S2Point x = S2EdgeUtil.getIntersection(a0, a1, b0, b1);
+        double t = S2EdgeUtil.getDistanceFraction(x, a0, a1);
+        intersections.add(new ParametrizedS2Point(t, x));
+      } else if (S2EdgeUtil.vertexCrossing(a0, a1, b0, b1)) {
+        // There is a crossing at one of the vertices. The basic rule is simple:
+        // if a0 equals one of the "b" vertices, the crossing occurs at t=0;
+        // otherwise, it occurs at t=1.
+        //
+        // This has the effect that when two symmetric edges are encountered (an
+        // edge an its reverse), neither one is included in the output. When two
+        // duplicate edges are encountered, both are included in the output. The
+        // "addSharedEdges" flag allows one of these two copies to be removed by
+        // changing its intersection parameter from 0 to 1.
+        double t = (a0.equals(b0) || a0.equals(b1)) ? 0 : 1;
+        if (!addSharedEdges && a1.equals(b1)) {
+          t = 1;
+        }
+        intersections.add(new ParametrizedS2Point(t, t == 0 ? a0 : a1));
+      }
+    }
+  }
+
+  /**
    * An iterator on data edges that may cross a query edge (a,b). Create the
    * iterator, call getCandidates(), then hasNext()/next() repeatedly.
    *

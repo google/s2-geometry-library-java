@@ -507,14 +507,18 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return new LoopVertexIndexPair(loopIndex, vertexInLoop);
     }
 
-    // It is faster to return both vertices at once. It makes a difference
-    // for small polygons.
-    public abstract S2Edge edgeFromTo(int index);
-
     @Override
     public final int getNumEdges() {
       return indexToLoop.length;
     }
+
+    /**
+     * Mark the edgeFromTo method abstract again, so children of this class
+     * <strong>must</strong> implement it without using {@code edgeFrom(int)}
+     * and {@code edgeTo(int)}.
+     */
+    @Override
+    public abstract S2Edge edgeFromTo(int index);
 
     @Override
     public S2Point edgeFrom(int index) {
@@ -571,63 +575,6 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
-  private static void addIntersection(S2Point a0,
-      S2Point a1,
-      S2Point b0,
-      S2Point b1,
-      boolean addSharedEdges,
-      int crossing,
-      List<ParametrizedS2Point> intersections) {
-    if (crossing > 0) {
-      // There is a proper edge crossing.
-      S2Point x = S2EdgeUtil.getIntersection(a0, a1, b0, b1);
-      double t = S2EdgeUtil.getDistanceFraction(x, a0, a1);
-      intersections.add(new ParametrizedS2Point(t, x));
-    } else if (S2EdgeUtil.vertexCrossing(a0, a1, b0, b1)) {
-      // There is a crossing at one of the vertices. The basic rule is simple:
-      // if a0 equals one of the "b" vertices, the crossing occurs at t=0;
-      // otherwise, it occurs at t=1.
-      //
-      // This has the effect that when two symmetric edges are encountered (an
-      // edge an its reverse), neither one is included in the output. When two
-      // duplicate edges are encountered, both are included in the output. The
-      // "addSharedEdges" flag allows one of these two copies to be removed by
-      // changing its intersection parameter from 0 to 1.
-      double t = (a0.equals(b0) || a0.equals(b1)) ? 0 : 1;
-      if (!addSharedEdges && a1.equals(b1)) {
-        t = 1;
-      }
-      intersections.add(new ParametrizedS2Point(t, t == 0 ? a0 : a1));
-    }
-  }
-
-  /**
-   * Find all points where the polygon B intersects the edge (a0,a1), and add
-   * the corresponding parameter values (in the range [0,1]) to "intersections".
-   */
-  private static void clipEdge(final S2Point a0, final S2Point a1, S2LoopSequenceIndex bIndex,
-      boolean addSharedEdges, List<ParametrizedS2Point> intersections) {
-    S2LoopSequenceIndex.DataEdgeIterator it = new S2LoopSequenceIndex.DataEdgeIterator(bIndex);
-    it.getCandidates(a0, a1);
-    S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(a0, a1, a0);
-    S2Point from = null;
-    S2Point to = null;
-    for (; it.hasNext(); it.next()) {
-      S2Point previousTo = to;
-      S2Edge fromTo = bIndex.edgeFromTo(it.index());
-      from = fromTo.getStart();
-      to = fromTo.getEnd();
-      if (previousTo == null || !previousTo.equals(from)) {
-        crosser.restartAt(from);
-      }
-      int crossing = crosser.robustCrossing(to);
-      if (crossing < 0) {
-        continue;
-      }
-      addIntersection(a0, a1, from, to, addSharedEdges, crossing, intersections);
-    }
-  }
-
   /**
    * Clip the boundary of A to the interior of B, and add the resulting edges to
    * "builder". Shells are directed CCW and holes are directed clockwise, unless
@@ -657,7 +604,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         S2Point a0 = aLoop.vertex(j);
         S2Point a1 = aLoop.vertex(j + dir);
         intersections.clear();
-        clipEdge(a0, a1, bIndex, addSharedEdges, intersections);
+        bIndex.clipEdge(a0, a1, addSharedEdges, intersections);
 
         if (inside) {
           intersections.add(new ParametrizedS2Point(0.0, a0));
@@ -901,7 +848,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     for (int j = 0; j < n - 1; j++) {
       S2Point a0 = a.vertex(j);
       S2Point a1 = a.vertex(j + 1);
-      clipEdge(a0, a1, polyIndex, true, intersections);
+      polyIndex.clipEdge(a0, a1, true, intersections);
       if (inside) {
         intersections.add(new ParametrizedS2Point(0, a0));
       }
@@ -1291,47 +1238,6 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
     public int getVertexIndex() {
       return vertexIndex;
-    }
-  }
-
-  /**
-   * An S2Point that also has a parameter associated with it, which corresponds
-   * to a time-like order on the points.
-   */
-  private static final class ParametrizedS2Point implements Comparable<ParametrizedS2Point> {
-    private final double time;
-    private final S2Point point;
-
-    public ParametrizedS2Point(double time, S2Point point) {
-      this.time = time;
-      this.point = point;
-    }
-
-    public double getTime() {
-      return time;
-    }
-
-    public S2Point getPoint() {
-      return point;
-    }
-
-    @Override
-    public int compareTo(ParametrizedS2Point o) {
-      int compareTime = Double.compare(time, o.time);
-      if (compareTime != 0) {
-        return compareTime;
-      }
-      return point.compareTo(o.point);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof ParametrizedS2Point) {
-        ParametrizedS2Point x = (ParametrizedS2Point) other;
-        return time == x.time && point.equals(x.point);
-      } else {
-        return false;
-      }
     }
   }
 }
