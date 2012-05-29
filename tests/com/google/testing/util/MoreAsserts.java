@@ -31,7 +31,7 @@ import java.util.List;
 
 public final class MoreAsserts {
 
-  private MoreAsserts() { }
+  private MoreAsserts() {}
 
   /**
    * Asserts that {@code actual} contains precisely the elements
