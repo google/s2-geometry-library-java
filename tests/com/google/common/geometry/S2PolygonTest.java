@@ -17,8 +17,10 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /**
@@ -551,4 +553,41 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     // distance is to (1,0) or (-1,0), and should be 1 degree
     assertEquals(1d, shell.getDistance(origin).degrees(), epsilon);
   }
+
+  public void testFastInit() {
+    S2LatLngRect bound = null;
+    Map<S2Loop, List<S2Loop>> nestedLoops = Maps.newHashMap();
+    nestedLoops.put(null, Lists.<S2Loop>newArrayList());
+
+    List<S2Point> vertices = Lists.newArrayList();
+
+    bound = parseVertices("-2:-2, -3:6, 6:-3", vertices);
+    S2Loop loop1 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
+    nestedLoops.get(null).add(loop1);
+    nestedLoops.put(loop1, Lists.<S2Loop>newArrayList());
+
+    vertices = Lists.newArrayList();
+    bound = parseVertices("-1:-2, -2:5, 5:-2", vertices);
+    S2Loop loop2 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
+    nestedLoops.get(loop1).add(loop2);
+    nestedLoops.put(loop2, Lists.<S2Loop>newArrayList());
+
+    vertices = Lists.newArrayList();
+    bound = parseVertices("-1:0, 0:1, 1:0, 0:-1", vertices);
+    S2Loop loop3 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
+    nestedLoops.get(loop2).add(loop3);
+    nestedLoops.put(loop3, Lists.<S2Loop>newArrayList());
+
+    S2Polygon polygon = new S2Polygon();
+    polygon.initWithNestedLoops(nestedLoops);
+
+    assertEquals(0, polygon.compareTo(makePolygon(NEAR0 + NEAR2 + NEAR3)));
+
+    assertTrue(polygon.isValid());
+    assertEquals(0, polygon.loop(0).depth());
+    assertEquals(1, polygon.loop(1).depth());
+    assertEquals(2, polygon.loop(2).depth());
+    assertDoubleNear(0.003821967440517272, polygon.getArea());
+  }
+
 }

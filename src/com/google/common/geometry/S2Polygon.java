@@ -186,6 +186,46 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
+   * Initialize a polygon from a set of S2Loops.
+   *
+   * <p>
+   * Unlike S2Polygon.init() this method assumes the caller already knows the
+   * nesting of loops within other loops.  The passed in map maps from parents
+   * to their immediate child loops with null mapping to the list of top most
+   * shell loops.  Immediate child loops must be completely spatially contained
+   * within their parent loop but not contained in any other loop except for
+   * ancestors of the parent.  This method avoids the cost of determining nesting
+   * internally, but if the passed in nesting is wrong future operations on
+   * the S2Polygon may be arbitrarily incorrect.
+   *
+   * Note that unlike init(), the passed in container of loops is not cleared;
+   * however, the passed in loops become owned by the S2Polygon and should
+   * not be modified by the caller after calling this method.
+   *
+   * @param nestedLoops loops with nesting.
+   */
+  public void initWithNestedLoops(Map<S2Loop, List<S2Loop>> nestedLoops) {
+    Preconditions.checkState(numLoops() == 0);
+    initLoop(null, -1, nestedLoops);
+
+    // Empty the map as an indication we have taken ownership of the loops.
+    nestedLoops.clear();
+
+    // Compute the bounding rectangle of the entire polygon.
+    hasHoles = false;
+    bound = S2LatLngRect.empty();
+    numVertices = 0;
+    for (int i = 0; i < loops.size(); ++i) {
+      numVertices += loops.get(i).numVertices();
+      if (loops.get(i).sign() < 0) {
+        hasHoles = true;
+      } else {
+        bound = bound.union(loops.get(i).getRectBound());
+      }
+    }
+  }
+
+  /**
    * Release ownership of the loops of this polygon by appending them to the
    * given list. Resets the polygon to be empty.
    */

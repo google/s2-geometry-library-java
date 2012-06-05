@@ -111,6 +111,39 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
   }
 
   /**
+   * Fast/unsafe loop initialization.
+   *
+   * <p>
+   * This constructor provides known good values for bounds and the originInside value. This is
+   * intended to be a "fast loop creation" when we already know a lot about the loop. It is
+   * primarily used in combination with the fast S2Polygon initializer (
+   * {@link S2Polygon#initWithNestedLoops(java.util.Map)}). The last vertex is implicitly connected
+   * to the first. All points should be unit length. Loops must have at least 3 vertices.
+   *
+   * @param vertices loop vertices
+   * @param originInside true if the S2::origin() is inside the loop
+   * @param bound the lat/long bounds of the loop
+   * @returns new loop.
+   */
+  public static S2Loop newLoopWithTrustedDetails(
+      List<S2Point> vertices, boolean originInside, S2LatLngRect bound) {
+    // This is a static method to try and discourage its use.
+    return new S2Loop(vertices, originInside, bound);
+  }
+
+  private S2Loop(List<S2Point> vertices, boolean originInside, S2LatLngRect bound) {
+    this.numVertices = vertices.size();
+    this.vertices = new S2Point[numVertices];
+    this.bound = bound;
+    this.depth = 0;
+    this.originInside = originInside;
+
+    vertices.toArray(this.vertices);
+
+    initFirstLogicalVertex();
+  }
+
+  /**
    * Initialize a loop corresponding to the given cell.
    */
   public S2Loop(S2Cell cell) {
@@ -854,6 +887,15 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     }
     index.predictAdditionalCalls(expectedQueries);
     return new S2EdgeIndex.DataEdgeIterator(index);
+  }
+
+  /**
+   * Return true if the S2:origin() is inside this loop.
+   *
+   * Primarily used to serialize internal details about a loop for later fast initialization.
+   */
+  public boolean isOriginInside() {
+    return originInside;
   }
 
   /** Return true if this loop is valid. */

@@ -167,11 +167,12 @@ public strictfp class GeometryTestCase extends TestCase {
         S2Point.mul(z, (1 - h))));
   }
 
-  static void parseVertices(String str, List<S2Point> vertices) {
+  static S2LatLngRect parseVertices(String str, List<S2Point> vertices) {
     if (str == null) {
-      return;
+      return null;
     }
 
+    S2LatLngRect bound = S2LatLngRect.empty();
     for (String token : Splitter.on(',').trimResults().omitEmptyStrings().split(str)) {
       int colon = token.indexOf(':');
       if (colon == -1) {
@@ -181,7 +182,10 @@ public strictfp class GeometryTestCase extends TestCase {
       double lat = Double.parseDouble(token.substring(0, colon));
       double lng = Double.parseDouble(token.substring(colon + 1));
       vertices.add(S2LatLng.fromDegrees(lat, lng).toPoint());
+      bound.addPoint(S2LatLng.fromDegrees(lat, lng));
     }
+    
+    return bound;
   }
 
   static S2Point makePoint(String str) {

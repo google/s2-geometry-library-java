@@ -127,6 +127,14 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(southHemi.getRectBound().lat(), new R1Interval(-S2.M_PI_2, 0));
   }
 
+  public void testFastConstructor() {
+    List<S2Point> vertices = Lists.newArrayList();
+    S2LatLngRect bound = parseVertices("-80:120, -80:0, -80:-120", vertices);
+    S2Loop loop = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
+    assertTrue(loop.isValid());
+    assertEquals(0, loop.depth());
+  }
+
   public void testAreaCentroid() {
     assertDoubleNear(northHemi.getArea(), 2 * S2.M_PI);
     assertDoubleNear(eastHemi.getArea(), 2 * S2.M_PI);
@@ -575,6 +583,11 @@ public strictfp class S2LoopTest extends GeometryTestCase {
 
     assertEquals(2 * S2.M_PI, skinnyChevron.getTurningAngle());
     checkTurningAngleInvariants(skinnyChevron);
+  }
+
+  public void testIsOriginInside() {
+    assertEquals(eastHemi.contains(S2.origin()), eastHemi.isOriginInside());
+    assertEquals(arctic80.contains(S2.origin()), arctic80.isOriginInside());
   }
 
   /**
