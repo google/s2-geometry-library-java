@@ -37,14 +37,14 @@ import java.util.PriorityQueue;
  *  The approximation algorithm is not optimal but does a pretty good job in
  * practice. The output does not always use the maximum number of cells allowed,
  * both because this would not always yield a better approximation, and because
- * max_cells() is a limit on how much work is done exploring the possible
+ * maxCells() is a limit on how much work is done exploring the possible
  * covering as well as a limit on the final output size.
  *
  *  One can also generate interior coverings, which are sets of cells which are
  * entirely contained within a region. Interior coverings can be empty, even for
  * non-empty regions, if there are no cells that satisfy the provided
  * constraints and are contained by the region. Note that for performance
- * reasons, it is wise to specify a max_level when computing interior coverings
+ * reasons, it is wise to specify a maxLevel when computing interior coverings
  * - otherwise for regions with small or zero area, the algorithm may spend a
  * lot of time subdividing cells all the way to leaf level to try to find
  * contained cells.
@@ -115,8 +115,7 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * We define our own comparison function on QueueEntries in order to make the
-   * results deterministic. Using the default less<QueueEntry>, entries of equal
-   * priority would be sorted according to the memory address of the candidate.
+   * results deterministic.
    */
   static class QueueEntriesComparator implements Comparator<QueueEntry> {
     @Override
@@ -127,9 +126,7 @@ public final strictfp class S2RegionCoverer {
 
 
   /**
-   * We keep the candidates in a priority queue. We specify a vector to hold the
-   * queue entries since for some reason priority_queue<> uses a deque by
-   * default.
+   * We keep the candidates in a priority queue.
    */
   private PriorityQueue<QueueEntry> candidateQueue;
 
@@ -149,7 +146,7 @@ public final strictfp class S2RegionCoverer {
   }
 
   // Set the minimum and maximum cell level to be used. The default is to use
-  // all cell levels. Requires: max_level() >= min_level().
+  // all cell levels. Requires: maxLevel() >= minLevel().
   //
   // To find the cell level corresponding to a given physical distance, use
   // the S2Cell metrics defined in s2.h. For example, to find the cell
@@ -158,7 +155,7 @@ public final strictfp class S2RegionCoverer {
   // int level = S2::kAvgEdge.GetClosestLevel(
   // geostore::S2Earth::KmToRadians(length_km));
   //
-  // Note: min_level() takes priority over max_cells(), i.e. cells below the
+  // Note: minLevel() takes priority over maxCells(), i.e. cells below the
   // given level will never be used even if this causes a large number of
   // cells to be returned.
 
@@ -191,8 +188,8 @@ public final strictfp class S2RegionCoverer {
   }
 
   /**
-   * If specified, then only cells where (level - min_level) is a multiple of
-   * "level_mod" will be used (default 1). This effectively allows the branching
+   * If specified, then only cells where (level - minLevel) is a multiple of
+   * "levelMod" will be used (default 1). This effectively allows the branching
    * factor of the S2CellId hierarchy to be increased. Currently the only
    * parameter values allowed are 1, 2, or 3, corresponding to branching factors
    * of 4, 16, and 64 respectively.
@@ -209,19 +206,19 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * Sets the maximum desired number of cells in the approximation (defaults to
-   * kDefaultMaxCells). Note the following:
+   * DEFAULT_MAX_CELLS). Note the following:
    *
    * <ul>
-   * <li>For any setting of max_cells(), up to 6 cells may be returned if that
+   * <li>For any setting of maxCells(), up to 6 cells may be returned if that
    * is the minimum number of cells required (e.g. if the region intersects all
    * six face cells). Up to 3 cells may be returned even for very tiny convex
    * regions if they happen to be located at the intersection of three cube
    * faces.
    *
-   * <li>For any setting of max_cells(), an arbitrary number of cells may be
-   * returned if min_level() is too high for the region being approximated.
+   * <li>For any setting of maxCells(), an arbitrary number of cells may be
+   * returned if minLevel() is too high for the region being approximated.
    *
-   * <li>If max_cells() is less than 4, the area of the covering may be
+   * <li>If maxCells() is less than 4, the area of the covering may be
    * arbitrarily large compared to the area of the original region even if the
    * region is convex (e.g. an S2Cap or S2LatLngRect).
    * </ul>
@@ -253,7 +250,7 @@ public final strictfp class S2RegionCoverer {
     // GetCoveringInternal(), we construct a cell union and then denormalize it.
     // This has the effect of replacing four child cells with their parent
     // whenever this does not violate the covering parameters specified
-    // (min_level, level_mod, etc). This strategy significantly reduces the
+    // (minLevel, levelMod, etc). This strategy significantly reduces the
     // number of cells returned in many cases, and it is cheap compared to
     // computing the covering in the first place.
 
@@ -279,7 +276,7 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * Return a normalized cell union that covers the given region and satisfies
-   * the restrictions *EXCEPT* for min_level() and level_mod(). These criteria
+   * the restrictions *EXCEPT* for minLevel() and levelMod(). These criteria
    * cannot be satisfied using a cell union because cell unions are
    * automatically normalized by replacing four child cells with their parent
    * whenever possible. (Note that the list of cell ids passed to the cell union
@@ -299,7 +296,7 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * Return a normalized cell union that is contained within the given region
-   * and satisfies the restrictions *EXCEPT* for min_level() and level_mod().
+   * and satisfies the restrictions *EXCEPT* for minLevel() and levelMod().
    */
   public S2CellUnion getInteriorCovering(S2Region region) {
     S2CellUnion covering = new S2CellUnion();
@@ -364,8 +361,8 @@ public final strictfp class S2RegionCoverer {
 
   /**
    * Process a candidate by either adding it to the result list or expanding its
-   * children and inserting it into the priority queue. Passing an argument of
-   * NULL does nothing.
+   * children and inserting it into the priority queue. Passing a null argument
+   * does nothing.
    */
   private void addCandidate(Candidate candidate) {
     if (candidate == null) {
@@ -378,7 +375,7 @@ public final strictfp class S2RegionCoverer {
     }
     // assert (candidate.numChildren == 0);
 
-    // Expand one level at a time until we hit min_level_ to ensure that
+    // Expand one level at a time until we hit minLevel to ensure that
     // we don't skip over it.
     int numLevels = (candidate.cell.level() < minLevel) ? 1 : levelMod;
     int numTerminals = expandChildren(candidate, candidate.cell, numLevels);
@@ -485,7 +482,7 @@ public final strictfp class S2RegionCoverer {
     // that are entirely contained within the region are immediately added to
     // the output, while cells that do not intersect the region are immediately
     // discarded.
-    // Therefore pq_ only contains cells that partially intersect the region.
+    // Therefore candidateQueue only contains cells that partially intersect the region.
     // Candidates are prioritized first according to cell size (larger cells
     // first), then by the number of intersecting children they have (fewest
     // children first), and then by the number of fully contained children
@@ -499,16 +496,23 @@ public final strictfp class S2RegionCoverer {
     getInitialCandidates();
     while (!candidateQueue.isEmpty() && (!interiorCovering || result.size() < maxCells)) {
       Candidate candidate = candidateQueue.poll().candidate;
-      // logger.info("Pop: " + candidate.cell.id());
-      if (candidate.cell.level() < minLevel || candidate.numChildren == 1
-          || result.size() + (interiorCovering ? 0 : candidateQueue.size()) + candidate.numChildren
-              <= maxCells) {
+      // For interior covering we keep subdividing no matter how many children
+      // candidate has. If we reach maxCells before expanding all children,
+      // we will just use some of them.
+      // For exterior covering we cannot do this, because result has to cover the
+      // whole region, so all children have to be used.
+      // candidate.numChildren == 1 case takes care of the situation when we
+      // already have more than maxCells in result (minLevel is too high).
+      if (interiorCovering ||
+          candidate.cell.level() < minLevel ||
+          candidate.numChildren == 1 ||
+          result.size() + candidateQueue.size() + candidate.numChildren <= maxCells) {
         // Expand this candidate into its children.
         for (int i = 0; i < candidate.numChildren; ++i) {
-          addCandidate(candidate.children[i]);
+          if (!interiorCovering || result.size() < maxCells) {
+            addCandidate(candidate.children[i]);
+          }
         }
-      } else if (interiorCovering) {
-        // Do nothing
       } else {
         candidate.isTerminal = true;
         addCandidate(candidate);

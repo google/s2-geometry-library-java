@@ -148,4 +148,63 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     }
     assertEquals(tokens, Lists.newArrayList("0554", "0ffc", "1004", "1aac"));
   }
+
+  public void testInteriorCovering() {
+    // We construct the region the following way. Start with S2 cell of level l.
+    // Remove from it one of its grandchildren (level l+2). If we then set
+    //   minLevel = l
+    //   maxLevel = l + 3
+    //   maxCells = 3
+    // the best interior covering should contain 3 children of the initial cell,
+    // that were not affected by removal of a grandchild.
+    final int level = 12;
+
+    S2CellId smallCell = S2CellId.fromPoint(randomPoint()).parent(level + 2);
+    S2CellId largeCell = smallCell.parent(level);
+
+    S2CellUnion smallCellUnion = new S2CellUnion();
+    smallCellUnion.initFromCellIds(Lists.newArrayList(smallCell));
+
+    S2CellUnion largeCellUnion = new S2CellUnion();
+    largeCellUnion.initFromCellIds(Lists.newArrayList(largeCell));
+
+    // Because the Java S2CellUnion doesn't have getDifference(), we construct it
+    // manually by taking all grandchildren except the missing one.
+    ArrayList<S2CellId> diffList = Lists.newArrayList();
+    for (S2CellId id = largeCell.childBegin(level + 2);
+         !id.equals(largeCell.childEnd(level + 2));
+         id = id.next()) {
+      if(!id.equals(smallCell)) {
+        diffList.add(id);
+      }
+    }
+
+    S2CellUnion diff = new S2CellUnion();
+    diff.initFromCellIds(diffList);
+
+    S2RegionCoverer coverer = new S2RegionCoverer();
+    coverer.setMaxCells(3);
+    coverer.setMaxLevel(level + 3);
+    coverer.setMinLevel(level);
+
+    ArrayList<S2CellId> interior = Lists.newArrayList();
+    coverer.getInteriorCovering(diff, interior);
+    assertEquals(3, interior.size());
+
+    for (int i = 0; i < 3; ++i) {
+      assertEquals(level + 1, interior.get(i).level());
+    }
+
+    // For a full cover, we'd need 6 cells (3 at level+1, and 3 at level+2). If we allow 5, ensure
+    // that all 3 large cells are there and we get 2 small ones.
+    coverer.setMaxCells(5);
+    ArrayList<S2CellId> moreInterior = Lists.newArrayList();
+    coverer.getInteriorCovering(diff, moreInterior);
+
+    assertEquals(5, moreInterior.size());
+    moreInterior.removeAll(interior);
+    assertEquals(2, moreInterior.size());
+    assertEquals(level + 2, moreInterior.get(0).level());
+    assertEquals(level + 2, moreInterior.get(1).level());
+  }
 }
