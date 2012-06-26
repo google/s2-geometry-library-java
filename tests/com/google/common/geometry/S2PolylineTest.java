@@ -160,6 +160,32 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(2, edgeIndex);
   }
 
+  public void testValid() {
+    // A simple normalized line must be valid.
+    List<S2Point> vertices = Lists.newArrayList();
+    vertices.add(new S2Point(1,0,0));
+    vertices.add(new S2Point(0,1,0));
+    S2Polyline line = new S2Polyline(vertices);
+    assertTrue(line.isValid());
+  }
+
+  public void testInvalid() {
+    // A non-normalized line must be invalid.
+    List<S2Point> vertices = Lists.newArrayList();
+    vertices.add(new S2Point(1,0,0));
+    vertices.add(new S2Point(0,2,0));
+    S2Polyline line = new S2Polyline(vertices);
+    assertFalse(line.isValid());
+
+    // Lines with duplicate points must be invalid.
+    List<S2Point> vertices2 = Lists.newArrayList();
+    vertices2.add(new S2Point(1,0,0));
+    vertices2.add(new S2Point(0,1,0));
+    vertices2.add(new S2Point(0,1,0));
+    S2Polyline line2 = new S2Polyline(vertices2);
+    assertFalse(line2.isValid());
+  }
+
   /**
    * Utility for testing equals() and hashCode() results at once.
    * Tests that lhs.equals(rhs) matches expectedResult, as well as

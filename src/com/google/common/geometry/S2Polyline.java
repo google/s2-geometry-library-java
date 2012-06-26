@@ -61,6 +61,14 @@ public final strictfp class S2Polyline implements S2Region {
   }
 
   /**
+   * Return true if the polyline is valid having all vertices be in unit length
+   * and having no identical or antipodal adjacent vertices.
+   */
+  public boolean isValid() {
+    return isValid(Arrays.asList(vertices));
+  }
+
+  /**
    * Return true if the given vertices form a valid polyline.
    */
   public boolean isValid(List<S2Point> vertices) {
