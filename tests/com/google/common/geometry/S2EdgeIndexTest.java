@@ -186,4 +186,13 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
       tryCrossingsRandomInCap(2000, 300, 50000, 1000, 10);
     }
   }
+
+  public void testLenientCrossingRegression() {
+    S2Point a = makePoint("0:0");
+    S2Point b = makePoint("0:1");
+    S2Point c = makePoint("-1:2");
+    S2Point d = makePoint("1:2");
+    assertFalse("Non-crossing edges crossed",
+        S2EdgeIndex.lenientCrossing(a, b, c, d));
+  }
 }

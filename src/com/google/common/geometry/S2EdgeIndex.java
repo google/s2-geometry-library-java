@@ -453,22 +453,28 @@ public abstract strictfp class S2EdgeIndex {
   /**
    * Returns true if ab possibly crosses cd, by clipping tiny angles to zero.
    */
-  private static boolean lenientCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
+  static final boolean lenientCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
     // assert (S2.isUnitLength(a));
     // assert (S2.isUnitLength(b));
     // assert (S2.isUnitLength(c));
 
     double acb = S2Point.crossProd(a, c).dotProd(b);
+    if (Math.abs(acb) < MAX_DET_ERROR) {
+      return true;
+    }
     double bda = S2Point.crossProd(b, d).dotProd(a);
-    if (Math.abs(acb) < MAX_DET_ERROR || Math.abs(bda) < MAX_DET_ERROR) {
+    if (Math.abs(bda) < MAX_DET_ERROR) {
       return true;
     }
     if (acb * bda < 0) {
       return false;
     }
     double cbd = S2Point.crossProd(c, b).dotProd(d);
-    double dac = S2Point.crossProd(c, a).dotProd(c);
-    if (Math.abs(cbd) < MAX_DET_ERROR || Math.abs(dac) < MAX_DET_ERROR) {
+    if (Math.abs(cbd) < MAX_DET_ERROR) {
+      return true;
+    }
+    double dac = S2Point.crossProd(d, a).dotProd(c);
+    if (Math.abs(dac) < MAX_DET_ERROR) {
       return true;
     }
     return (acb * cbd >= 0) && (acb * dac >= 0);
