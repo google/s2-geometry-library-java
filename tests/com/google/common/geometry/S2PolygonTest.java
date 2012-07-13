@@ -238,7 +238,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
       this.a_or_b = a_or_b;
       this.a_minus_b = a_minus_b;
     }
-  };
+  }
 
   private static TestCase[] testCases = {
     // Two triangles that share an edge.
@@ -553,6 +553,51 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     // distance is to (1,0) or (-1,0), and should be 1 degree
     assertEquals(1d, shell.getDistance(origin).degrees(), epsilon);
   }
+
+  public void testProject() {
+    S2Polygon polygon = makePolygon(NEAR0 + NEAR2);
+    double epsilon = 1e-15;
+    S2Point point;
+    S2Point projected;
+
+    // The point inside the polygon should be projected into itself.
+    point = makePoint("1.1:0");
+    projected = polygon.project(point);
+    assertTrue(point.aequal(projected, epsilon));
+
+    // The point is on the outside of the polygon.
+    point = makePoint("5.1:-2");
+    projected  = polygon.project(point);
+    assertTrue(makePoint("5:-2").aequal(projected, epsilon));
+
+    // The point is inside the hole in the polygon. Note the expected value
+    // is based on a plane, so it's not that accurate; thus, tolerance is
+    // reduced to 1e-6.
+    point = makePoint("-0.49:-0.49");
+    projected = polygon.project(point);
+    assertTrue(makePoint("-0.5:-0.5").aequal(projected, 1e-6));
+
+    point = makePoint("0:-3");
+    projected = polygon.project(point);
+    assertTrue(makePoint("0:-2").aequal(projected, epsilon));
+  }
+
+  public void testProjectMatchesDistance() {
+    S2Polygon polygon = makePolygon(NEAR0 + NEAR2);
+    double epsilon = 1e-15;
+    S2Point point;
+    S2Point projected;
+
+    // In the hole
+    point = makePoint("-0.49:-0.49");
+    projected = polygon.project(point);
+    assertEquals(polygon.getDistance(point).radians(), point.angle(projected), epsilon);
+
+    // Outside the polygon
+    point = makePoint("10:15");
+    projected = polygon.project(point);
+    assertEquals(polygon.getDistance(point).radians(), point.angle(projected), epsilon);
+}
 
   public void testFastInit() {
     S2LatLngRect bound = null;
