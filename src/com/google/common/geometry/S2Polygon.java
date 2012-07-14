@@ -739,8 +739,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // plus the boundary of B clipped to the interior of A,
     // plus one copy of any directed edges that are in both boundaries.
 
-    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
-    options.setMergeDistance(vertexMergeRadius);
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
+        .setMergeDistance(vertexMergeRadius)
+        .build();
     S2PolygonBuilder builder = new S2PolygonBuilder(options);
     clipBoundary(a, false, b, false, false, true, builder);
     clipBoundary(b, false, a, false, false, false, builder);
@@ -761,8 +762,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // plus the boundary of B clipped to the exterior of A,
     // plus one copy of any directed edges that are in both boundaries.
 
-    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
-    options.setMergeDistance(vertexMergeRadius);
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
+        .setMergeDistance(vertexMergeRadius)
+        .build();
     S2PolygonBuilder builder = new S2PolygonBuilder(options);
     clipBoundary(a, false, b, false, true, true, builder);
     clipBoundary(b, false, a, false, true, false, builder);
@@ -784,8 +786,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // plus the reversed boundary of B clipped to the interior of A,
     // plus one copy of any edge in A that is also a reverse edge in B.
 
-    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
-    options.setMergeDistance(vertexMergeRadius);
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
+        .setMergeDistance(vertexMergeRadius)
+        .build();
     S2PolygonBuilder builder = new S2PolygonBuilder(options);
     clipBoundary(a, false, b, true, true, true, builder);
     clipBoundary(b, true, a, false, false, false, builder);

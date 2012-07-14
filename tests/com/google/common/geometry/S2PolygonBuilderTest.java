@@ -483,9 +483,10 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       final boolean makesPolygon) {
     for (int iter = 0; iter < 500; ++iter) {
       // Initialize to the default options, which are changed below
-      S2PolygonBuilder.Options options = new S2PolygonBuilder.Options(false, true);
-      options.setUndirectedEdges(evalTristate(undirectedEdges));
-      options.setXorEdges(evalTristate(xorEdges));
+      S2PolygonBuilder.Options options = S2PolygonBuilder.Options.builder()
+          .setUndirectedEdges(evalTristate(undirectedEdges))
+          .setXorEdges(evalTristate(xorEdges))
+          .build();
 
       // Each test has a minimum and a maximum merge radius.  The merge
       // radius must be at least the given minimum to ensure that all expected
@@ -593,10 +594,12 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // merging and/or splicing (the "g" value mentioned above).
       double minEdge = minMergeRadians + (vertexMerge + 2 * maxPerturb) / minSin;
 
-      options.setMergeDistance(S1Angle.radians(vertexMerge));
-      options.setEdgeSpliceFraction(edgeFraction);
-      options.setValidate(true);
-      S2PolygonBuilder builder = new S2PolygonBuilder(options);
+      S2PolygonBuilder.Options newOptions = options.toBuilder()
+          .setMergeDistance(S1Angle.radians(vertexMerge))
+          .setEdgeSpliceFraction(edgeFraction)
+          .setValidate(true)
+          .build();
+      S2PolygonBuilder builder = new S2PolygonBuilder(newOptions);
 
       // On each iteration we randomly rotate the test case around the sphere.
       // This causes the S2PolygonBuilder to choose different first edges when
@@ -699,8 +702,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     // one before it.
     S2Polygon last = null;
     for (int i = 0; i < NUM_TESTS; i++) {
-      S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR;
-      options.setMergeDistance(S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+      S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
+          .setMergeDistance(S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE)
+          .build();
       S2PolygonBuilder builder = new S2PolygonBuilder(options);
       S2Polygon result = new S2Polygon();
 

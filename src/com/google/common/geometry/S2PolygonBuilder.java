@@ -31,34 +31,34 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
+import javax.annotation.Nullable;
+
 /**
  * This is a simple class for assembling polygons out of edges. It requires that
- * no two edges cross. It can handle both directed and undirected edges, and
- * optionally it can also remove duplicate edge pairs (consisting of two
- * identical edges or an edge and its reverse edge). This is useful for
- * computing seamless unions of polygons that have been cut into pieces.
+ * no two edges cross. It can handle both directed and undirected edges, and,
+ * optionally, it can remove duplicate-edge pairs (consisting of two identical
+ * edges or an edge and its reverse edge). This is useful for computing seamless
+ * unions of polygons that have been cut into pieces.
  *
- *  Here are some of the situations this class was designed to handle:
- *
- *  1. Computing the union of disjoint polygons that may share part of their
- * boundaries. For example, reassembling a lake that has been split into two
- * loops by a state boundary.
- *
- *  2. Constructing polygons from input data that does not follow S2
- * conventions, i.e. where loops may have repeated vertices, or distinct loops
- * may share edges, or shells and holes have opposite or unspecified
- * orientations.
- *
- *  3. Computing the symmetric difference of a set of polygons whose edges
- * intersect only at vertices. This can be used to implement a limited form of
- * polygon intersection or subtraction as well as unions.
- *
- *  4. As a tool for implementing other polygon operations by generating a
- * collection of directed edges and then assembling them into loops.
+ * <p>Some of the situations this class was designed to handle:
+ * <ol>
+ * <li>Computing the union of disjoint polygons that may share part of their
+ *     boundaries. For example, reassembling a lake that has been split into two
+ *     loops by a state boundary.
+ * <li>Constructing polygons from input data that do not follow S2
+ *     conventions, i.e., where loops may have repeated vertices, or distinct
+ *     loops may share edges, or shells and holes having opposite or unspecified
+ *     orientations.
+ * <li>Computing the symmetric difference of a set of polygons whose edges
+ *     intersect only at vertices. This can be used to implement a limited form
+ *     of polygon intersection or subtraction as well as unions.
+ * <li>As a tool for implementing other polygon operations by generating a
+ *     collection of directed edges and then assembling them into loops.
+ * </ol>
  *
  */
-public strictfp class S2PolygonBuilder {
-  private Options options;
+public final strictfp class S2PolygonBuilder {
+  private final Options options;
 
   /**
    * The current set of edges, grouped by origin. The set of destination
@@ -85,7 +85,30 @@ public strictfp class S2PolygonBuilder {
     this.options = options;
   }
 
-  public static class Options {
+  /**
+   * Options for initializing a {@link S2PolygonBuilder}. Choose one of the
+   * predefined options, or use a {@link Builder} to construct a new one.
+   * <p>Examples:
+   * <pre>  {@code
+   * S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(
+   *     S2PolygonBuilder.Options.UNDIRECTED_XOR);
+   *
+   * S2PolygonBuilder.Options options =
+   *     S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
+   *         .setMergeDistance(vertexMergeRadius)
+   *         .build();
+   * S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);
+   *
+   * S2PolygonBuilder.Options options =
+   *     S2PolygonBuilder.Options.builder()
+   *         .setUndirectedEdges(false)
+   *         .setXorEdges(true)
+   *         .setMergeDistance(vertexMergeRadius)
+   *         .build();
+   * S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);
+   * }</pre>
+   */
+  public static final class Options {
     /**
      * These are the options that should be used for assembling well-behaved
      * input data into polygons. All edges should be directed such that "shells"
@@ -93,14 +116,20 @@ public strictfp class S2PolygonBuilder {
      * clockwise holes), unless it is known that shells and holes do not share
      * any edges.
      */
-    public static final Options DIRECTED_XOR = new Options(false, true);
+    public static final Options DIRECTED_XOR = builder()
+        .setUndirectedEdges(false)
+        .setXorEdges(true)
+        .build();
 
     /**
      * These are the options that should be used for assembling polygons that do
-     * not follow the conventions above, e.g. where edge directions may vary
+     * not follow the conventions above, e.g., where edge directions may vary
      * within a single loop, or shells and holes are not oppositely oriented.
      */
-    public static final Options UNDIRECTED_XOR = new Options(true, true);
+    public static final Options UNDIRECTED_XOR = builder()
+        .setUndirectedEdges(true)
+        .setXorEdges(true)
+        .build();
 
     /**
      * These are the options that should be used for assembling edges where the
@@ -108,159 +137,245 @@ public strictfp class S2PolygonBuilder {
      * may occur more than once. Edges are treated as undirected and are not
      * XORed together, in particular, adding edge A->B also adds B->A.
      */
-    public static final Options UNDIRECTED_UNION = new Options(true, false);
+    public static final Options UNDIRECTED_UNION = builder()
+        .setUndirectedEdges(true)
+        .setXorEdges(false)
+        .build();
 
     /**
      * Finally, select this option when the desired output is a collection of
      * loops rather than a polygon, but your input edges are directed and you do
      * not want reverse edges to be added implicitly as above.
      */
-    public static final Options DIRECTED_UNION = new Options(false, false);
+    public static final Options DIRECTED_UNION = builder()
+        .setUndirectedEdges(false)
+        .setXorEdges(false)
+        .build();
 
-    private boolean undirectedEdges;
-    private boolean xorEdges;
-    private boolean validate;
-    private S1Angle mergeDistance;
+    private final boolean undirectedEdges;
+    private final boolean xorEdges;
+    private final boolean validate;
+    private final S1Angle mergeDistance;
 
     /**
-     * If positive, this is the fraction of {@code mergeDistance} that a point
+     * If positive, this is the fraction of {@link #mergeDistance} that a point
      * can be from an edge before it will be snapped to the edge.
      */
-    private double edgeSpliceFraction;
+    private final double edgeSpliceFraction;
 
-    public Options(boolean undirectedEdges, boolean xorEdges) {
-      this.undirectedEdges = undirectedEdges;
-      this.xorEdges = xorEdges;
-      this.validate = false;
-      this.mergeDistance = S1Angle.radians(0);
-      this.edgeSpliceFraction = 0.866;
+    /**
+     * Private constructor called by the {@link Builder}.
+     */
+    private Options(Builder builder) {
+      this.undirectedEdges = builder.undirectedEdges;
+      this.xorEdges = builder.xorEdges;
+      this.validate = builder.validate;
+      this.mergeDistance = builder.mergeDistance;
+      this.edgeSpliceFraction = builder.edgeSpliceFraction;
     }
 
     /**
-     * If "undirected_edges" is false, then the input is assumed to consist of
-     * edges that can be assembled into oriented loops without reversing any of
-     * the edges. Otherwise, "undirected_edges" should be set to true.
+     * Static factory method for returning a new options {@link Builder} with
+     * default settings, which is equivalent to {@link #DIRECTED_XOR}.
+     */
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    /**
+     * Returns a new {@link Builder} with the same settings as the current
+     * options. Use this to create a new {@link Options} based on the current
+     * options.
+     */
+    public Builder toBuilder() {
+      return new Builder()
+          .setUndirectedEdges(undirectedEdges)
+          .setXorEdges(xorEdges)
+          .setValidate(validate)
+          .setMergeDistance(mergeDistance)
+          .setEdgeSpliceFraction(edgeSpliceFraction);
+    }
+
+    /**
+     * If this returns false, the input is assumed to consist of edges that can
+     * be assembled into oriented loops without reversing any of the edges.
+     * Otherwise, use {@link Builder#setUndirectedEdges} to set this attribute
+     * to true when building the options.
      */
     public boolean getUndirectedEdges() {
       return undirectedEdges;
     }
 
     /**
-     * If "xor_edges" is true, then any duplicate edge pairs are removed. This
+     * If {@code xorEdges} is true, any duplicate edge pairs are removed. This
      * is useful for computing the union of a collection of polygons whose
      * interiors are disjoint but whose boundaries may share some common edges
-     * (e.g. computing the union of South Africa, Lesotho, and Swaziland).
+     * (e.g., computing the union of South Africa, Lesotho, and Swaziland).
      *
-     *  Note that for directed edges, a "duplicate edge pair" consists of an
+     * <p>Note that for directed edges, a "duplicate edge pair" consists of an
      * edge and its corresponding reverse edge. This means that either (a)
      * "shells" and "holes" must have opposite orientations, or (b) shells and
-     * holes do not share edges. Otherwise undirected_edges() should be
-     * specified.
+     * holes do not share edges.
      *
-     *  There are only two reasons to turn off xor_edges():
+     * <p>There are only two reasons to turn off {@code xorEdges} (via
+     * {@link Builder#setXorEdges}):
+     * <ol>
+     * <li>{@link #assemblePolygon} will be called, and you want to assert that
+     *     there are no duplicate edge pairs in the input.
      *
-     *  (1) assemblePolygon() will be called, and you want to assert that there
-     * are no duplicate edge pairs in the input.
-     *
-     *  (2) assembleLoops() will be called, and you want to keep abutting loops
-     * separate in the output rather than merging their regions together (e.g.
-     * assembling loops for Kansas City, KS and Kansas City, MO simultaneously).
+     * <li>{@link #assembleLoops} will be called, and you want to keep abutting
+     *     loops separate in the output, rather than merging their regions
+     *     together (e.g., assembling loops for Kansas City, KS and Kansas City,
+     *     MO simultaneously).
+     * </ol>
      */
     public boolean getXorEdges() {
       return xorEdges;
     }
 
     /**
-     * Default value: false
+     * If true, {@link S2Loop#isValid} is called on all loops and polygons
+     * before constructing them. If any loop is invalid (e.g.,
+     * self-intersecting), it is rejected and returned as a set of
+     * "unused edges". Any remaining valid loops are kept. If the entire polygon
+     * is invalid (e.g., two loops intersect), then all edges are rejected and
+     * returned as unused edges. See {@link Builder#setValidate}.
+     *
+     * <p>Default value: false
      */
     public boolean getValidate() {
       return validate;
     }
 
     /**
-     * Default value: 0
+     * If set to a positive value, all vertex pairs that are separated by
+     * less than this distance will be merged together. Note that vertices can
+     * move arbitrarily far if there is a long chain of vertices separated by
+     * less than this distance.
+     *
+     * <p>Setting this to a positive value is useful for assembling polygons out
+     * of input data where vertices and/or edges may not be perfectly aligned.
+     * See {@link Builder#setMergeDistance}.
+     *
+     * <p>Default value: 0
      */
     public S1Angle getMergeDistance() {
       return mergeDistance;
     }
 
     /**
-     * If true, isValid() is called on all loops and polygons before
-     * constructing them. If any loop is invalid (e.g. self-intersecting), it is
-     * rejected and returned as a set of "unused edges". Any remaining valid
-     * loops are kept. If the entire polygon is invalid (e.g. two loops
-     * intersect), then all loops are rejected and returned as unused edges.
-     */
-    public void setValidate(boolean validate) {
-      this.validate = validate;
-    }
-
-    /**
-     * <p>If set to a positive value, all vertex pairs that are separated by
-     * less than this distance will be merged together. Note that vertices can
-     * move arbitrarily far if there is a long chain of vertices separated by
-     * less than this distance.
-     *
-     * <p>
-     * This method is useful for assembling polygons out of input data where
-     * vertices and/or edges may not be perfectly aligned.
-     *
-     * Default value: 0.
-     */
-    public void setMergeDistance(S1Angle mergeDistance) {
-      this.mergeDistance = mergeDistance;
-    }
-
-    // Used for testing only
-    void setUndirectedEdges(boolean undirectedEdges) {
-      this.undirectedEdges = undirectedEdges;
-    }
-
-    // Used for testing only
-    void setXorEdges(boolean xorEdges) {
-      this.xorEdges = xorEdges;
-    }
-
-    /**
      * Returns the edge splice fraction, which defaults to 0.866 (approximately
-     * sqrt(3)/2).
+     * {@code sqrt(3)/2}).
      *
-     * <p>
-     * The edge splice radius is automatically set to this fraction of the
+     * <p>The edge splice radius is automatically set to this fraction of the
      * vertex merge radius. If the edge splice radius is positive, then all
      * vertices that are closer than this distance to an edge are spliced into
      * that edge. Note that edges can move arbitrarily far if there is a long
      * chain of vertices in just the right places.
      *
-     * <p>
-     * You can turn off edge splicing by setting this value to zero. This will
-     * save some time if you don't need this feature, or you don't want vertices
-     * to be spliced into nearby edges for some reason.
+     * <p>You can turn off edge splicing by setting this value to zero; see
+     * {@link Builder#setEdgeSpliceFraction}. This will save some time if you
+     * don't need this feature, or you don't want vertices to be spliced into
+     * nearby edges for some reason.
      *
-     * <p>
-     * Note that the edge splice fraction must be less than sqrt(3)/2 in order
-     * to avoid infinite loops in the merge algorithm. The default value is very
-     * close to this maximum and therefore results in the maximum amount of edge
-     * splicing for a given vertex merge radius.
+     * <p>Note that the edge splice fraction must be less than {@code sqrt(3)/2}
+     * in order to avoid infinite loops in the merge algorithm. The default
+     * value is very close to this maximum and therefore results in the maximum
+     * amount of edge splicing for a given vertex merge radius.
      *
-     * <p>
-     * The only reason to reduce the edge splice fraction is if you want to
+     * <p>The only reason to reduce the edge splice fraction is if you want to
      * limit changes in edge direction due to splicing. The direction of an edge
-     * can change by up to asin(edge_splice_fraction) due to each splice. Thus
-     * by default, edges are allowed to change direction by up to 60 degrees per
-     * splice. However, note that most direction changes are much smaller than
-     * this: the worst case occurs only if the vertex being spliced is just
-     * outside the vertex merge radius from one of the edge endpoints.
+     * can change by up to {@code asin(edge_splice_fraction)} due to each
+     * splice. Thus, by default, edges are allowed to change direction by up to
+     * 60 degrees per splice. However, note that most direction changes are much
+     * smaller than this: the worst case occurs only if the vertex being spliced
+     * is just outside the vertex merge radius from one of the edge endpoints.
      */
     public double getEdgeSpliceFraction() {
       return edgeSpliceFraction;
     }
 
-    public void setEdgeSpliceFraction(double edgeSpliceFraction) {
-      Preconditions.checkState(edgeSpliceFraction < Math.sqrt(3) / 2,
-          "Splice fraction must be at least sqrt(3)/2 to ensure termination " +
-          "of edge splicing algorithm.");
-      this.edgeSpliceFraction = edgeSpliceFraction;
+    /**
+     * Builder class for {@link Options}.
+     */
+    public static class Builder {
+      private boolean undirectedEdges = false;
+      private boolean xorEdges = true;
+      private boolean validate = false;
+      private S1Angle mergeDistance = S1Angle.radians(0);
+      private double edgeSpliceFraction = 0.866;
+
+      /**
+       * Constructs a new builder with default values, which is equivalent to
+       * {@link Options#DIRECTED_XOR}.
+       */
+      public Builder() {}
+
+      /**
+       * Builds and returns a new (immutable) instance of {@link Options}.
+       */
+      public Options build() {
+        return new Options(this);
+      }
+
+      /**
+       * Sets whether edges are undirected. See
+       * {@link Options#getUndirectedEdges}.
+       *
+       * <p>Default: false
+       */
+      public Builder setUndirectedEdges(boolean undirectedEdges) {
+        this.undirectedEdges = undirectedEdges;
+        return this;
+      }
+
+      /**
+       * Sets whether duplicated edges will be collapsed. See
+       * {@link Options#getXorEdges}.
+       *
+       * <p>Default: true
+       */
+      public Builder setXorEdges(boolean xorEdges) {
+        this.xorEdges = xorEdges;
+        return this;
+      }
+
+      /**
+       * Sets whether {@link S2Loop#isValid} is called for all loops. See
+       * {@link Options#getValidate}.
+       *
+       * <p>Default: false
+       */
+      public Builder setValidate(boolean validate) {
+        this.validate = validate;
+        return this;
+      }
+
+      /**
+       * Sets the threshold angle at which to merge vertex pairs. See
+       * {@link Options#getMergeDistance}.
+       *
+       * Default value: 0.
+       */
+      public Builder setMergeDistance(S1Angle mergeDistance) {
+        this.mergeDistance = mergeDistance;
+        return this;
+      }
+
+      /**
+       * Sets the threshold radius at which vertex are spliced into an edge.
+       * See {@link Options#getEdgeSpliceFraction}. Must be at least
+       * {@code sprt(3) / 2}.
+       *
+       * <p>Default value: 0.866
+       */
+      public Builder setEdgeSpliceFraction(double edgeSpliceFraction) {
+        Preconditions.checkState(edgeSpliceFraction < Math.sqrt(3) / 2,
+            "Splice fraction must be at least sqrt(3)/2 to ensure termination " +
+            "of edge splicing algorithm.");
+        this.edgeSpliceFraction = edgeSpliceFraction;
+        return this;
+      }
     }
   }
 
@@ -269,7 +384,7 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Add the given edge to the polygon builder and returns true if the edge was
+   * Adds the given edge to the polygon builder and returns true if the edge was
    * actually added to the edge graph.
    *
    * <p>This method should be used for input data that may not follow S2 polygon
@@ -281,7 +396,7 @@ public strictfp class S2PolygonBuilder {
       return false;
     }
 
-    // If xor_edges is true, we look for an existing edge in the opposite
+    // If xorEdges is true, we look for an existing edge in the opposite
     // direction. We either delete that edge or insert a new one.
     if (options.getXorEdges() && hasEdge(v1, v0)) {
       eraseEdge(v1, v0);
@@ -306,12 +421,12 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Add all edges in the given loop. If the sign() of the loop is negative
-   * (i.e. this loop represents a hole), the reverse edges are added instead.
-   * This implies that "shells" are CCW and "holes" are CW, as required for the
-   * directed edges convention described above.
+   * Adds all edges in the given loop. If the {@code sign()} of the loop is
+   * negative (i.e., this loop represents a hole), the reverse edges are added
+   * instead. This implies that "shells" are CCW and "holes" are CW, as required
+   * for the directed edges convention described above.
    *
-   * This method does not take ownership of the loop.
+   * <p>This method does not take ownership of the loop.
    */
   public void addLoop(S2Loop loop) {
     int sign = loop.sign();
@@ -322,9 +437,9 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Add all loops in the given polygon. Shells and holes are added with
-   * opposite orientations as described for AddLoop(). This method does not take
-   * ownership of the polygon.
+   * Adds all loops in the given polygon. Shells and holes are added with
+   * opposite orientations as described for {@link #addLoop}. This method does
+   * not take ownership of the polygon.
    */
   public void addPolygon(S2Polygon polygon) {
     for (int i = 0; i < polygon.numLoops(); ++i) {
@@ -335,18 +450,21 @@ public strictfp class S2PolygonBuilder {
   /**
    * Assembles the given edges into as many non-crossing loops as possible. When
    * there is a choice about how to assemble the loops, then CCW loops are
-   * preferred. Returns true if all edges were assembled. If "unused_edges" is
-   * not NULL, it is initialized to the set of edges that could not be assembled
-   * into loops.
+   * preferred. Returns true if all edges were assembled. If {@code unusedEdges}
+   * is not null, it is initialized to the set of edges that could not be
+   * assembled into loops.
    *
-   *  Note that if xor_edges() is false and duplicate edge pairs may be present,
-   * then undirected_edges() should be specified unless all loops can be
-   * assembled in a counter-clockwise direction. Otherwise this method may not
-   * be able to assemble all loops due to its preference for CCW loops.
+   * <p>Note that if {@link Options#getXorEdges} returns false and duplicate
+   * edge pairs may be present, then use
+   * {@link Options.Builder#setUndirectedEdges} to set it to true, unless all
+   * loops can be assembled in a counter-clockwise direction. Otherwise this
+   * method may not be able to assemble all loops due to its preference for
+   * CCW loops.
    *
-   * This method resets the S2PolygonBuilder state so that it can be reused.
+   * <p>This method resets the {@link S2PolygonBuilder} state so that it can be
+   * reused.
    */
-  public boolean assembleLoops(List<S2Loop> loops, List<S2Edge> unusedEdges) {
+  public boolean assembleLoops(List<S2Loop> loops, @Nullable List<S2Edge> unusedEdges) {
     if (options.getMergeDistance().radians() > 0) {
       PointIndex index = new PointIndex(
           options.getMergeDistance().radians(),
@@ -388,22 +506,24 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Like AssembleLoops, but normalizes all the loops so that they enclose less
-   * than half the sphere, and then assembles the loops into a polygon.
+   * Like {@link #assembleLoops}, but normalizes all the loops so that they
+   * enclose less than half the sphere, and then assembles the loops into a
+   * polygon.
    *
-   *  For this method to succeed, there should be no duplicate edges in the
-   * input. If this is not known to be true, then the "xor_edges" option should
-   * be set (which is true by default).
+   * <p>For this method to succeed, there should be no duplicate edges in the
+   * input. If this is not known to be true, then use
+   * {@link Options.Builder#setXorEdges} to set it to true (which is true by
+   * default).
    *
-   *  Note that S2Polygons cannot represent arbitrary regions on the sphere,
-   * because of the limitation that no loop encloses more than half of the
-   * sphere. For example, an S2Polygon cannot represent a 100km wide band around
-   * the equator. In such cases, this method will return the *complement* of the
-   * expected region. So for example if all the world's coastlines were
-   * assembled, the output S2Polygon would represent the land area (irrespective
-   * of the input edge or loop orientations).
+   * <p>Note that {@link S2Polygon}s cannot represent arbitrary regions on the
+   * sphere, because of the limitation that no loop encloses more than half of
+   * the sphere. For example, an {@link S2Polygon} cannot represent a 100km wide
+   * band around the equator. In such cases, this method will return the
+   * *complement* of the expected region. So, for example, if all the world's
+   * coastlines were assembled, the output S2Polygon would represent the land
+   * area (irrespective of the input edge or loop orientations).
    */
-  public boolean assemblePolygon(S2Polygon polygon, List<S2Edge> unusedEdges) {
+  public boolean assemblePolygon(S2Polygon polygon, @Nullable List<S2Edge> unusedEdges) {
     List<S2Loop> loops = Lists.newArrayList();
     boolean success = assembleLoops(loops, unusedEdges);
 
@@ -616,9 +736,9 @@ public strictfp class S2PolygonBuilder {
   }
 
   /**
-   * Clusters vertices that are separated by at most merge_distance() and
-   * returns a map of each one to a single representative vertex for all the
-   * vertices in the cluster.
+   * Clusters vertices that are separated by at most
+   * {@link Options#getMergeDistance} and returns a map of each one to a single
+   * representative vertex for all the vertices in the cluster.
    */
   private Map<S2Point, S2Point> buildMergeMap(PointIndex index) {
     // The overall strategy is to start from each vertex and grow a maximal
@@ -688,7 +808,10 @@ public strictfp class S2PolygonBuilder {
     return vset == null ? false : vset.count(v1) > 0;
   }
 
-  /** Uses the point index to help splice vertices that are near an edge onto the edge. */
+  /**
+   * Uses the point index to help splice vertices that are near an edge onto the
+   * edge.
+   */
   private void spliceEdges(PointIndex index) {
     // We keep a stack of unprocessed edges.  Initially all edges are
     // pushed onto the stack.
@@ -744,12 +867,12 @@ public strictfp class S2PolygonBuilder {
    * fixed-radius queries and has various special-purpose operations to avoid
    * the need for additional data structures.
    *
-   * <p>This class is <strong>not thread-safe</strong>.
+   * <p>This class is <b>not thread-safe</b>.
    */
   private class PointIndex {
-    private double vertexRadius;
-    private double edgeFraction;
-    private int level;
+    private final double vertexRadius;
+    private final double edgeFraction;
+    private final int level;
     private final TreeMultimap<S2CellId, S2Point> delegate = TreeMultimap.create();
     private final List<S2CellId> ids = Lists.newArrayList();
 
@@ -766,7 +889,7 @@ public strictfp class S2PolygonBuilder {
           Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * searchRadius), S2CellId.MAX_LEVEL - 1);
     }
 
-    /** Add a point to the index in each cell neighbor at the index level. */
+    /** Adds a point to the index in each cell neighbor at the index level. */
     public void add(S2Point p) {
       S2CellId.fromPoint(p).getVertexNeighbors(level, ids);
       for (S2CellId id : ids) {
@@ -784,8 +907,8 @@ public strictfp class S2PolygonBuilder {
     }
 
     /**
-     * Return the set of points whose distance to "axis" is less than
-     * {@code searchRadius}.
+     * Returns the set of points whose distance to "axis" is less than
+     * {@code vertexRadius}.
      */
     public void queryCap(S2Point axis, List<S2Point> output) {
       output.clear();
@@ -804,9 +927,9 @@ public strictfp class S2PolygonBuilder {
     }
 
     /**
-     * Return a point whose distance from the edge (v0,v1) is less than
-     * searchRadius, and which is not equal to v0 or v1. The current
-     * implementation returns the closest such point.
+     * Returns a point whose distance from the edge {@code (v0,v1)} is less than
+     * {@code vertexRadius}, and which is not equal to {@code v0} or
+     * {@code v1}. The current implementation returns the closest such point.
      */
     public S2Point findNearbyPoint(S2Point v0, S2Point v1) {
       // Strategy: we compute a very cheap covering by approximating the edge as
