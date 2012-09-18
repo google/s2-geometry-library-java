@@ -64,12 +64,12 @@ public strictfp class S2LatLng implements Serializable {
     // We use atan2 rather than asin because the input vector is not necessarily
     // unit length, and atan2 is much more accurate than asin near the poles.
     return S1Angle.radians(
-        Math.atan2(p.get(2), Math.sqrt(p.get(0) * p.get(0) + p.get(1) * p.get(1))));
+        Math.atan2(p.z, Math.sqrt(p.x * p.x + p.y * p.y)));
   }
 
   public static S1Angle longitude(S2Point p) {
     // Note that atan2(0, 0) is defined to be zero.
-    return S1Angle.radians(Math.atan2(p.get(1), p.get(0)));
+    return S1Angle.radians(Math.atan2(p.y, p.x));
   }
 
   /** This is internal to avoid ambiguity about which units are expected. */

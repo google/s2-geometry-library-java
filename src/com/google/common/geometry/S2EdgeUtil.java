@@ -123,8 +123,8 @@ public strictfp class S2EdgeUtil {
      * point-in-polygon containment tests.
      */
     public boolean edgeOrVertexCrossing(S2Point d) {
-      // We need to copy c since it is clobbered by robustCrossing().
-      S2Point c2 = new S2Point(c.get(0), c.get(1), c.get(2));
+      // Copy c, since the reference may be replaced by robustCrossing().
+      S2Point c2 = c;
 
       int crossing = robustCrossing(d);
       if (crossing < 0) {
@@ -218,7 +218,7 @@ public strictfp class S2EdgeUtil {
         if (da * db < 0) {
           // Minimum/maximum latitude occurs in the edge interior. This affects
           // the latitude bounds but not the longitude bounds.
-          double absLat = Math.acos(Math.abs(aCrossB.get(2) / aCrossB.norm()));
+          double absLat = Math.acos(Math.abs(aCrossB.z / aCrossB.norm()));
           R1Interval lat = bound.lat();
           if (da < 0) {
             absLat = Math.min(S2.M_PI_2, absLat + LAT_ERROR);
