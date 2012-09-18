@@ -58,6 +58,18 @@ public strictfp class S2Point implements Comparable<S2Point> {
     this.z = z;
   }
 
+  public double getX() {
+    return x;
+  }
+
+  public double getY() {
+    return y;
+  }
+
+  public double getZ() {
+    return z;
+  }
+
   public static S2Point minus(S2Point p1, S2Point p2) {
     return sub(p1, p2);
   }
