@@ -608,7 +608,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   /**
    * Indexing structure for an {@link S2Polygon}.
    */
-  private static final class S2PolygonIndex extends S2LoopSequenceIndex {
+  public static final class S2PolygonIndex extends S2LoopSequenceIndex {
     private final S2Polygon poly;
     private final boolean reverse;
 
@@ -623,7 +623,11 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return vertices;
     }
 
-    public S2PolygonIndex(S2Polygon poly, boolean reverse) {
+    public S2PolygonIndex(S2Polygon poly) {
+      this(poly, false);
+    }
+
+    S2PolygonIndex(S2Polygon poly, boolean reverse) {
       super(getVertices(poly));
       this.poly = poly;
       this.reverse = reverse;
