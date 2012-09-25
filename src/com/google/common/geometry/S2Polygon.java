@@ -600,7 +600,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
 
     @Override
-    protected S2Point edgeTo(int index) {
+    public S2Point edgeTo(int index) {
       return edgeFromTo(index).getEnd();
     }
   }

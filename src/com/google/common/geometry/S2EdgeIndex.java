@@ -212,16 +212,19 @@ public abstract strictfp class S2EdgeIndex {
   }
 
   /**
-   * Overwrite these functions to give access to the underlying data. The
-   * function getNumEdges() returns the number of edges in the index, while
-   * edgeFrom(index) and edgeTo(index) return the "from" and "to" endpoints of
-   * the edge at the given index.
+   * Returns the number of edges in this index.
    */
-  protected abstract int getNumEdges();
+  public abstract int getNumEdges();
 
-  protected abstract S2Point edgeFrom(int index);
+  /**
+   * Returns the starting vertex of the edge at offset {@code index}.
+   */
+  public abstract S2Point edgeFrom(int index);
 
-  protected abstract S2Point edgeTo(int index);
+  /**
+   * Returns the ending vertex of the edge at offset {@code index}.
+   */
+  public abstract S2Point edgeTo(int index);
 
   /**
    * Return both vertices of the given {@code index} in one call. Can be overridden by some

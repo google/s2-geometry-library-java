@@ -39,17 +39,17 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     }
 
     @Override
-    protected int getNumEdges() {
+    public int getNumEdges() {
       return edges.size();
     }
 
     @Override
-    protected S2Point edgeFrom(int index) {
+    public S2Point edgeFrom(int index) {
       return edges.get(index).getStart();
     }
 
     @Override
-    protected S2Point edgeTo(int index) {
+    public S2Point edgeTo(int index) {
       return edges.get(index).getEnd();
     }
   }

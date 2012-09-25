@@ -870,17 +870,17 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
     if (index == null) {
       index = new S2EdgeIndex() {
         @Override
-        protected int getNumEdges() {
+        public int getNumEdges() {
           return numVertices;
         }
 
         @Override
-        protected S2Point edgeFrom(int index) {
+        public S2Point edgeFrom(int index) {
           return vertex(index);
         }
 
         @Override
-        protected S2Point edgeTo(int index) {
+        public S2Point edgeTo(int index) {
           return vertex(index + 1);
         }
       };
