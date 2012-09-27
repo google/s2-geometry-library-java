@@ -197,15 +197,14 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
     return pos != 0 && cellIds.get(pos - 1).rangeMax().greaterOrEquals(id.rangeMin());
   }
 
+  /**
+   * Returns true if this cell union contains {@code that}. Both must have been
+   * normalized.
+   */
   public boolean contains(S2CellUnion that) {
-    // TODO(kirilll?): A divide-and-conquer or alternating-skip-search approach
-    // may be significantly faster in both the average and worst case.
-    for (S2CellId id : that) {
-      if (!this.contains(id)) {
-        return false;
-      }
-    }
-    return true;
+    S2CellUnion result = new S2CellUnion();
+    result.getIntersection(this, that);
+    return result.cellIds.equals(that.cellIds);
   }
 
   /** This is a fast operation (logarithmic in the size of the cell union). */
@@ -215,20 +214,17 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
   }
 
   /**
-   * Return true if this cell union contain/intersects the given other cell
-   * union.
+   * Return true if this cell union intersects {@code union}.
    */
   public boolean intersects(S2CellUnion union) {
-    // TODO(kirilll?): A divide-and-conquer or alternating-skip-search approach
-    // may be significantly faster in both the average and worst case.
-    for (S2CellId id : union) {
-      if (intersects(id)) {
-        return true;
-      }
-    }
-    return false;
+    S2CellUnion result = new S2CellUnion();
+    result.getIntersection(this, union);
+    return result.size() > 0;
   }
 
+  /**
+   * Sets this cell union to the union of {@code x} and {@code y}.
+   */
   public void getUnion(S2CellUnion x, S2CellUnion y) {
     // assert (x != this && y != this);
     cellIds.clear();
@@ -264,7 +260,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
   }
 
   /**
-   * Initialize this cell union to the union or intersection of the two given
+   * Initializes this cell union to the intersection of the two given
    * cell unions. Requires: x != this and y != this.
    */
   public void getIntersection(S2CellUnion x, S2CellUnion y) {
