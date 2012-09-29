@@ -41,8 +41,8 @@ public final class S2Edge {
 
   @Override
   public String toString() {
-    return String.format("Edge: (%s -> %s)\n   or [%s -> %s]",
-        start.toDegreesString(), end.toDegreesString(), start, end);
+    return String.format("Edge: (%s -> %s)",
+        start.toDegreesString(), end.toDegreesString());
   }
 
   @Override
