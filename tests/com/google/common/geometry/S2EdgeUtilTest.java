@@ -616,4 +616,13 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       maxPointDist = S1Angle.max(maxPointDist, new S1Angle(p, x));
     }
   }
+
+  public void testLenientCrossingRegression() {
+    S2Point a = makePoint("0:0");
+    S2Point b = makePoint("0:1");
+    S2Point c = makePoint("-1:2");
+    S2Point d = makePoint("1:2");
+    assertFalse("Non-crossing edges crossed",
+        S2EdgeUtil.lenientCrossing(a, b, c, d));
+  }
 }

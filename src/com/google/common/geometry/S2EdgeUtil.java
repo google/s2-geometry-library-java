@@ -40,6 +40,12 @@ public strictfp class S2EdgeUtil {
   public static final S1Angle DEFAULT_INTERSECTION_TOLERANCE = S1Angle.radians(1.5e-15);
 
   /**
+   * Threshold for small angles, that help lenientCrossing to determine whether
+   * two edges are likely to intersect.
+   */
+  private static final double MAX_DET_ERROR = 1e-14;
+
+  /**
    * This class allows a vertex chain v0, v1, v2, ... to be efficiently tested
    * for intersection with a given fixed edge AB.
    */
@@ -680,6 +686,36 @@ public strictfp class S2EdgeUtil {
         vmin = y;
       }
     }
+  }
+
+  /**
+   * Returns true if ab possibly crosses cd, by clipping tiny angles to zero.
+   */
+  public static final boolean lenientCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
+    // assert (S2.isUnitLength(a));
+    // assert (S2.isUnitLength(b));
+    // assert (S2.isUnitLength(c));
+
+    double acb = S2Point.crossProd(a, c).dotProd(b);
+    if (Math.abs(acb) < MAX_DET_ERROR) {
+      return true;
+    }
+    double bda = S2Point.crossProd(b, d).dotProd(a);
+    if (Math.abs(bda) < MAX_DET_ERROR) {
+      return true;
+    }
+    if (acb * bda < 0) {
+      return false;
+    }
+    double cbd = S2Point.crossProd(c, b).dotProd(d);
+    if (Math.abs(cbd) < MAX_DET_ERROR) {
+      return true;
+    }
+    double dac = S2Point.crossProd(d, a).dotProd(c);
+    if (Math.abs(dac) < MAX_DET_ERROR) {
+      return true;
+    }
+    return (acb * cbd >= 0) && (acb * dac >= 0);
   }
 
   /*

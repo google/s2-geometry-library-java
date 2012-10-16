@@ -36,12 +36,6 @@ public abstract strictfp class S2EdgeIndex {
   private static final double THICKENING = 0.01;
 
   /**
-   * Threshold for small angles, that help lenientCrossing to determine whether
-   * two edges are likely to intersect.
-   */
-  private static final double MAX_DET_ERROR = 1e-14;
-
-  /**
    * The cell containing each edge, as given in the parallel array
    * <code>edges</code>.
    */
@@ -454,36 +448,6 @@ public abstract strictfp class S2EdgeIndex {
   }
 
   /**
-   * Returns true if ab possibly crosses cd, by clipping tiny angles to zero.
-   */
-  static final boolean lenientCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
-    // assert (S2.isUnitLength(a));
-    // assert (S2.isUnitLength(b));
-    // assert (S2.isUnitLength(c));
-
-    double acb = S2Point.crossProd(a, c).dotProd(b);
-    if (Math.abs(acb) < MAX_DET_ERROR) {
-      return true;
-    }
-    double bda = S2Point.crossProd(b, d).dotProd(a);
-    if (Math.abs(bda) < MAX_DET_ERROR) {
-      return true;
-    }
-    if (acb * bda < 0) {
-      return false;
-    }
-    double cbd = S2Point.crossProd(c, b).dotProd(d);
-    if (Math.abs(cbd) < MAX_DET_ERROR) {
-      return true;
-    }
-    double dac = S2Point.crossProd(d, a).dotProd(c);
-    if (Math.abs(dac) < MAX_DET_ERROR) {
-      return true;
-    }
-    return (acb * cbd >= 0) && (acb * dac >= 0);
-  }
-
-  /**
    * Returns true if the edge and the cell (including boundary) intersect.
    */
   private static boolean edgeIntersectsCellBoundary(S2Point a, S2Point b, S2Cell cell) {
@@ -494,7 +458,7 @@ public abstract strictfp class S2EdgeIndex {
     for (int i = 0; i < 4; ++i) {
       S2Point fromPoint = vertices[i];
       S2Point toPoint = vertices[(i + 1) % 4];
-      if (lenientCrossing(a, b, fromPoint, toPoint)) {
+      if (S2EdgeUtil.lenientCrossing(a, b, fromPoint, toPoint)) {
         return true;
       }
     }
