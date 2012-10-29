@@ -696,22 +696,22 @@ public strictfp class S2EdgeUtil {
     // assert (S2.isUnitLength(b));
     // assert (S2.isUnitLength(c));
 
-    double acb = S2Point.crossProd(a, c).dotProd(b);
+    double acb = S2Point.scalarTripleProduct(b, a, c);
     if (Math.abs(acb) < MAX_DET_ERROR) {
       return true;
     }
-    double bda = S2Point.crossProd(b, d).dotProd(a);
+    double bda = S2Point.scalarTripleProduct(a, b, d);
     if (Math.abs(bda) < MAX_DET_ERROR) {
       return true;
     }
     if (acb * bda < 0) {
       return false;
     }
-    double cbd = S2Point.crossProd(c, b).dotProd(d);
+    double cbd = S2Point.scalarTripleProduct(d, c, b);
     if (Math.abs(cbd) < MAX_DET_ERROR) {
       return true;
     }
-    double dac = S2Point.crossProd(d, a).dotProd(c);
+    double dac = S2Point.scalarTripleProduct(c, d, a);
     if (Math.abs(dac) < MAX_DET_ERROR) {
       return true;
     }
@@ -796,11 +796,16 @@ public strictfp class S2EdgeUtil {
    * Return the minimum distance from X to any point on the edge AB. The result
    * is very accurate for small distances but may have some numerical error if
    * the distance is large (approximately Pi/2 or greater). The case A == B is
-   * handled correctly. Note: x, a and b must be of unit length. Throws
-   * IllegalArgumentException if this is not the case.
+   * handled correctly.
+   *
+   * @throws IllegalArgumentException Thrown if the parameters are not all unit
+   * length.
    */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b) {
-    return getDistance(x, a, b, S2.robustCrossProd(a, b));
+    Preconditions.checkArgument(S2.isUnitLength(x));
+    Preconditions.checkArgument(S2.isUnitLength(a));
+    Preconditions.checkArgument(S2.isUnitLength(b));
+    return S1Angle.radians(getDistanceRadians(x, a, b, S2.robustCrossProd(a, b)));
   }
 
   /**
@@ -808,34 +813,53 @@ public strictfp class S2EdgeUtil {
    * of the two endpoints has been precomputed. The cross product does not need
    * to be normalized, but should be computed using S2.robustCrossProd() for the
    * most accurate results.
-   */
+    *
+   * @throws IllegalArgumentException Thrown if the parameters are not all unit
+   * length.
+  */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
     Preconditions.checkArgument(S2.isUnitLength(x));
     Preconditions.checkArgument(S2.isUnitLength(a));
     Preconditions.checkArgument(S2.isUnitLength(b));
+    return S1Angle.radians(getDistanceRadians(x, a, b, aCrossB));
+  }
 
+  /**
+   * A more efficient version of getDistance() where the cross product of the
+   * endpoints has been precomputed and the result is returned as a direct
+   * radian measure rather than wrapping it in an S1Angle. This is the
+   * recommended method for making large numbers of back-to-back edge distance
+   * tests, since it allocates no objects. The inputs are assumed to be unit
+   * length; results are undefined if they are not.
+   */
+  public static double getDistanceRadians(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
     // There are three cases. If X is located in the spherical wedge defined by
     // A, B, and the axis A x B, then the closest point is on the segment AB.
     // Otherwise the closest point is either A or B; the dividing line between
     // these two cases is the great circle passing through (A x B) and the
     // midpoint of AB.
-
     if (S2.simpleCCW(aCrossB, a, x) && S2.simpleCCW(x, b, aCrossB)) {
       // The closest point to X lies on the segment AB. We compute the distance
       // to the corresponding great circle. The result is accurate for small
       // distances but not necessarily for large distances (approaching Pi/2).
-
       double sinDist = Math.abs(x.dotProd(aCrossB)) / aCrossB.norm();
-      return S1Angle.radians(Math.asin(Math.min(1.0, sinDist)));
+      return Math.asin(Math.min(1.0, sinDist));
     }
 
     // Otherwise, the closest point is either A or B. The cheapest method is
     // just to compute the minimum of the two linear (as opposed to spherical)
     // distances and convert the result to an angle. Again, this method is
     // accurate for small but not large distances (approaching Pi).
+    double linearDist2 = Math.min(diffMag2(x, a), diffMag2(x, b));
+    return 2 * Math.asin(Math.min(1.0, 0.5 * Math.sqrt(linearDist2)));
+  }
 
-    double linearDist2 = Math.min(S2Point.minus(x, a).norm2(), S2Point.minus(x, b).norm2());
-    return S1Angle.radians(2 * Math.asin(Math.min(1.0, 0.5 * Math.sqrt(linearDist2))));
+  /** Returns the squared distance from {@code a} to {@code b}. */
+  private static final double diffMag2(S2Point a, S2Point b) {
+    double dx = a.getX() - b.getX();
+    double dy = a.getY() - b.getY();
+    double dz = a.getZ() - b.getZ();
+    return dx * dx + dy * dy + dz * dz;
   }
 
   /**

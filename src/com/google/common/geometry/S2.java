@@ -456,9 +456,9 @@ public final strictfp class S2 {
     // formula which this margin is too narrow to contain :)
 
     // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-    double sina = S2Point.crossProd(b, c).norm();
-    double sinb = S2Point.crossProd(c, a).norm();
-    double sinc = S2Point.crossProd(a, b).norm();
+    double sina = b.crossProdNorm(c);
+    double sinb = c.crossProdNorm(a);
+    double sinc = a.crossProdNorm(b);
     double ra = (sina == 0) ? 1 : (Math.asin(sina) / sina);
     double rb = (sinb == 0) ? 1 : (Math.asin(sinb) / sinb);
     double rc = (sinc == 0) ? 1 : (Math.asin(sinc) / sinc);
@@ -468,8 +468,10 @@ public final strictfp class S2 {
     S2Point y = new S2Point(a.y, b.y, c.y);
     S2Point z = new S2Point(a.z, b.z, c.z);
     S2Point r = new S2Point(ra, rb, rc);
-    return new S2Point(0.5 * S2Point.crossProd(y, z).dotProd(r),
-        0.5 * S2Point.crossProd(z, x).dotProd(r), 0.5 * S2Point.crossProd(x, y).dotProd(r));
+    return new S2Point(
+        0.5 * S2Point.scalarTripleProduct(r, y, z),
+        0.5 * S2Point.scalarTripleProduct(r, z, x),
+        0.5 * S2Point.scalarTripleProduct(r, x, y));
   }
 
   /**
@@ -495,7 +497,7 @@ public final strictfp class S2 {
     // (1) x.CrossProd(y) == -(y.CrossProd(x))
     // (2) (-x).DotProd(y) == -(x.DotProd(y))
 
-    return S2Point.crossProd(c, a).dotProd(b) > 0;
+    return S2Point.scalarTripleProduct(b, c, a) > 0;
   }
 
   /**
@@ -622,19 +624,19 @@ public final strictfp class S2 {
     if (dca < dbc || (dca == dbc && a.lessThan(b))) {
       if (dab < dbc || (dab == dbc && a.lessThan(c))) {
         // The "sab" factor converts A +/- B into B +/- A.
-        sign = S2Point.crossProd(vab, vca).dotProd(a) * sab; // BC is longest
-                                                             // edge
+        // BC is longest edge.
+        sign = S2Point.scalarTripleProduct(a, vab, vca) * sab;
       } else {
-        sign = S2Point.crossProd(vca, vbc).dotProd(c) * sca; // AB is longest
-                                                             // edge
+        // AB is longest edge.
+        sign = S2Point.scalarTripleProduct(c, vca, vbc) * sca;
       }
     } else {
       if (dab < dca || (dab == dca && b.lessThan(c))) {
-        sign = S2Point.crossProd(vbc, vab).dotProd(b) * sbc; // CA is longest
-                                                             // edge
+        // CA is longest edge.
+        sign = S2Point.scalarTripleProduct(b, vbc, vab) * sbc;
       } else {
-        sign = S2Point.crossProd(vca, vbc).dotProd(c) * sca; // AB is longest
-                                                             // edge
+        // AB is longest edge.
+        sign = S2Point.scalarTripleProduct(c, vca, vbc) * sca;
       }
     }
     if (sign > 0) {

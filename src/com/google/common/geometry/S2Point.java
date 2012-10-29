@@ -70,15 +70,15 @@ public strictfp class S2Point implements Comparable<S2Point> {
     return z;
   }
 
-  public static S2Point minus(S2Point p1, S2Point p2) {
+  public final static S2Point minus(S2Point p1, S2Point p2) {
     return sub(p1, p2);
   }
 
-  public static S2Point neg(S2Point p) {
+  public final static S2Point neg(S2Point p) {
     return new S2Point(-p.x, -p.y, -p.z);
   }
 
-  public double norm2() {
+  public final double norm2() {
     return x * x + y * y + z * z;
   }
 
@@ -86,33 +86,47 @@ public strictfp class S2Point implements Comparable<S2Point> {
     return Math.sqrt(norm2());
   }
 
-  public static S2Point crossProd(final S2Point p1, final S2Point p2) {
+  public static final S2Point crossProd(final S2Point p1, final S2Point p2) {
     return new S2Point(
         p1.y * p2.z - p1.z * p2.y, p1.z * p2.x - p1.x * p2.z, p1.x * p2.y - p1.y * p2.x);
   }
 
-  public static S2Point add(final S2Point p1, final S2Point p2) {
+  public static final S2Point add(final S2Point p1, final S2Point p2) {
     return new S2Point(p1.x + p2.x, p1.y + p2.y, p1.z + p2.z);
   }
 
-  public static S2Point sub(final S2Point p1, final S2Point p2) {
+  public static final S2Point sub(final S2Point p1, final S2Point p2) {
     return new S2Point(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
   }
 
-  public double dotProd(S2Point that) {
+  public final double dotProd(S2Point that) {
     return this.x * that.x + this.y * that.y + this.z * that.z;
   }
 
-  public static S2Point mul(final S2Point p, double m) {
+  /**
+   * Returns the scalar triple product,
+   * {@code a.dotProd(S2Point.crossProd(b, c))}. This is a faster
+   * implementation than calling the dotProd and crossProd methods directly.
+   */
+  public static final double scalarTripleProduct(S2Point a, S2Point b, S2Point c) {
+    double x = b.y * c.z - b.z * c.y;
+    double y = b.z * c.x - b.x * c.z;
+    double z = b.x * c.y - b.y * c.x;
+    double result = a.x * x + a.y * y + a.z * z;
+    // assert result == a.dotProd(S2Point.crossProd(b, c));
+    return result;
+  }
+
+  public static final S2Point mul(final S2Point p, double m) {
     return new S2Point(m * p.x, m * p.y, m * p.z);
   }
 
-  public static S2Point div(final S2Point p, double m) {
+  public static final S2Point div(final S2Point p, double m) {
     return new S2Point(p.x / m, p.y / m, p.z / m);
   }
 
   /** return a vector orthogonal to this one */
-  public S2Point ortho() {
+  public final S2Point ortho() {
     int k = largestAbsComponent();
     S2Point temp;
     if (k == 1) {
@@ -126,7 +140,7 @@ public strictfp class S2Point implements Comparable<S2Point> {
   }
 
   /** Return the index of the largest component fabs */
-  public int largestAbsComponent() {
+  public final int largestAbsComponent() {
     S2Point temp = fabs(this);
     if (temp.x > temp.y) {
       if (temp.x > temp.z) {
@@ -143,11 +157,11 @@ public strictfp class S2Point implements Comparable<S2Point> {
     }
   }
 
-  public static S2Point fabs(S2Point p) {
+  public static final S2Point fabs(S2Point p) {
     return new S2Point(Math.abs(p.x), Math.abs(p.y), Math.abs(p.z));
   }
 
-  public static S2Point normalize(S2Point p) {
+  public static final S2Point normalize(S2Point p) {
     double norm = p.norm();
     if (norm != 0) {
       norm = 1.0 / norm;
@@ -155,13 +169,27 @@ public strictfp class S2Point implements Comparable<S2Point> {
     return S2Point.mul(p, norm);
   }
 
-  public double get(int axis) {
+  public final double get(int axis) {
     return (axis == 0) ? x : (axis == 1) ? y : z;
   }
 
+  /**
+   * Returns the norm of the cross product,
+   * {@code S2Point.crossProd(this, va).norm()}. This is more efficient
+   * than calling crossProd() followed by norm().
+   */
+  public final double crossProdNorm(S2Point va) {
+    double x = this.y * va.z - this.z * va.y;
+    double y = this.z * va.x - this.x * va.z;
+    double z = this.x * va.y - this.y * va.x;
+    double result = Math.sqrt(x * x + y * y + z * z);
+    // assert result == S2Point.crossProd(this, va).norm();
+    return result;
+  }
+
   /** Return the angle between two vectors in radians */
-  public double angle(S2Point va) {
-    return Math.atan2(crossProd(this, va).norm(), this.dotProd(va));
+  public final double angle(S2Point va) {
+    return Math.atan2(this.crossProdNorm(va), this.dotProd(va));
   }
 
   /**
