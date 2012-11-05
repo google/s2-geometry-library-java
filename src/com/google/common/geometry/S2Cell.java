@@ -24,14 +24,18 @@ package com.google.common.geometry;
  */
 
 public final strictfp class S2Cell implements S2Region {
-
   private static final int MAX_CELL_SIZE = 1 << S2CellId.MAX_LEVEL;
 
   byte face;
   byte level;
   byte orientation;
   S2CellId cellId;
-  double[][] uv = new double[2][2];
+  double uMin;
+  double uMax;
+  double vMin;
+  double vMax;
+  double uMid;
+  double vMid;
 
   /**
    * Default constructor used only internally.
@@ -93,7 +97,9 @@ public final strictfp class S2Cell implements S2Region {
    */
   public S2Point getVertexRaw(int k) {
     // Vertices are returned in the order SW, SE, NE, NW.
-    return S2Projections.faceUvToXyz(face, uv[0][(k >> 1) ^ (k & 1)], uv[1][k >> 1]);
+    return S2Projections.faceUvToXyz(face,
+        ((k >> 1) ^ (k & 1)) == 0 ? uMin : uMax,
+        (k >> 1) == 0 ? vMin : vMax);
   }
 
   public S2Point getEdge(int k) {
@@ -103,13 +109,13 @@ public final strictfp class S2Cell implements S2Region {
   public S2Point getEdgeRaw(int k) {
     switch (k) {
       case 0:
-        return S2Projections.getVNorm(face, uv[1][0]); // South
+        return S2Projections.getVNorm(face, vMin); // South
       case 1:
-        return S2Projections.getUNorm(face, uv[0][1]); // East
+        return S2Projections.getUNorm(face, uMax); // East
       case 2:
-        return S2Point.neg(S2Projections.getVNorm(face, uv[1][1])); // North
+        return S2Point.neg(S2Projections.getVNorm(face, vMax)); // North
       default:
-        return S2Point.neg(S2Projections.getUNorm(face, uv[0][0])); // West
+        return S2Point.neg(S2Projections.getUNorm(face, uMin)); // West
     }
   }
 
@@ -135,9 +141,6 @@ public final strictfp class S2Cell implements S2Region {
       return false;
     }
 
-    // Compute the cell midpoint in uv-space.
-    R2Vector uvMid = getCenterUV();
-
     // Create four children with the appropriate bounds.
     S2CellId id = cellId.childBegin();
     for (int pos = 0; pos < 4; ++pos, id = id.next()) {
@@ -147,12 +150,24 @@ public final strictfp class S2Cell implements S2Region {
       child.orientation = (byte) (orientation ^ S2.posToOrientation(pos));
       child.cellId = id;
       int ij = S2.posToIJ(orientation, pos);
-      for (int d = 0; d < 2; ++d) {
-        // The dimension 0 index (i/u) is in bit 1 of ij.
-        int m = 1 - ((ij >> (1 - d)) & 1);
-        child.uv[d][m] = uvMid.get(d);
-        child.uv[d][1 - m] = uv[d][1 - m];
+      // The dimension 0 index (i/u) is in bit 1 of ij.
+      double u1, v1, u2, v2;
+      if ((ij & 0x2) != 0) {
+        u1 = uMid;
+        u2 = uMax;
+      } else {
+        u1 = uMin;
+        u2 = uMid;
       }
+      // The dimension 1 index (j/v) is in bit 0 of ij.
+      if ((ij & 0x1) != 0) {
+        v1 = vMid;
+        v2 = vMax;
+      } else {
+        v1 = vMin;
+        v2 = vMid;
+      }
+      child.setBounds(u1, v1, u2, v2);
     }
     return true;
   }
@@ -179,19 +194,7 @@ public final strictfp class S2Cell implements S2Region {
    * not at the midpoint of the (u,v) rectangle covered by the cell
    */
   public R2Vector getCenterUV() {
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    cellId.toFaceIJOrientation(i, j, null);
-    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
-
-    // TODO(dbeaumont): Figure out a better naming of the variables here (and elsewhere).
-    int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    double x = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * si);
-
-    int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    double y = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sj);
-
-    return new R2Vector(x, y);
+    return new R2Vector(uMid, vMid);
   }
 
   /**
@@ -260,8 +263,12 @@ public final strictfp class S2Cell implements S2Region {
     clone.face = this.face;
     clone.level = this.level;
     clone.orientation = this.orientation;
-    clone.uv = this.uv.clone();
-
+    clone.uMin = this.uMin;
+    clone.uMid = this.uMid;
+    clone.uMax = this.uMax;
+    clone.vMin = this.vMin;
+    clone.vMid = this.vMid;
+    clone.vMax = this.vMax;
     return clone;
   }
 
@@ -276,8 +283,8 @@ public final strictfp class S2Cell implements S2Region {
     // the (u,v)-origin never determine the maximum cap size (this is a
     // possible future optimization).
 
-    double u = 0.5 * (uv[0][0] + uv[0][1]);
-    double v = 0.5 * (uv[1][0] + uv[1][1]);
+    double u = 0.5 * (uMin + uMax);
+    double v = 0.5 * (vMin + vMax);
     S2Cap cap = S2Cap.fromAxisHeight(S2Point.normalize(S2Projections.faceUvToXyz(face, u, v)), 0);
     for (int k = 0; k < 4; ++k) {
       cap = cap.addPoint(getVertex(k));
@@ -314,8 +321,8 @@ public final strictfp class S2Cell implements S2Region {
       // absolute x- and y-coordinates. To do this we look at each coordinate
       // (u and v), and determine whether we want to minimize or maximize that
       // coordinate based on the axis direction and the cell's (u,v) quadrant.
-      double u = uv[0][0] + uv[0][1];
-      double v = uv[1][0] + uv[1][1];
+      double u = uMin + uMax;
+      double v = vMin + vMax;
       int i = S2Projections.getUAxis(face).z == 0 ? (u < 0 ? 1 : 0) : (u > 0 ? 1 : 0);
       int j = S2Projections.getVAxis(face).z == 0 ? (v < 0 ? 1 : 0) : (v > 0 ? 1 : 0);
 
@@ -368,8 +375,8 @@ public final strictfp class S2Cell implements S2Region {
     if (uvPoint == null) {
       return false;
     }
-    return (uvPoint.x() >= uv[0][0] && uvPoint.x() <= uv[0][1]
-        && uvPoint.y() >= uv[1][0] && uvPoint.y() <= uv[1][1]);
+    return (uvPoint.x() >= uMin && uvPoint.x() <= uMax
+        && uvPoint.y() >= vMin && uvPoint.y() <= vMax);
   }
 
   // The point 'p' does not need to be normalized.
@@ -380,36 +387,61 @@ public final strictfp class S2Cell implements S2Region {
 
   private void init(S2CellId id) {
     cellId = id;
-    MutableInteger ij[] = new MutableInteger[2];
+    MutableInteger iju = new MutableInteger(0);
+    MutableInteger ijv = new MutableInteger(0);
     MutableInteger mOrientation = new MutableInteger(0);
 
-    for (int d = 0; d < 2; ++d) {
-      ij[d] = new MutableInteger(0);
-    }
-
-    face = (byte) id.toFaceIJOrientation(ij[0], ij[1], mOrientation);
+    face = (byte) id.toFaceIJOrientation(iju, ijv, mOrientation);
     orientation = (byte) mOrientation.intValue(); // Compress int to a byte.
     level = (byte) id.level();
     int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
-    for (int d = 0; d < 2; ++d) {
-      // Compute the cell bounds in scaled (i,j) coordinates.
-      int sijLo = (ij[d].intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
-      int sijHi = sijLo + cellSize * 2;
-      uv[d][0] = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLo);
-      uv[d][1] = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHi);
-    }
+    // Compute the cell bounds in scaled (i,j) coordinates.
+    int sijLoU = (iju.intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
+    int sijHiU = sijLoU + cellSize * 2;
+    int sijLoV = (ijv.intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
+    int sijHiV = sijLoV + cellSize * 2;
+    setBounds(
+        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLoU),
+        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLoV),
+        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHiU),
+        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHiV));
   }
 
 
   // Internal method that does the actual work in the constructors.
 
+  private void setBounds(double uMin, double vMin, double uMax, double vMax) {
+    this.uMin = uMin;
+    this.vMin = vMin;
+    this.uMax = uMax;
+    this.vMax = vMax;
+
+    // Compute the center.
+    MutableInteger i = new MutableInteger(0);
+    MutableInteger j = new MutableInteger(0);
+    cellId.toFaceIJOrientation(i, j, null);
+    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
+
+    int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    this.uMid = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * si);
+
+    int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    this.vMid = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sj);
+  }
+
+  private S2Point getPoint(int i, int j) {
+    return S2Projections.faceUvToXyz(face,
+        i == 0 ? uMin : uMax,
+        j == 0 ? vMin : vMax);
+  }
+
   private double getLatitude(int i, int j) {
-    S2Point p = S2Projections.faceUvToXyz(face, uv[0][i], uv[1][j]);
+    S2Point p = getPoint(i, j);
     return Math.atan2(p.z, Math.sqrt(p.x * p.x + p.y * p.y));
   }
 
   private double getLongitude(int i, int j) {
-    S2Point p = S2Projections.faceUvToXyz(face, uv[0][i], uv[1][j]);
+    S2Point p = getPoint(i, j);
     return Math.atan2(p.y, p.x);
   }
 

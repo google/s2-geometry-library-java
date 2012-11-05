@@ -83,8 +83,8 @@ public final strictfp class S2Polyline implements S2Region {
 
     // Adjacent vertices must not be identical or antipodal.
     for (int i = 1; i < n; ++i) {
-      if (vertices.get(i - 1).equals(vertices.get(i))
-          || vertices.get(i - 1).equals(S2Point.neg(vertices.get(i)))) {
+      if (vertices.get(i - 1).equalsPoint(vertices.get(i))
+          || vertices.get(i - 1).equalsPoint(S2Point.neg(vertices.get(i)))) {
         log.info("Vertices " + (i - 1) + " and " + i + " are identical or antipodal");
         return false;
       }
@@ -267,7 +267,7 @@ public final strictfp class S2Polyline implements S2Region {
     }
 
     for (int i = 0; i < vertices.length; i++) {
-      if (!vertices[i].equals(thatPolygon.vertices[i])) {
+      if (!vertices[i].equalsPoint(thatPolygon.vertices[i])) {
         return false;
       }
     }

@@ -141,15 +141,17 @@ public strictfp class S2Point implements Comparable<S2Point> {
 
   /** Return the index of the largest component fabs */
   public final int largestAbsComponent() {
-    S2Point temp = fabs(this);
-    if (temp.x > temp.y) {
-      if (temp.x > temp.z) {
+    final double absX = Math.abs(x);
+    final double absY = Math.abs(y);
+    final double absZ = Math.abs(z);
+    if (absX > absY) {
+      if (absX > absZ) {
         return 0;
       } else {
         return 2;
       }
     } else {
-      if (temp.y > temp.z) {
+      if (absY > absZ) {
         return 1;
       } else {
         return 2;
@@ -208,6 +210,14 @@ public strictfp class S2Point implements Comparable<S2Point> {
     }
     S2Point thatPoint = (S2Point) that;
     return this.x == thatPoint.x && this.y == thatPoint.y && this.z == thatPoint.z;
+  }
+
+  /**
+   * Returns true if this point is equal to {@code that}. Slightly faster than
+   * {@link #equals(Object)}.
+   */
+  public boolean equalsPoint(S2Point that) {
+    return this.x == that.x && this.y == that.y && this.z == that.z;
   }
 
   public boolean lessThan(S2Point vb) {

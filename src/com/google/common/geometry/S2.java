@@ -287,7 +287,7 @@ public final strictfp class S2 {
 
     // assert (isUnitLength(a) && isUnitLength(b));
     S2Point x = S2Point.crossProd(S2Point.add(b, a), S2Point.sub(b, a));
-    if (!x.equals(S2Point.ORIGIN)) {
+    if (!x.equalsPoint(S2Point.ORIGIN)) {
       return x;
     }
 
@@ -574,7 +574,7 @@ public final strictfp class S2 {
    */
   private static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
     // Return zero if and only if two points are the same. This ensures (1).
-    if (a.equals(b) || b.equals(c) || c.equals(a)) {
+    if (a.equalsPoint(b) || b.equalsPoint(c) || c.equalsPoint(a)) {
       return 0;
     }
 

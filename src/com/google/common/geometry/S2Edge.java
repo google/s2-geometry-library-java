@@ -56,6 +56,7 @@ public final class S2Edge {
       return false;
     }
     S2Edge other = (S2Edge) o;
-    return getStart().equals(other.getStart()) && getEnd().equals(other.getEnd());
+    return getStart().equalsPoint(other.getStart())
+        && getEnd().equalsPoint(other.getEnd());
   }
 }

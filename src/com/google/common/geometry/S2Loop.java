@@ -1114,7 +1114,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
         if (crossing > 0) {
           return -1; // There is a proper edge crossing.
         }
-        if (vertex(i + 1).equals(b.vertex(j + 1))) {
+        if (vertex(i + 1).equalsPoint(b.vertex(j + 1))) {
           result = Math.min(result, relation.test(
               vertex(i), vertex(i + 1), vertex(i + 2), b.vertex(j), b.vertex(j + 2)));
           if (result < 0) {

@@ -398,7 +398,7 @@ public final strictfp class S2Cap implements S2Region {
     }
 
     S2Cap other = (S2Cap) that;
-    return (axis.equals(other.axis) && height == other.height)
+    return (axis.equalsPoint(other.axis) && height == other.height)
         || (isEmpty() && other.isEmpty()) || (isFull() && other.isFull());
 
   }

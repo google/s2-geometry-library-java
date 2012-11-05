@@ -1301,8 +1301,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         return false;
       }
       UndirectedEdge other = (UndirectedEdge) o;
-      return ((getStart().equals(other.getStart()) && getEnd().equals(other.getEnd()))
-          || (getStart().equals(other.getEnd()) && getEnd().equals(other.getStart())));
+      return ((getStart().equalsPoint(other.getStart()) && getEnd().equalsPoint(other.getEnd()))
+          || (getStart().equalsPoint(other.getEnd()) && getEnd().equalsPoint(other.getStart())));
     }
 
     @Override

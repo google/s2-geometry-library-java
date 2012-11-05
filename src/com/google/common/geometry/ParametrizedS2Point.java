@@ -52,7 +52,7 @@ public final class ParametrizedS2Point implements Comparable<ParametrizedS2Point
   public boolean equals(Object other) {
     if (other instanceof ParametrizedS2Point) {
       ParametrizedS2Point x = (ParametrizedS2Point) other;
-      return time == x.time && point.equals(x.point);
+      return time == x.time && point.equalsPoint(x.point);
     } else {
       return false;
     }

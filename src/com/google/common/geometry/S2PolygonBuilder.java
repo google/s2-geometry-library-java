@@ -392,7 +392,7 @@ public final strictfp class S2PolygonBuilder {
    * that as a convenience, edges where v0 == v1 are ignored.
    */
   public boolean addEdge(S2Point v0, S2Point v1) {
-    if (v0.equals(v1)) {
+    if (v0.equalsPoint(v1)) {
       return false;
     }
 
@@ -620,7 +620,7 @@ public final strictfp class S2PolygonBuilder {
       if (vset != null) {
         for (S2Point v : vset) {
           // We prefer the leftmost outgoing edge, ignoring any reverse edges.
-          if (v.equals(v0)) {
+          if (v.equalsPoint(v0)) {
             continue;
           }
           if (!v2Found || S2.orderedCCW(v0, v2, v, v1)) {
@@ -647,7 +647,7 @@ public final strictfp class S2PolygonBuilder {
         // original vertex order. In a more complicated case the edge that
         // closed the loop is different and we should remove initial vertices
         // that are not part of the loop.
-        if (index.get(v2) == 1 && path.get(0).equals(path.get(path.size() - 1))) {
+        if (index.get(v2) == 1 && path.get(0).equalsPoint(path.get(path.size() - 1))) {
           path.remove(path.size() - 1);
         } else {
           // We've completed a loop. Throw away any initial vertices that
@@ -785,7 +785,7 @@ public final strictfp class S2PolygonBuilder {
         // Pop the top frontier point and get all points nearby
         index.queryCap(frontier.pop(), mergeable);
         for (S2Point vnear : mergeable) {
-          if (!vstart.equals(vnear)) {
+          if (!vstart.equalsPoint(vnear)) {
             // Erase from the index any vertices that will be merged.  This
             // ensures that we won't try to merge the same vertex twice.
             index.remove(vnear);
@@ -957,7 +957,7 @@ public final strictfp class S2PolygonBuilder {
             break;
           }
           for (S2Point p : cellPoints.getValue()) {
-            if (!p.equals(v0) && !p.equals(v1)) {
+            if (!p.equalsPoint(v0) && !p.equalsPoint(v1)) {
               double dist = S2EdgeUtil.getDistance(p, v0, v1, normal).radians();
               if (dist < bestDistance) {
                 bestDistance = dist;

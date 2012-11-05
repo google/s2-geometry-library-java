@@ -420,7 +420,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
       double area = S2Cell.averageArea(id.level());
       centroid = S2Point.add(centroid, S2Point.mul(id.toPoint(), area));
     }
-    if (centroid.equals(S2Point.ORIGIN)) {
+    if (centroid.equalsPoint(S2Point.ORIGIN)) {
       centroid = S2Point.X_POS;
     } else {
       centroid = S2Point.normalize(centroid);

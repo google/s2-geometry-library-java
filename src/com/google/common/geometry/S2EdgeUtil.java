@@ -459,7 +459,7 @@ public strictfp class S2EdgeUtil {
       }
 
       // We are in case 2 or 4, or case 3 if a2 == b0.
-      return (a2.equals(b0)) ? 0 : -1; // Case 3 vs. 2,4.
+      return (a2.equalsPoint(b0)) ? 0 : -1; // Case 3 vs. 2,4.
     }
   }
 
@@ -504,7 +504,7 @@ public strictfp class S2EdgeUtil {
         }
 
         // We are in case 5 or 6, or case 2 if a2 == b2.
-        return (a2.equals(b2)) ? 0 : -1; // Case 2 vs. 5,6.
+        return (a2.equalsPoint(b2)) ? 0 : -1; // Case 2 vs. 5,6.
       }
       // We are in case 2, 3, or 4.
       return S2.orderedCCW(a0, b0, a2, ab1) ? 0 : -1; // Case 2,3 vs. 4.
@@ -618,23 +618,23 @@ public strictfp class S2EdgeUtil {
   public static boolean vertexCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
     // If A == B or C == D there is no intersection. We need to check this
     // case first in case 3 or more input points are identical.
-    if (a.equals(b) || c.equals(d)) {
+    if (a.equalsPoint(b) || c.equalsPoint(d)) {
       return false;
     }
 
     // If any other pair of vertices is equal, there is a crossing if and only
     // if orderedCCW() indicates that the edge AB is further CCW around the
     // shared vertex than the edge CD.
-    if (a.equals(d)) {
+    if (a.equalsPoint(d)) {
       return S2.orderedCCW(S2.ortho(a), c, b, a);
     }
-    if (b.equals(c)) {
+    if (b.equalsPoint(c)) {
       return S2.orderedCCW(S2.ortho(b), d, a, b);
     }
-    if (a.equals(c)) {
+    if (a.equalsPoint(c)) {
       return S2.orderedCCW(S2.ortho(a), d, b, a);
     }
-    if (b.equals(d)) {
+    if (b.equalsPoint(d)) {
       return S2.orderedCCW(S2.ortho(b), c, a, b);
     }
 
@@ -786,7 +786,7 @@ public strictfp class S2EdgeUtil {
    * that X == Interpolate(A, B, t). Requires that A and B are distinct.
    */
   public static double getDistanceFraction(S2Point x, S2Point a0, S2Point a1) {
-    Preconditions.checkArgument(!a0.equals(a1));
+    Preconditions.checkArgument(!a0.equalsPoint(a1));
     double d0 = x.angle(a0);
     double d1 = x.angle(a1);
     return d0 / (d0 + d1);
