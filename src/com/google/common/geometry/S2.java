@@ -63,7 +63,7 @@ public final strictfp class S2 {
   }
 
   /** Mapping Hilbert traversal order to orientation adjustment mask. */
-  private static final int[] POS_TO_ORIENTATION =
+  private static final int[] posToOrientation =
       {SWAP_MASK, 0, 0, INVERT_MASK + SWAP_MASK};
 
   /**
@@ -80,11 +80,11 @@ public final strictfp class S2 {
    */
   public static int posToOrientation(int position) {
     Preconditions.checkArgument(0 <= position && position < 4);
-    return POS_TO_ORIENTATION[position];
+    return posToOrientation[position];
   }
 
   /** Mapping from cell orientation + Hilbert traversal to IJ-index. */
-  private static final int[][] POS_TO_IJ = {
+  private static final int[][] posToIj = {
       // 0 1 2 3
       {0, 1, 3, 2}, // canonical order: (0,0), (0,1), (1,1), (1,0)
       {0, 2, 3, 1}, // axes swapped: (0,0), (1,0), (1,1), (0,1)
@@ -106,7 +106,7 @@ public final strictfp class S2 {
   public static int posToIJ(int orientation, int position) {
     Preconditions.checkArgument(0 <= orientation && orientation < 4);
     Preconditions.checkArgument(0 <= position && position < 4);
-    return POS_TO_IJ[orientation][position];
+    return posToIj[orientation][position];
   }
 
   /** Mapping from Hilbert traversal order + cell orientation to IJ-index. */

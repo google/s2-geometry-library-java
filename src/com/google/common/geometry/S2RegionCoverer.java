@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -62,13 +63,14 @@ public final strictfp class S2RegionCoverer {
    */
   public static final int DEFAULT_MAX_CELLS = 8;
 
-  private static final S2Cell[] FACE_CELLS = new S2Cell[6];
+  private static final ImmutableList<S2Cell> FACE_CELLS;
   static {
+    ImmutableList.Builder<S2Cell> builder = ImmutableList.builder();
     for (int face = 0; face < 6; ++face) {
-      FACE_CELLS[face] = S2Cell.fromFacePosLevel(face, (byte) 0, 0);
+      builder.add(S2Cell.fromFacePosLevel(face, (byte) 0, 0));
     }
+    FACE_CELLS = builder.build();
   }
-
 
   private int minLevel;
   private int maxLevel;
@@ -467,7 +469,7 @@ public final strictfp class S2RegionCoverer {
     }
     // Default: start with all six cube faces.
     for (int face = 0; face < 6; ++face) {
-      addCandidate(newCandidate(FACE_CELLS[face]));
+      addCandidate(newCandidate(FACE_CELLS.get(face)));
     }
   }
 
