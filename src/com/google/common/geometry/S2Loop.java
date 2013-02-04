@@ -709,7 +709,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
       done.add(new LoopOffsets(i, j));
 
       // If (i == na && offset == na-1) where na == a.numVertices(), then
-      // then (i+1+offset) overflows the [0, 2*na-1] range allowed by vertex().
+      // (i+1+offset) overflows the [0, 2*na-1] range allowed by vertex().
       // So we reduce the range if necessary.
       int io = i + a_offset;
       if (io >= a.numVertices()) {
