@@ -123,7 +123,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * @param vertices loop vertices
    * @param originInside true if the S2::origin() is inside the loop
    * @param bound the lat/long bounds of the loop
-   * @returns new loop.
+   * @return new loop.
    */
   public static S2Loop newLoopWithTrustedDetails(
       List<S2Point> vertices, boolean originInside, S2LatLngRect bound) {
