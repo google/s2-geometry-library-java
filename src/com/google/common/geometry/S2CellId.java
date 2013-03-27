@@ -15,9 +15,15 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.UnmodifiableIterator;
+
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.NoSuchElementException;
 
 /**
  * An S2CellId is a 64-bit unsigned integer that uniquely identifies a cell in
@@ -336,6 +342,43 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
     // assert (isValid() && level >= 0 && level <= this.level());
     long newLsb = lowestOnBitForLevel(level);
     return new S2CellId((id & -newLsb) | newLsb);
+  }
+
+  public Iterable<S2CellId> children() {
+    if (isLeaf()) {
+      return ImmutableList.of();
+    } else {
+      return childrenAtLevel(level() + 1);
+    }
+  }
+
+  public Iterable<S2CellId> childrenAtLevel(final int level) {
+    Preconditions.checkState(isValid());
+    Preconditions.checkArgument(level >= this.level() && level <= MAX_LEVEL);
+    return new Iterable<S2CellId>() {
+      @Override
+      public Iterator<S2CellId> iterator() {
+        return new UnmodifiableIterator<S2CellId>() {
+          private S2CellId next = childBegin(level);
+          private long childEnd = childEnd(level).id();
+
+          @Override
+          public boolean hasNext() {
+            return next.id() != childEnd;
+          }
+
+          @Override
+          public S2CellId next() {
+            if (!hasNext()) {
+              throw new NoSuchElementException();
+            }
+            S2CellId oldNext = next;
+            next = next.next();
+            return oldNext;
+          }
+        };
+      }
+    };
   }
 
   public S2CellId childBegin() {
