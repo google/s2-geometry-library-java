@@ -103,8 +103,7 @@ public final strictfp class S2Polyline implements S2Region {
   }
 
   /**
-   * Return the angle corresponding to the total arclength of the polyline on a
-   * unit sphere.
+   * Return the angle corresponding to the total arclength of the polyline on a unit sphere.
    */
   public S1Angle getArclengthAngle() {
     double lengthSum = 0;
@@ -145,6 +144,33 @@ public final strictfp class S2Polyline implements S2Region {
       target -= length;
     }
     return vertex(numVertices() - 1);
+  }
+
+  /**
+   * Projects the query point to the nearest part of the polyline, and returns the fraction of the
+   * polyline's total length traveled along the polyline from vertex 0 to the projected point.
+   * <p>
+   * For any query point, the returned fraction is at least 0 (when the query point projects to the
+   * first vertex of the line) and at most 1 (when the query point projects to the last vertex).
+   * <p>
+   * This method is essentially the inverse of {@link #interpolate(double)}, except that this method
+   * accepts any normalized point, whereas interpolate() only produces points on the line.
+   * <p>
+   * In the unusual case of multiple equidistant points on the polyline, one of the nearest points
+   * is selected in a deterministic but unpredictable manner, and the fraction is computed up to
+   * that position. For example, all points of the S2 edge from (1,0,0) to (0,1,0) are equidistant
+   * from (0,0,1), so any fraction from 0 to 1 is a correct answer!
+   */
+  public double uninterpolate(S2Point queryPoint) {
+    int i = getNearestEdgeIndex(queryPoint);
+
+    double arcLength =
+        S2EdgeUtil.getClosestPoint(queryPoint, vertex(i), vertex(i + 1)).angle(vertex(i));
+    for (; i > 0; i--) {
+      arcLength += vertex(i - 1).angle(vertex(i));
+    }
+
+    return Math.min(arcLength / getArclengthAngle().radians(), 1);
   }
 
   // S2Region interface (see {@code S2Region} for details):

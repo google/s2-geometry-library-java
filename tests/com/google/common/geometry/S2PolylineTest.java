@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import junit.framework.Assert;
@@ -27,6 +28,8 @@ import java.util.List;
  *
  */
 public strictfp class S2PolylineTest extends GeometryTestCase {
+
+  private static final double EPSILON = 2e-14d;
 
   @Override
   public void setUp() {
@@ -62,7 +65,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
       vertices.add(vertices.get(0));
       S2Polyline line = new S2Polyline(vertices);
       S1Angle length = line.getArclengthAngle();
-      assertTrue(Math.abs(length.radians() - 2 * S2.M_PI) < 2e-14);
+      assertTrue(Math.abs(length.radians() - 2 * S2.M_PI) < EPSILON);
     }
   }
 
@@ -93,6 +96,40 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(line.interpolate(0.5), vertices.get(1));
     assertEquals(line.interpolate(0.75), vertices.get(2));
     assertEquals(line.interpolate(1.1), vertices.get(3));
+  }
+
+  public void testUninterpolate() {
+    S2Point pointA = new S2Point(1, 0, 0);
+    S2Point pointB = new S2Point(0, 1, 0);
+    S2Point pointC = new S2Point(0, 0, 1);
+    S2Polyline line = new S2Polyline(ImmutableList.of(pointA, pointB, pointC));
+
+    // Test at vertices
+    assertEquals(line.uninterpolate(pointA), 0d, EPSILON);
+    assertEquals(line.uninterpolate(pointB), 0.5d, EPSILON);
+    assertEquals(line.uninterpolate(pointC), 1d, EPSILON);
+
+    // Test at non-vertex points on the line
+    final int steps = 7; // Not a power of two, to test at fractions w/o exact value in double
+    for (int i = 1; i < steps; i++) {
+      double fraction = i / (double) steps;
+      S2Point interpolatedPoint = line.interpolate(fraction);
+      assertEquals(line.uninterpolate(interpolatedPoint), fraction, EPSILON);
+    }
+
+    // Test at a point off the line such that the unique nearest point is a vertex
+    S2Point pointOffFromB = S2Point.normalize(new S2Point(-0.001, 1, -0.001));
+    assertEquals(line.uninterpolate(pointOffFromB), 0.5d, EPSILON);
+
+    // Test at a point off the line such that the unique nearest point is a not vertex
+    S2Point pointOffFromMidAB = S2Point.normalize(new S2Point(1, 1, -0.001));
+    assertEquals(line.uninterpolate(pointOffFromMidAB), 0.25d, EPSILON);
+
+    // Test at a point off the line such that there are two nearest points
+    S2Point pointEquidistantFromABAndBC = S2Point.normalize(new S2Point(1, 1, 1));
+    double fraction = line.uninterpolate(pointEquidistantFromABAndBC);
+    assertTrue((0.25 - EPSILON < fraction && fraction < 0.25 + EPSILON)
+        || (0.75 - EPSILON < fraction && fraction < 0.75 + EPSILON));
   }
 
   public void testEqualsAndHashCode() {
