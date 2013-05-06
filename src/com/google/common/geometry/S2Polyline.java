@@ -281,6 +281,17 @@ public final strictfp class S2Polyline implements S2Region {
     return S2EdgeUtil.getClosestPoint(point, vertex(index), vertex(index + 1));
   }
 
+  /**
+   * Returns the point on the polyline closest to {@code queryPoint}.
+   * <p>
+   * In the unusual case of a query point that is equidistant from multiple points on the line, one
+   * is returned in a deterministic but otherwise unpredictable way.
+   */
+  public S2Point project(S2Point queryPoint) {
+    int i = getNearestEdgeIndex(queryPoint);
+    return S2EdgeUtil.getClosestPoint(queryPoint, vertex(i), vertex(i + 1));
+  }
+
   @Override
   public boolean equals(Object that) {
     if (!(that instanceof S2Polyline)) {

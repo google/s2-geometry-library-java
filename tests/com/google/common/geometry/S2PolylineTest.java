@@ -155,7 +155,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkEqualsAndHashCodeMethods(line1, "", false);
   }
 
-  public void testProject() {
+  public void testGetNearestEdgeIndexAndProjectToEdge() {
     List<S2Point> latLngs = Lists.newArrayList();
     latLngs.add(S2LatLng.fromDegrees(0, 0).toPoint());
     latLngs.add(S2LatLng.fromDegrees(0, 1).toPoint());
@@ -195,6 +195,37 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(S2.approxEquals(
         line.projectToEdge(testPoint, edgeIndex), S2LatLng.fromDegrees(1, 2).toPoint()));
     assertEquals(2, edgeIndex);
+  }
+
+  public void testProject() {
+    S2Point pointA = new S2Point(1, 0, 0);
+    S2Point pointB = new S2Point(0, 1, 0);
+    S2Point pointC = new S2Point(0, 0, 1);
+    S2Polyline line = new S2Polyline(ImmutableList.of(pointA, pointB, pointC));
+
+    S2Point pointMidAB = S2Point.normalize(new S2Point(1, 1, 0));
+    S2Point pointMidBC = S2Point.normalize(new S2Point(0, 1, 1));
+
+    // Test at query points on the line
+    final int steps = 6;
+    for (int i = 0; i <= steps; i++) {
+      S2Point queryPoint = line.interpolate(i / (double) steps);
+      assertTrue(S2.approxEquals(line.project(queryPoint), queryPoint));
+    }
+
+    // Test at a point off the line such that the unique nearest point is a vertex
+    S2Point pointOffFromB = S2Point.normalize(new S2Point(-0.1, 1, -0.1));
+    assertTrue(S2.approxEquals(line.project(pointOffFromB), pointB));
+
+    // Test at a point off the line such that the unique nearest point is a not vertex
+    S2Point pointOffFromMidAB = S2Point.normalize(new S2Point(1, 1, -0.1));
+    assertTrue(S2.approxEquals(line.project(pointOffFromMidAB), pointMidAB));
+
+    // Test at a point off the line such that there are two nearest points
+    S2Point pointEquidistantFromABAndBC = S2Point.normalize(new S2Point(1, 1, 1));
+    S2Point projectedPoint = line.project(pointEquidistantFromABAndBC);
+    assertTrue(
+        S2.approxEquals(projectedPoint, pointMidAB) || S2.approxEquals(projectedPoint, pointMidBC));
   }
 
   public void testValid() {
