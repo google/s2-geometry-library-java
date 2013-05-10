@@ -21,11 +21,20 @@ package com.google.common.geometry;
  * zero-length intervals (containing a single point).
  *
  */
-
 public final strictfp class R1Interval {
+  private double lo;
+  private double hi;
 
-  private final double lo;
-  private final double hi;
+  /**
+   * Default constructor, contains the empty interval.
+   *
+   * Package private since only the S2 library needs to mutate R1Intervals. External code that needs
+   * an empty interval should call {@link #empty()}.
+   */
+  R1Interval() {
+    lo = 1;
+    hi = 0;
+  }
 
   /** Interval constructor. If lo > hi, the interval is empty. */
   public R1Interval(double lo, double hi) {
@@ -69,11 +78,53 @@ public final strictfp class R1Interval {
     return hi;
   }
 
+  /** Designates which end of the interval to work with. */
+  enum Endpoint {
+    /** The low end of the interval. */
+    LO {
+      @Override
+      public double getValue(R1Interval interval) {
+        return interval.lo;
+      }
+      @Override
+      public void setValue(R1Interval interval, double value) {
+        interval.lo = value;
+      }
+    },
+    /** The high end of the interval. */
+    HI {
+      @Override
+      public double getValue(R1Interval interval) {
+        return interval.hi;
+      }
+      @Override
+      public void setValue(R1Interval interval, double value) {
+        interval.hi = value;
+      }
+    };
+    public abstract double getValue(R1Interval interval);
+    public abstract void setValue(R1Interval interval, double value);
+  }
+
+  /**
+   * Returns the value at the given Endpoint, which must not be null.
+   */
+  double getValue(Endpoint endpoint) {
+    return endpoint.getValue(this);
+  }
+
+  /**
+   * Sets the value of the given Endpoint, which must not be null.
+   */
+  void setValue(Endpoint endpoint, double value) {
+    endpoint.setValue(this, value);
+  }
+
   /**
    * Return true if the interval is empty, i.e. it contains no points.
    */
   public boolean isEmpty() {
-    return lo() > hi();
+    return lo > hi;
   }
 
   /**
@@ -81,7 +132,7 @@ public final strictfp class R1Interval {
    * arbitrary.
    */
   public double getCenter() {
-    return 0.5 * (lo() + hi());
+    return 0.5 * (lo + hi);
   }
 
   /**
@@ -89,15 +140,15 @@ public final strictfp class R1Interval {
    * negative.
    */
   public double getLength() {
-    return hi() - lo();
+    return hi - lo;
   }
 
   public boolean contains(double p) {
-    return p >= lo() && p <= hi();
+    return p >= lo && p <= hi;
   }
 
   public boolean interiorContains(double p) {
-    return p > lo() && p < hi();
+    return p > lo && p < hi;
   }
 
   /** Return true if this interval contains the interval 'y'. */
@@ -105,7 +156,7 @@ public final strictfp class R1Interval {
     if (y.isEmpty()) {
       return true;
     }
-    return y.lo() >= lo() && y.hi() <= hi();
+    return y.lo >= lo && y.hi <= hi;
   }
 
   /**
@@ -116,7 +167,7 @@ public final strictfp class R1Interval {
     if (y.isEmpty()) {
       return true;
     }
-    return y.lo() > lo() && y.hi() < hi();
+    return y.lo > lo && y.hi < hi;
   }
 
   /**
@@ -124,10 +175,10 @@ public final strictfp class R1Interval {
    * have any points in common.
    */
   public boolean intersects(R1Interval y) {
-    if (lo() <= y.lo()) {
-      return y.lo() <= hi() && y.lo() <= y.hi();
+    if (lo <= y.lo) {
+      return y.lo <= hi && y.lo <= y.hi;
     } else {
-      return lo() <= y.hi() && lo() <= hi();
+      return lo <= y.hi && lo <= hi;
     }
   }
 
@@ -136,20 +187,43 @@ public final strictfp class R1Interval {
    * given interval (including its boundary).
    */
   public boolean interiorIntersects(R1Interval y) {
-    return y.lo() < hi() && lo() < y.hi() && lo() < hi() && y.lo() <= y.hi();
+    return y.lo < hi && lo < y.hi && lo < hi && y.lo <= y.hi;
   }
 
-  /** Expand the interval so that it contains the given point "p". */
-  public R1Interval addPoint(double p) {
+  /**
+   * Sets the minimum and maximum value of this interval. If {@code lo} is greater than {@code hi}
+   * this interval will become empty.
+   *
+   * <p>Package private since only the S2 libraries have a current need to mutate R1Intervals.
+   */
+  void set(double lo, double hi) {
+    this.lo = lo;
+    this.hi = hi;
+  }
+
+  /**
+   * Expand this interval so that it contains the given point "p".
+   *
+   * <p>Package private since only the S2 library needs to mutate R1Intervals.
+   */
+  void unionInternal(double p) {
     if (isEmpty()) {
-      return R1Interval.fromPoint(p);
-    } else if (p < lo()) {
-      return new R1Interval(p, hi());
-    } else if (p > hi()) {
-      return new R1Interval(lo(), p);
-    } else {
-      return new R1Interval(lo(), hi());
+      lo = p;
+      hi = p;
+    } else if (p < lo) {
+      lo = p;
+    } else if (p > hi) {
+      hi = p;
     }
+  }
+
+  /**
+   * Returns the closest point in the interval to the given point "p". The interval must be
+   * non-empty.
+   */
+  public double clampPoint(double p) {
+    // assert (!isEmpty());
+    return Math.max(lo, Math.min(hi, p));
   }
 
   /**
@@ -162,7 +236,7 @@ public final strictfp class R1Interval {
     if (isEmpty()) {
       return this;
     }
-    return new R1Interval(lo() - radius, hi() + radius);
+    return new R1Interval(lo - radius, hi + radius);
   }
 
   /**
@@ -176,7 +250,7 @@ public final strictfp class R1Interval {
     if (y.isEmpty()) {
       return this;
     }
-    return new R1Interval(Math.min(lo(), y.lo()), Math.max(hi(), y.hi()));
+    return new R1Interval(Math.min(lo, y.lo), Math.max(hi, y.hi));
   }
 
   /**
@@ -184,7 +258,20 @@ public final strictfp class R1Interval {
    * intervals do not need to be special-cased.
    */
   public R1Interval intersection(R1Interval y) {
-    return new R1Interval(Math.max(lo(), y.lo()), Math.min(hi(), y.hi()));
+    return new R1Interval(Math.max(lo, y.lo), Math.min(hi, y.hi));
+  }
+
+  /** Returns the smallest interval that contains this interval and the given point. */
+  public R1Interval addPoint(double p) {
+    if (isEmpty()) {
+      return R1Interval.fromPoint(p);
+    } else if (p < lo) {
+      return new R1Interval(p, hi);
+    } else if (p > hi) {
+      return new R1Interval(lo, p);
+    } else {
+      return new R1Interval(lo, hi);
+    }
   }
 
   @Override
@@ -192,7 +279,7 @@ public final strictfp class R1Interval {
     if (that instanceof R1Interval) {
       R1Interval y = (R1Interval) that;
       // Return true if two intervals contain the same set of points.
-      return (lo() == y.lo() && hi() == y.hi()) || (isEmpty() && y.isEmpty());
+      return (lo == y.lo && hi == y.hi) || (isEmpty() && y.isEmpty());
 
     }
     return false;
@@ -210,6 +297,9 @@ public final strictfp class R1Interval {
     return (int) (value ^ (value >>> 32));
   }
 
+  /**
+   * Returns true if the intervals cover the same range, to within a small floating point tolerance.
+   */
   public boolean approxEquals(R1Interval y) {
     return approxEquals(y, 1e-15);
   }
@@ -217,7 +307,6 @@ public final strictfp class R1Interval {
   /**
    * Return true if length of the symmetric difference between the two intervals
    * is at most the given tolerance.
-   *
    */
   public boolean approxEquals(R1Interval y, double maxError) {
     if (isEmpty()) {
@@ -226,11 +315,11 @@ public final strictfp class R1Interval {
     if (y.isEmpty()) {
       return getLength() <= maxError;
     }
-    return Math.abs(y.lo() - lo()) + Math.abs(y.hi() - hi()) <= maxError;
+    return Math.abs(y.lo - lo) + Math.abs(y.hi - hi) <= maxError;
   }
 
   @Override
   public String toString() {
-    return "[" + lo() + ", " + hi() + "]";
+    return "[" + lo + ", " + hi + "]";
   }
 }

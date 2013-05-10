@@ -28,6 +28,16 @@ public final strictfp class S2 {
   public static final double M_SQRT2 = Math.sqrt(2);
   public static final double M_E = Math.E;
 
+  /** The smallest floating-point value {@code x} such that {@code (1 + x != 1)}. */
+  public static final double DBL_EPSILON;
+  static {
+    double machEps = 1.0d;
+    do {
+       machEps /= 2.0f;
+    } while ((1.0 + (machEps / 2.0)) != 1.0);
+    DBL_EPSILON = machEps;
+  }
+
   // Together these flags define a cell orientation. If SWAP_MASK
   // is true, then canonical traversal order is flipped around the
   // diagonal (i.e. i and j are swapped with each other). If
@@ -572,7 +582,7 @@ public final strictfp class S2 {
    * A relatively expensive calculation invoked by RobustCCW() if the sign of
    * the determinant is uncertain.
    */
-  private static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
+  public static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
     // Return zero if and only if two points are the same. This ensures (1).
     if (a.equalsPoint(b) || b.equalsPoint(c) || c.equalsPoint(a)) {
       return 0;
