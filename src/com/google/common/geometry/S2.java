@@ -466,18 +466,32 @@ public final strictfp class S2 {
     // formula which this margin is too narrow to contain :)
 
     // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-    double sina = b.crossProdNorm(c);
-    double sinb = c.crossProdNorm(a);
-    double sinc = a.crossProdNorm(b);
-    double ra = (sina == 0) ? 1 : (Math.asin(sina) / sina);
-    double rb = (sinb == 0) ? 1 : (Math.asin(sinb) / sinb);
-    double rc = (sinc == 0) ? 1 : (Math.asin(sinc) / sinc);
 
-    // Now compute a point M such that M.X = rX * det(ABC) / 2 for X in A,B,C.
-    S2Point x = new S2Point(a.x, b.x, c.x);
-    S2Point y = new S2Point(a.y, b.y, c.y);
-    S2Point z = new S2Point(a.z, b.z, c.z);
-    S2Point r = new S2Point(ra, rb, rc);
+    // Use angle() in order to get accurate results for small triangles.
+    double aAngle = b.angle(c);
+    double bAngle = c.angle(a);
+    double cAngle = a.angle(b);
+    double ra = (aAngle == 0) ? 1 : (aAngle / Math.sin(aAngle));
+    double rb = (bAngle == 0) ? 1 : (bAngle / Math.sin(bAngle));
+    double rc = (cAngle == 0) ? 1 : (cAngle / Math.sin(cAngle));
+
+    // Now compute a point M such that:
+    //
+    //  [Ax Ay Az] [Mx]                       [ra]
+    //  [Bx By Bz] [My]  = 0.5 * det(A,B,C) * [rb]
+    //  [Cx Cy Cz] [Mz]                       [rc]
+    //
+    // To improve the numerical stability we subtract the first row (A) from the
+    // other two rows; this reduces the cancellation error when A, B, and C are
+    // very close together.  Then we solve it using Cramer's rule.
+    //
+    // TODO(user): This code still isn't as numerically stable as it could be.
+    // The biggest potential improvement is to compute B-A and C-A more
+    // accurately so that (B-A)x(C-A) is always inside triangle ABC.
+    S2Point x = new S2Point(a.x, b.x - a.x, c.x - a.x);
+    S2Point y = new S2Point(a.y, b.y - a.y, c.y - a.y);
+    S2Point z = new S2Point(a.z, b.z - a.z, c.z - a.z);
+    S2Point r = new S2Point(ra, rb - ra, rc - ra);
     return new S2Point(
         0.5 * S2Point.scalarTripleProduct(r, y, z),
         0.5 * S2Point.scalarTripleProduct(r, z, x),

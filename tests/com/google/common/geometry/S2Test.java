@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.collect.Lists;
+
 import java.util.logging.Logger;
 
 public strictfp class S2Test extends GeometryTestCase {
@@ -318,5 +320,13 @@ public strictfp class S2Test extends GeometryTestCase {
     assertEquals(0, S2.exp(0));
     assertEquals(2, S2.exp(3));
     assertEquals(3, S2.exp(5));
+  }
+
+  public void testTrueCentroidForSmallTriangle() {
+    S2Polygon smallPoly = new S2Polygon(Lists.newArrayList(new S2Loop(Lists.newArrayList(
+        S2LatLng.fromE7(0x2094588f, 0xfc9edbe6).toPoint(),
+        S2LatLng.fromE7(0x209456c4, 0xfc9ee491).toPoint(),
+        S2LatLng.fromE7(0x20945e7f, 0xfc9ee954).toPoint()))));
+    assertTrue(smallPoly.contains(smallPoly.getCentroid()));
   }
 }
