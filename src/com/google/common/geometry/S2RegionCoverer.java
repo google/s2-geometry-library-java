@@ -77,26 +77,6 @@ public final strictfp class S2RegionCoverer {
   private int levelMod;
   private int maxCells;
 
-  // True if we're computing an interior covering.
-  private boolean interiorCovering;
-
-  // Counter of number of candidates created, for performance evaluation.
-  private int candidatesCreatedCounter;
-
-  /**
-   * We save a temporary copy of the pointer passed to GetCovering() in order to
-   * avoid passing this parameter around internally. It is only used (and only
-   * valid) for the duration of a single GetCovering() call.
-   */
-  S2Region region;
-
-  /**
-   * A temporary variable used by GetCovering() that holds the cell ids that
-   * have been added to the covering so far.
-   */
-  ArrayList<S2CellId> result;
-
-
   static class Candidate {
     private S2Cell cell;
     private boolean isTerminal; // Cell should not be expanded further.
@@ -126,12 +106,6 @@ public final strictfp class S2RegionCoverer {
     }
   }
 
-
-  /**
-   * We keep the candidates in a priority queue.
-   */
-  private PriorityQueue<QueueEntry> candidateQueue;
-
   /**
    * Default constructor, sets all fields to default values.
    */
@@ -140,11 +114,6 @@ public final strictfp class S2RegionCoverer {
     maxLevel = S2CellId.MAX_LEVEL;
     levelMod = 1;
     maxCells = DEFAULT_MAX_CELLS;
-    this.region = null;
-    result = new ArrayList<S2CellId>();
-    // TODO(kirilll?): 10 is a completely random number, work out a better
-    // estimate
-    candidateQueue = new PriorityQueue<QueueEntry>(10, new QueueEntriesComparator());
   }
 
   // Set the minimum and maximum cell level to be used. The default is to use
@@ -291,9 +260,9 @@ public final strictfp class S2RegionCoverer {
   }
 
   public void getCovering(S2Region region, S2CellUnion covering) {
-    interiorCovering = false;
-    getCoveringInternal(region);
-    covering.initSwap(result);
+    ActiveCovering state = new ActiveCovering(false, region);
+    state.getCoveringInternal();
+    covering.initSwap(state.result);
   }
 
   /**
@@ -307,9 +276,9 @@ public final strictfp class S2RegionCoverer {
   }
 
   public void getInteriorCovering(S2Region region, S2CellUnion covering) {
-    interiorCovering = true;
-    getCoveringInternal(region);
-    covering.initSwap(result);
+    ActiveCovering state = new ActiveCovering(true, region);
+    state.getCoveringInternal();
+    covering.initSwap(state.result);
   }
 
   /**
@@ -321,208 +290,228 @@ public final strictfp class S2RegionCoverer {
     floodFill(region, S2CellId.fromPoint(start).parent(level), output);
   }
 
-  /**
-   * If the cell intersects the given region, return a new candidate with no
-   * children, otherwise return null. Also marks the candidate as "terminal" if
-   * it should not be expanded further.
-   */
-  private Candidate newCandidate(S2Cell cell) {
-    if (!region.mayIntersect(cell)) {
-      return null;
+  /** This class tracks the state of a covering while it is underway. */
+  final class ActiveCovering {
+    /** True if we're covering the interior. */
+    final boolean interiorCovering;
+
+    /** The region being covered. */
+    final S2Region region;
+
+    /** Counter of number of candidates created, for performance evaluation. */
+    int candidatesCreatedCounter = 0;
+
+    /** Cell ids that have been added to the covering so far. */
+    final ArrayList<S2CellId> result = new ArrayList<S2CellId>();
+
+    /** Prioritized candidates to explore next. */
+    final PriorityQueue<QueueEntry> candidateQueue = new PriorityQueue<QueueEntry>(
+        // TODO(kirilll?): 10 is a completely random number, work out a better
+        // estimate
+        10, new QueueEntriesComparator());
+
+    ActiveCovering(boolean interior, S2Region region) {
+      this.interiorCovering = interior;
+      this.region = region;
     }
 
-    boolean isTerminal = false;
-    if (cell.level() >= minLevel) {
-      if (interiorCovering) {
-        if (region.contains(cell)) {
-          isTerminal = true;
-        } else if (cell.level() + levelMod > maxLevel) {
-          return null;
-        }
-      } else {
-        if (cell.level() + levelMod > maxLevel || region instanceof S2Polyline ||
-            region.contains(cell)) {
-          isTerminal = true;
-        }
+    /**
+     * If the cell intersects the given region, return a new candidate with no
+     * children, otherwise return null. Also marks the candidate as "terminal" if
+     * it should not be expanded further.
+     */
+    private Candidate newCandidate(S2Cell cell) {
+      if (!region.mayIntersect(cell)) {
+        return null;
       }
-    }
-    Candidate candidate = new Candidate();
-    candidate.cell = cell;
-    candidate.isTerminal = isTerminal;
-    if (!isTerminal) {
-      candidate.children = new Candidate[1 << maxChildrenShift()];
-    }
-    candidatesCreatedCounter++;
-    return candidate;
-  }
 
-  /** Return the log base 2 of the maximum number of children of a candidate. */
-  private int maxChildrenShift() {
-    return 2 * levelMod;
-  }
-
-  /**
-   * Process a candidate by either adding it to the result list or expanding its
-   * children and inserting it into the priority queue. Passing a null argument
-   * does nothing.
-   */
-  private void addCandidate(Candidate candidate) {
-    if (candidate == null) {
-      return;
-    }
-
-    if (candidate.isTerminal) {
-      result.add(candidate.cell.id());
-      return;
-    }
-    // assert (candidate.numChildren == 0);
-
-    // Expand one level at a time until we hit minLevel to ensure that
-    // we don't skip over it.
-    int numLevels = (candidate.cell.level() < minLevel) ? 1 : levelMod;
-    int numTerminals = expandChildren(candidate, candidate.cell, numLevels);
-
-    if (candidate.numChildren == 0) {
-      // Do nothing
-    } else if (!interiorCovering && numTerminals == 1 << maxChildrenShift()
-        && candidate.cell.level() >= minLevel) {
-      // Optimization: add the parent cell rather than all of its children.
-      // We can't do this for interior coverings, since the children just
-      // intersect the region, but may not be contained by it - we need to
-      // subdivide them further.
-      candidate.isTerminal = true;
-      addCandidate(candidate);
-
-    } else {
-      // We negate the priority so that smaller absolute priorities are returned
-      // first. The heuristic is designed to refine the largest cells first,
-      // since those are where we have the largest potential gain. Among cells
-      // at the same level, we prefer the cells with the smallest number of
-      // intersecting children. Finally, we prefer cells that have the smallest
-      // number of children that cannot be refined any further.
-      int priority = -((((candidate.cell.level() << maxChildrenShift()) + candidate.numChildren)
-          << maxChildrenShift()) + numTerminals);
-      candidateQueue.add(new QueueEntry(priority, candidate));
-      // logger.info("Push: " + candidate.cell.id() + " (" + priority + ") ");
-    }
-  }
-
-  /**
-   * Populate the children of "candidate" by expanding the given number of
-   * levels from the given cell. Returns the number of children that were marked
-   * "terminal".
-   */
-  private int expandChildren(Candidate candidate, S2Cell cell, int numLevels) {
-    numLevels--;
-    S2Cell[] childCells = new S2Cell[4];
-    for (int i = 0; i < 4; ++i) {
-      childCells[i] = new S2Cell();
-    }
-    cell.subdivide(childCells);
-    int numTerminals = 0;
-    for (int i = 0; i < 4; ++i) {
-      if (numLevels > 0) {
-        if (region.mayIntersect(childCells[i])) {
-          numTerminals += expandChildren(candidate, childCells[i], numLevels);
-        }
-        continue;
-      }
-      Candidate child = newCandidate(childCells[i]);
-      if (child != null) {
-        candidate.children[candidate.numChildren++] = child;
-        if (child.isTerminal) {
-          ++numTerminals;
-        }
-      }
-    }
-    return numTerminals;
-  }
-
-  /** Computes a set of initial candidates that cover the given region. */
-  private void getInitialCandidates() {
-    // Optimization: if at least 4 cells are desired (the normal case),
-    // start with a 4-cell covering of the region's bounding cap. This
-    // lets us skip quite a few levels of refinement when the region to
-    // be covered is relatively small.
-    if (maxCells >= 4) {
-      // Find the maximum level such that the bounding cap contains at most one
-      // cell vertex at that level.
-      S2Cap cap = region.getCapBound();
-      int level = Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * cap.angle().radians()),
-          Math.min(maxLevel(), S2CellId.MAX_LEVEL - 1));
-      if (levelMod() > 1 && level > minLevel()) {
-        level -= (level - minLevel()) % levelMod();
-      }
-      // We don't bother trying to optimize the level == 0 case, since more than
-      // four face cells may be required.
-      if (level > 0) {
-        // Find the leaf cell containing the cap axis, and determine which
-        // subcell of the parent cell contains it.
-        ArrayList<S2CellId> base = new ArrayList<S2CellId>(4);
-        S2CellId id = S2CellId.fromPoint(cap.axis());
-        id.getVertexNeighbors(level, base);
-        for (int i = 0; i < base.size(); ++i) {
-          addCandidate(newCandidate(new S2Cell(base.get(i))));
-        }
-        return;
-      }
-    }
-    // Default: start with all six cube faces.
-    for (int face = 0; face < 6; ++face) {
-      addCandidate(newCandidate(FACE_CELLS.get(face)));
-    }
-  }
-
-  /** Generates a covering and stores it in result. */
-  private void getCoveringInternal(S2Region region) {
-    // Strategy: Start with the 6 faces of the cube. Discard any
-    // that do not intersect the shape. Then repeatedly choose the
-    // largest cell that intersects the shape and subdivide it.
-    //
-    // result contains the cells that will be part of the output, while the
-    // priority queue contains cells that we may still subdivide further. Cells
-    // that are entirely contained within the region are immediately added to
-    // the output, while cells that do not intersect the region are immediately
-    // discarded.
-    // Therefore candidateQueue only contains cells that partially intersect the region.
-    // Candidates are prioritized first according to cell size (larger cells
-    // first), then by the number of intersecting children they have (fewest
-    // children first), and then by the number of fully contained children
-    // (fewest children first).
-
-    Preconditions.checkState(candidateQueue.isEmpty() && result.isEmpty());
-
-    this.region = region;
-    candidatesCreatedCounter = 0;
-
-    getInitialCandidates();
-    while (!candidateQueue.isEmpty() && (!interiorCovering || result.size() < maxCells)) {
-      Candidate candidate = candidateQueue.poll().candidate;
-      // For interior covering we keep subdividing no matter how many children
-      // candidate has. If we reach maxCells before expanding all children,
-      // we will just use some of them.
-      // For exterior covering we cannot do this, because result has to cover the
-      // whole region, so all children have to be used.
-      // candidate.numChildren == 1 case takes care of the situation when we
-      // already have more than maxCells in result (minLevel is too high).
-      if (interiorCovering ||
-          candidate.cell.level() < minLevel ||
-          candidate.numChildren == 1 ||
-          result.size() + candidateQueue.size() + candidate.numChildren <= maxCells) {
-        // Expand this candidate into its children.
-        for (int i = 0; i < candidate.numChildren; ++i) {
-          if (!interiorCovering || result.size() < maxCells) {
-            addCandidate(candidate.children[i]);
+      boolean isTerminal = false;
+      if (cell.level() >= minLevel) {
+        if (interiorCovering) {
+          if (region.contains(cell)) {
+            isTerminal = true;
+          } else if (cell.level() + levelMod > maxLevel) {
+            return null;
+          }
+        } else {
+          if (cell.level() + levelMod > maxLevel || region instanceof S2Polyline ||
+              region.contains(cell)) {
+            isTerminal = true;
           }
         }
-      } else {
+      }
+      Candidate candidate = new Candidate();
+      candidate.cell = cell;
+      candidate.isTerminal = isTerminal;
+      if (!isTerminal) {
+        candidate.children = new Candidate[1 << maxChildrenShift()];
+      }
+      candidatesCreatedCounter++;
+      return candidate;
+    }
+
+    /** Return the log base 2 of the maximum number of children of a candidate. */
+    private int maxChildrenShift() {
+      return 2 * levelMod;
+    }
+
+    /**
+     * Process a candidate by either adding it to the result list or expanding its
+     * children and inserting it into the priority queue. Passing a null argument
+     * does nothing.
+     */
+    private void addCandidate(Candidate candidate) {
+      if (candidate == null) {
+        return;
+      }
+
+      if (candidate.isTerminal) {
+        result.add(candidate.cell.id());
+        return;
+      }
+      // assert (candidate.numChildren == 0);
+
+      // Expand one level at a time until we hit minLevel to ensure that
+      // we don't skip over it.
+      int numLevels = (candidate.cell.level() < minLevel) ? 1 : levelMod;
+      int numTerminals = expandChildren(candidate, candidate.cell, numLevels);
+
+      if (candidate.numChildren == 0) {
+        // Do nothing
+      } else if (!interiorCovering && numTerminals == 1 << maxChildrenShift()
+          && candidate.cell.level() >= minLevel) {
+        // Optimization: add the parent cell rather than all of its children.
+        // We can't do this for interior coverings, since the children just
+        // intersect the region, but may not be contained by it - we need to
+        // subdivide them further.
         candidate.isTerminal = true;
         addCandidate(candidate);
+
+      } else {
+        // We negate the priority so that smaller absolute priorities are returned
+        // first. The heuristic is designed to refine the largest cells first,
+        // since those are where we have the largest potential gain. Among cells
+        // at the same level, we prefer the cells with the smallest number of
+        // intersecting children. Finally, we prefer cells that have the smallest
+        // number of children that cannot be refined any further.
+        int priority = -((((candidate.cell.level() << maxChildrenShift()) + candidate.numChildren)
+            << maxChildrenShift()) + numTerminals);
+        candidateQueue.add(new QueueEntry(priority, candidate));
+        // logger.info("Push: " + candidate.cell.id() + " (" + priority + ") ");
       }
     }
 
-    candidateQueue.clear();
-    this.region = null;
+    /**
+     * Populate the children of "candidate" by expanding the given number of
+     * levels from the given cell. Returns the number of children that were marked
+     * "terminal".
+     */
+    private int expandChildren(Candidate candidate, S2Cell cell, int numLevels) {
+      numLevels--;
+      S2Cell[] childCells = new S2Cell[4];
+      for (int i = 0; i < 4; ++i) {
+        childCells[i] = new S2Cell();
+      }
+      cell.subdivide(childCells);
+      int numTerminals = 0;
+      for (int i = 0; i < 4; ++i) {
+        if (numLevels > 0) {
+          if (region.mayIntersect(childCells[i])) {
+            numTerminals += expandChildren(candidate, childCells[i], numLevels);
+          }
+          continue;
+        }
+        Candidate child = newCandidate(childCells[i]);
+        if (child != null) {
+          candidate.children[candidate.numChildren++] = child;
+          if (child.isTerminal) {
+            ++numTerminals;
+          }
+        }
+      }
+      return numTerminals;
+    }
+
+    /** Computes a set of initial candidates that cover the given region. */
+    private void getInitialCandidates() {
+      // Optimization: if at least 4 cells are desired (the normal case),
+      // start with a 4-cell covering of the region's bounding cap. This
+      // lets us skip quite a few levels of refinement when the region to
+      // be covered is relatively small.
+      if (maxCells >= 4) {
+        // Find the maximum level such that the bounding cap contains at most one
+        // cell vertex at that level.
+        S2Cap cap = region.getCapBound();
+        int level = Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * cap.angle().radians()),
+            Math.min(maxLevel(), S2CellId.MAX_LEVEL - 1));
+        if (levelMod() > 1 && level > minLevel()) {
+          level -= (level - minLevel()) % levelMod();
+        }
+        // We don't bother trying to optimize the level == 0 case, since more than
+        // four face cells may be required.
+        if (level > 0) {
+          // Find the leaf cell containing the cap axis, and determine which
+          // subcell of the parent cell contains it.
+          ArrayList<S2CellId> base = new ArrayList<S2CellId>(4);
+          S2CellId id = S2CellId.fromPoint(cap.axis());
+          id.getVertexNeighbors(level, base);
+          for (int i = 0; i < base.size(); ++i) {
+            addCandidate(newCandidate(new S2Cell(base.get(i))));
+          }
+          return;
+        }
+      }
+      // Default: start with all six cube faces.
+      for (int face = 0; face < 6; ++face) {
+        addCandidate(newCandidate(FACE_CELLS.get(face)));
+      }
+    }
+
+    /** Generates a covering and stores it in result. */
+    private void getCoveringInternal() {
+      // Strategy: Start with the 6 faces of the cube. Discard any
+      // that do not intersect the shape. Then repeatedly choose the
+      // largest cell that intersects the shape and subdivide it.
+      //
+      // result contains the cells that will be part of the output, while the
+      // priority queue contains cells that we may still subdivide further. Cells
+      // that are entirely contained within the region are immediately added to
+      // the output, while cells that do not intersect the region are immediately
+      // discarded.
+      // Therefore candidateQueue only contains cells that partially intersect the region.
+      // Candidates are prioritized first according to cell size (larger cells
+      // first), then by the number of intersecting children they have (fewest
+      // children first), and then by the number of fully contained children
+      // (fewest children first).
+
+      Preconditions.checkState(candidateQueue.isEmpty() && result.isEmpty());
+
+      getInitialCandidates();
+      while (!candidateQueue.isEmpty() && (!interiorCovering || result.size() < maxCells)) {
+        Candidate candidate = candidateQueue.poll().candidate;
+        // For interior covering we keep subdividing no matter how many children
+        // candidate has. If we reach maxCells before expanding all children,
+        // we will just use some of them.
+        // For exterior covering we cannot do this, because result has to cover the
+        // whole region, so all children have to be used.
+        // candidate.numChildren == 1 case takes care of the situation when we
+        // already have more than maxCells in result (minLevel is too high).
+        if (interiorCovering ||
+            candidate.cell.level() < minLevel ||
+            candidate.numChildren == 1 ||
+            result.size() + candidateQueue.size() + candidate.numChildren <= maxCells) {
+          // Expand this candidate into its children.
+          for (int i = 0; i < candidate.numChildren; ++i) {
+            if (!interiorCovering || result.size() < maxCells) {
+              addCandidate(candidate.children[i]);
+            }
+          }
+        } else {
+          candidate.isTerminal = true;
+          addCandidate(candidate);
+        }
+      }
+    }
   }
 
   /**
