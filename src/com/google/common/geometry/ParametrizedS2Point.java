@@ -16,13 +16,19 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * An S2Point that also has a parameter associated with it, which corresponds
  * to a time-like order on the points.
  *
  * @author kirilll@google.com (Kirill Levin)
  */
-public final class ParametrizedS2Point implements Comparable<ParametrizedS2Point> {
+@GwtCompatible(serializable = true)
+public final class ParametrizedS2Point implements Comparable<ParametrizedS2Point>, Serializable {
+
   private final double time;
   private final S2Point point;
 

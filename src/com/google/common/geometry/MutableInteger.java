@@ -15,6 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * Like an Integer, but mutable :)
  *
@@ -26,10 +30,11 @@ package com.google.common.geometry;
  * NOT thread-safe
  *
  */
-public class MutableInteger {
+@GwtCompatible(serializable = true)
+public class MutableInteger implements Serializable {
 
   private int value;
-  private Integer cachedIntegerValue = null;
+  private transient Integer cachedIntegerValue = null;
 
   public MutableInteger(final int i) {
     value = i;

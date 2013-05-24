@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.geometry.S2.Metric;
 
 /**
@@ -68,8 +69,13 @@ import com.google.common.geometry.S2.Metric;
  * This data was produced using s2cell_unittest and s2cellid_unittest.
  *
  */
-
+@GwtCompatible
 public final strictfp class S2Projections {
+  /**
+   * See {@link S2Projections} class documentation for definitions of each of
+   * these projections.
+   */
+  @GwtCompatible
   public enum Projections {
     S2_LINEAR_PROJECTION, S2_TAN_PROJECTION, S2_QUADRATIC_PROJECTION
   }

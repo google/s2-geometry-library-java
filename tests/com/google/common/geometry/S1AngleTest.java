@@ -15,10 +15,15 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import junit.framework.TestCase;
 
+/**
+ * Tests for {@link S1Angle}.
+ */
+@GwtCompatible
 public strictfp class S1AngleTest extends TestCase {
-
 
   public void testBasic() {
     // Check that the conversion between Pi radians and 180 degrees is exact.

@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -28,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@GwtCompatible
 public abstract strictfp class S2EdgeIndex {
   /**
    * Thicken the edge in all directions by roughly 1% of the edge length when

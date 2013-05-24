@@ -15,11 +15,14 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import junit.framework.TestCase;
 
 /**
  * Verifies R2Vector.
  */
+@GwtCompatible
 public class R2VectorTest extends TestCase {
   public void testOrtho() {
     assertEquals(new R2Vector(1, 1), new R2Vector(1, -1).ortho());

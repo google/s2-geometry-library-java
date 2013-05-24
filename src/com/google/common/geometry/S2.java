@@ -15,9 +15,11 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
+@GwtCompatible
 public final strictfp class S2 {
 
   // Declare some frequently used constants
@@ -148,7 +150,10 @@ public final strictfp class S2 {
   /**
    * Defines an area or a length cell metric.
    */
+  @GwtCompatible(emulated = true, serializable = false)
   public static class Metric {
+    // NOTE: This isn't GWT serializable because writing custom field serializers for inner classes
+    // is hard.
 
     private final double deriv;
     private final int dim;
@@ -171,7 +176,7 @@ public final strictfp class S2 {
 
     /** Return the value of a metric for cells at the given level. */
     public double getValue(int level) {
-      return StrictMath.scalb(deriv, dim * (1 - level));
+      return Platform.scalb(deriv, dim * (1 - level));
     }
 
     /**

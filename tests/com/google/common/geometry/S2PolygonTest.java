@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
@@ -27,6 +28,7 @@ import java.util.logging.Logger;
  * Tests for {@link S2Polygon}.
  *
  */
+@GwtCompatible
 public strictfp class S2PolygonTest extends GeometryTestCase {
   private static Logger logger = Logger.getLogger(S2PolygonTest.class.getName());
 

@@ -15,11 +15,15 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/** Tests for S2Cell. */
+@GwtCompatible
 public strictfp class S2CellTest extends GeometryTestCase {
 
   public static final boolean DEBUG_MODE = true;
@@ -330,7 +334,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     double minError = minValue - minMetric.getValue(level);
     double maxError = maxMetric.getValue(level) - maxValue;
     double avgError = Math.abs(avgMetric.getValue(level) - avgValue);
-    System.out.printf(
+    Platform.printf(System.out,
       "%-10s (%6.0f samples, tolerance %8.3g) - min (%9.3g : %9.3g) "
         + "max (%9.3g : %9.3g), avg (%9.3g : %9.3g)\n", label, count,
       tolerance, minError / minValue, minError / tolerance, maxError
@@ -358,10 +362,10 @@ public strictfp class S2CellTest extends GeometryTestCase {
     // cell to the shortest edge of that same cell (and similarly for the
     // maximum diagonal aspect).
 
-    System.out
-      .printf("Level    Area      Edge          Diag          Approx       Average\n");
-    System.out
-      .printf("        Ratio  Ratio Aspect  Ratio Aspect    Min    Max    Min    Max\n");
+    Platform.printf(System.out,
+        "Level    Area      Edge          Diag          Approx       Average\n");
+    Platform.printf(System.out,
+        "        Ratio  Ratio Aspect  Ratio Aspect    Min    Max    Min    Max\n");
     for (int i = 0; i <= S2CellId.MAX_LEVEL; ++i) {
       LevelStats s = levelStats.get(i);
       if (s.count > 0) {
@@ -371,7 +375,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
         s.avgDiag /= s.count;
         s.avgAngleSpan /= s.count;
       }
-      System.out.printf(
+      Platform.printf(System.out,
         "%5d  %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f\n", i,
         s.maxArea / s.minArea, s.maxEdge / s.minEdge, s.maxEdgeAspect,
         s.maxDiag / s.minDiag, s.maxDiagAspect, s.minApproxRatio,
@@ -387,8 +391,8 @@ public strictfp class S2CellTest extends GeometryTestCase {
         continue;
       }
 
-      System.out.printf(
-        "Level %2d - metric (error/actual : error/tolerance)\n", i);
+      Platform.printf(System.out,
+          "Level %2d - metric (error/actual : error/tolerance)\n", i);
 
       // The various length calculations are only accurate to 1e-15 or so,
       // so we need to allow for this amount of discrepancy with the theoretical

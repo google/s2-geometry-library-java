@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
@@ -24,6 +26,8 @@ import com.google.common.collect.Multiset;
 import com.google.common.geometry.S2EdgeIndex.DataEdgeIterator;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
+import java.io.Serializable;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,9 +54,9 @@ import java.util.logging.Logger;
  * representing the empty and full rectangles as well as single points.
  *
  */
-
-public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
-  private static final Logger log = Logger.getLogger(S2Loop.class.getCanonicalName());
+@GwtCompatible(serializable = true)
+public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Serializable {
+  private static final Logger log = Platform.getLoggerForClass(S2Loop.class);
 
   /**
    * Max angle that intersections can be off by and yet still be considered
@@ -66,7 +70,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    * constant time, whereas without an edge index it is forced to compare the
    * query point against every edge in the loop.
    */
-  private S2EdgeIndex index;
+  private transient S2EdgeIndex index;
 
   /** Maps each S2Point to its order in the loop, from 1 to numVertices. */
   private Map<S2Point, Integer> vertexToIndex;
@@ -176,13 +180,34 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
    */
   public S2Loop(S2Loop src) {
     this.numVertices = src.numVertices();
-    this.vertices = src.vertices.clone();
+    this.vertices = new S2Point[numVertices];
+    for (int i = 0; i < numVertices; i++) {
+      this.vertices[i] = src.vertices[i];
+    }
     this.vertexToIndex = src.vertexToIndex;
     this.index = src.index;
     this.firstLogicalVertex = src.firstLogicalVertex;
     this.bound = src.getRectBound();
     this.originInside = src.originInside;
     this.depth = src.depth();
+  }
+
+  // Note that this doesn't do anything smart: it just compares a few fields for equality, but
+  // doesn't check for equivalent loops that were initialized in different ways, etc.
+  @Override
+  public boolean equals(Object obj) {
+    if (obj instanceof S2Loop) {
+      S2Loop that = (S2Loop) obj;
+      return Arrays.equals(this.vertices, that.vertices)
+          && Objects.equal(this.originInside, that.originInside)
+          && Objects.equal(this.bound, that.bound);
+    }
+    return false;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(this.vertices, this.originInside, this.bound);
   }
 
   public int depth() {
@@ -969,11 +994,11 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop> {
           previousIndex = b2;
           if (crosses ) {
             log.info("Edges " + a1 + " and " + b1 + " cross");
-            log.info(String.format("Edge locations in degrees: " + "%s-%s and %s-%s",
-                new S2LatLng(vertex(a1)).toStringDegrees(),
-                new S2LatLng(vertex(a2)).toStringDegrees(),
-                new S2LatLng(vertex(b1)).toStringDegrees(),
-                new S2LatLng(vertex(b2)).toStringDegrees()));
+            log.info("Edge locations in degrees: " +
+                new S2LatLng(vertex(a1)).toStringDegrees() +
+                "-" + new S2LatLng(vertex(a2)).toStringDegrees() +
+                " and " + new S2LatLng(vertex(b1)).toStringDegrees() +
+                "-" + new S2LatLng(vertex(b2)).toStringDegrees());
             return false;
           }
         }

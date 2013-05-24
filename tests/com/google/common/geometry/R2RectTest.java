@@ -15,9 +15,9 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.geometry.R1Interval.Endpoint;
 import com.google.common.geometry.R2Rect.Axis;
-
 
 /**
  * Verifies R2Rect. Most of the R2Rect methods have trivial implementations in terms of the
@@ -25,6 +25,7 @@ import com.google.common.geometry.R2Rect.Axis;
  *
  * <p>Package private because the underlying class is.
  */
+@GwtCompatible
 public class R2RectTest extends GeometryTestCase {
   /**
    * Tests all of the interval operations on the given pair of intervals.

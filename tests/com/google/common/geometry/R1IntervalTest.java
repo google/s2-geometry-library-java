@@ -15,9 +15,11 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.geometry.R1Interval.Endpoint;
 
 /** Verifies R1Interval. */
+@GwtCompatible
 public strictfp class R1IntervalTest extends GeometryTestCase {
   /**
    * Test all of the interval operations on the given pair of intervals.

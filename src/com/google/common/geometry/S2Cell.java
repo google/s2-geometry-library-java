@@ -15,6 +15,9 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
 
 /**
  * An S2Cell is an S2Region object that represents a cell. Unlike S2CellIds, it
@@ -22,8 +25,9 @@ package com.google.common.geometry;
  * more expensive representation.
  *
  */
+@GwtCompatible(serializable = true)
+public final strictfp class S2Cell implements S2Region, Serializable {
 
-public final strictfp class S2Cell implements S2Region {
   private static final int MAX_CELL_SIZE = 1 << S2CellId.MAX_LEVEL;
 
   byte face;
@@ -257,7 +261,8 @@ public final strictfp class S2Cell implements S2Region {
   // //////////////////////////////////////////////////////////////////////
   // S2Region interface (see {@code S2Region} for details):
 
-  @Override
+  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
+  // Object, so we can't mark it as such.
   public S2Region clone() {
     S2Cell clone = new S2Cell();
     clone.face = this.face;

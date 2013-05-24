@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 /**
  * An S2Region represents a two-dimensional region over the unit sphere. It is
  * an abstract interface with various concrete subtypes.
@@ -26,11 +28,11 @@ package com.google.common.geometry;
  *
  *
  */
+@GwtCompatible
 public interface S2Region {
 
   /** Return a bounding spherical cap. */
   public abstract S2Cap getCapBound();
-
 
   /** Return a bounding latitude-longitude rectangle. */
   public abstract S2LatLngRect getRectBound();

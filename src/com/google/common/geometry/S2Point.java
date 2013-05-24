@@ -15,13 +15,18 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * An S2Point represents a point on the unit sphere as a 3D vector. Usually
  * points are normalized to be unit length, but some methods do not require
  * this.
  *
  */
-public strictfp class S2Point implements Comparable<S2Point> {
+@GwtCompatible(serializable = true)
+public strictfp class S2Point implements Comparable<S2Point>, Serializable {
   /** Origin of the coordinate system, [0,0,0]. */
   public static final S2Point ORIGIN = new S2Point(0, 0, 0);
 

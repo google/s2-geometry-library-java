@@ -15,6 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+/** Tests for S2Cap. */
+@GwtCompatible
 public strictfp class S2CapTest extends GeometryTestCase {
 
   public S2Point getLatLngPoint(double latDegrees, double lngDegrees) {

@@ -15,13 +15,18 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * An R1Interval represents a closed, bounded interval on the real line. It is
  * capable of representing the empty interval (containing no points) and
  * zero-length intervals (containing a single point).
  *
  */
-public final strictfp class R1Interval {
+@GwtCompatible(serializable = true)
+public final strictfp class R1Interval implements Serializable {
   private double lo;
   private double hi;
 

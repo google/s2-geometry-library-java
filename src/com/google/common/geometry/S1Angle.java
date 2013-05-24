@@ -15,8 +15,12 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 
-public final strictfp class S1Angle implements Comparable<S1Angle> {
+import java.io.Serializable;
+
+@GwtCompatible(serializable = true)
+public final strictfp class S1Angle implements Comparable<S1Angle>, Serializable {
 
   private final double radians;
 

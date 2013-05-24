@@ -15,14 +15,16 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Ascii;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.UnmodifiableIterator;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 
 /**
@@ -55,7 +57,8 @@ import java.util.NoSuchElementException;
  *
  *
  */
-public final strictfp class S2CellId implements Comparable<S2CellId> {
+@GwtCompatible(emulated = true, serializable = true)
+public final strictfp class S2CellId implements Comparable<S2CellId>, Serializable {
 
   // Although only 60 bits are needed to represent the index of a leaf
   // cell, we need an extra bit in order to represent the position of
@@ -526,7 +529,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
       return "X";
     }
 
-    String hex = Long.toHexString(id).toLowerCase(Locale.ENGLISH);
+    String hex = Ascii.toLowerCase(Long.toHexString(id));
     StringBuilder sb = new StringBuilder(16);
     for (int i = hex.length(); i < 16; i++) {
       sb.append('0');
@@ -743,7 +746,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
     // rather than local variables helps the compiler to do a better job
     // of register allocation as well. Note that the two 32-bits halves
     // get shifted one bit to the left when they are combined.
-    long n[] = {0, face << (POS_BITS - 33)};
+    long n[] = {0, ((long) face) << (POS_BITS - 33)};
+
 
     // Alternating faces have opposite Hilbert curve orientations; this
     // is necessary in order for all faces to have a right-handed
@@ -898,8 +902,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId> {
     // Find the (s,t) coordinates corresponding to (i,j). At least one
     // of these coordinates will be just outside the range [0, 1].
     final double kScale = 1.0 / MAX_SIZE;
-    double s = kScale * ((i << 1) + 1 - MAX_SIZE);
-    double t = kScale * ((j << 1) + 1 - MAX_SIZE);
+    double s = kScale * (((long) i << 1) + 1 - MAX_SIZE);
+    double t = kScale * (((long) j << 1) + 1 - MAX_SIZE);
 
     // Find the leaf cell coordinates on the adjacent face, and convert
     // them to a cell id at the appropriate level.

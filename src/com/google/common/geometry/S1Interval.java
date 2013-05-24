@@ -15,6 +15,9 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
 
 /**
  * An S1Interval represents a closed interval on a unit circle (also known as a
@@ -35,8 +38,8 @@ package com.google.common.geometry;
  * [-Pi, Pi], and the Empty() interval is [Pi, -Pi].
  *
  */
-
-public final strictfp class S1Interval implements Cloneable {
+@GwtCompatible(serializable = true)
+public final strictfp class S1Interval implements Cloneable, Serializable {
 
   private final double lo;
   private final double hi;
@@ -356,8 +359,8 @@ public final strictfp class S1Interval implements Cloneable {
     }
 
     // NOTE(dbeaumont): Should this remainder be 2 * M_PI or just M_PI ??
-    double lo = Math.IEEEremainder(lo() - radius, 2 * S2.M_PI);
-    double hi = Math.IEEEremainder(hi() + radius, 2 * S2.M_PI);
+    double lo = Platform.IEEEremainder(lo() - radius, 2 * S2.M_PI);
+    double hi = Platform.IEEEremainder(hi() + radius, 2 * S2.M_PI);
     if (lo == -S2.M_PI) {
       lo = S2.M_PI;
     }
@@ -457,8 +460,8 @@ public final strictfp class S1Interval implements Cloneable {
     if (y.isEmpty()) {
       return getLength() <= maxError;
     }
-    return (Math.abs(Math.IEEEremainder(y.lo() - lo(), 2 * S2.M_PI))
-        + Math.abs(Math.IEEEremainder(y.hi() - hi(), 2 * S2.M_PI))) <= maxError;
+    return (Math.abs(Platform.IEEEremainder(y.lo() - lo(), 2 * S2.M_PI))
+        + Math.abs(Platform.IEEEremainder(y.hi() - hi(), 2 * S2.M_PI))) <= maxError;
   }
 
   public boolean approxEquals(final S1Interval y) {

@@ -15,13 +15,18 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * An R2Rect represents a closed axis-aligned rectangle in the (x,y) plane. This class is mutable
  * to allow iteratively constructing bounds via e.g. {@link #addPoint(R2Vector)}.
  *
  * <p>This class is package private, since it is not intended for external usage.
  */
-final strictfp class R2Rect {
+@GwtCompatible(serializable = true)
+final strictfp class R2Rect implements Serializable {
   private final R1Interval x;
   private final R1Interval y;
 
@@ -164,7 +169,7 @@ final strictfp class R2Rect {
       public R1Interval getInterval(R2Rect rect) {
         return rect.y;
       }
-      
+
     };
     public abstract R1Interval getInterval(R2Rect rect);
   }

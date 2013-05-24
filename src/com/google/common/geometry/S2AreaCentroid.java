@@ -16,6 +16,11 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Objects;
+
+import java.io.Serializable;
+
 import javax.annotation.Nullable;
 
 /**
@@ -27,7 +32,8 @@ import javax.annotation.Nullable;
  *
  * @author dbentley@google.com (Daniel Bentley)
  */
-public final class S2AreaCentroid {
+@GwtCompatible(serializable = true)
+public final class S2AreaCentroid implements Serializable {
 
   private final double area;
   private final S2Point centroid;
@@ -43,5 +49,20 @@ public final class S2AreaCentroid {
 
   @Nullable public S2Point getCentroid() {
     return centroid;
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (obj instanceof S2AreaCentroid) {
+      S2AreaCentroid that = (S2AreaCentroid) obj;
+      return this.area == that.area
+          && Objects.equal(this.centroid, that.centroid);
+    }
+    return false;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(area, centroid);
   }
 }

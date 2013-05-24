@@ -16,12 +16,14 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.ImmutableList;
 
 /**
  * Tests for {@link S2EdgeUtil}.
  *
  */
+@GwtCompatible
 public strictfp class S2EdgeUtilTest extends GeometryTestCase {
 
   public static final int DEGENERATE = -2;
@@ -475,7 +477,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
 
     // We allow a bit more than the usual 1e-15 error tolerance because
     // Interpolate() uses trig functions.
-    assertTrue(String.format("Expected: %s, actual: %s",
+    assertTrue(Platform.formatString("Expected: %s, actual: %s",
         new S2LatLng(expected).toStringDegrees(),
         new S2LatLng(actual).toStringDegrees()), S2.approxEquals(expected, actual, 3e-15));
   }

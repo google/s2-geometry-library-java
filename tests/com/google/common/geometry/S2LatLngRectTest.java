@@ -15,6 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+/** Tests for {@link S2LatLngRect}. */
+@GwtCompatible
 public strictfp class S2LatLngRectTest extends GeometryTestCase {
 
   public void testIntervalOps(S2LatLngRect x, S2LatLngRect y, String expectedRelation,
@@ -121,7 +125,8 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
       double lat = S2.M_PI_4 * (i - 2);
       double lng = S2.M_PI_2 * (i - 2) + 0.2;
       S2LatLngRect r = new S2LatLngRect(new R1Interval(lat, lat + S2.M_PI_4), new S1Interval(
-          Math.IEEEremainder(lng, 2 * S2.M_PI), Math.IEEEremainder(lng + S2.M_PI_2, 2 * S2.M_PI)));
+          Platform.IEEEremainder(lng, 2 * S2.M_PI),
+          Platform.IEEEremainder(lng + S2.M_PI_2, 2 * S2.M_PI)));
       for (int k = 0; k < 4; ++k) {
         assertTrue(
             S2.simpleCCW(r.getVertex((k - 1) & 3).toPoint(), r.getVertex(k).toPoint(),

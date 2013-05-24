@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
@@ -28,8 +30,9 @@ import java.util.logging.Logger;
  *
  * @author andriy@google.com (Andriy Bihun) ported from util/geometry
  */
+@GwtCompatible(emulated = true)
 public strictfp class S2EdgeIndexTest extends GeometryTestCase {
-  private static final Logger log = Logger.getLogger(S2EdgeIndexTest.class.getCanonicalName());
+  private static final Logger log = Platform.getLoggerForClass(S2EdgeIndexTest.class);
 
   public static class EdgeVectorIndex extends S2EdgeIndex {
     private List<S2Edge> edges;
@@ -110,7 +113,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
           sbError
               .append("\n==CHECK_ERROR===================================\n")
               .append("CandidateSet: ")
-              .append(sb)
+              .append(sb.toString())
               .append("\nin=")
               .append(in)
               .append(" i=")
@@ -173,17 +176,31 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     checkAllCrossings(allEdges, 0, 16);
   }
 
-  public void testRandomEdgeCrossings() {
+  @GwtIncompatible("Too slow for GWT")
+  public void testRandomEdgeCrossingsSlow() {
     tryCrossingsRandomInCap(2000, 30, 5000, 500, 2);
     tryCrossingsRandomInCap(1000, 100, 5000, 500, 3);
     tryCrossingsRandomInCap(1000, 1000, 5000, 1000, 40);
     tryCrossingsRandomInCap(500, 5000, 5000, 5000, 20);
   }
 
-  public void testRandomEdgeCrossingsSparse() {
+  public void testRandomEdgeCrossingsFast() {
+    tryCrossingsRandomInCap(50, 5000, 5000, 100, 15);
+    tryCrossingsRandomInCap(75, 5000, 5000, 200, 15);
+  }
+
+  @GwtIncompatible("Too slow for GWT")
+  public void testRandomEdgeCrossingsSparseSlow() {
     for (int i = 0; i < 5; ++i) {
       tryCrossingsRandomInCap(2000, 100, 5000, 500, 8);
       tryCrossingsRandomInCap(2000, 300, 50000, 1000, 10);
+    }
+  }
+
+  public void testRandomEdgeCrossingsSparseFast() {
+    for (int i = 0; i < 5; ++i) {
+      tryCrossingsRandomInCap(50, 100, 5000, 40, 2);
+      tryCrossingsRandomInCap(50, 300, 50000, 40, 2);
     }
   }
 }

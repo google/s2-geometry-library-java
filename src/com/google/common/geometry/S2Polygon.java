@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
@@ -23,6 +24,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.TreeMultimap;
 
+import java.io.Serializable;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -53,8 +55,9 @@ import java.util.logging.Logger;
  * loop.
  *
  */
-public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon> {
-  private static final Logger log = Logger.getLogger(S2Polygon.class.getCanonicalName());
+@GwtCompatible(serializable = true)
+public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>, Serializable {
+  private static final Logger log = Platform.getLoggerForClass(S2Polygon.class);
 
   private final List<S2Loop> loops = Lists.newArrayList();
 
@@ -1291,8 +1294,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
     @Override
     public String toString() {
-      return String.format("Edge: (%s <-> %s)\n   or [%s <-> %s]",
-          a.toDegreesString(), b.toDegreesString(), a, b);
+      return "Edge: (" + a.toDegreesString() + " <-> " + b.toDegreesString() + ")\n   or [" +
+         a + " <-> " + b + "]";
     }
 
     @Override
@@ -1311,6 +1314,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
+  @GwtCompatible(serializable = false)
   private static final class LoopVertexIndexPair {
     private final int loopIndex;
     private final int vertexIndex;

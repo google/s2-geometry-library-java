@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 
@@ -29,6 +30,7 @@ import java.util.logging.Logger;
  * Tests for {@link S2PolygonBuilder}.
  *
  */
+@GwtCompatible
 public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   /** Holds the original S2Loop loglevel. */
   private Level oldLoopLevel;
@@ -42,10 +44,10 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     // Disable the logging done by S2Loop and S2Polygon, since it will get in
     // the way of the logging we need to see from S2PolygonBuilder*java, and
     // save the levels to restore when we teardown the test.
-    Logger loopLogger = Logger.getLogger(S2Loop.class.getCanonicalName());
+    Logger loopLogger = Platform.getLoggerForClass(S2Loop.class);
     oldLoopLevel = loopLogger.getLevel();
     loopLogger.setLevel(Level.OFF);
-    Logger polyLogger = Logger.getLogger(S2Polygon.class.getCanonicalName());
+    Logger polyLogger = Platform.getLoggerForClass(S2Polygon.class);
     oldPolygonLevel = polyLogger.getLevel();
     polyLogger.setLevel(Level.OFF);
   }
@@ -53,8 +55,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   @Override
   protected void tearDown() {
     // Restore the logging done by S2Loop and S2Polygon to the prior settings.
-    Logger.getLogger(S2Loop.class.getCanonicalName()).setLevel(oldLoopLevel);
-    Logger.getLogger(S2Polygon.class.getCanonicalName()).setLevel(oldPolygonLevel);
+    Platform.getLoggerForClass(S2Loop.class).setLevel(oldLoopLevel);
+    Platform.getLoggerForClass(S2Polygon.class).setLevel(oldPolygonLevel);
   }
 
   /**
@@ -442,12 +444,12 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     List<String> lines = Lists.newArrayList();
     // Get inverse to rotate coordinates back to starting location.
     SimpleMatrix inverse = m.transpose();
-    lines.add(String.format("Wrong number of unused edges (%d expected, %d actual):",
+    lines.add(Platform.formatString("Wrong number of unused edges (%d expected, %d actual):",
         numExpected, unusedEdges.size()));
     for (int i = 0; i < unusedEdges.size(); ++i) {
       S2LatLng p0 = new S2LatLng(rotate(unusedEdges.get(i).getStart(), inverse));
       S2LatLng p1 = new S2LatLng(rotate(unusedEdges.get(i).getEnd(), inverse));
-      lines.add(String.format("  [%.6f, %.6f] -> [%.6f, %.5f]",
+      lines.add(Platform.formatString("  [%.6f, %.6f] -> [%.6f, %.5f]",
           p0.lat().degrees(), p0.lng().degrees(),
           p1.lat().degrees(), p1.lng().degrees()));
     }
@@ -640,7 +642,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       }
 
       assertTrue(
-          String.format(
+          Platform.formatString(
               "During iteration %d:\n  undirected: %b\n  xor: %b\n" +
                   "  maxSplits: %d\n  maxPerturb: %.6g\n" +
                   "  vertexMerge_radius: %.6g\n  edgeSpliceFraction: %.6g\n" +
@@ -664,12 +666,12 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   private static String loopsToString(String label, SimpleMatrix m, List<S2Loop> actual) {
     List<String> lines = Lists.newArrayList();
     for (int i = 0; i < actual.size(); i++) {
-      lines.add(String.format("%s loop %d:", label, i));
+      lines.add(Platform.formatString("%s loop %d:", label, i));
       S2Loop loop = actual.get(i);
       SimpleMatrix inverse = m.transpose();
       for (int j = 0; j < loop.numVertices(); ++j) {
         S2LatLng ll = new S2LatLng(rotate(loop.vertex(j), inverse));
-        lines.add(String.format("  [%.6f, %.6f]",
+        lines.add(Platform.formatString("  [%.6f, %.6f]",
             ll.lat().degrees(), ll.lng().degrees()));
       }
     }

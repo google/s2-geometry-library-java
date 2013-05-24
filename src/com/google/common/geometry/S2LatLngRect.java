@@ -15,15 +15,18 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
+
+import java.io.Serializable;
 
 /**
  * An S2LatLngRect represents a latitude-longitude rectangle. It is capable of
  * representing the empty and full rectangles as well as single points.
  *
  */
-
-public strictfp class S2LatLngRect implements S2Region {
+@GwtCompatible(serializable = true)
+public strictfp class S2LatLngRect implements S2Region, Serializable {
 
   private final R1Interval lat;
   private final S1Interval lng;
@@ -578,7 +581,8 @@ public strictfp class S2LatLngRect implements S2Region {
   // //////////////////////////////////////////////////////////////////////
   // S2Region interface (see {@code S2Region} for details):
 
-  @Override
+  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
+  // Object, so we can't mark it as such.
   public S2Region clone() {
     return new S2LatLngRect(this.lo(), this.hi());
   }
@@ -610,7 +614,7 @@ public strictfp class S2LatLngRect implements S2Region {
     // rectangles that are larger than 180 degrees, we punt and always return a
     // bounding cap centered at one of the two poles.
     double lngSpan = lng.hi() - lng.lo();
-    if (Math.IEEEremainder(lngSpan, 2 * S2.M_PI) >= 0) {
+    if (Platform.IEEEremainder(lngSpan, 2 * S2.M_PI) >= 0) {
       if (lngSpan < 2 * S2.M_PI) {
         S2Cap midCap = S2Cap.fromAxisAngle(getCenter().toPoint(), S1Angle
           .radians(0));

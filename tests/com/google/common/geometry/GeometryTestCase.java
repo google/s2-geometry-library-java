@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -30,6 +32,10 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * Common code for geometry tests.
+ */
+@GwtCompatible(emulated = true)
 public strictfp class GeometryTestCase extends TestCase {
 
   public Random rand;
@@ -184,7 +190,7 @@ public strictfp class GeometryTestCase extends TestCase {
       vertices.add(S2LatLng.fromDegrees(lat, lng).toPoint());
       bound.addPoint(S2LatLng.fromDegrees(lat, lng));
     }
-    
+
     return bound;
   }
 
@@ -217,12 +223,13 @@ public strictfp class GeometryTestCase extends TestCase {
     parseVertices(str, vertices);
     return new S2Polyline(vertices);
   }
-  
+
 
   /**
    * Returns the result of encoding and immediately decoding the given value.
    */
   @SuppressWarnings("unchecked")
+  @GwtIncompatible("ByteArrayInputStream")
   static <E> E encodeDecode(Serializable value) throws Exception {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     new ObjectOutputStream(bytes).writeObject(value);

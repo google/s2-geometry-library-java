@@ -15,9 +15,12 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -54,7 +57,8 @@ import java.util.PriorityQueue;
  * methods will conflict and produce unpredictable results.
  *
  */
-public final strictfp class S2RegionCoverer {
+@GwtCompatible(serializable = true)
+public final strictfp class S2RegionCoverer implements Serializable {
 
   /**
    * By default, the covering uses at most 8 cells at any level. This gives a
@@ -114,6 +118,23 @@ public final strictfp class S2RegionCoverer {
     maxLevel = S2CellId.MAX_LEVEL;
     levelMod = 1;
     maxCells = DEFAULT_MAX_CELLS;
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (obj instanceof S2RegionCoverer) {
+      S2RegionCoverer that = (S2RegionCoverer) obj;
+      return this.minLevel == that.minLevel
+          && this.maxLevel == that.maxLevel
+          && this.levelMod == that.levelMod
+          && this.maxCells == that.maxCells;
+    }
+    return false;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(minLevel, maxLevel, levelMod, maxCells);
   }
 
   // Set the minimum and maximum cell level to be used. The default is to use

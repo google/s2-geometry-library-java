@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
@@ -57,6 +58,7 @@ import javax.annotation.Nullable;
  * </ol>
  *
  */
+@GwtCompatible(serializable = false)
 public final strictfp class S2PolygonBuilder {
   private final Options options;
 

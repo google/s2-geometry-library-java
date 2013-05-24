@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -23,6 +24,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Logger;
 
+/** Tests for S2CellUnion. */
+@GwtCompatible
 public strictfp class S2CellUnionTest extends GeometryTestCase {
   public static Logger logger = Logger.getLogger(S2CellUnionTest.class.getName());
 
@@ -67,7 +70,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     union.initFromCellIds(Lists.newArrayList(randomCells));
 
     // Add one more
-    while (!randomCells.add(getRandomCellId(S2CellId.MAX_LEVEL))) {      
+    while (!randomCells.add(getRandomCellId(S2CellId.MAX_LEVEL))) {
     }
 
     S2CellUnion unionPlusOne = new S2CellUnion();

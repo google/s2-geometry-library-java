@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 
 /**
@@ -24,6 +25,7 @@ import com.google.common.base.Preconditions;
  * polylines, loops, and general polygons.
  *
  */
+@GwtCompatible(serializable = false)
 public strictfp class S2EdgeUtil {
   /**
    * IEEE floating-point operations have a maximum error of 0.5 ULPS (units in

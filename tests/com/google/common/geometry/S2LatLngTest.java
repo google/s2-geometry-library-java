@@ -15,7 +15,11 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 
+/** Verifies S2LatLng. */
+@GwtCompatible(emulated = true)
 public strictfp class S2LatLngTest extends GeometryTestCase {
 
   public void testBasic() {
@@ -88,6 +92,7 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
         2e-6);
   }
 
+  @GwtIncompatible("GeometryTestCase.encodeDecode")
   public void testSerializable() throws Exception {
     S2LatLng latLong = S2LatLng.fromDegrees(-37, 25);
     assertEquals(latLong, encodeDecode(latLong));

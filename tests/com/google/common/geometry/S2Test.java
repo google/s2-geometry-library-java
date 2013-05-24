@@ -15,10 +15,13 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
 import java.util.logging.Logger;
 
+/** Verifies S2 static methods. */
+@GwtCompatible
 public strictfp class S2Test extends GeometryTestCase {
 
   private static Logger logger = Logger.getLogger(S2Test.class.getName());

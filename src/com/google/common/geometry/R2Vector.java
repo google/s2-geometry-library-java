@@ -15,13 +15,18 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * R2Vector represents a vector in the two-dimensional space. It defines the
  * basic geometrical operations for 2D vectors, e.g. cross product, addition,
  * norm, comparison, etc.
  *
  */
-public final strictfp class R2Vector {
+@GwtCompatible(serializable = true)
+public final strictfp class R2Vector implements Serializable {
   private final double x;
   private final double y;
 

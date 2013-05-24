@@ -16,9 +16,11 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
@@ -33,8 +35,9 @@ import java.util.logging.Logger;
  * vertices.
  *
  */
-public final strictfp class S2Polyline implements S2Region {
-  private static final Logger log = Logger.getLogger(S2Polyline.class.getCanonicalName());
+@GwtCompatible(serializable = true)
+public final strictfp class S2Polyline implements S2Region, Serializable {
+  private static final Logger log = Platform.getLoggerForClass(S2Polyline.class);
 
   private final int numVertices;
   private final S2Point[] vertices;
@@ -57,7 +60,10 @@ public final strictfp class S2Polyline implements S2Region {
    */
   public S2Polyline(S2Polyline src) {
     this.numVertices = src.numVertices();
-    this.vertices = src.vertices.clone();
+    this.vertices = new S2Point[numVertices];
+    for (int i = 0; i < numVertices; i++) {
+      this.vertices[i] = src.vertices[i];
+    }
   }
 
   /**

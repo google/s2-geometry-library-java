@@ -15,6 +15,9 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
 
 /**
  * This class represents a spherical cap, i.e. a portion of a sphere cut off by
@@ -30,7 +33,8 @@ package com.google.common.geometry;
  * h = 1 - cos(theta) = 2 sin^2(theta/2) d^2 = 2 h = a^2 + h^2
  *
  */
-public final strictfp class S2Cap implements S2Region {
+@GwtCompatible(serializable = true)
+public final strictfp class S2Cap implements S2Region, Serializable {
 
   /**
    * Multiply a positive number by this constant to ensure that the result of a
@@ -282,9 +286,9 @@ public final strictfp class S2Cap implements S2Region {
       double sinC = Math.cos(axisLatLng.lat().radians());
       if (sinA <= sinC) {
         double angleA = Math.asin(sinA / sinC);
-        lng[0] = Math.IEEEremainder(axisLatLng.lng().radians() - angleA,
+        lng[0] = Platform.IEEEremainder(axisLatLng.lng().radians() - angleA,
           2 * S2.M_PI);
-        lng[1] = Math.IEEEremainder(axisLatLng.lng().radians() + angleA,
+        lng[1] = Platform.IEEEremainder(axisLatLng.lng().radians() + angleA,
           2 * S2.M_PI);
       }
     }

@@ -16,9 +16,11 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,8 +33,9 @@ import java.util.logging.Logger;
  * cases due to a problem with S2.robustCCW().
  *
  */
+@GwtCompatible
 public strictfp class S2LoopTest extends GeometryTestCase {
-  private static final Logger log = Logger.getLogger(S2LoopTest.class.getCanonicalName());
+  private static final Logger log = Platform.getLoggerForClass(S2LoopTest.class);
 
   // A stripe that slightly over-wraps the equator.
   private S2Loop candyCane = makeLoop("-20:150, -20:-70, 0:70, 10:-150, 10:70, -10:-70");
@@ -157,7 +160,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       // We want to position the vertices close enough together so that their
       // maximum distance from the boundary of the spherical cap is kMaxDist.
       // Thus we want fabs(atan(tan(phi) / cos(dtheta/2)) - phi) <= kMaxDist.
-      double kMaxDist = 1e-6;
+      double kMaxDist = TestPlatform.S2_LOOP_TEST_MAX_ANGLE_DELTA;
       double height = 2 * rand.nextDouble();
       double phi = Math.asin(1 - height);
       double maxDtheta =
@@ -409,7 +412,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     // Construct polygons consisting of a sequence of adjacent cell ids
     // at some fixed level. Comparing two polygons at the same level
     // ensures that there are no T-vertices.
-    for (int iter = 0; iter < 1000; ++iter) {
+    for (int iter = 0; iter < TestPlatform.S2_LOOP_TEST_LOOP_RELATIONS2_ITERATIONS; ++iter) {
       long num = rand.nextLong();
       S2CellId begin = new S2CellId(num | 1);
       if (!begin.isValid()) {
@@ -597,13 +600,13 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   private void dumpCrossings(S2Loop loop) {
 
     System.out.println("Ortho(v1): " + S2.ortho(loop.vertex(1)));
-    System.out.printf("Contains(kOrigin): %b\n", loop.contains(S2.origin()));
+    System.out.println("Contains(kOrigin): " + loop.contains(S2.origin()) + "\n");
     for (int i = 1; i <= loop.numVertices(); ++i) {
       S2Point a = S2.ortho(loop.vertex(i));
       S2Point b = loop.vertex(i - 1);
       S2Point c = loop.vertex(i + 1);
       S2Point o = loop.vertex(i);
-      System.out.printf("Vertex %d: [%.17g, %.17g, %.17g], "
+      Platform.printf(System.out, "Vertex %d: [%.17g, %.17g, %.17g], "
           + "%d%dR=%d, %d%d%d=%d, R%d%d=%d, inside: %b\n",
           i,
           loop.vertex(i).x,
@@ -626,13 +629,13 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       S2Point dest;
       if (i < loop.numVertices()) {
         dest = loop.vertex(i);
-        System.out.printf("Origin->%d crosses:", i);
+        Platform.printf(System.out, "Origin->%d crosses:", i);
       } else {
         dest = new S2Point(0, 0, 1);
         if (i == loop.numVertices() + 1) {
           orig = loop.vertex(1);
         }
-        System.out.printf("Case %d:", i);
+        Platform.printf(System.out, "Case %d:", i);
       }
       for (int j = 0; j < loop.numVertices(); ++j) {
         System.out.println(
@@ -641,12 +644,12 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       System.out.println();
     }
     for (int i = 0; i <= 2; i += 2) {
-      System.out.printf("Origin->v1 crossing v%d->v1: ", i);
+      Platform.printf(System.out, "Origin->v1 crossing v%d->v1: ", i);
       S2Point a = S2.ortho(loop.vertex(1));
       S2Point b = loop.vertex(i);
       S2Point c = S2.origin();
       S2Point o = loop.vertex(1);
-      System.out.printf("%d1R=%d, M1%d=%d, R1M=%d, crosses: %b\n",
+      Platform.printf(System.out, "%d1R=%d, M1%d=%d, R1M=%d, crosses: %b\n",
           i,
           S2.robustCCW(b, o, a),
           i,

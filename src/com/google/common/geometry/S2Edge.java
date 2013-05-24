@@ -16,12 +16,17 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
 /**
  * An abstract directed edge from one S2Point to another S2Point.
  *
  * @author kirilll@google.com (Kirill Levin)
  */
-public final class S2Edge {
+@GwtCompatible(serializable = true)
+public final class S2Edge implements Serializable {
 
   private final S2Point start;
   private final S2Point end;
@@ -41,8 +46,7 @@ public final class S2Edge {
 
   @Override
   public String toString() {
-    return String.format("Edge: (%s -> %s)",
-        start.toDegreesString(), end.toDegreesString());
+    return "Edge: (" + start.toDegreesString() + " -> " + end.toDegreesString() + ")";
   }
 
   @Override

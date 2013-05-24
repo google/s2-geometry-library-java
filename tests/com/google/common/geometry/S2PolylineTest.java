@@ -16,6 +16,7 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
@@ -27,6 +28,7 @@ import java.util.List;
  * Tests for {@link S2Polyline}.
  *
  */
+@GwtCompatible
 public strictfp class S2PolylineTest extends GeometryTestCase {
 
   private static final double EPSILON = 2e-14d;

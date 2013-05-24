@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -25,9 +27,10 @@ import java.util.logging.Logger;
 
 /**
  */
+@GwtCompatible
 public strictfp class S2CellIdTest extends GeometryTestCase {
 
-  private static final Logger logger = Logger.getLogger(S2CellIdTest.class.getName());
+  private static final Logger logger = Platform.getLoggerForClass(S2CellIdTest.class);
 
   private S2CellId getCellId(double latDegrees, double lngDegrees) {
     S2CellId id = S2CellId.fromLatLng(S2LatLng.fromDegrees(latDegrees, lngDegrees));
@@ -196,9 +199,9 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
       S2Point p = id.toPointRaw();
       int face = S2Projections.xyzToFace(p);
       R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
-      assertDoubleNear(Math.IEEEremainder(
+      assertDoubleNear(Platform.IEEEremainder(
           S2Projections.uvToST(uv.x()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
-      assertDoubleNear(Math.IEEEremainder(
+      assertDoubleNear(Platform.IEEEremainder(
           S2Projections.uvToST(uv.y()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
     }
   }

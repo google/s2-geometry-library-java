@@ -15,8 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -30,7 +32,8 @@ import java.util.List;
  * suitable for optimizations based on preprocessing.
  *
  */
-public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
+@GwtCompatible(serializable = true)
+public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
 
   /** The CellIds that form the Union */
   private ArrayList<S2CellId> cellIds = new ArrayList<S2CellId>();
@@ -401,7 +404,8 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId> {
     expand(Math.min(minLevel + maxLevelDiff, radiusLevel));
   }
 
-  @Override
+  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
+  // Object, so we can't mark it as such.
   public S2Region clone() {
     S2CellUnion copy = new S2CellUnion();
     copy.initRawCellIds(Lists.newArrayList(cellIds));

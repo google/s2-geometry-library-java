@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -22,6 +23,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Logger;
 
+/** Tests for {@link S2RegionCoverer}. */
+@GwtCompatible
 public strictfp class S2RegionCovererTest extends GeometryTestCase {
   private static Logger logger = Logger.getLogger(S2RegionCovererTest.class.getName());
 

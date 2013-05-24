@@ -15,7 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 
+/** Tests for {@link S1Interval}. */
+@GwtCompatible
 public strictfp class S1IntervalTest extends GeometryTestCase {
 
   private void testIntervalOps(S1Interval x, S1Interval y, String expectedRelation,
