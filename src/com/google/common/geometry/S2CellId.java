@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Ascii;
 import com.google.common.base.Preconditions;
@@ -158,11 +159,10 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   public static S2CellId fromPoint(S2Point p) {
     int face = S2Projections.xyzToFace(p);
     R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
-    int i = stToIJ(S2Projections.uvToST(uv.x()));
-    int j = stToIJ(S2Projections.uvToST(uv.y()));
+    int i = stToIJ(PROJ.uvToST(uv.x()));
+    int j = stToIJ(PROJ.uvToST(uv.y()));
     return fromFaceIJ(face, i, j);
   }
-
 
   /** Return the leaf cell containing the given S2LatLng. */
   public static S2CellId fromLatLng(S2LatLng ll) {
@@ -882,8 +882,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   private static S2Point faceSiTiToXYZ(int face, int si, int ti) {
     final double kScale = 1.0 / MAX_SIZE;
-    double u = S2Projections.stToUV(kScale * si);
-    double v = S2Projections.stToUV(kScale * ti);
+    double u = PROJ.stToUV(kScale * si);
+    double v = PROJ.stToUV(kScale * ti);
     return S2Projections.faceUvToXyz(face, u, v);
   }
 

@@ -70,205 +70,215 @@ import com.google.common.geometry.S2.Metric;
  *
  */
 @GwtCompatible
-public final strictfp class S2Projections {
-  /**
-   * See {@link S2Projections} class documentation for definitions of each of
-   * these projections.
-   */
-  @GwtCompatible
-  public enum Projections {
-    S2_LINEAR_PROJECTION, S2_TAN_PROJECTION, S2_QUADRATIC_PROJECTION
-  }
-
-  private static final Projections S2_PROJECTION = Projections.S2_QUADRATIC_PROJECTION;
-
+public strictfp enum S2Projections {
   // All of the values below were obtained by a combination of hand analysis and
   // Mathematica. In general, S2_TAN_PROJECTION produces the most uniform
   // shapes and sizes of cells, S2_LINEAR_PROJECTION is considerably worse, and
   // S2_QUADRATIC_PROJECTION is somewhere in between (but generally closer to
   // the tangent projection than the linear one).
-
-
-  // The minimum area of any cell at level k is at least MIN_AREA.GetValue(k),
-  // and the maximum is at most MAX_AREA.GetValue(k). The average area of all
-  // cells at level k is exactly AVG_AREA.GetValue(k).
-  public static final Metric MIN_AREA = new Metric(2,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 1 / (3 * Math.sqrt(3)) : // 0.192
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? (S2.M_PI * S2.M_PI)
-        / (16 * S2.M_SQRT2) : // 0.436
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 2 * S2.M_SQRT2 / 9 : // 0.314
-          0);
-  public static final Metric MAX_AREA = new Metric(2,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 1 : // 1.000
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI * S2.M_PI / 16 : // 0.617
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 0.65894981424079037 : // 0.659
-          0);
-  public static final Metric AVG_AREA = new Metric(2, S2.M_PI / 6); // 0.524)
-
-
-  // Each cell is bounded by four planes passing through its four edges and
-  // the center of the sphere. These metrics relate to the angle between each
-  // pair of opposite bounding planes, or equivalently, between the planes
-  // corresponding to two different s-values or two different t-values. For
-  // example, the maximum angle between opposite bounding planes for a cell at
-  // level k is MAX_ANGLE_SPAN.GetValue(k), and the average angle span for all
-  // cells at level k is approximately AVG_ANGLE_SPAN.GetValue(k).
-  public static final Metric MIN_ANGLE_SPAN = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 0.5 : // 0.500
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / 4 : // 0.785
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION ? 2. / 3 : // 0.667
-          0);
-  public static final Metric MAX_ANGLE_SPAN = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 1 : // 1.000
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / 4 : // 0.785
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 0.85244858959960922 : // 0.852
-          0);
-  public static final Metric AVG_ANGLE_SPAN = new Metric(1, S2.M_PI / 4); // 0.785
-
-
-  // The width of geometric figure is defined as the distance between two
-  // parallel bounding lines in a given direction. For cells, the minimum
-  // width is always attained between two opposite edges, and the maximum
-  // width is attained between two opposite vertices. However, for our
-  // purposes we redefine the width of a cell as the perpendicular distance
-  // between a pair of opposite edges. A cell therefore has two widths, one
-  // in each direction. The minimum width according to this definition agrees
-  // with the classic geometric one, but the maximum width is different. (The
-  // maximum geometric width corresponds to MAX_DIAG defined below.)
-  //
-  // For a cell at level k, the distance between opposite edges is at least
-  // MIN_WIDTH.GetValue(k) and at most MAX_WIDTH.GetValue(k). The average
-  // width in both directions for all cells at level k is approximately
-  // AVG_WIDTH.GetValue(k).
-  //
-  // The width is useful for bounding the minimum or maximum distance from a
-  // point on one edge of a cell to the closest point on the opposite edge.
-  // For example, this is useful when "growing" regions by a fixed distance.
-  public static final Metric MIN_WIDTH = new Metric(1,
-    (S2Projections.S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 1 / Math.sqrt(6) : // 0.408
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / (4 * S2.M_SQRT2) : // 0.555
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION ? S2.M_SQRT2 / 3 : // 0.471
-        0));
-
-  public static final Metric MAX_WIDTH = new Metric(1, MAX_ANGLE_SPAN.deriv());
-  public static final Metric AVG_WIDTH = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 0.70572967292222848 : // 0.706
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? 0.71865931946258044 : // 0.719
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 0.71726183644304969 : // 0.717
-          0);
-
-  // The minimum edge length of any cell at level k is at least
-  // MIN_EDGE.GetValue(k), and the maximum is at most MAX_EDGE.GetValue(k).
-  // The average edge length is approximately AVG_EDGE.GetValue(k).
-  //
-  // The edge length metrics can also be used to bound the minimum, maximum,
-  // or average distance from the center of one cell to the center of one of
-  // its edge neighbors. In particular, it can be used to bound the distance
-  // between adjacent cell centers along the space-filling Hilbert curve for
-  // cells at any given level.
-  public static final Metric MIN_EDGE = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? S2.M_SQRT2 / 3 : // 0.471
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / (4 * S2.M_SQRT2) : // 0.555
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION ? S2.M_SQRT2 / 3 : // 0.471
-          0);
-  public static final Metric MAX_EDGE = new Metric(1, MAX_ANGLE_SPAN.deriv());
-  public static final Metric AVG_EDGE = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 0.72001709647780182 : // 0.720
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? 0.73083351627336963 : // 0.731
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 0.72960687319305303 : // 0.730
-          0);
-
-
-  // The minimum diagonal length of any cell at level k is at least
-  // MIN_DIAG.GetValue(k), and the maximum is at most MAX_DIAG.GetValue(k).
-  // The average diagonal length is approximately AVG_DIAG.GetValue(k).
-  //
-  // The maximum diagonal also happens to be the maximum diameter of any cell,
-  // and also the maximum geometric width (see the discussion above). So for
-  // example, the distance from an arbitrary point to the closest cell center
-  // at a given level is at most half the maximum diagonal length.
-  public static final Metric MIN_DIAG = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? S2.M_SQRT2 / 3 : // 0.471
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / (3 * S2.M_SQRT2) : // 0.740
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 4 * S2.M_SQRT2 / 9 : // 0.629
-          0);
-  public static final Metric MAX_DIAG = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? S2.M_SQRT2 : // 1.414
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_PI / Math.sqrt(6) : // 1.283
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 1.2193272972170106 : // 1.219
-          0);
-  public static final Metric AVG_DIAG = new Metric(1,
-    S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? 1.0159089332094063 : // 1.016
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? 1.0318115985978178 : // 1.032
-        S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION
-          ? 1.03021136949923584 : // 1.030
-          0);
-
-  // This is the maximum edge aspect ratio over all cells at any level, where
-  // the edge aspect ratio of a cell is defined as the ratio of its longest
-  // edge length to its shortest edge length.
-  public static final double MAX_EDGE_ASPECT =
-      S2_PROJECTION == Projections.S2_LINEAR_PROJECTION ? S2.M_SQRT2 : // 1.414
-      S2_PROJECTION == Projections.S2_TAN_PROJECTION ? S2.M_SQRT2 : // 1.414
-      S2_PROJECTION == Projections.S2_QUADRATIC_PROJECTION ? 1.44261527445268292 : // 1.443
-      0;
-
-  // This is the maximum diagonal aspect ratio over all cells at any level,
-  // where the diagonal aspect ratio of a cell is defined as the ratio of its
-  // longest diagonal length to its shortest diagonal length.
-  public static final double MAX_DIAG_ASPECT = Math.sqrt(3); // 1.732
-
-  public static double stToUV(double s) {
-    switch (S2_PROJECTION) {
-      case S2_LINEAR_PROJECTION:
-        return s;
-      case S2_TAN_PROJECTION:
-        // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due
-        // to
-        // a flaw in the implementation of tan(), it's because the derivative of
-        // tan(x) at x=pi/4 is 2, and it happens that the two adjacent floating
-        // point numbers on either side of the infinite-precision value of pi/4
-        // have
-        // tangents that are slightly below and slightly above 1.0 when rounded
-        // to
-        // the nearest double-precision result.
-        s = Math.tan(S2.M_PI_4 * s);
-        return s + (1.0 / (1L << 53)) * s;
-      case S2_QUADRATIC_PROJECTION:
-        if (s >= 0) {
-          return (1 / 3.) * ((1 + s) * (1 + s) - 1);
-        } else {
-          return (1 / 3.) * (1 - (1 - s) * (1 - s));
-        }
-      default:
-        throw new IllegalStateException("Invalid value for S2_PROJECTION");
+  S2_LINEAR_PROJECTION(
+      1 / (3 * Math.sqrt(3)), // minAreaDeriv ~0.192
+      1, // maxAreaDeriv ~1.000
+      0.5, // minAngleSpanDeriv ~0.500
+      1, // maxAngleSpanDeriv ~1.000
+      1 / Math.sqrt(6), // minWidthDeriv ~0.408
+      0.70572967292222848, // avgWidthDeriv ~0.706
+      S2.M_SQRT2 / 3, // minEdgeDeriv ~0.471
+      0.72001709647780182, // avgEdgeDeriv ~0.720
+      S2.M_SQRT2 / 3, // minDiagDeriv ~0.471
+      S2.M_SQRT2, // maxDiagDeriv ~1.414
+      1.0159089332094063, // avgDiagDeriv ~1.016
+      S2.M_SQRT2) { // maxEdgeAspect ~1.414
+    @Override
+    public double stToUV(double s) {
+      return s;
     }
+    @Override
+    public double uvToST(double u) {
+      return u;
+    }
+  },
+  S2_TAN_PROJECTION(
+      (S2.M_PI * S2.M_PI) / (16 * S2.M_SQRT2), // minAreaDeriv ~0.436
+      S2.M_PI * S2.M_PI / 16, // maxAreaDeriv ~0.617
+      S2.M_PI / 4, // minAngleSpanDeriv ~0.785
+      S2.M_PI / 4, // maxAngleSpanDeriv ~0.785
+      S2.M_PI / (4 * S2.M_SQRT2), // minWidthDeriv ~0.555
+      0.71865931946258044, // avgWidthDeriv ~0.719
+      S2.M_PI / (4 * S2.M_SQRT2), // minEdgeDeriv ~0.555
+      0.73083351627336963, // avgEdgeDeriv ~0.731
+      S2.M_PI / (3 * S2.M_SQRT2), // minDiagDeriv ~0.740
+      S2.M_PI / Math.sqrt(6), // maxDiagDeriv ~1.283
+      1.0318115985978178, // avgDiagDeriv ~1.032
+      S2.M_SQRT2) { // maxEdgeAspect ~1.414
+    @Override
+    public double stToUV(double s) {
+      // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
+      // implementation of tan(), it's because the derivative of tan(x) at x=pi/4 is 2, and it
+      // happens that the two adjacent floating point numbers on either side of the infinite-
+      // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
+      // rounded to the nearest double-precision result.
+      s = Math.tan(S2.M_PI_4 * s);
+      return s + (1.0 / (1L << 53)) * s;
+    }
+    @Override
+    public double uvToST(double u) {
+      return (4 * S2.M_1_PI) * Math.atan(u);
+    }
+  },
+  S2_QUADRATIC_PROJECTION(
+      2 * S2.M_SQRT2 / 9, // minAreaDeriv ~0.314
+      0.65894981424079037, // maxAreaDeriv ~0.659
+      2. / 3, // minAngleSpanDeriv ~0.667
+      0.85244858959960922, // maxAngleSpanDeriv ~0.852
+      S2.M_SQRT2 / 3, // minWidthDeriv ~0.471
+      0.71726183644304969, // avgWidthDeriv ~0.717
+      S2.M_SQRT2 / 3, // minEdgeDeriv ~0.471
+      0.72960687319305303, // avgEdgeDeriv ~0.730
+      4 * S2.M_SQRT2 / 9, // minDiagDeriv ~0.629
+      1.2193272972170106, // maxDiagDeriv ~1.219
+      1.03021136949923584, // avgDiagDeriv ~1.030
+      1.44261527445268292) { // maxEdgeAspect ~1.443
+    @Override
+    public double stToUV(double s) {
+      if (s >= 0) {
+        return (1 / 3.) * ((1 + s) * (1 + s) - 1);
+      } else {
+        return (1 / 3.) * (1 - (1 - s) * (1 - s));
+      }
+    }
+    @Override
+    public double uvToST(double u) {
+      if (u >= 0) {
+        return Math.sqrt(1 + 3 * u) - 1;
+      } else {
+        return 1 - Math.sqrt(1 - 3 * u);
+      }
+    }
+  };
+
+  /** Minimum area of a cell at level k. */
+  public final Metric minArea;
+
+  /** Maximum area of a cell at level k. */
+  public final Metric maxArea;
+
+  /** Average area of a cell at level k. */
+  public final Metric avgArea;
+
+  /**
+   * Minimum angular separation between opposite edges of a cell at level k. Each cell is bounded
+   * by four planes passing through its four edges and the center of the sphere. The angle span
+   * metrics relate to the angle between each pair of opposite bounding planes, or equivalently,
+   * between the planes corresponding to two different s-values or two different t-values.
+   */
+  public final Metric minAngleSpan;
+
+  /** Maximum angular separation between opposite edges of a cell at level k. */
+  public final Metric maxAngleSpan;
+
+  /** Average angular separation between opposite edges of a cell at level k. */
+  public final Metric avgAngleSpan;
+
+  /**
+   * Minimum perpendicular angular separation between opposite edges of a cell at level k.
+   *
+   * <p>The width of a geometric figure is defined as the distance between two parallel bounding
+   * lines in a given direction. For cells, the minimum width is always attained between two
+   * opposite edges, and the maximum width is attained between two opposite vertices. However, for
+   * our purposes we redefine the width of a cell as the perpendicular distance between a pair of
+   * opposite edges. A cell therefore has two widths, one in each direction. The minimum width
+   * according to this definition agrees with the classic geometric one, but the maximum width is
+   * different. (The maximum geometric width corresponds to {@link #maxDiag}.)
+   *
+   * <p>This is useful for bounding the minimum or maximum distance from a point on one edge of a
+   * cell to the closest point on the opposite edge. For example, this is useful when "growing"
+   * regions by a fixed distance.
+   */
+  public final Metric minWidth;
+
+  /** Maximum perpendicular angular separation between opposite edges of a cell at level k. */
+  public final Metric maxWidth;
+
+  /** Average perpendicular angular separation between opposite edges of a cell at level k. */
+  public final Metric avgWidth;
+
+  /**
+   * Minimum angular length of any cell edge at level k. The edge length metrics can also be used
+   * to bound the minimum, maximum, or average distance from the center of one cell to the center
+   * of one of its edge neighbors. In particular, it can be used to bound the distance between
+   * adjacent cell centers along the space-filling Hilbert curve for cells at any given level.
+   */
+  public final Metric minEdge;
+
+  /** Maximum angular length of any cell edge at level k. */
+  public final Metric maxEdge;
+
+  /** Average angular length of any cell edge at level k. */
+  public final Metric avgEdge;
+
+  /** Minimum diagonal size of cells at level k. */
+  public final Metric minDiag;
+
+  /**
+   * Maximum diagonal size of cells at level k. The maximum diagonal also happens to be the
+   * maximum diameter of any cell, and also the maximum geometric width. So for example, the
+   * distance from an arbitrary point to the closest cell center at a given level is at most half
+   * the maximum diagonal length.
+   */
+  public final Metric maxDiag;
+
+  /** Average diagonal size of cells at level k. */
+  public final Metric avgDiag;
+
+  /**
+   * Maximum edge aspect ratio over all cells at any level, where the edge aspect ratio of a cell
+   * is defined as the ratio of its longest edge length to its shortest edge length.
+   */
+  public final double maxEdgeAspect;
+
+  /**
+   * This is the maximum diagonal aspect ratio over all cells at any level, where the diagonal
+   * aspect ratio of a cell is defined as the ratio of its longest diagonal length to its
+   * shortest diagonal length.
+   */
+  public final double maxDiagAspect = Math.sqrt(3); // 1.732
+
+  S2Projections(double minAreaDeriv, double maxAreaDeriv,
+      double minAngleSpanDeriv, double maxAngleSpanDeriv,
+      double minWidthDeriv, double avgWidthDeriv,
+      double minEdgeDeriv, double avgEdgeDeriv,
+      double minDiagDeriv, double maxDiagDeriv, double avgDiagDeriv,
+      double maxEdgeAspect) {
+    this.minArea = new Metric(2, minAreaDeriv);
+    this.maxArea = new Metric(2, maxAreaDeriv);
+    this.avgArea = new Metric(2, S2.M_PI / 6); // 0.524)
+    this.minAngleSpan = new Metric(1, minAngleSpanDeriv);
+    this.maxAngleSpan = new Metric(1, maxAngleSpanDeriv);
+    this.avgAngleSpan = new Metric(1, S2.M_PI / 4); // 0.785
+    this.minWidth = new Metric(1, minWidthDeriv);
+    this.maxWidth = new Metric(1, maxAngleSpanDeriv);
+    this.avgWidth = new Metric(1, avgWidthDeriv);
+    this.minEdge = new Metric(1, minEdgeDeriv);
+    this.maxEdge = new Metric(1, maxAngleSpanDeriv);
+    this.avgEdge = new Metric(1, avgEdgeDeriv);
+    this.minDiag = new Metric(1, minDiagDeriv);
+    this.maxDiag = new Metric(1, maxDiagDeriv);
+    this.avgDiag = new Metric(1, avgDiagDeriv);
+    this.maxEdgeAspect = maxEdgeAspect;
   }
 
-  public static double uvToST(double u) {
-    switch (S2_PROJECTION) {
-      case S2_LINEAR_PROJECTION:
-        return u;
-      case S2_TAN_PROJECTION:
-        return (4 * S2.M_1_PI) * Math.atan(u);
-      case S2_QUADRATIC_PROJECTION:
-        if (u >= 0) {
-          return Math.sqrt(1 + 3 * u) - 1;
-        } else {
-          return 1 - Math.sqrt(1 - 3 * u);
-        }
-      default:
-        throw new IllegalStateException("Invalid value for S2_PROJECTION");
-    }
-  }
+  /**
+   * Convert an s- or t-value to the corresponding u- or v-value.  This is a non-linear
+   * transformation from [-1,1] to [-1,1] that attempts to make the cell sizes more uniform.
+   */
+  public abstract double stToUV(double s);
 
+  /**
+   * The inverse of {@link #stToUV(double)}. Note that it is not always true that
+   * {@code uvToST(stToUV(x)) == x} due to numerical errors.
+   */
+  public abstract double uvToST(double u);
 
   /**
    * Convert (face, u, v) coordinates to a direction vector (not necessarily
@@ -417,7 +427,6 @@ public final strictfp class S2Projections {
     }
   }
 
-  // Don't instantiate
-  private S2Projections() {
-  }
+  /** The default transformation between ST and UV coordinates. */
+  public static final S2Projections PROJ = S2Projections.S2_QUADRATIC_PROJECTION;
 }

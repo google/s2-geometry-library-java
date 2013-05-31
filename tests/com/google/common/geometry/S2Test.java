@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
@@ -60,13 +62,13 @@ public strictfp class S2Test extends GeometryTestCase {
   public void testSTUV() {
     // Check boundary conditions.
     for (double x = -1; x <= 1; ++x) {
-      assertEquals(S2Projections.stToUV(x), x);
-      assertEquals(S2Projections.uvToST(x), x);
+      assertEquals(PROJ.stToUV(x), x);
+      assertEquals(PROJ.uvToST(x), x);
     }
     // Check that UVtoST and STtoUV are inverses.
     for (double x = -1; x <= 1; x += 0.0001) {
-      assertDoubleNear(S2Projections.uvToST(S2Projections.stToUV(x)), x);
-      assertDoubleNear(S2Projections.stToUV(S2Projections.uvToST(x)), x);
+      assertDoubleNear(PROJ.uvToST(PROJ.stToUV(x)), x);
+      assertDoubleNear(PROJ.stToUV(PROJ.uvToST(x)), x);
     }
   }
 
@@ -234,15 +236,15 @@ public strictfp class S2Test extends GeometryTestCase {
   public void testMetrics() {
 
     MetricBundle angleSpan = new MetricBundle(
-        S2Projections.MIN_ANGLE_SPAN, S2Projections.MAX_ANGLE_SPAN, S2Projections.AVG_ANGLE_SPAN);
+        PROJ.minAngleSpan, PROJ.maxAngleSpan, PROJ.avgAngleSpan);
     MetricBundle width =
-        new MetricBundle(S2Projections.MIN_WIDTH, S2Projections.MAX_WIDTH, S2Projections.AVG_WIDTH);
+        new MetricBundle(PROJ.minWidth, PROJ.maxWidth, PROJ.avgWidth);
     MetricBundle edge =
-        new MetricBundle(S2Projections.MIN_EDGE, S2Projections.MAX_EDGE, S2Projections.AVG_EDGE);
+        new MetricBundle(PROJ.minEdge, PROJ.maxEdge, PROJ.avgEdge);
     MetricBundle diag =
-        new MetricBundle(S2Projections.MIN_DIAG, S2Projections.MAX_DIAG, S2Projections.AVG_DIAG);
+        new MetricBundle(PROJ.minDiag, PROJ.maxDiag, PROJ.avgDiag);
     MetricBundle area =
-        new MetricBundle(S2Projections.MIN_AREA, S2Projections.MAX_AREA, S2Projections.AVG_AREA);
+        new MetricBundle(PROJ.minArea, PROJ.maxArea, PROJ.avgArea);
 
     // First, check that min <= avg <= max for each metric.
     testMinMaxAvg(angleSpan);
@@ -253,22 +255,22 @@ public strictfp class S2Test extends GeometryTestCase {
 
     // Check that the maximum aspect ratio of an individual cell is consistent
     // with the global minimums and maximums.
-    assertTrue(S2Projections.MAX_EDGE_ASPECT >= 1.0);
-    assertTrue(S2Projections.MAX_EDGE_ASPECT
-        < S2Projections.MAX_EDGE.deriv() / S2Projections.MIN_EDGE.deriv());
-    assertTrue(S2Projections.MAX_DIAG_ASPECT >= 1);
-    assertTrue(S2Projections.MAX_DIAG_ASPECT
-        < S2Projections.MAX_DIAG.deriv() / S2Projections.MIN_DIAG.deriv());
+    assertTrue(PROJ.maxEdgeAspect >= 1.0);
+    assertTrue(PROJ.maxEdgeAspect
+        < PROJ.maxEdge.deriv() / PROJ.minEdge.deriv());
+    assertTrue(PROJ.maxDiagAspect >= 1);
+    assertTrue(PROJ.maxDiagAspect
+        < PROJ.maxDiag.deriv() / PROJ.minDiag.deriv());
 
     // Check various conditions that are provable mathematically.
     testLessOrEqual(width, angleSpan);
     testLessOrEqual(width, edge);
     testLessOrEqual(edge, diag);
 
-    assertTrue(S2Projections.MIN_AREA.deriv()
-        >= S2Projections.MIN_WIDTH.deriv() * S2Projections.MIN_EDGE.deriv() - 1e-15);
-    assertTrue(S2Projections.MAX_AREA.deriv()
-        < S2Projections.MAX_WIDTH.deriv() * S2Projections.MAX_EDGE.deriv() + 1e-15);
+    assertTrue(PROJ.minArea.deriv()
+        >= PROJ.minWidth.deriv() * PROJ.minEdge.deriv() - 1e-15);
+    assertTrue(PROJ.maxArea.deriv()
+        < PROJ.maxWidth.deriv() * PROJ.maxEdge.deriv() + 1e-15);
 
     // GetMinLevelForLength() and friends have built-in assertions, we just need
     // to call these functions to test them.
@@ -279,35 +281,35 @@ public strictfp class S2Test extends GeometryTestCase {
     // S2Cell has methods to compute the cell vertices, etc.
 
     for (int level = -2; level <= S2CellId.MAX_LEVEL + 3; ++level) {
-      double dWidth = (2 * S2Projections.MIN_WIDTH.deriv()) * Math.pow(2, -level);
+      double dWidth = (2 * PROJ.minWidth.deriv()) * Math.pow(2, -level);
       if (level >= S2CellId.MAX_LEVEL + 3) {
         dWidth = 0;
       }
 
       // Check boundary cases (exactly equal to a threshold value).
       int expectedLevel = Math.max(0, Math.min(S2CellId.MAX_LEVEL, level));
-      assertEquals(S2Projections.MIN_WIDTH.getMinLevel(dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getMaxLevel(dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMinLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMaxLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(dWidth), expectedLevel);
 
       // Also check non-boundary cases.
-      assertEquals(S2Projections.MIN_WIDTH.getMinLevel(1.2 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getMaxLevel(0.8 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(1.2 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(0.8 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMinLevel(1.2 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMaxLevel(0.8 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(1.2 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(0.8 * dWidth), expectedLevel);
 
       // Same thing for area1.
-      double area1 = (4 * S2Projections.MIN_AREA.deriv()) * Math.pow(4, -level);
+      double area1 = (4 * PROJ.minArea.deriv()) * Math.pow(4, -level);
       if (level <= -3) {
         area1 = 0;
       }
-      assertEquals(S2Projections.MIN_AREA.getMinLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMaxLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMinLevel(1.2 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMaxLevel(0.8 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(1.2 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(0.8 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(area1), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(1.2 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(0.8 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(1.2 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(0.8 * area1), expectedLevel);
     }
   }
 

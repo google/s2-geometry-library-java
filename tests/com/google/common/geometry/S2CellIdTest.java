@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 
 import java.util.ArrayList;
@@ -188,7 +190,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     // path over the surface of the sphere, i.e. there are no
     // discontinuous jumps from one region to another.
 
-    double maxDist = S2Projections.MAX_EDGE.getValue(MAX_WALK_LEVEL);
+    double maxDist = PROJ.maxEdge.getValue(MAX_WALK_LEVEL);
     S2CellId end = S2CellId.end(MAX_WALK_LEVEL);
     S2CellId id = S2CellId.begin(MAX_WALK_LEVEL);
     for (; !id.equals(end); id = id.next()) {
@@ -200,9 +202,9 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
       int face = S2Projections.xyzToFace(p);
       R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
       assertDoubleNear(Platform.IEEEremainder(
-          S2Projections.uvToST(uv.x()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
+          PROJ.uvToST(uv.x()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
       assertDoubleNear(Platform.IEEEremainder(
-          S2Projections.uvToST(uv.y()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
+          PROJ.uvToST(uv.y()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
     }
   }
 
@@ -214,8 +216,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     // adjacent values of "i" or "j". (It is sqrt(2/3) rather than 1/2 because
     // the cells at the corners of each face are stretched -- they have 60 and
     // 120 degree angles.)
-
-    double maxDist = 0.5 * S2Projections.MAX_DIAG.getValue(S2CellId.MAX_LEVEL);
+    double maxDist = 0.5 * PROJ.maxDiag.getValue(S2CellId.MAX_LEVEL);
     for (int i = 0; i < 1000000; ++i) {
       // randomPoint();
       S2Point p = new S2Point(0.37861576725894824, 0.2772406863275093, 0.8830558887338725);

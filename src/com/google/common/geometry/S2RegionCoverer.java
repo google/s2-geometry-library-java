@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -463,7 +465,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
         // Find the maximum level such that the bounding cap contains at most one
         // cell vertex at that level.
         S2Cap cap = region.getCapBound();
-        int level = Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * cap.angle().radians()),
+        int level = Math.min(PROJ.minWidth.getMaxLevel(2 * cap.angle().radians()),
             Math.min(maxLevel(), S2CellId.MAX_LEVEL - 1));
         if (levelMod() > 1 && level > minLevel()) {
           level -= (level - minLevel()) % levelMod();

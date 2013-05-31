@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
@@ -887,8 +889,7 @@ public final strictfp class S2PolygonBuilder {
       // S2CellId.getVertexNeighbors). This turns out to be the highest
       // level such that a spherical cap (i.e. "disc") of the given radius
       // fits completely inside all cells at that level.
-      this.level =
-          Math.min(S2Projections.MIN_WIDTH.getMaxLevel(2 * searchRadius), S2CellId.MAX_LEVEL - 1);
+      this.level = Math.min(PROJ.minWidth.getMaxLevel(2 * searchRadius), S2CellId.MAX_LEVEL - 1);
     }
 
     /** Adds a point to the index in each cell neighbor at the index level. */
@@ -940,7 +941,7 @@ public final strictfp class S2PolygonBuilder {
       // covering by using some intermediate points along the edge as well.
       double length = v0.angle(v1);
       S2Point normal = S2.robustCrossProd(v0, v1);
-      int queryLevel = Math.min(level, S2Projections.MIN_WIDTH.getMaxLevel(length));
+      int queryLevel = Math.min(level, PROJ.minWidth.getMaxLevel(length));
       S2CellId.fromPoint(v0).getVertexNeighbors(queryLevel, ids);
       S2CellId.fromPoint(v1).getVertexNeighbors(queryLevel, ids);
       // Sort the cell ids so that we can skip duplicates in the loop below.

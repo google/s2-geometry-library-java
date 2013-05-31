@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -321,7 +323,7 @@ public abstract strictfp class S2EdgeIndex {
     // thickening is honored (it's not a big deal if we honor it when we don't
     // request it) when doing the covering-by-cap trick.
     double edgeLength = a.angle(b);
-    int idealLevel = S2Projections.MIN_WIDTH.getMaxLevel(edgeLength * (1 + 2 * THICKENING));
+    int idealLevel = PROJ.minWidth.getMaxLevel(edgeLength * (1 + 2 * THICKENING));
 
     S2CellId containingCellId;
     if (!thickenEdge) {

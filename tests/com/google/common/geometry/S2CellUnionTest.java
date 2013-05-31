@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 
@@ -342,16 +344,14 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
       covering.expand(S1Angle.radians(radius), maxLevelDiff);
       checkCovering(expandedCap, covering, false, new S2CellId());
 
-      int expandLevel =
-          Math.min(minLevel + maxLevelDiff, S2Projections.MIN_WIDTH.getMaxLevel(radius));
+      int expandLevel = Math.min(minLevel + maxLevelDiff, PROJ.minWidth.getMaxLevel(radius));
       double expandedMaxAngle = getMaxAngle(covering, cap.axis());
 
       // If the covering includes a tiny cell along the boundary, in theory the
       // maximum angle of the covering from the cap axis can increase by up to
       // twice the maximum length of a cell diagonal. We allow for an increase
       // of slightly more than this because cell bounding caps are not exact.
-      assertTrue(expandedMaxAngle - maxAngle <= 2.01 * S2Projections.MAX_DIAG
-          .getValue(expandLevel));
+      assertTrue(expandedMaxAngle - maxAngle <= 2.01 * PROJ.maxDiag.getValue(expandLevel));
     }
   }
 

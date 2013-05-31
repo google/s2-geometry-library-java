@@ -21,7 +21,6 @@ import com.google.common.base.Preconditions;
 
 @GwtCompatible
 public final strictfp class S2 {
-
   // Declare some frequently used constants
   public static final double M_PI = Math.PI;
   public static final double M_1_PI = 1.0 / Math.PI;

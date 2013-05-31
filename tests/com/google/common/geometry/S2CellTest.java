@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
 import com.google.common.annotations.GwtCompatible;
 
 import java.util.ArrayList;
@@ -398,28 +399,26 @@ public strictfp class S2CellTest extends GeometryTestCase {
       // so we need to allow for this amount of discrepancy with the theoretical
       // minimums and maximums. The area calculation is accurate to about 1e-15
       // times the cell width.
-      testMinMaxAvg("area", i, s.count, 1e-15 * s.minWidth, s.minArea,
-        s.maxArea, s.avgArea, S2Projections.MIN_AREA, S2Projections.MAX_AREA,
-        S2Projections.AVG_AREA);
-      testMinMaxAvg("width", i, s.count, 1e-15, s.minWidth, s.maxWidth,
-        s.avgWidth, S2Projections.MIN_WIDTH, S2Projections.MAX_WIDTH,
-        S2Projections.AVG_WIDTH);
-      testMinMaxAvg("edge", i, s.count, 1e-15, s.minEdge, s.maxEdge,
-        s.avgEdge, S2Projections.MIN_EDGE, S2Projections.MAX_EDGE,
-        S2Projections.AVG_EDGE);
-      testMinMaxAvg("diagonal", i, s.count, 1e-15, s.minDiag, s.maxDiag,
-        s.avgDiag, S2Projections.MIN_DIAG, S2Projections.MAX_DIAG,
-        S2Projections.AVG_DIAG);
-      testMinMaxAvg("angle span", i, s.count, 1e-15, s.minAngleSpan,
-        s.maxAngleSpan, s.avgAngleSpan, S2Projections.MIN_ANGLE_SPAN,
-        S2Projections.MAX_ANGLE_SPAN, S2Projections.AVG_ANGLE_SPAN);
+      testMinMaxAvg("area", i, s.count, 1e-15 * s.minWidth,
+          s.minArea, s.maxArea, s.avgArea,
+          PROJ.minArea, PROJ.maxArea, PROJ.avgArea);
+      testMinMaxAvg("width", i, s.count, 1e-15,
+          s.minWidth, s.maxWidth, s.avgWidth,
+          PROJ.minWidth, PROJ.maxWidth, PROJ.avgWidth);
+      testMinMaxAvg("edge", i, s.count, 1e-15,
+          s.minEdge, s.maxEdge, s.avgEdge,
+          PROJ.minEdge, PROJ.maxEdge, PROJ.avgEdge);
+      testMinMaxAvg("diagonal", i, s.count, 1e-15,
+          s.minDiag, s.maxDiag, s.avgDiag,
+          PROJ.minDiag, PROJ.maxDiag, PROJ.avgDiag);
+      testMinMaxAvg("angle span", i, s.count, 1e-15,
+          s.minAngleSpan, s.maxAngleSpan, s.avgAngleSpan,
+          PROJ.minAngleSpan, PROJ.maxAngleSpan, PROJ.avgAngleSpan);
 
       // The aspect ratio calculations are ratios of lengths and are therefore
       // less accurate at higher subdivision levels.
-      assertTrue(s.maxEdgeAspect <= S2Projections.MAX_EDGE_ASPECT + 1e-15
-        * (1 << i));
-      assertTrue(s.maxDiagAspect <= S2Projections.MAX_DIAG_ASPECT + 1e-15
-        * (1 << i));
+      assertTrue(s.maxEdgeAspect <= PROJ.maxEdgeAspect + 1e-15 * (1 << i));
+      assertTrue(s.maxDiagAspect <= PROJ.maxDiagAspect + 1e-15 * (1 << i));
     }
   }
 

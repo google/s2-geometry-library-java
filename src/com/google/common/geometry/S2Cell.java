@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
@@ -205,7 +207,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    * Return the average area for cells at the given level.
    */
   public static double averageArea(int level) {
-    return S2Projections.AVG_AREA.getValue(level);
+    return PROJ.avgArea.getValue(level);
   }
 
   /**
@@ -406,10 +408,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     int sijLoV = (ijv.intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
     int sijHiV = sijLoV + cellSize * 2;
     setBounds(
-        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLoU),
-        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLoV),
-        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHiU),
-        S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHiV));
+        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijLoU),
+        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijLoV),
+        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijHiU),
+        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijHiV));
   }
 
 
@@ -428,10 +430,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
 
     int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    this.uMid = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * si);
+    this.uMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * si);
 
     int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    this.vMid = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sj);
+    this.vMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sj);
   }
 
   private S2Point getPoint(int i, int j) {
