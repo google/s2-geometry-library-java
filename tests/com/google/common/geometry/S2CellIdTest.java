@@ -18,6 +18,7 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.geometry.S2CellId.FaceIJ;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -134,23 +135,18 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     if (parent.level() == kMaxExpandLevel) {
       return;
     }
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    MutableInteger orientation = new MutableInteger(0);
-    int face = parent.toFaceIJOrientation(i, j, orientation);
-    assertEquals(face, parent.face());
+    FaceIJ fij = parent.toFaceIJOrientation();
+    assertEquals(fij.face, parent.face());
 
     int pos = 0;
-    for (S2CellId child = parent.childBegin(); !child.equals(parent.childEnd());
-        child = child.next()) {
+    S2CellId end = parent.childEnd();
+    for (S2CellId child = parent.childBegin(); !child.equals(end); child = child.next()) {
       // Do some basic checks on the children
       assertEquals(child.level(), parent.level() + 1);
       assertTrue(!child.isLeaf());
-      MutableInteger childOrientation = new MutableInteger(0);
-      assertEquals(child.toFaceIJOrientation(i, j, childOrientation), face);
-      assertEquals(
-          childOrientation.intValue(), orientation.intValue() ^ S2.posToOrientation(pos));
-
+      FaceIJ cfij = child.toFaceIJOrientation();
+      assertEquals(cfij.face, fij.face);
+      assertEquals(cfij.orientation, fij.orientation ^ S2.posToOrientation(pos));
       parentMap.put(child, parent);
       expandCell(child, cells, parentMap);
       ++pos;

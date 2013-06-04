@@ -31,8 +31,8 @@ import java.io.Serializable;
  *
  */
 @GwtCompatible(serializable = true)
+@Deprecated
 public class MutableInteger implements Serializable {
-
   private int value;
   private transient Integer cachedIntegerValue = null;
 

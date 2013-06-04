@@ -196,16 +196,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // The following calculation converts (i,j) to the (si,ti) coordinates of
     // the cell center. (We need to multiply the coordinates by a factor of 2
     // so that the center of leaf cells can be represented exactly.)
-
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    int face = toFaceIJOrientation(i, j, null);
-    // System.out.println("i= " + i.intValue() + " j = " + j.intValue());
-    int delta = isLeaf() ? 1 : (((i.intValue() ^ (((int) id) >>> 2)) & 1) != 0)
-      ? 2 : 0;
-    int si = (i.intValue() << 1) + delta - MAX_SIZE;
-    int ti = (j.intValue() << 1) + delta - MAX_SIZE;
-    return faceSiTiToXYZ(face, si, ti);
+    FaceIJ fij = toFaceIJOrientation();
+    int delta = isLeaf() ? 1 : (((fij.i ^ (((int) id) >>> 2)) & 1) != 0) ? 2 : 0;
+    int si = (fij.i << 1) + delta - MAX_SIZE;
+    int ti = (fij.j << 1) + delta - MAX_SIZE;
+    return faceSiTiToXYZ(fij.face, si, ti);
   }
 
   /** Return the S2LatLng corresponding to the center of the given cell. */
@@ -602,23 +597,19 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * neighbors are guaranteed to be distinct.
    */
   public void getEdgeNeighbors(S2CellId neighbors[]) {
-
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-
     int level = this.level();
     int size = 1 << (MAX_LEVEL - level);
-    int face = toFaceIJOrientation(i, j, null);
+    FaceIJ fij = toFaceIJOrientation();
 
     // Edges 0, 1, 2, 3 are in the S, E, N, W directions.
-    neighbors[0] = fromFaceIJSame(face, i.intValue(), j.intValue() - size,
-      j.intValue() - size >= 0).parent(level);
-    neighbors[1] = fromFaceIJSame(face, i.intValue() + size, j.intValue(),
-      i.intValue() + size < MAX_SIZE).parent(level);
-    neighbors[2] = fromFaceIJSame(face, i.intValue(), j.intValue() + size,
-      j.intValue() + size < MAX_SIZE).parent(level);
-    neighbors[3] = fromFaceIJSame(face, i.intValue() - size, j.intValue(),
-      i.intValue() - size >= 0).parent(level);
+    neighbors[0] = fromFaceIJSame(fij.face, fij.i, fij.j - size, fij.j - size >= 0)
+        .parent(level);
+    neighbors[1] = fromFaceIJSame(fij.face, fij.i + size, fij.j, fij.i + size < MAX_SIZE)
+        .parent(level);
+    neighbors[2] = fromFaceIJSame(fij.face, fij.i, fij.j + size, fij.j + size < MAX_SIZE)
+        .parent(level);
+    neighbors[3] = fromFaceIJSame(fij.face, fij.i - size, fij.j, fij.i - size >= 0)
+        .parent(level);
   }
 
   /**
@@ -634,9 +625,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // "level" must be strictly less than this cell's level so that we can
     // determine which vertex this cell is closest to.
     // assert (level < this.level());
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    int face = toFaceIJOrientation(i, j, null);
+    FaceIJ fij = toFaceIJOrientation();
 
     // Determine the i- and j-offsets to the closest neighboring cell in each
     // direction. This involves looking at the next bit of "i" and "j" to
@@ -645,33 +634,29 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     int size = halfsize << 1;
     boolean isame, jsame;
     int ioffset, joffset;
-    if ((i.intValue() & halfsize) != 0) {
+    if ((fij.i & halfsize) != 0) {
       ioffset = size;
-      isame = (i.intValue() + size) < MAX_SIZE;
+      isame = (fij.i + size) < MAX_SIZE;
     } else {
       ioffset = -size;
-      isame = (i.intValue() - size) >= 0;
+      isame = (fij.i - size) >= 0;
     }
-    if ((j.intValue() & halfsize) != 0) {
+    if ((fij.j & halfsize) != 0) {
       joffset = size;
-      jsame = (j.intValue() + size) < MAX_SIZE;
+      jsame = (fij.j + size) < MAX_SIZE;
     } else {
       joffset = -size;
-      jsame = (j.intValue() - size) >= 0;
+      jsame = (fij.j - size) >= 0;
     }
 
     output.add(parent(level));
-    output
-      .add(fromFaceIJSame(face, i.intValue() + ioffset, j.intValue(), isame)
-        .parent(level));
-    output
-      .add(fromFaceIJSame(face, i.intValue(), j.intValue() + joffset, jsame)
-        .parent(level));
+    output.add(fromFaceIJSame(fij.face, fij.i + ioffset, fij.j, isame).parent(level));
+    output.add(fromFaceIJSame(fij.face, fij.i, fij.j + joffset, jsame).parent(level));
     // If i- and j- edge neighbors are *both* on a different face, then this
     // vertex only has three neighbors (it is one of the 8 cube vertices).
     if (isame || jsame) {
-      output.add(fromFaceIJSame(face, i.intValue() + ioffset,
-        j.intValue() + joffset, isame && jsame).parent(level));
+      output.add(fromFaceIJSame(fij.face, fij.i + ioffset, fij.j + joffset, isame && jsame)
+          .parent(level));
     }
   }
 
@@ -685,17 +670,14 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * face vertex, the same neighbor may be appended more than once.
    */
   public void getAllNeighbors(int nbrLevel, List<S2CellId> output) {
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-
-    int face = toFaceIJOrientation(i, j, null);
+    FaceIJ fij = toFaceIJOrientation();
 
     // Find the coordinates of the lower left-hand leaf cell. We need to
     // normalize (i,j) to a known position within the cell because nbrLevel
     // may be larger than this cell's level.
     int size = 1 << (MAX_LEVEL - level());
-    i.setValue(i.intValue() & -size);
-    j.setValue(j.intValue() & -size);
+    int i = fij.i & -size;
+    int j = fij.j & -size;
 
     int nbrSize = 1 << (MAX_LEVEL - nbrLevel);
     // assert (nbrSize <= size);
@@ -705,23 +687,20 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     for (int k = -nbrSize;; k += nbrSize) {
       boolean sameFace;
       if (k < 0) {
-        sameFace = (j.intValue() + k >= 0);
+        sameFace = j + k >= 0;
       } else if (k >= size) {
-        sameFace = (j.intValue() + k < MAX_SIZE);
+        sameFace = j + k < MAX_SIZE;
       } else {
         sameFace = true;
         // North and South neighbors.
-        output.add(fromFaceIJSame(face, i.intValue() + k,
-          j.intValue() - nbrSize, j.intValue() - size >= 0).parent(nbrLevel));
-        output.add(fromFaceIJSame(face, i.intValue() + k, j.intValue() + size,
-          j.intValue() + size < MAX_SIZE).parent(nbrLevel));
+        output.add(fromFaceIJSame(fij.face, i + k, j - nbrSize, j - size >= 0).parent(nbrLevel));
+        output.add(fromFaceIJSame(fij.face, i + k, j + size, j + size < MAX_SIZE).parent(nbrLevel));
       }
       // East, West, and Diagonal neighbors.
-      output.add(fromFaceIJSame(face, i.intValue() - nbrSize,
-        j.intValue() + k, sameFace && i.intValue() - size >= 0).parent(
-        nbrLevel));
-      output.add(fromFaceIJSame(face, i.intValue() + size, j.intValue() + k,
-        sameFace && i.intValue() + size < MAX_SIZE).parent(nbrLevel));
+      output.add(fromFaceIJSame(fij.face, i - nbrSize, j + k, sameFace && i - size >= 0)
+          .parent(nbrLevel));
+      output.add(fromFaceIJSame(fij.face, i + size, j + k, sameFace && i + size < MAX_SIZE)
+          .parent(nbrLevel));
       if (k >= size) {
         break;
       }
@@ -748,7 +727,6 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // get shifted one bit to the left when they are combined.
     long n[] = {0, ((long) face) << (POS_BITS - 33)};
 
-
     // Alternating faces have opposite Hilbert curve orientations; this
     // is necessary in order for all faces to have a right-handed
     // coordinate system.
@@ -764,8 +742,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
       bits = getBits(n, i, j, k, bits);
     }
 
-    S2CellId s = new S2CellId((((n[1] << 32) + n[0]) << 1) + 1);
-    return s;
+    return new S2CellId((((n[1] << 32) + n[0]) << 1) + 1);
   }
 
   private static int getBits(long[] n, int i, int j, int k, int bits) {
@@ -778,36 +755,42 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return bits;
   }
 
+  /** The face, [i,j] position in that cell, and orientation of the [i,j] axes for the cell. */
+  public static final class FaceIJ {
+    /** The face on which the position exists. */
+    public final int face;
+    /** The i, or also frequently u- or s-coordinate. See {@link S2Projections} for details. */
+    public final int i;
+    /** The j, or also frequently v- or t-coordinate. See {@link S2Projections} for details. */
+    public final int j;
+    /** The orientation of the axes within this cell. See {@link S2Projections} for details. */
+    public final int orientation;
 
-  /**
-   * Return the (face, i, j) coordinates for the leaf cell corresponding to this
-   * cell id. Since cells are represented by the Hilbert curve position at the
-   * center of the cell, the returned (i,j) for non-leaf cells will be a leaf
-   * cell adjacent to the cell center. If "orientation" is non-NULL, also return
-   * the Hilbert curve orientation for the current cell.
-   */
-  public int toFaceIJOrientation(MutableInteger pi, MutableInteger pj,
-      MutableInteger orientation) {
-    // System.out.println("Entering toFaceIjorientation");
-    int face = this.face();
-    int bits = (face & SWAP_MASK);
+    /** Private constructor. Only S2CellId needs to create instances. */
+    private FaceIJ(S2CellId id) {
+      this.face = id.face();
+      int bits = (face & SWAP_MASK);
 
-    // System.out.println("face = " + face + " bits = " + bits);
+      // Each iteration maps 8 bits of the Hilbert curve position into
+      // 4 bits of "i" and "j". The lookup table transforms a key of the
+      // form "ppppppppoo" to a value of the form "iiiijjjjoo", where the
+      // letters [ijpo] represents bits of "i", "j", the Hilbert curve
+      // position, and the Hilbert curve orientation respectively.
+      //
+      // On the first iteration we need to be careful to clear out the bits
+      // representing the cube face.
+      int i = 0, j = 0;
+      for (int k = 7; k >= 0; --k) {
+        final int nbits = (k == 7) ? (MAX_LEVEL - 7 * LOOKUP_BITS) : LOOKUP_BITS;
+        bits += (((int) (id.id() >>> (k * 2 * LOOKUP_BITS + 1)) & ((1 << (2 * nbits)) - 1))) << 2;
+        bits = LOOKUP_IJ[bits];
+        i += (bits >> (LOOKUP_BITS + 2)) << (k * LOOKUP_BITS);
+        j += (((bits >> 2) & ((1 << LOOKUP_BITS) - 1))) << (k * LOOKUP_BITS);
+        bits &= (SWAP_MASK | INVERT_MASK);
+      }
+      this.i = i;
+      this.j = j;
 
-    // Each iteration maps 8 bits of the Hilbert curve position into
-    // 4 bits of "i" and "j". The lookup table transforms a key of the
-    // form "ppppppppoo" to a value of the form "iiiijjjjoo", where the
-    // letters [ijpo] represents bits of "i", "j", the Hilbert curve
-    // position, and the Hilbert curve orientation respectively.
-    //
-    // On the first iteration we need to be careful to clear out the bits
-    // representing the cube face.
-    for (int k = 7; k >= 0; --k) {
-      bits = getBits1(pi, pj, k, bits);
-      // System.out.println("pi = " + pi + " pj= " + pj + " bits = " + bits);
-    }
-
-    if (orientation != null) {
       // The position of a non-leaf cell at level "n" consists of a prefix of
       // 2*n bits that identifies the cell, followed by a suffix of
       // 2*(MAX_LEVEL-n)+1 bits of the form 10*. If n==MAX_LEVEL, the suffix is
@@ -817,37 +800,22 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
       // the SWAP_MASK bit.
       // assert (S2.POS_TO_ORIENTATION[2] == 0);
       // assert (S2.POS_TO_ORIENTATION[0] == S2.SWAP_MASK);
-      if ((lowestOnBit() & 0x1111111111111110L) != 0) {
+      if ((id.lowestOnBit() & 0x1111111111111110L) != 0) {
         bits ^= S2.SWAP_MASK;
       }
-      orientation.setValue(bits);
+      this.orientation = bits;
     }
-    return face;
   }
 
-  private int getBits1(MutableInteger i, MutableInteger j, int k, int bits) {
-    final int nbits = (k == 7) ? (MAX_LEVEL - 7 * LOOKUP_BITS) : LOOKUP_BITS;
-
-    bits += (((int) (id >>> (k * 2 * LOOKUP_BITS + 1)) &
-            ((1 << (2 * nbits)) - 1))) << 2;
-    /*
-     * System.out.println("id is: " + id_); System.out.println("bits is " +
-     * bits); System.out.println("LOOKUP_IJ[bits] is " + LOOKUP_IJ[bits]);
-     */
-    bits = LOOKUP_IJ[bits];
-    i.setValue(i.intValue()
-      + ((bits >> (LOOKUP_BITS + 2)) << (k * LOOKUP_BITS)));
-    /*
-     * System.out.println("left is " + ((bits >> 2) & ((1 << LOOKUP_BITS) -
-     * 1))); System.out.println("right is " + (k * LOOKUP_BITS));
-     * System.out.println("j is: " + j.intValue()); System.out.println("addition
-     * is: " + ((((bits >> 2) & ((1 << LOOKUP_BITS) - 1))) << (k *
-     * LOOKUP_BITS)));
-     */
-    j.setValue(j.intValue()
-      + ((((bits >> 2) & ((1 << LOOKUP_BITS) - 1))) << (k * LOOKUP_BITS)));
-    bits &= (SWAP_MASK | INVERT_MASK);
-    return bits;
+  /**
+   * Returns the (face, i, j) coordinates for the leaf cell corresponding to this cell id, and the
+   * orientation the i- and j-axes follow at that level.
+   *
+   * <p>Since cells are represented by the Hilbert curve position at the center of the cell, the
+   * returned (i,j) for non-leaf cells will be a leaf cell adjacent to the cell center.
+   */
+  public FaceIJ toFaceIJOrientation() {
+    return new FaceIJ(this);
   }
 
   /** Return the lowest-numbered bit that is on for cells at the given level. */

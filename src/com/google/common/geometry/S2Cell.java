@@ -18,6 +18,7 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.geometry.S2CellId.FaceIJ;
 
 import java.io.Serializable;
 
@@ -393,19 +394,17 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   }
 
   private void init(S2CellId id) {
+    // Set cell properties from the ID and the FaceIJ of the ID.
     cellId = id;
-    MutableInteger iju = new MutableInteger(0);
-    MutableInteger ijv = new MutableInteger(0);
-    MutableInteger mOrientation = new MutableInteger(0);
-
-    face = (byte) id.toFaceIJOrientation(iju, ijv, mOrientation);
-    orientation = (byte) mOrientation.intValue(); // Compress int to a byte.
+    FaceIJ fij = id.toFaceIJOrientation();
+    face = (byte) fij.face;
+    orientation = (byte) fij.orientation;
     level = (byte) id.level();
     int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
     // Compute the cell bounds in scaled (i,j) coordinates.
-    int sijLoU = (iju.intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
+    int sijLoU = (fij.i & -cellSize) * 2 - MAX_CELL_SIZE;
     int sijHiU = sijLoU + cellSize * 2;
-    int sijLoV = (ijv.intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
+    int sijLoV = (fij.j & -cellSize) * 2 - MAX_CELL_SIZE;
     int sijHiV = sijLoV + cellSize * 2;
     setBounds(
         PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijLoU),
@@ -424,15 +423,13 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     this.vMax = vMax;
 
     // Compute the center.
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    cellId.toFaceIJOrientation(i, j, null);
+    FaceIJ fij = cellId.toFaceIJOrientation();
     int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
 
-    int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    int si = (fij.i & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
     this.uMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * si);
 
-    int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
+    int sj = (fij.j & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
     this.vMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sj);
   }
 
