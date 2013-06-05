@@ -19,55 +19,120 @@ import com.google.common.annotations.GwtCompatible;
 import com.google.common.geometry.S2.Metric;
 
 /**
- * This class specifies the details of how the cube faces are projected onto the
- * unit sphere. This includes getting the face ordering and orientation correct
- * so that sequentially increasing cell ids follow a continuous space-filling
- * curve over the entire sphere, and defining the transformation from cell-space
- * to cube-space (see s2.h) in order to make the cells more uniform in size.
+ * This class specifies the coordinate systems and transforms used to project points from the sphere
+ * to the unit cube to an {@link S2CellId}.
  *
+ * <p>In the process of converting a latitude-longitude pair to a 64-bit cell id, the following
+ * coordinate systems are used:
  *
- *  We have implemented three different projections from cell-space (s,t) to
- * cube-space (u,v): linear, quadratic, and tangent. They have the following
- * tradeoffs:
+ * <ul>
+ * <li>(id): An S2CellId is a 64-bit encoding of a face and a Hilbert curve position on that face.
+ * The Hilbert curve position implicitly encodes both the position of a cell and its subdivision
+ * level (see s2cellid.h).
  *
- *  Linear - This is the fastest transformation, but also produces the least
- * uniform cell sizes. Cell areas vary by a factor of about 5.2, with the
- * largest cells at the center of each face and the smallest cells in the
- * corners.
+ * <li>(face, i, j): Leaf-cell coordinates. "i" and "j" are integers in the range [0,(2**30)-1] that
+ * identify a particular leaf cell on the given face. The (i, j) coordinate system is right-handed
+ * on each face, and the faces are oriented such that Hilbert curves connect continuously from one
+ * face to the next.
  *
- *  Tangent - Transforming the coordinates via atan() makes the cell sizes more
- * uniform. The areas vary by a maximum ratio of 1.4 as opposed to a maximum
- * ratio of 5.2. However, each call to atan() is about as expensive as all of
- * the other calculations combined when converting from points to cell ids, i.e.
- * it reduces performance by a factor of 3.
+ * <li>(face, s, t): Cell-space coordinates. "s" and "t" are real numbers in the range [0,1] that
+ * identify a point on the given face. For example, the point (s, t) = (0.5, 0.5) corresponds to the
+ * center of the top-level face cell. This point is also a vertex of exactly four cells at each
+ * subdivision level greater than zero.
  *
- *  Quadratic - This is an approximation of the tangent projection that is much
- * faster and produces cells that are almost as uniform in size. It is about 3
- * times faster than the tangent projection for converting cell ids to points,
- * and 2 times faster for converting points to cell ids. Cell areas vary by a
- * maximum ratio of about 2.1.
+ * <li>(face, si, ti): Discrete cell-space coordinates. These are obtained by multiplying "s" and
+ * "t" by 2**31 and rounding to the nearest unsigned integer. Discrete coordinates lie in the range
+ * [0,2**31]. This coordinate system can represent the edge and center positions of all cells with
+ * no loss of precision (including non-leaf cells).
  *
- *  Here is a table comparing the cell uniformity using each projection. "Area
- * ratio" is the maximum ratio over all subdivision levels of the largest cell
- * area to the smallest cell area at that level, "edge ratio" is the maximum
- * ratio of the longest edge of any cell to the shortest edge of any cell at the
- * same level, and "diag ratio" is the ratio of the longest diagonal of any cell
- * to the shortest diagonal of any cell at the same level. "ToPoint" and
- * "FromPoint" are the times in microseconds required to convert cell ids to and
- * from points (unit vectors) respectively.
+ * <li>(face, u, v): Cube-space coordinates. To make the cells at each level more uniform in size
+ * after they are projected onto the sphere, we apply apply a nonlinear transformation of the form
+ * u=f(s), v=f(t). The (u, v) coordinates after this transformation give the actual coordinates on
+ * the cube face (modulo some 90 degree rotations) before it is projected onto the unit sphere.
  *
- *  Area Edge Diag ToPoint FromPoint Ratio Ratio Ratio (microseconds)
- * ------------------------------------------------------- Linear: 5.200 2.117
- * 2.959 0.103 0.123 Tangent: 1.414 1.414 1.704 0.290 0.306 Quadratic: 2.082
- * 1.802 1.932 0.116 0.161
+ * <li>(x, y, z): Direction vector (S2Point). Direction vectors are not necessarily unit length, and
+ * are often chosen to be points on the biunit cube [-1,+1]x[-1,+1]x[-1,+1]. They can be be
+ * normalized to obtain the corresponding point on the unit sphere.
  *
- *  The worst-case cell aspect ratios are about the same with all three
- * projections. The maximum ratio of the longest edge to the shortest edge
- * within the same cell is about 1.4 and the maximum ratio of the diagonals
- * within the same cell is about 1.7.
+ * <li>(lat, lng): Latitude and longitude (S2LatLng). Latitudes must be between -90 and 90 degrees
+ * inclusive, and longitudes must be between -180 and 180 degrees inclusive.
  *
- * This data was produced using s2cell_unittest and s2cellid_unittest.
+ * <p>Note that the (i, j), (s, t), (si, ti), and (u, v) coordinate systems are right-handed on all
+ * six faces.
  *
+ * <p>We have implemented three different projections from cell-space (s,t) to cube-space (u,v):
+ * linear, quadratic, and tangent. The default is in {@link S2Projections#PROJ}. These projections
+ * have the following tradeoffs:
+ *
+ * <ul>
+ * <li>Linear - This is the fastest transformation, but also produces the least uniform cell sizes.
+ * Cell areas vary by a factor of about 5.2, with the largest cells at the center of each face and
+ * the smallest cells in the corners.
+ * <li>Tangent - Transforming the coordinates via atan() makes the cell sizes more uniform. The
+ * areas vary by a maximum ratio of 1.4 as opposed to a maximum ratio of 5.2. However, each call to
+ * atan() is about as expensive as all of the other calculations combined when converting from
+ * points to cell IDs, i.e. it reduces performance by a factor of 3.
+ * <li>Quadratic - This is an approximation of the tangent projection that is much faster and
+ * produces cells that are almost as uniform in size. It is about 3 times faster than the tangent
+ * projection for converting cell IDs to points or vice versa. Cell areas vary by a maximum ratio of
+ * about 2.1.
+ * </ul>
+ *
+ * <p>Here is a table comparing the cell uniformity using each projection. "Area ratio" is the
+ * maximum ratio over all subdivision levels of the largest cell area to the smallest cell area at
+ * that level, "edge ratio" is the maximum ratio of the longest edge of any cell to the shortest
+ * edge of any cell at the same level, and "diag ratio" is the ratio of the longest diagonal of any
+ * cell to the shortest diagonal of any cell at the same level. "ToPoint" and "FromPoint" are the
+ * times in microseconds required to convert cell IDs to and from points (unit vectors)
+ * respectively. "ToPointRaw" is the time to convert to a non-unit-length vector, which is all that
+ * is needed for some purposes.
+ *
+ * <table>
+ * <tr>
+ * <th>Projection</th>
+ * <th>Area Ratio</th>
+ * <th>Edge Ratio</th>
+ * <th>Diag Ratio</th>
+ * <th>ToPointRaw</th>
+ * <th>ToPoint (microseconds)</th>
+ * <th>FromPoint (microseconds)</th>
+ * </tr>
+ * <tr>
+ * <td>Linear</td>
+ * <td>5.200</td>
+ * <td>2.117</td>
+ * <td>2.959</td>
+ * <td>0.020</td>
+ * <td>0.087</td>
+ * <td>0.085</td>
+ * </tr>
+ * <tr>
+ * <td>Tangent</td>
+ * <td>1.414</td>
+ * <td>1.414</td>
+ * <td>1.704</td>
+ * <td>0.237</td>
+ * <td>0.299</td>
+ * <td>0.258</td>
+ * </tr>
+ * <tr>
+ * <td>Quadratic</td>
+ * <td>2.082</td>
+ * <td>1.802</td>
+ * <td>1.932</td>
+ * <td>0.033</td>
+ * <td>0.096</td>
+ * <td>0.108</td>
+ * </tr>
+ * </table>
+ *
+ * <p>The worst-case cell aspect ratios are about the same with all three projections. The maximum
+ * ratio of the longest edge to the shortest edge within the same cell is about 1.4 and the maximum
+ * ratio of the diagonals within the same cell is about 1.7.
+ *
+ * <p>This data was produced using {@code S2CellTest} and {@code S2CellIdTest}.
+ *
+ * @author eengle@google.com (Eric Engle) ported from util/geometry
  */
 @GwtCompatible
 public strictfp enum S2Projections {
@@ -77,40 +142,40 @@ public strictfp enum S2Projections {
   // S2_QUADRATIC_PROJECTION is somewhere in between (but generally closer to
   // the tangent projection than the linear one).
   S2_LINEAR_PROJECTION(
-      1 / (3 * Math.sqrt(3)), // minAreaDeriv ~0.192
-      1, // maxAreaDeriv ~1.000
-      0.5, // minAngleSpanDeriv ~0.500
-      1, // maxAngleSpanDeriv ~1.000
-      1 / Math.sqrt(6), // minWidthDeriv ~0.408
-      0.70572967292222848, // avgWidthDeriv ~0.706
-      S2.M_SQRT2 / 3, // minEdgeDeriv ~0.471
-      0.72001709647780182, // avgEdgeDeriv ~0.720
-      S2.M_SQRT2 / 3, // minDiagDeriv ~0.471
-      S2.M_SQRT2, // maxDiagDeriv ~1.414
-      1.0159089332094063, // avgDiagDeriv ~1.016
-      S2.M_SQRT2) { // maxEdgeAspect ~1.414
+      4 / (3 * Math.sqrt(3)), // minArea 0.770
+      4, // maxArea 4.000
+      1.0, // minAngleSpan 1.000
+      2, // maxAngleSpan 2.000
+      Math.sqrt(2. / 3), // minWidth 0.816
+      1.411459345844456965, // avgWidth 1.411
+      2 * Math.sqrt(2) / 3, // minEdge 0.943
+      1.440034192955603643, // avgEdge 1.440
+      2 * Math.sqrt(2) / 3, // minDiag 0.943
+      2 * Math.sqrt(2), // maxDiag 2.828
+      2.031817866418812674, // avgDiag 2.032
+      Math.sqrt(2)) { // maxEdgeAspect 1.414
     @Override
     public double stToUV(double s) {
-      return s;
+      return 2 * s - 1;
     }
     @Override
     public double uvToST(double u) {
-      return u;
+      return 0.5 * (u + 1);
     }
   },
   S2_TAN_PROJECTION(
-      (S2.M_PI * S2.M_PI) / (16 * S2.M_SQRT2), // minAreaDeriv ~0.436
-      S2.M_PI * S2.M_PI / 16, // maxAreaDeriv ~0.617
-      S2.M_PI / 4, // minAngleSpanDeriv ~0.785
-      S2.M_PI / 4, // maxAngleSpanDeriv ~0.785
-      S2.M_PI / (4 * S2.M_SQRT2), // minWidthDeriv ~0.555
-      0.71865931946258044, // avgWidthDeriv ~0.719
-      S2.M_PI / (4 * S2.M_SQRT2), // minEdgeDeriv ~0.555
-      0.73083351627336963, // avgEdgeDeriv ~0.731
-      S2.M_PI / (3 * S2.M_SQRT2), // minDiagDeriv ~0.740
-      S2.M_PI / Math.sqrt(6), // maxDiagDeriv ~1.283
-      1.0318115985978178, // avgDiagDeriv ~1.032
-      S2.M_SQRT2) { // maxEdgeAspect ~1.414
+      (S2.M_PI * S2.M_PI) / (4 * Math.sqrt(2)), // minArea 1.745
+      S2.M_PI * S2.M_PI / 4, // maxArea 2.467
+      S2.M_PI / 2, // minAngleSpan 1.571
+      S2.M_PI / 2, // maxAngleSpan 1.571
+      S2.M_PI / (2 * Math.sqrt(2)), // minWidth 1.111
+      1.437318638925160885, // avgWidth 1.437
+      S2.M_PI / (2 * Math.sqrt(2)), // minEdge 1.111
+      1.461667032546739266, // avgEdge 1.462
+      S2.M_PI * Math.sqrt(2) / 3, // minDiag 1.481
+      S2.M_PI * Math.sqrt(2. / 3), // maxDiag 2.565
+      2.063623197195635753, // avgDiag 2.064
+      Math.sqrt(2)) { // maxEdgeAspect 1.414
     @Override
     public double stToUV(double s) {
       // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
@@ -118,41 +183,41 @@ public strictfp enum S2Projections {
       // happens that the two adjacent floating point numbers on either side of the infinite-
       // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
       // rounded to the nearest double-precision result.
-      s = Math.tan(S2.M_PI_4 * s);
+      s = Math.tan(S2.M_PI_2 * s - S2.M_PI_4);
       return s + (1.0 / (1L << 53)) * s;
     }
     @Override
     public double uvToST(double u) {
-      return (4 * S2.M_1_PI) * Math.atan(u);
+      return (2 * S2.M_1_PI) * (Math.atan(u) + S2.M_PI_4);
     }
   },
   S2_QUADRATIC_PROJECTION(
-      2 * S2.M_SQRT2 / 9, // minAreaDeriv ~0.314
-      0.65894981424079037, // maxAreaDeriv ~0.659
-      2. / 3, // minAngleSpanDeriv ~0.667
-      0.85244858959960922, // maxAngleSpanDeriv ~0.852
-      S2.M_SQRT2 / 3, // minWidthDeriv ~0.471
-      0.71726183644304969, // avgWidthDeriv ~0.717
-      S2.M_SQRT2 / 3, // minEdgeDeriv ~0.471
-      0.72960687319305303, // avgEdgeDeriv ~0.730
-      4 * S2.M_SQRT2 / 9, // minDiagDeriv ~0.629
-      1.2193272972170106, // maxDiagDeriv ~1.219
-      1.03021136949923584, // avgDiagDeriv ~1.030
-      1.44261527445268292) { // maxEdgeAspect ~1.443
+      8 * Math.sqrt(2) / 9, // minArea 1.257
+      2.635799256963161491, // maxArea 2.636
+      4. / 3, // minAngleSpan 1.333
+      1.704897179199218452, // maxAngleSpan 1.705
+      2 * Math.sqrt(2) / 3, // minWidth 0.943
+      1.434523672886099389, // avgWidth 1.435
+      2 * Math.sqrt(2) / 3, // minEdge 0.943
+      1.459213746386106062, // avgEdge 1.459
+      8 * Math.sqrt(2) / 9, // minDiag 1.257
+      2.438654594434021032, // maxDiag 2.439
+      2.060422738998471683, // avgDiag 2.060
+      1.442615274452682920) { // maxEdgeAspect 1.443
     @Override
     public double stToUV(double s) {
-      if (s >= 0) {
-        return (1 / 3.) * ((1 + s) * (1 + s) - 1);
+      if (s >= 0.5) {
+        return (1 / 3.) * (4 * s * s - 1);
       } else {
-        return (1 / 3.) * (1 - (1 - s) * (1 - s));
+        return (1 / 3.) * (1 - 4 * (1 - s) * (1 - s));
       }
     }
     @Override
     public double uvToST(double u) {
       if (u >= 0) {
-        return Math.sqrt(1 + 3 * u) - 1;
+        return 0.5 * Math.sqrt(1 + 3 * u);
       } else {
-        return 1 - Math.sqrt(1 - 3 * u);
+        return 1 - 0.5 * Math.sqrt(1 - 3 * u);
       }
     }
   };
@@ -252,10 +317,10 @@ public strictfp enum S2Projections {
       double maxEdgeAspect) {
     this.minArea = new Metric(2, minAreaDeriv);
     this.maxArea = new Metric(2, maxAreaDeriv);
-    this.avgArea = new Metric(2, S2.M_PI / 6); // 0.524)
+    this.avgArea = new Metric(2, 4 * S2.M_PI / 6); // ~2.094
     this.minAngleSpan = new Metric(1, minAngleSpanDeriv);
     this.maxAngleSpan = new Metric(1, maxAngleSpanDeriv);
-    this.avgAngleSpan = new Metric(1, S2.M_PI / 4); // 0.785
+    this.avgAngleSpan = new Metric(1, S2.M_PI / 2); // ~1.571
     this.minWidth = new Metric(1, minWidthDeriv);
     this.maxWidth = new Metric(1, maxAngleSpanDeriv);
     this.avgWidth = new Metric(1, avgWidthDeriv);

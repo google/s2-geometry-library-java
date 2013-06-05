@@ -390,7 +390,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
     if (isEmpty()) {
       return false;
     }
-    if (contains(cell.getCenter())) {
+    if (contains(cell.getCenterRaw())) {
       return true;
     }
     if (cell.contains(getCenter().toPoint())) {
@@ -481,11 +481,9 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    */
   public S2LatLngRect expanded(S2LatLng margin) {
     // assert (margin.lat().radians() >= 0 && margin.lng().radians() >= 0);
-    if (isEmpty()) {
-      return this;
-    }
-    return new S2LatLngRect(lat.expanded(margin.lat().radians()).intersection(
-      fullLat()), lng.expanded(margin.lng().radians()));
+    return new S2LatLngRect(
+        lat.expanded(margin.lat().radians()).intersection(fullLat()),
+        lng.expanded(margin.lng().radians()));
   }
 
   /**

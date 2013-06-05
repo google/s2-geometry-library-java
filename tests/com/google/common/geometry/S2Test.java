@@ -61,14 +61,14 @@ public strictfp class S2Test extends GeometryTestCase {
 
   public void testSTUV() {
     // Check boundary conditions.
-    for (double x = -1; x <= 1; ++x) {
-      assertEquals(PROJ.stToUV(x), x);
-      assertEquals(PROJ.uvToST(x), x);
+    for (double x = 0; x <= 1; x++) {
+      assertDoubleNear(PROJ.stToUV(x), 2 * x - 1);
+      assertDoubleNear(PROJ.uvToST(2 * x - 1), x);
     }
     // Check that UVtoST and STtoUV are inverses.
-    for (double x = -1; x <= 1; x += 0.0001) {
+    for (double x = 0; x <= 1; x += 0.0001 ) {
       assertDoubleNear(PROJ.uvToST(PROJ.stToUV(x)), x);
-      assertDoubleNear(PROJ.stToUV(PROJ.uvToST(x)), x);
+      assertDoubleNear(PROJ.stToUV(PROJ.uvToST(2 * x - 1)), 2 * x - 1);
     }
   }
 
@@ -281,7 +281,8 @@ public strictfp class S2Test extends GeometryTestCase {
     // S2Cell has methods to compute the cell vertices, etc.
 
     for (int level = -2; level <= S2CellId.MAX_LEVEL + 3; ++level) {
-      double dWidth = (2 * PROJ.minWidth.deriv()) * Math.pow(2, -level);
+      double dWidth = PROJ.minWidth.deriv() * Math.pow(2, -level);
+      // Check lengths.
       if (level >= S2CellId.MAX_LEVEL + 3) {
         dWidth = 0;
       }
@@ -298,18 +299,18 @@ public strictfp class S2Test extends GeometryTestCase {
       assertEquals(PROJ.minWidth.getClosestLevel(1.2 * dWidth), expectedLevel);
       assertEquals(PROJ.minWidth.getClosestLevel(0.8 * dWidth), expectedLevel);
 
-      // Same thing for area1.
-      double area1 = (4 * PROJ.minArea.deriv()) * Math.pow(4, -level);
+      // Check areas.
+      double dArea = PROJ.minArea.deriv() * Math.pow(4, -level);
       if (level <= -3) {
-        area1 = 0;
+        dArea = 0;
       }
-      assertEquals(PROJ.minArea.getMinLevel(area1), expectedLevel);
-      assertEquals(PROJ.minArea.getMaxLevel(area1), expectedLevel);
-      assertEquals(PROJ.minArea.getClosestLevel(area1), expectedLevel);
-      assertEquals(PROJ.minArea.getMinLevel(1.2 * area1), expectedLevel);
-      assertEquals(PROJ.minArea.getMaxLevel(0.8 * area1), expectedLevel);
-      assertEquals(PROJ.minArea.getClosestLevel(1.2 * area1), expectedLevel);
-      assertEquals(PROJ.minArea.getClosestLevel(0.8 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(1.2 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(0.8 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(1.2 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(0.8 * dArea), expectedLevel);
     }
   }
 

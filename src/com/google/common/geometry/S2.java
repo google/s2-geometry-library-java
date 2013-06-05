@@ -150,7 +150,7 @@ public final strictfp class S2 {
    * Defines an area or a length cell metric.
    */
   @GwtCompatible(emulated = true, serializable = false)
-  public static class Metric {
+  public static final class Metric {
     // NOTE: This isn't GWT serializable because writing custom field serializers for inner classes
     // is hard.
 
@@ -175,7 +175,7 @@ public final strictfp class S2 {
 
     /** Return the value of a metric for cells at the given level. */
     public double getValue(int level) {
-      return Platform.scalb(deriv, dim * (1 - level));
+      return Platform.scalb(deriv, -dim * level);
     }
 
     /**
@@ -185,7 +185,7 @@ public final strictfp class S2 {
      * always a valid level.
      */
     public int getClosestLevel(double value) {
-      return getMinLevel(M_SQRT2 * value);
+      return getMinLevel((dim == 1 ? S2.M_SQRT2 : 2) * value);
     }
 
     /**
@@ -202,9 +202,8 @@ public final strictfp class S2 {
 
       // This code is equivalent to computing a floating-point "level"
       // value and rounding up.
-      int exponent = exp(value / ((1 << dim) * deriv));
-      int level = Math.max(0,
-          Math.min(S2CellId.MAX_LEVEL, -((exponent - 1) >> (dim - 1))));
+      int exponent = exp(value / deriv);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, -((exponent - 1) >> (dim - 1))));
       // assert (level == S2CellId.MAX_LEVEL || getValue(level) <= value);
       // assert (level == 0 || getValue(level - 1) > value);
       return level;
@@ -224,9 +223,8 @@ public final strictfp class S2 {
 
       // This code is equivalent to computing a floating-point "level"
       // value and rounding down.
-      int exponent = exp((1 << dim) * deriv / value);
-      int level = Math.max(0,
-          Math.min(S2CellId.MAX_LEVEL, ((exponent - 1) >> (dim - 1))));
+      int exponent = exp(deriv / value);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, ((exponent - 1) >> (dim - 1))));
       // assert (level == 0 || getValue(level) >= value);
       // assert (level == S2CellId.MAX_LEVEL || getValue(level + 1) < value);
       return level;

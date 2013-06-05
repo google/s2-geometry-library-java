@@ -32,7 +32,6 @@ import java.util.logging.Logger;
  */
 @GwtCompatible
 public strictfp class S2CellIdTest extends GeometryTestCase {
-
   private static final Logger logger = Platform.getLoggerForClass(S2CellIdTest.class);
 
   private S2CellId getCellId(double latDegrees, double lngDegrees) {
@@ -192,15 +191,13 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     for (; !id.equals(end); id = id.next()) {
       assertTrue(id.toPointRaw().angle(id.nextWrap().toPointRaw()) <= maxDist);
 
-      // Check that the ToPointRaw() returns the center of each cell
-      // in (s,t) coordinates.
+      // Check that the toPointRaw() returns the center of each cell in (s,t) coordinates.
       S2Point p = id.toPointRaw();
       int face = S2Projections.xyzToFace(p);
       R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
-      assertDoubleNear(Platform.IEEEremainder(
-          PROJ.uvToST(uv.x()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
-      assertDoubleNear(Platform.IEEEremainder(
-          PROJ.uvToST(uv.y()), 1.0 / (1 << MAX_WALK_LEVEL)), 0);
+      final double cellSize = 1.0 / (1 << MAX_WALK_LEVEL);
+      assertDoubleNear(Platform.IEEEremainder(PROJ.uvToST(uv.x()), 0.5 * cellSize), 0);
+      assertDoubleNear(Platform.IEEEremainder(PROJ.uvToST(uv.y()), 0.5 * cellSize), 0);
     }
   }
 

@@ -60,7 +60,6 @@ import java.util.NoSuchElementException;
  */
 @GwtCompatible(emulated = true, serializable = true)
 public final strictfp class S2CellId implements Comparable<S2CellId>, Serializable {
-
   // Although only 60 bits are needed to represent the index of a leaf
   // cell, we need an extra bit in order to represent the position of
   // the center of the leaf cell along the Hilbert curve.
@@ -69,6 +68,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   public static final int MAX_LEVEL = 30; // Valid levels: 0..MAX_LEVEL
   public static final int POS_BITS = 2 * MAX_LEVEL + 1;
   public static final int MAX_SIZE = 1 << MAX_LEVEL;
+
+  /** The change in ST coordinates for each unit change in IJ coordinates. */
+  private static final double IJ_TO_ST = 1.0 / MAX_SIZE;
 
   // Constant related to unsigned long's
   public static final long MAX_UNSIGNED = -1L; // Equivalent to 0xffffffffffffffffL
@@ -169,17 +171,53 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return fromPoint(ll.toPoint());
   }
 
+  /**
+   * Returns the center of the cell in (u,v) coordinates. Note that the center of the cell is
+   * defined as the point at which it is recursively subdivided into four children; in general, it
+   * is not at the midpoint of the (u,v) rectangle covered by the cell.
+   */
+  public R2Vector getCenterUV() {
+    FaceSiTi center = getCenterSiTi();
+    return new R2Vector(
+        PROJ.stToUV((0.5 / MAX_SIZE) * center.si),
+        PROJ.stToUV((0.5 / MAX_SIZE) * center.ti));
+  }
+
+  /** Returns the center of the cell in (s,t) coordinates. */
+  public R2Vector getCenterST() {
+    FaceSiTi center = getCenterSiTi();
+    return new R2Vector(
+        (0.5 / MAX_SIZE) * center.si,
+        (0.5 / MAX_SIZE) * center.ti);
+  }
+
   public S2Point toPoint() {
     return S2Point.normalize(toPointRaw());
   }
 
   /**
    * Return the direction vector corresponding to the center of the given cell.
-   * The vector returned by ToPointRaw is not necessarily unit length.
+   * The vector returned by toPointRaw is not necessarily unit length.
    */
   public S2Point toPointRaw() {
+    // This code would be slightly shorter if we called GetCenterUV(),
+    // but this method is heavily used and it's 25% faster to include
+    // the method inline.
+    // TODO(eengle): Verify, this could well be false in Java.
+    FaceSiTi fij = getCenterSiTi();
+    return S2Projections.faceUvToXyz(fij.face,
+        PROJ.stToUV((0.5 / MAX_SIZE) * fij.si),
+        PROJ.stToUV((0.5 / MAX_SIZE) * fij.ti));
+  }
+
+  /**
+   * Returns the (face, si, ti) coordinates of the center of the cell.  Note that although (si,ti)
+   * coordinates span the range [0,2**31] in general, the cell center coordinates are always in the
+   * range [1,2**31-1] and therefore can be represented using a signed 32-bit integer.
+   */
+  FaceSiTi getCenterSiTi() {
     // First we compute the discrete (i,j) coordinates of a leaf cell contained
-    // within the given cell. Given that cells are represented by the Hilbert
+    // within the given cell.  Given that cells are represented by the Hilbert
     // curve position corresponding at their center, it turns out that the cell
     // returned by ToFaceIJOrientation is always one of two leaf cells closest
     // to the center of the cell (unless the given cell is a leaf cell itself,
@@ -187,27 +225,24 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     //
     // Given a cell of size s >= 2 (i.e. not a leaf cell), and letting (imin,
     // jmin) be the coordinates of its lower left-hand corner, the leaf cell
-    // returned by ToFaceIJOrientation() is either (imin + s/2, jmin + s/2)
-    // (imin + s/2 - 1, jmin + s/2 - 1). We can distinguish these two cases by
-    // looking at the low bit of "i" or "j". In the first case the low bit is
-    // zero, unless s == 2 (i.e. the level just above leaf cells) in which case
-    // the low bit is one.
+    // returned by ToFaceIJOrientation() is either (imin + s/2, jmin + s/2) or
+    // (imin + s/2 - 1, jmin + s/2 - 1).  The first case is the one we want.
+    // We can distinguish these two cases by looking at the low bit of "i" or
+    // "j".  In the second case the low bit is one, unless s == 2 (i.e. the
+    // level just above leaf cells) in which case the low bit is zero.
     //
-    // The following calculation converts (i,j) to the (si,ti) coordinates of
-    // the cell center. (We need to multiply the coordinates by a factor of 2
-    // so that the center of leaf cells can be represented exactly.)
+    // In the code below, the expression ((i ^ ((int) id >> 2)) & 1) is nonzero
+    // if we are in the second case described above.
     FaceIJ fij = toFaceIJOrientation();
     int delta = isLeaf() ? 1 : (((fij.i ^ (((int) id) >>> 2)) & 1) != 0) ? 2 : 0;
-    int si = (fij.i << 1) + delta - MAX_SIZE;
-    int ti = (fij.j << 1) + delta - MAX_SIZE;
-    return faceSiTiToXYZ(fij.face, si, ti);
+    // Note that (2 * {i,j} + delta) will never overflow a 32-bit integer.
+    return new FaceSiTi(fij.face, 2 * fij.i + delta, 2 * fij.j + delta);
   }
 
   /** Return the S2LatLng corresponding to the center of the given cell. */
   public S2LatLng toLatLng() {
     return new S2LatLng(toPointRaw());
   }
-
 
   /** The 64-bit unique identifier for this cell. */
   public long id() {
@@ -264,7 +299,25 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return level;
   }
 
+  /** As {@link #getSizeIJ(int)}, using the level of this cell. */
+  public int getSizeIJ() {
+    return getSizeIJ(level());
+  }
 
+  /** As {@link #getSizeST(int)}, using the level of this cell. */
+  public double getSizeST() {
+    return getSizeST(level());
+  }
+
+  /** Returns the edge length of cells at the given level in (i,j)-space. */
+  public static int getSizeIJ(int level) {
+    return 1 << (MAX_LEVEL - level);
+  }
+
+  /** Returns the edge length of cells at the given level in (s,t)-space. */
+  public static double getSizeST(int level) {
+    return getSizeIJ(level) * IJ_TO_ST;
+  }
 
   /**
    * Return true if this is a leaf cell (more efficient than checking whether
@@ -598,7 +651,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public void getEdgeNeighbors(S2CellId neighbors[]) {
     int level = this.level();
-    int size = 1 << (MAX_LEVEL - level);
+    int size = getSizeIJ(level);
     FaceIJ fij = toFaceIJOrientation();
 
     // Edges 0, 1, 2, 3 are in the S, E, N, W directions.
@@ -630,7 +683,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // Determine the i- and j-offsets to the closest neighboring cell in each
     // direction. This involves looking at the next bit of "i" and "j" to
     // determine which quadrant of this->parent(level) this cell lies in.
-    int halfsize = 1 << (MAX_LEVEL - (level + 1));
+    int halfsize = getSizeIJ(level + 1);
     int size = halfsize << 1;
     boolean isame, jsame;
     int ioffset, joffset;
@@ -675,11 +728,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // Find the coordinates of the lower left-hand leaf cell. We need to
     // normalize (i,j) to a known position within the cell because nbrLevel
     // may be larger than this cell's level.
-    int size = 1 << (MAX_LEVEL - level());
+    int size = getSizeIJ();
     int i = fij.i & -size;
     int j = fij.j & -size;
 
-    int nbrSize = 1 << (MAX_LEVEL - nbrLevel);
+    int nbrSize = getSizeIJ(nbrLevel);
     // assert (nbrSize <= size);
 
     // We compute the N-S, E-W, and diagonal neighbors in one pass.
@@ -807,6 +860,25 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     }
   }
 
+  /** A [face, si, ti] position. */
+  // TODO(eengle): This and getCenterSiTi are package private for now, since future work may require
+  // non-trivial changes to this class.
+  static final class FaceSiTi {
+    /** The face on which the position exists. */
+    public final int face;
+    /** The si coordinate. See {@link S2Projections} for details. */
+    public final int si;
+    /** The ti coordinate. See {@link S2Projections} for details. */
+    public final int ti;
+
+    /** Private constructor. Only S2CellId needs to create instances. */
+    private FaceSiTi(int face, int si, int ti) {
+      this.face = face;
+      this.si = si;
+      this.ti = ti;
+    }
+  }
+
   /**
    * Returns the (face, i, j) coordinates for the leaf cell corresponding to this cell id, and the
    * orientation the i- and j-axes follow at that level.
@@ -833,26 +905,12 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return 1L << (2 * (MAX_LEVEL - level));
   }
 
-
   /**
    * Return the i- or j-index of the leaf cell containing the given s- or
-   * t-value.
+   * t-value. Values are clamped appropriately.
    */
   private static int stToIJ(double s) {
-    final int m = MAX_SIZE / 2; // scaling multiplier
-    return (int) Math
-      .max(0, Math.min(2 * m - 1, Math.round(m * s + (m - 0.5))));
-  }
-
-  /**
-   * Convert (face, si, ti) coordinates (see s2.h) to a direction vector (not
-   * necessarily unit length).
-   */
-  private static S2Point faceSiTiToXYZ(int face, int si, int ti) {
-    final double kScale = 1.0 / MAX_SIZE;
-    double u = PROJ.stToUV(kScale * si);
-    double v = PROJ.stToUV(kScale * ti);
-    return S2Projections.faceUvToXyz(face, u, v);
+    return Math.max(0, Math.min(MAX_SIZE - 1, (int) Math.round(MAX_SIZE * s - 0.5)));
   }
 
   /**
@@ -862,23 +920,23 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   private static S2CellId fromFaceIJWrap(int face, int i, int j) {
     // Convert i and j to the coordinates of a leaf cell just beyond the
     // boundary of this face. This prevents 32-bit overflow in the case
-    // of finding the neighbors of a face cell, and also means that we
-    // don't need to worry about the distinction between (s,t) and (u,v).
+    // of finding the neighbors of a face cell.
     i = Math.max(-1, Math.min(MAX_SIZE, i));
     j = Math.max(-1, Math.min(MAX_SIZE, j));
 
-    // Find the (s,t) coordinates corresponding to (i,j). At least one
-    // of these coordinates will be just outside the range [0, 1].
-    final double kScale = 1.0 / MAX_SIZE;
-    double s = kScale * (((long) i << 1) + 1 - MAX_SIZE);
-    double t = kScale * (((long) j << 1) + 1 - MAX_SIZE);
+    // Find the (u,v) coordinates corresponding to the center of cell (i,j).
+    // For our purposes it's sufficient to always use the linear projection
+    // from (s,t) to (u,v): u=2*s-1 and v=2*t-1.
+    double u = IJ_TO_ST * (((long) i << 1) + 1 - MAX_SIZE);
+    double v = IJ_TO_ST * (((long) j << 1) + 1 - MAX_SIZE);
 
     // Find the leaf cell coordinates on the adjacent face, and convert
-    // them to a cell id at the appropriate level.
-    S2Point p = S2Projections.faceUvToXyz(face, s, t);
+    // them to a cell id at the appropriate level.  We convert from (u,v)
+    // back to (s,t) using s=0.5*(u+1), t=0.5*(v+1).
+    S2Point p = S2Projections.faceUvToXyz(face, u, v);
     face = S2Projections.xyzToFace(p);
-    R2Vector st = S2Projections.validFaceXyzToUv(face, p);
-    return fromFaceIJ(face, stToIJ(st.x()), stToIJ(st.y()));
+    R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
+    return fromFaceIJ(face, stToIJ(0.5 * (uv.x() + 1)), stToIJ(0.5 * (uv.y() + 1)));
   }
 
   /**

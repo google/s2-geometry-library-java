@@ -30,8 +30,7 @@ import java.io.Serializable;
  */
 @GwtCompatible(serializable = true)
 public final strictfp class S2Cell implements S2Region, Serializable {
-
-  private static final int MAX_CELL_SIZE = 1 << S2CellId.MAX_LEVEL;
+  private static final double CELL_SCALE = 1.0 / S2CellId.MAX_SIZE;
 
   byte face;
   byte level;
@@ -89,10 +88,12 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     return orientation;
   }
 
+  /** Returns true if this cell is a leaf-cell, i.e. it has no children. */
   public boolean isLeaf() {
     return level == S2CellId.MAX_LEVEL;
   }
 
+  /** As {@link #getVertexRaw(int)}, except the point is normalized to unit length. */
   public S2Point getVertex(int k) {
     return S2Point.normalize(getVertexRaw(k));
   }
@@ -109,10 +110,15 @@ public final strictfp class S2Cell implements S2Region, Serializable {
         (k >> 1) == 0 ? vMin : vMax);
   }
 
+  /** As {@link #getEdgeRaw(int)}, except the point is normalized to unit length. */
   public S2Point getEdge(int k) {
     return S2Point.normalize(getEdgeRaw(k));
   }
 
+  /**
+   * Returns the inward-facing normal of the great circle passing through the edge from vertex k to
+   * vertex k+1 (mod 4).  The normals returned by getEdgeRaw are not necessarily unit length.
+   */
   public S2Point getEdgeRaw(int k) {
     switch (k) {
       case 0:
@@ -126,17 +132,23 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     }
   }
 
+  /** As {@link S2CellId#getSizeIJ(int)}, using the level of this cell. */
+  public int getSizeIJ() {
+    return S2CellId.getSizeIJ(level());
+  }
+
   /**
-   * Return the inward-facing normal of the great circle passing through the
-   * edge from vertex k to vertex k+1 (mod 4). The normals returned by
-   * GetEdgeRaw are not necessarily unit length.
+   * Returns true if this is not a leaf cell, in which case the array, which must contain at least
+   * four non-null cells in indices 0..3, will be set to the four children of this cell in traversal
+   * order. Otherwise, if this is a leaf cell, false is returned without touching the array.
    *
-   *  If this is not a leaf cell, set children[0..3] to the four children of
-   * this cell (in traversal order) and return true. Otherwise returns false.
-   * This method is equivalent to the following:
+   * <p>This method is equivalent to the following:
    *
-   *  for (pos=0, id=child_begin(); id != child_end(); id = id.next(), ++pos)
-   * children[i] = S2Cell(id);
+   * <pre>
+   * for (pos=0, id=child_begin(); id != child_end(); id = id.next(), ++pos) {
+   *   children[i].init(id);
+   * }
+   * </pre>
    *
    * except that it is more than two times faster.
    */
@@ -156,6 +168,9 @@ public final strictfp class S2Cell implements S2Region, Serializable {
       child.level = (byte) (level + 1);
       child.orientation = (byte) (orientation ^ S2.posToOrientation(pos));
       child.cellId = id;
+      // We want to split the cell in half in "u" and "v".  To decide which
+      // side to set equal to the midpoint value, we look at cell's (i,j)
+      // position within its parent.  The index for "i" is in bit 1 of ij.
       int ij = S2.posToIJ(orientation, pos);
       // The dimension 0 index (i/u) is in bit 1 of ij.
       double u1, v1, u2, v2;
@@ -174,7 +189,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
         v1 = vMin;
         v2 = vMid;
       }
-      child.setBounds(u1, v1, u2, v2);
+      child.setBounds(id.toFaceIJOrientation(), id.getSizeIJ(), u1, v1, u2, v2);
     }
     return true;
   }
@@ -400,37 +415,35 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     face = (byte) fij.face;
     orientation = (byte) fij.orientation;
     level = (byte) id.level();
-    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
-    // Compute the cell bounds in scaled (i,j) coordinates.
-    int sijLoU = (fij.i & -cellSize) * 2 - MAX_CELL_SIZE;
-    int sijHiU = sijLoU + cellSize * 2;
-    int sijLoV = (fij.j & -cellSize) * 2 - MAX_CELL_SIZE;
-    int sijHiV = sijLoV + cellSize * 2;
-    setBounds(
-        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijLoU),
-        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijLoV),
-        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijHiU),
-        PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sijHiV));
+    int cellSize = S2CellId.getSizeIJ(level);
+    int i1 = fij.i & -cellSize;
+    int i2 = i1 + cellSize;
+    int j1 = fij.j & -cellSize;
+    int j2 = j1 + cellSize;
+    setBounds(fij, cellSize, ijToUv(i1), ijToUv(j1), ijToUv(i2), ijToUv(j2));
   }
 
-
-  // Internal method that does the actual work in the constructors.
-
-  private void setBounds(double uMin, double vMin, double uMax, double vMax) {
+  /**
+   * Assigns the given min, mid, and max coordinates for each axis, computing the mid coordinates
+   * from the FaceIJ and cellSize.
+   */
+  private void setBounds(FaceIJ fij, int cellSize,
+      double uMin, double vMin, double uMax, double vMax) {
     this.uMin = uMin;
     this.vMin = vMin;
     this.uMax = uMax;
     this.vMax = vMax;
 
-    // Compute the center.
-    FaceIJ fij = cellId.toFaceIJOrientation();
-    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
+    // Compute the center by masking off the bits of i and j below this level, which gives us the
+    // lower left corner, and adding half the cell size to get the center.
+    int halfSize = cellSize / 2;
+    this.uMid = ijToUv((fij.i & -cellSize) + halfSize);
+    this.vMid = ijToUv((fij.j & -cellSize) + halfSize);
+  }
 
-    int si = (fij.i & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    this.uMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * si);
-
-    int sj = (fij.j & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    this.vMid = PROJ.stToUV((1.0 / MAX_CELL_SIZE) * sj);
+  /** Returns the UV coordinate given an I- or J-coordinate. */
+  private static final double ijToUv(int ij) {
+    return PROJ.stToUV(CELL_SCALE * ij);
   }
 
   private S2Point getPoint(int i, int j) {

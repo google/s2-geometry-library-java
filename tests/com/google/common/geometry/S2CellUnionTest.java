@@ -351,7 +351,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
       // maximum angle of the covering from the cap axis can increase by up to
       // twice the maximum length of a cell diagonal. We allow for an increase
       // of slightly more than this because cell bounding caps are not exact.
-      assertTrue(expandedMaxAngle - maxAngle <= 2.01 * PROJ.maxDiag.getValue(expandLevel));
+      assertTrue(expandedMaxAngle - maxAngle <= 2.02 * PROJ.maxDiag.getValue(expandLevel));
     }
   }
 

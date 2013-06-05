@@ -422,7 +422,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
-  static final int MAX_LEVEL = DEBUG_MODE ? 6 : 10;
+  static final int MAX_LEVEL = DEBUG_MODE ? 6 : 11;
 
   public void expandChildren1(S2Cell cell) {
     S2Cell[] children = new S2Cell[4];
