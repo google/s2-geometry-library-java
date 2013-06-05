@@ -26,10 +26,6 @@ public class SerializationTest extends TestCase {
     }
   }
 
-  public void testMutableInteger() {
-    doTest(new MutableInteger(5));
-  }
-
   public void testParametrizedS2Point() {
     doTest(new ParametrizedS2Point(0.123, new S2Point(1, 1e7, 1e-9)));
   }
