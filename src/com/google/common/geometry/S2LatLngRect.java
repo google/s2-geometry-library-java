@@ -21,8 +21,14 @@ import com.google.common.base.Preconditions;
 import java.io.Serializable;
 
 /**
- * An S2LatLngRect represents a latitude-longitude rectangle. It is capable of
- * representing the empty and full rectangles as well as single points.
+ * An S2LatLngRect represents a latitude-longitude rectangle. It is capable of representing the
+ * empty and full rectangles as well as single points.
+ *
+ * <p>Note that the latitude-longitude space is considered to have a <strong>cylindrical</strong>
+ * topology rather than a spherical one, i.e. the poles have multiple lat/lng representations. An
+ * S2LatLngRect may be defined so that it includes some representations of a pole but not others.
+ * Use the polarClosure() method if you want to expand a rectangle so that it contains all possible
+ * representations of any contained poles.
  *
  */
 @GwtCompatible(serializable = true)
@@ -197,9 +203,11 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
     return lng.isInverted();
   }
 
-  /** Return the k-th vertex of the rectangle (k = 0,1,2,3) in CCW order. */
+  /**
+   * Returns the k<super>th</super> vertex of the rectangle (k = 0,1,2,3) in CCW order (lower-left,
+   * lower right, upper right, upper left).
+   */
   public S2LatLng getVertex(int k) {
-    // Return the points in CCW order (SW, SE, NE, NW).
     switch (k) {
       case 0:
         return S2LatLng.fromRadians(lat.lo(), lng.lo());
@@ -487,6 +495,19 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
   }
 
   /**
+   * If the rectangle does not include either pole, return it unmodified. Otherwise expand the
+   * longitude range to full() so that the rectangle contains all possible representations of the
+   * contained pole(s).
+   */
+  public S2LatLngRect polarClosure() {
+    if (lat.lo() == -S2.M_PI_2 || lat.hi() == S2.M_PI_2) {
+      return new S2LatLngRect(lat, S1Interval.full());
+    } else {
+      return this;
+    }
+  }
+
+  /**
    * Return the smallest rectangle containing the union of this rectangle and
    * the given rectangle.
    */
@@ -557,16 +578,27 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
 
   /**
    * Return true if the latitude and longitude intervals of the two rectangles
-   * are the same up to the given tolerance (see r1interval.h and s1interval.h
-   * for details).
+   * are the same up to the given tolerance.
    */
   public boolean approxEquals(S2LatLngRect other, double maxError) {
-    return (lat.approxEquals(other.lat, maxError) && lng.approxEquals(
-      other.lng, maxError));
+    return lat.approxEquals(other.lat, maxError)
+        && lng.approxEquals(other.lng, maxError);
   }
 
+  /**
+   * Returns true if this rectangle is very nearly identical to the given other rectangle.
+   */
   public boolean approxEquals(S2LatLngRect other) {
     return approxEquals(other, 1e-15);
+  }
+
+  /**
+   * As {@link #approxEquals(S2LatLngRect, double)}, but with separate tolerances for latitude and
+   * longitude.
+   */
+  public boolean approxEquals(S2LatLngRect other, S2LatLng maxError) {
+    return lat.approxEquals(other.lat, maxError.lat().radians())
+        && lng.approxEquals(other.lng, maxError.lng().radians());
   }
 
   @Override
@@ -632,10 +664,14 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
     return this;
   }
 
+  /**
+   * Returns true if this latitude/longitude region contains the given cell. A latitude-longitude
+   * rectangle contains a cell if and only if it contains the cell's bounding rectangle, making this
+   * an exact test. Note, however, that the cell must be valid; an error may result if e.g.
+   * {@link S2CellId#sentinel()} is passed here.
+   */
   @Override
   public boolean contains(S2Cell cell) {
-    // A latitude-longitude rectangle contains a cell if and only if it contains
-    // the cell's bounding rectangle. (This is an exact test.)
     return contains(cell.getRectBound());
   }
 

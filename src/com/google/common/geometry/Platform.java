@@ -36,6 +36,11 @@ final class Platform {
     return StrictMath.scalb(d, scaleFactor);
   }
 
+  /** @see Math#getExponent(double) */
+  static int getExponent(double d) {
+    return Math.getExponent(d);
+  }
+
   /**
    * Returns the {@link Logger} for the class.
    *

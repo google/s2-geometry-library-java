@@ -97,9 +97,10 @@ public strictfp class GeometryTestCase extends TestCase {
   }
 
 
-  // Pick "base" uniformly from range [0,maxLog] and then return
-  // "base" random bits. The effect is to pick a number in the range
-  // [0,2^maxLog-1] with bias towards smaller numbers.
+  /**
+   * Picks a "base" uniformly from range [0,maxLog] and then return "base" random bits. The effect
+   * is to pick a number in the range [0,2^maxLog-1] with bias towards smaller numbers.
+   */
   int skewed(int maxLog) {
     final int base = Math.abs(rand.nextInt()) % (maxLog + 1);
     // if (!base) return 0; // if 0==base, we & with 0 below.

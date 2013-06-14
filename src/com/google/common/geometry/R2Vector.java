@@ -27,8 +27,8 @@ import java.io.Serializable;
  */
 @GwtCompatible(serializable = true)
 public final strictfp class R2Vector implements Serializable {
-  private final double x;
-  private final double y;
+  double x;
+  double y;
 
   /** Constructs a new R2Vector at the origin [0,0] of the R2 coordinate system. */
   public R2Vector() {
@@ -67,10 +67,28 @@ public final strictfp class R2Vector implements Serializable {
    * @throws ArrayIndexOutOfBoundsException Thrown if the given index is not 0 or 1.
    */
   public double get(int index) {
-    if (index > 1) {
+    if (index < 0 || index > 1) {
       throw new ArrayIndexOutOfBoundsException(index);
     }
     return index == 0 ? this.x : this.y;
+  }
+
+  /**
+   * Sets the position of this vector from the given other vector. Package private since this is
+   * only mutable for S2.
+   */
+  void set(R2Vector v) {
+    this.x = v.x();
+    this.y = v.y();
+  }
+
+  /**
+   * Sets the position of this vector from the given values. Package private since this is only
+   * mutable for S2.
+   */
+  void set(double x, double y) {
+    this.x = x;
+    this.y = y;
   }
 
   /** Returns the vector result of {@code p1 - p2}. */
@@ -91,9 +109,27 @@ public final strictfp class R2Vector implements Serializable {
     return new R2Vector(m * p.x, m * p.y);
   }
 
+  /** Returns the vector magnitude. */
+  public double norm() {
+    return Math.sqrt(norm2());
+  }
+
   /** Returns the square of the vector magnitude. */
   public double norm2() {
     return (x * x) + (y * y);
+  }
+
+  /**
+   * Returns a new vector scaled to magnitude 1, or a copy of the original vector if magnitude was
+   * 0.
+   */
+  public static R2Vector normalize(R2Vector vector) {
+    double n = vector.norm();
+    if (n != 0) {
+      return mul(vector, 1.0 / n);
+    } else {
+      return new R2Vector(vector.x, vector.y);
+    }
   }
 
   /**

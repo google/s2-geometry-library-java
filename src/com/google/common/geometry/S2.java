@@ -16,7 +16,6 @@
 package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 @GwtCompatible
@@ -26,6 +25,8 @@ public final strictfp class S2 {
   public static final double M_1_PI = 1.0 / Math.PI;
   public static final double M_PI_2 = Math.PI / 2.0;
   public static final double M_PI_4 = Math.PI / 4.0;
+  /** Inverse of the root of 2. */
+  public static final double M_SQRT1_2 = 1 / Math.sqrt(2);
   public static final double M_SQRT2 = Math.sqrt(2);
   public static final double M_E = Math.E;
 
@@ -47,31 +48,6 @@ public final strictfp class S2 {
   // the axis directions are reversed).
   public static final int SWAP_MASK = 0x01;
   public static final int INVERT_MASK = 0x02;
-
-  // Number of bits in the mantissa of a double.
-  private static final int EXPONENT_SHIFT = 52;
-  // Mask to extract the exponent from a double.
-  private static final long EXPONENT_MASK = 0x7ff0000000000000L;
-
-  /**
-   * If v is non-zero, return an integer {@code exp} such that
-   * {@code (0.5 <= |v|*2^(-exp) < 1)}. If v is zero, return 0.
-   *
-   * <p>Note that this arguably a bad definition of exponent because it makes
-   * {@code exp(9) == 4}. In decimal this would be like saying that the
-   * exponent of 1234 is 4, when in scientific 'exponent' notation 1234 is
-   * {@code 1.234 x 10^3}.
-   *
-   * TODO(dbeaumont): Replace this with "DoubleUtils.getExponent(v) - 1" ?
-   */
-  @VisibleForTesting
-  static int exp(double v) {
-    if (v == 0) {
-      return 0;
-    }
-    long bits = Double.doubleToLongBits(v);
-    return (int) ((EXPONENT_MASK & bits) >> EXPONENT_SHIFT) - 1022;
-  }
 
   /** Mapping Hilbert traversal order to orientation adjustment mask. */
   private static final int[] posToOrientation =
@@ -201,9 +177,10 @@ public final strictfp class S2 {
       }
 
       // This code is equivalent to computing a floating-point "level"
-      // value and rounding up.
-      int exponent = exp(value / deriv);
-      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, -((exponent - 1) >> (dim - 1))));
+      // value and rounding up.  The getExponent() method returns the
+      // exponent corresponding to a fraction in the range [1,2).
+      int exponent = Platform.getExponent(value / deriv);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, -(exponent >> (dim - 1))));
       // assert (level == S2CellId.MAX_LEVEL || getValue(level) <= value);
       // assert (level == 0 || getValue(level - 1) > value);
       return level;
@@ -223,13 +200,12 @@ public final strictfp class S2 {
 
       // This code is equivalent to computing a floating-point "level"
       // value and rounding down.
-      int exponent = exp(deriv / value);
-      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, ((exponent - 1) >> (dim - 1))));
+      int exponent = Platform.getExponent(deriv / value);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, exponent >> (dim - 1)));
       // assert (level == 0 || getValue(level) >= value);
       // assert (level == S2CellId.MAX_LEVEL || getValue(level + 1) < value);
       return level;
     }
-
   }
 
   /**
@@ -247,7 +223,13 @@ public final strictfp class S2 {
    * useful for assertions).
    */
   public static boolean isUnitLength(S2Point p) {
-    return Math.abs(p.norm2() - 1) <= 1e-15;
+    // Normalize() is guaranteed to return a vector whose L2-norm differs from 1
+    // by less than 2 * DBL_EPSILON.  Thus the squared L2-norm differs by less
+    // than 4 * DBL_EPSILON.  The actual calculated Norm2() can have up to 1.5 *
+    // DBL_EPSILON of additional error.  The total error of 5.5 * DBL_EPSILON
+    // can then be rounded down since the result must be a representable
+    // double-precision value.
+    return Math.abs(p.norm2() - 1) <= 5 * DBL_EPSILON;  // About 1.11e-15
   }
 
   /**
@@ -527,6 +509,39 @@ public final strictfp class S2 {
   }
 
   /**
+   * Given the normal of an edge pointing to the left, this method converts the determinant of the
+   * dot product between the edge normal and a following vertex to determine if the vertex is to the
+   * left, a counterclockwise turn, to the right, a clockwise turn, or straight within the precision
+   * limits of the scalar triple product.
+   * @return -1 for clockwise, 0 for straight, 1 for counterclockwise.
+   */
+  public static int triageCCW(double det) {
+    // There are 14 multiplications and additions to compute the determinant
+    // below. Since all three points are normalized, it is possible to show
+    // that the average rounding error per operation does not exceed 2**-54,
+    // the maximum rounding error for an operation whose result magnitude is in
+    // the range [0.5,1). Therefore, if the absolute value of the determinant
+    // is greater than 2*14*(2**-54), the determinant will have the same sign
+    // even if the arguments are rotated (which produces a mathematically
+    // equivalent result but with potentially different rounding errors).
+    final double kMaxDetError = 1.6e-15; // 2 * 14 * 2**-54
+
+    // Double-check borderline cases in debug mode.
+    // assert ((Math.abs(det) <= kMinAbsValue) || (Math.abs(det) >= 100 * kMinAbsValue)
+    //    || (det * expensiveCCW(a, b, c) > 0));
+
+    if (det >= kMaxDetError) {
+      return 1;
+    }
+
+    if (det <= -kMaxDetError) {
+      return -1;
+    }
+
+    return 0;
+  }
+
+  /**
    * WARNING! This requires arbitrary precision arithmetic to be truly robust.
    * This means that for nearly colinear AB and AC, this function may return the
    * wrong answer.
@@ -554,7 +569,12 @@ public final strictfp class S2 {
    * are undefined.
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c) {
-    return robustCCW(a, b, c, S2Point.crossProd(a, b));
+    // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
+    int ccw = triageCCW(S2Point.scalarTripleProduct(c, a, b));
+    if (ccw == 0) {
+      ccw = expensiveCCW(a, b, c);
+    }
+    return ccw;
   }
 
   /**
@@ -566,32 +586,11 @@ public final strictfp class S2 {
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
     // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-
-    // There are 14 multiplications and additions to compute the determinant
-    // below. Since all three points are normalized, it is possible to show
-    // that the average rounding error per operation does not exceed 2**-54,
-    // the maximum rounding error for an operation whose result magnitude is in
-    // the range [0.5,1). Therefore, if the absolute value of the determinant
-    // is greater than 2*14*(2**-54), the determinant will have the same sign
-    // even if the arguments are rotated (which produces a mathematically
-    // equivalent result but with potentially different rounding errors).
-    final double kMinAbsValue = 1.6e-15; // 2 * 14 * 2**-54
-
-    double det = aCrossB.dotProd(c);
-
-    // Double-check borderline cases in debug mode.
-    // assert ((Math.abs(det) < kMinAbsValue) || (Math.abs(det) > 1000 * kMinAbsValue)
-    //    || (det * expensiveCCW(a, b, c) > 0));
-
-    if (det > kMinAbsValue) {
-      return 1;
+    int ccw = triageCCW(aCrossB.dotProd(c));
+    if (ccw == 0) {
+      ccw = expensiveCCW(a, b, c);
     }
-
-    if (det < -kMinAbsValue) {
-      return -1;
-    }
-
-    return expensiveCCW(a, b, c);
+    return ccw;
   }
 
   /**

@@ -19,6 +19,7 @@ import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
+import com.google.common.geometry.S2Projections.FaceSiTi;
 
 import java.util.logging.Logger;
 
@@ -101,6 +102,76 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  public void testFaceXyzToUvw() {
+    for (int face = 0; face < 6; ++face) {
+      assertEquals(new S2Point(0,  0,  0),
+          S2Projections.faceXyzToUvw(face, new S2Point(0, 0, 0)));
+      assertEquals(new S2Point(1,  0,  0),
+          S2Projections.faceXyzToUvw(face, S2Projections.getUAxis(face)));
+      assertEquals(new S2Point(-1,  0,  0),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getUAxis(face))));
+      assertEquals(new S2Point(0,  1,  0),
+          S2Projections.faceXyzToUvw(face, S2Projections.getVAxis(face)));
+      assertEquals(new S2Point(0, -1,  0),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getVAxis(face))));
+      assertEquals(new S2Point(0,  0,  1),
+          S2Projections.faceXyzToUvw(face, S2Projections.getNorm(face)));
+      assertEquals(new S2Point(0,  0, -1),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getNorm(face))));
+    }
+  }
+
+  public void testXYZToFaceSiTi() {
+    // Check the conversion of random cells to center points and back.
+    for (int level = 0; level <= S2CellId.MAX_LEVEL; level++) {
+      for (int i = 0; i < 1000; ++i) {
+        S2CellId id = getRandomCellId(level);
+        S2Point p = id.toPoint();
+        FaceSiTi result = PROJ.xyzToFaceSiTi(p);
+        int resultLevel = PROJ.levelIfCenter(result, p);
+        assertEquals(level, resultLevel);
+        S2CellId actualId = S2CellId.fromFaceIJ(result.face,
+            (int) (result.si / 2), (int) (result.ti / 2)).parent(level);
+        assertEquals(id, actualId);
+
+        // Now test a point near the cell center but not equal to it.
+        S2Point pMoved = S2Point.add(id.toPoint(), new S2Point(1e-13, 1e-13, 1e-13));
+        FaceSiTi moved = PROJ.xyzToFaceSiTi(pMoved);
+        assertEquals(-1, PROJ.levelIfCenter(moved, pMoved));
+        assertEquals(result.face, moved.face);
+        assertEquals(result.si, moved.si);
+        assertEquals(result.ti, moved.ti);
+
+        // Finally, test some random (si,ti) values that may be at different
+        // levels, or not at a valid level at all (for example, si == 0).
+        int faceRandom = random(S2CellId.NUM_FACES);
+        long siRandom, tiRandom;
+        long mask = 0xFFFFFFFFL << (S2CellId.MAX_LEVEL - level);
+        do {
+          siRandom = rand.nextInt() & mask;
+          tiRandom = rand.nextInt() & mask;
+        } while (siRandom > S2Projections.MAX_SITI || tiRandom > S2Projections.MAX_SITI);
+        S2Point pRandom = PROJ.faceSiTiToXyz(faceRandom, siRandom, tiRandom);
+        FaceSiTi actual = PROJ.xyzToFaceSiTi(pRandom);
+        int actualLevel = PROJ.levelIfCenter(actual, pRandom);
+        if (actual.face != faceRandom) {
+          // The chosen point is on the edge of a top-level face cell.
+          assertEquals(-1, actualLevel);
+          assertTrue(actual.si == 0 || actual.si == S2Projections.MAX_SITI
+              || actual.ti == 0 || actual.ti == S2Projections.MAX_SITI);
+        } else {
+          assertEquals(siRandom, actual.si);
+          assertEquals(tiRandom, actual.ti);
+          if (actualLevel >= 0) {
+            assertEquals(pRandom,
+                S2CellId.fromFaceIJ(actual.face, (int) (actual.si / 2), (int) (actual.ti / 2))
+                .parent(actualLevel).toPoint());
+          }
+        }
+      }
+    }
+  }
+
   public void testUVNorms() {
     // Check that GetUNorm and GetVNorm compute right-handed normals for
     // an edge in the increasing U or V direction.
@@ -125,6 +196,40 @@ public strictfp class S2Test extends GeometryTestCase {
           S2Projections.faceUvToXyz(face, 1, 0), S2Projections.faceUvToXyz(face, 0, 0)));
       assertEquals(S2Projections.getVAxis(face), S2Point.sub(
           S2Projections.faceUvToXyz(face, 0, 1), S2Projections.faceUvToXyz(face, 0, 0)));
+    }
+  }
+
+  public void testUVWAxis() {
+    for (int face = 0; face < 6; ++face) {
+      // Check that axes are consistent with faceUvToXyz.
+      assertEquals(S2Projections.getUAxis(face), S2Point.sub(
+          S2Projections.faceUvToXyz(face, 1, 0), S2Projections.faceUvToXyz(face, 0, 0)));
+      assertEquals(S2Projections.getVAxis(face), S2Point.sub(
+          S2Projections.faceUvToXyz(face, 0, 1), S2Projections.faceUvToXyz(face, 0, 0)));
+      assertEquals(S2Projections.getNorm(face), S2Projections.faceUvToXyz(face, 0, 0));
+
+      // Check that every face coordinate frame is right-handed.
+      assertEquals(1D, S2Point.scalarTripleProduct(
+          S2Projections.getUAxis(face),
+          S2Projections.getVAxis(face),
+          S2Projections.getNorm(face)));
+
+      // Check that GetUVWAxis is consistent with getUAxis, getVAxis, getNorm.
+      assertEquals(S2Projections.getUAxis(face), S2Projections.getUVWAxis(face, 0));
+      assertEquals(S2Projections.getVAxis(face), S2Projections.getUVWAxis(face, 1));
+      assertEquals(S2Projections.getNorm(face), S2Projections.getUVWAxis(face, 2));
+    }
+  }
+
+  public void testUVWFace() {
+    // Check that GetUVWFace is consistent with GetUVWAxis.
+    for (int face = 0; face < 6; ++face) {
+      for (int axis = 0; axis < 3; ++axis) {
+        assertEquals(S2Projections.getUVWFace(face, axis, 0),
+            S2Projections.xyzToFace(S2Point.neg(S2Projections.getUVWAxis(face, axis))));
+        assertEquals(S2Projections.getUVWFace(face, axis, 1),
+            S2Projections.xyzToFace(S2Projections.getUVWAxis(face, axis)));
+      }
     }
   }
 
@@ -234,7 +339,6 @@ public strictfp class S2Test extends GeometryTestCase {
   }
 
   public void testMetrics() {
-
     MetricBundle angleSpan = new MetricBundle(
         PROJ.minAngleSpan, PROJ.maxAngleSpan, PROJ.avgAngleSpan);
     MetricBundle width =
@@ -257,10 +361,10 @@ public strictfp class S2Test extends GeometryTestCase {
     // with the global minimums and maximums.
     assertTrue(PROJ.maxEdgeAspect >= 1.0);
     assertTrue(PROJ.maxEdgeAspect
-        < PROJ.maxEdge.deriv() / PROJ.minEdge.deriv());
+        <= PROJ.maxEdge.deriv() / PROJ.minEdge.deriv());
     assertTrue(PROJ.maxDiagAspect >= 1);
     assertTrue(PROJ.maxDiagAspect
-        < PROJ.maxDiag.deriv() / PROJ.minDiag.deriv());
+        <= PROJ.maxDiag.deriv() / PROJ.minDiag.deriv());
 
     // Check various conditions that are provable mathematically.
     testLessOrEqual(width, angleSpan);
@@ -270,15 +374,14 @@ public strictfp class S2Test extends GeometryTestCase {
     assertTrue(PROJ.minArea.deriv()
         >= PROJ.minWidth.deriv() * PROJ.minEdge.deriv() - 1e-15);
     assertTrue(PROJ.maxArea.deriv()
-        < PROJ.maxWidth.deriv() * PROJ.maxEdge.deriv() + 1e-15);
+        <= PROJ.maxWidth.deriv() * PROJ.maxEdge.deriv() + 1e-15);
 
-    // GetMinLevelForLength() and friends have built-in assertions, we just need
-    // to call these functions to test them.
+    // GetMinLevelForLength() and friends have built-in assertions, we just need to call these
+    // functions to test them.
     //
-    // We don't actually check that the metrics are correct here, e.g. that
-    // GetMinWidth(10) is a lower bound on the width of cells at level 10.
-    // It is easier to check these properties in s2cell_unittest, since
-    // S2Cell has methods to compute the cell vertices, etc.
+    // We don't actually check that the metrics are correct here, e.g. that getMinWidth(10) is a
+    // lower bound on the width of cells at level 10. It is easier to check these properties in
+    // S2CellTest, since S2Cell has methods to compute the cell vertices, etc.
 
     for (int level = -2; level <= S2CellId.MAX_LEVEL + 3; ++level) {
       double dWidth = PROJ.minWidth.deriv() * Math.pow(2, -level);
@@ -314,25 +417,61 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
-  public void testExp() {
-    for (int i = 0; i < 10; ++i) {
-      assertEquals(i + 1, S2.exp(Math.pow(2, i)));
-    }
-
-    for (int i = 0; i < 10; ++i) {
-      assertEquals(i + 1, S2.exp(-Math.pow(2, i)));
-    }
-
-    assertEquals(0, S2.exp(0));
-    assertEquals(2, S2.exp(3));
-    assertEquals(3, S2.exp(5));
-  }
-
   public void testTrueCentroidForSmallTriangle() {
     S2Polygon smallPoly = new S2Polygon(Lists.newArrayList(new S2Loop(Lists.newArrayList(
         S2LatLng.fromE7(0x2094588f, 0xfc9edbe6).toPoint(),
         S2LatLng.fromE7(0x209456c4, 0xfc9ee491).toPoint(),
         S2LatLng.fromE7(0x20945e7f, 0xfc9ee954).toPoint()))));
     assertTrue(smallPoly.contains(smallPoly.getCentroid()));
+  }
+
+  // TODO(eengle): Move this to a new test file PlatformTest.java.
+  public void testExp() {
+    assertEquals(-1023, Platform.getExponent(-0.000000));
+    assertEquals(1, Platform.getExponent(-3.141593));
+    assertEquals(3, Platform.getExponent(-12.566371));
+    assertEquals(4, Platform.getExponent(-28.274334));
+    assertEquals(5, Platform.getExponent(-50.265482));
+    assertEquals(6, Platform.getExponent(-78.539816));
+    assertEquals(6, Platform.getExponent(-113.097336));
+    assertEquals(7, Platform.getExponent(-153.938040));
+    assertEquals(7, Platform.getExponent(-201.061930));
+    assertEquals(7, Platform.getExponent(-254.469005));
+    assertEquals(1024, Platform.getExponent(Double.POSITIVE_INFINITY));
+    assertEquals(-1023, Platform.getExponent(0.000000));
+    assertEquals(1, Platform.getExponent(3.141593));
+    assertEquals(3, Platform.getExponent(12.566371));
+    assertEquals(4, Platform.getExponent(28.274334));
+    assertEquals(5, Platform.getExponent(50.265482));
+    assertEquals(6, Platform.getExponent(78.539816));
+    assertEquals(6, Platform.getExponent(113.097336));
+    assertEquals(7, Platform.getExponent(153.938040));
+    assertEquals(7, Platform.getExponent(201.061930));
+    assertEquals(7, Platform.getExponent(254.469005));
+    assertEquals(1024, Platform.getExponent(Double.NEGATIVE_INFINITY));
+    assertEquals(1024, Platform.getExponent(Double.NaN));
+  }
+
+  // TODO(eengle): Move this to a new test file PlatformTest.java.
+  public void testRemainder() {
+    double[] numerators = {0, 1, -2, 7, Math.E, Double.NaN, Double.NEGATIVE_INFINITY};
+    double[] denominators = {0, -3, 4, Math.PI, Double.NaN, Double.POSITIVE_INFINITY};
+    // Expected results from the cross product of each [numerator, denominator] pair defined above.
+    double[] results = {Double.NaN, 0.0, 0.0, 0.0, Double.NaN, 0.0, Double.NaN, 1.0, 1.0, 1.0,
+        Double.NaN, 1.0, Double.NaN, 1.0, -2.0, 1.1415926535897931, Double.NaN, -2.0, Double.NaN,
+        1.0, -1.0, 0.7168146928204138, Double.NaN, 7.0, Double.NaN, -0.2817181715409549,
+        -1.281718171540955, -0.423310825130748, Double.NaN, 2.718281828459045, Double.NaN,
+        Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+        Double.NaN, Double.NaN, Double.NaN, Double.NaN};
+    int resultIndex = 0;
+    for (double f1 : numerators) {
+      for (double f2 : denominators) {
+        double expected = results[resultIndex++];
+        double actual = Platform.IEEEremainder(f1, f2);
+        // Note that we can't just use assertEquals, since the GWT JUnit version returns false
+        // for assertTrue(Double.NaN, Double.NaN).
+        assertTrue(Double.isNaN(expected) ? Double.isNaN(actual) : expected == actual);
+      }
+    }
   }
 }

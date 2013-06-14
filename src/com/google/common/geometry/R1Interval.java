@@ -68,10 +68,18 @@ public final strictfp class R1Interval implements Serializable {
    * calling AddPoint() twice, but it is more efficient.
    */
   public static R1Interval fromPointPair(double p1, double p2) {
+    R1Interval result = new R1Interval();
+    result.initFromPointPair(p1, p2);
+    return result;
+  }
+
+  void initFromPointPair(double p1, double p2) {
     if (p1 <= p2) {
-      return new R1Interval(p1, p2);
+      lo = p1;
+      hi = p2;
     } else {
-      return new R1Interval(p2, p1);
+      lo = p2;
+      hi = p1;
     }
   }
 
@@ -207,6 +215,26 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
+   * Sets the minimum value of this interval. If {@code lo} is greater than {@code hi()} this
+   * interval will become empty.
+   *
+   * <p>Package private since only the S2 libraries have a current need to mutate R1Intervals.
+   */
+  void setLo(double lo) {
+    this.lo = lo;
+  }
+
+  /**
+   * Sets the maximum value of this interval. If {@code hi} is less than {@code lo()} this interval
+   * will become empty.
+   *
+   * <p>Package private since only the S2 libraries have a current need to mutate R1Intervals.
+   */
+  void setHi(double hi) {
+    this.hi = hi;
+  }
+
+  /**
    * Expand this interval so that it contains the given point "p".
    *
    * <p>Package private since only the S2 library needs to mutate R1Intervals.
@@ -259,6 +287,21 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
+   * Union this interval with the given other interval.
+   *
+   * <p>Package private since only S2 classes are intended to mutate R11Intervals for now.
+   */
+  void unionInternal(R1Interval y) {
+    if (isEmpty()) {
+      lo = y.lo;
+      hi = y.hi;
+    } else if (!y.isEmpty()) {
+      lo = Math.min(lo, y.lo);
+      hi = Math.max(hi, y.hi);
+    }
+  }
+
+  /**
    * Return the intersection of this interval with the given interval. Empty
    * intervals do not need to be special-cased.
    */
@@ -303,15 +346,18 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Returns true if the intervals cover the same range, to within a small floating point tolerance.
+   * As {@link #approxEquals(R1Interval, double)}, with a default value for maxError just larger
+   * than typical rounding errors in computing intervals.
    */
   public boolean approxEquals(R1Interval y) {
     return approxEquals(y, 1e-15);
   }
 
   /**
-   * Return true if length of the symmetric difference between the two intervals
-   * is at most the given tolerance.
+   * Returns true if this interval can be transformed into the given interval by moving each
+   * endpoint by at most "maxError". The empty interval is considered to be positioned arbitrarily
+   * on the real line, thus any interval for which {@code length <= 2*maxError} is true matches the
+   * empty interval.
    */
   public boolean approxEquals(R1Interval y, double maxError) {
     if (isEmpty()) {
@@ -320,7 +366,7 @@ public final strictfp class R1Interval implements Serializable {
     if (y.isEmpty()) {
       return getLength() <= maxError;
     }
-    return Math.abs(y.lo - lo) + Math.abs(y.hi - hi) <= maxError;
+    return Math.abs(y.lo - lo) <= maxError && Math.abs(y.hi - hi) <= maxError;
   }
 
   @Override

@@ -122,6 +122,25 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
     return result;
   }
 
+  /**
+   * Returns the distance in 3D coordinates from this to that. Equivalent to
+   * {@code S2Point.sub(a, b).norm()}, but significantly faster.
+   */
+  public double getDistance(S2Point that) {
+    return Math.sqrt(getDistance2(that));
+  }
+
+  /**
+   * Returns the square of the distance in 3D coordinates from this to that. Equivalent to
+   * {@code S2Point.sub(a, b).norm2()}, but significantly faster.
+   */
+  public double getDistance2(S2Point that) {
+    double dx = this.x - that.x;
+    double dy = this.y - that.y;
+    double dz = this.z - that.z;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
   public static final S2Point mul(final S2Point p, double m) {
     return new S2Point(m * p.x, m * p.y, m * p.z);
   }

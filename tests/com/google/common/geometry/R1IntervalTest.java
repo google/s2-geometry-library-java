@@ -42,13 +42,14 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
     assertEquals(0d, unit.lo());
     assertEquals(1d, unit.hi());
     assertEquals(-1d, negunit.getValue(Endpoint.LO));
+    assertEquals(-1d, negunit.getValue(Endpoint.LO));
     assertEquals(0d, negunit.getValue(Endpoint.HI));
     R1Interval ten = new R1Interval(0, 0);
     ten.setValue(Endpoint.HI, 10);
     assertEquals(new R1Interval(0, 10), ten);
-    ten.setValue(Endpoint.LO, -10);
+    ten.setLo(-10);
     assertEquals(new R1Interval(-10, 10), ten);
-    ten.setValue(Endpoint.HI, 0);
+    ten.setHi(0);
     assertEquals(new R1Interval(-10, 0), ten);
     ten.set(0, 10);
     assertEquals(new R1Interval(0, 10), ten);

@@ -34,19 +34,22 @@ import java.io.Serializable;
  *  Note that the point (-1, 0) has two valid representations, Pi and -Pi. The
  * normalized representation of this point internally is Pi, so that endpoints
  * of normal intervals are in the range (-Pi, Pi]. However, we take advantage of
- * the point -Pi to construct two special intervals: the Full() interval is
+ * the point -Pi to construct two special intervals: the full() interval is
  * [-Pi, Pi], and the Empty() interval is [Pi, -Pi].
  *
  */
 @GwtCompatible(serializable = true)
 public final strictfp class S1Interval implements Cloneable, Serializable {
+  private double lo;
+  private double hi;
 
-  private final double lo;
-  private final double hi;
+  public S1Interval() {
+    setEmpty();
+  }
 
   /**
    * Both endpoints must be in the range -Pi to Pi inclusive. The value -Pi is
-   * converted internally to Pi except for the Full() and Empty() intervals.
+   * converted internally to Pi except for the full() and empty() intervals.
    */
   public S1Interval(double lo, double hi) {
     this(lo, hi, false);
@@ -54,8 +57,6 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
 
   /**
    * Copy constructor. Assumes that the given interval is valid.
-   *
-   * TODO(dbeaumont): Make this class immutable and remove this method.
    */
   public S1Interval(S1Interval interval) {
     this.lo = interval.lo;
@@ -63,30 +64,64 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Internal constructor that assumes that both arguments are in the correct
-   * range, i.e. normalization from -Pi to Pi is already done.
+   * Internal constructor that just passes the arguments down to
+   * {@link #set(double, double, boolean)}.
    */
   private S1Interval(double lo, double hi, boolean checked) {
-    double newLo = lo;
-    double newHi = hi;
-    if (!checked) {
-      if (lo == -S2.M_PI && hi != S2.M_PI) {
-        newLo = S2.M_PI;
-      }
-      if (hi == -S2.M_PI && lo != S2.M_PI) {
-        newHi = S2.M_PI;
-      }
-    }
+    set(lo, hi, checked);
+  }
+
+  /**
+   * Assigns the range of this interval, assuming both arguments are in the correct range, i.e.
+   * normalization from -Pi to Pi is already done. If {@code checked} is false, endpoints at -Pi
+   * will be moved to +Pi unless the other endpoint is already there.
+   *
+   * <p>Note that because S1Interval has invariants to maintain after each update, values cannot be
+   * set singly, both endpoints must be set together.
+   */
+  void set(double newLo, double newHi, boolean checked) {
     this.lo = newLo;
     this.hi = newHi;
+    if (!checked) {
+      if (newLo == -S2.M_PI && newHi != S2.M_PI) {
+        lo = S2.M_PI;
+      }
+      if (newHi == -S2.M_PI && newLo != S2.M_PI) {
+        hi = S2.M_PI;
+      }
+    }
+  }
+
+  /**
+   * Sets the range of this interval to the empty interval.
+   *
+   * <p>Package private since only S2 code needs to mutate S1Intervals for now.
+   */
+  void setEmpty() {
+    lo = S2.M_PI;
+    hi = -S2.M_PI;
+  }
+
+  /**
+   * Sets the range of this interval to the full interval.
+   *
+   * <p>Package private since only S2 code needs to mutate S1Intervals for now.
+   */
+  void setFull() {
+    lo = -S2.M_PI;
+    hi = S2.M_PI;
   }
 
   public static S1Interval empty() {
-    return new S1Interval(S2.M_PI, -S2.M_PI, true);
+    S1Interval result = new S1Interval();
+    result.setEmpty();
+    return result;
   }
 
   public static S1Interval full() {
-    return new S1Interval(-S2.M_PI, S2.M_PI, true);
+    S1Interval result = new S1Interval();
+    result.setFull();
+    return result;
   }
 
   /** Convenience method to construct an interval containing a single point. */
@@ -100,10 +135,16 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   /**
    * Convenience method to construct the minimal interval containing the two
    * given points. This is equivalent to starting with an empty interval and
-   * calling AddPoint() twice, but it is more efficient.
+   * calling addPoint() twice, but it is more efficient.
    */
   public static S1Interval fromPointPair(double p1, double p2) {
     // assert (Math.abs(p1) <= S2.M_PI && Math.abs(p2) <= S2.M_PI);
+    S1Interval result = new S1Interval();
+    result.initFromPointPair(p1, p2);
+    return result;
+  }
+
+  void initFromPointPair(double p1, double p2) {
     if (p1 == -S2.M_PI) {
       p1 = S2.M_PI;
     }
@@ -111,9 +152,11 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
       p2 = S2.M_PI;
     }
     if (positiveDistance(p1, p2) <= S2.M_PI) {
-      return new S1Interval(p1, p2, true);
+      this.lo = p1;
+      this.hi = p2;
     } else {
-      return new S1Interval(p2, p1, true);
+      this.lo = p2;
+      this.hi = p1;
     }
   }
 
@@ -127,28 +170,28 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
 
   /**
    * An interval is valid if neither bound exceeds Pi in absolute value, and the
-   * value -Pi appears only in the Empty() and Full() intervals.
+   * value -Pi appears only in the Empty() and full() intervals.
    */
   public boolean isValid() {
-    return (Math.abs(lo()) <= S2.M_PI && Math.abs(hi()) <= S2.M_PI
-        && !(lo() == -S2.M_PI && hi() != S2.M_PI) && !(hi() == -S2.M_PI && lo() != S2.M_PI));
+    return (Math.abs(lo) <= S2.M_PI && Math.abs(hi) <= S2.M_PI
+        && !(lo == -S2.M_PI && hi != S2.M_PI) && !(hi == -S2.M_PI && lo != S2.M_PI));
   }
 
   /** Return true if the interval contains all points on the unit circle. */
   public boolean isFull() {
-    return hi() - lo() == 2 * S2.M_PI;
+    return hi - lo == 2 * S2.M_PI;
   }
 
 
   /** Return true if the interval is empty, i.e. it contains no points. */
   public boolean isEmpty() {
-    return lo() - hi() == 2 * S2.M_PI;
+    return lo - hi == 2 * S2.M_PI;
   }
 
 
   /* Return true if lo() > hi(). (This is true for empty intervals.) */
   public boolean isInverted() {
-    return lo() > hi();
+    return lo > hi;
   }
 
   /**
@@ -156,7 +199,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * result is arbitrary.
    */
   public double getCenter() {
-    double center = 0.5 * (lo() + hi());
+    double center = 0.5 * (lo + hi);
     if (!isInverted()) {
       return center;
     }
@@ -169,7 +212,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * negative.
    */
   public double getLength() {
-    double length = hi() - lo();
+    double length = hi - lo;
     if (length >= 0) {
       return length;
     }
@@ -186,10 +229,10 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * empty interval.
    */
   public S1Interval complement() {
-    if (lo() == hi()) {
+    if (lo == hi) {
       return full(); // Singleton.
     }
-    return new S1Interval(hi(), lo(), true); // Handles
+    return new S1Interval(hi, lo, true); // Handles
     // empty and
     // full.
   }
@@ -211,9 +254,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    */
   public boolean fastContains(double p) {
     if (isInverted()) {
-      return (p >= lo() || p <= hi()) && !isEmpty();
+      return (p >= lo || p <= hi) && !isEmpty();
     } else {
-      return p >= lo() && p <= hi();
+      return p >= lo && p <= hi;
     }
   }
 
@@ -226,9 +269,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     }
 
     if (isInverted()) {
-      return p > lo() || p < hi();
+      return p > lo || p < hi;
     } else {
-      return (p > lo() && p < hi()) || isFull();
+      return (p > lo && p < hi) || isFull();
     }
   }
 
@@ -242,14 +285,14 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
 
     if (isInverted()) {
       if (y.isInverted()) {
-        return y.lo() >= lo() && y.hi() <= hi();
+        return y.lo >= lo && y.hi <= hi;
       }
-      return (y.lo() >= lo() || y.hi() <= hi()) && !isEmpty();
+      return (y.lo >= lo || y.hi <= hi) && !isEmpty();
     } else {
       if (y.isInverted()) {
         return isFull() || y.isEmpty();
       }
-      return y.lo() >= lo() && y.hi() <= hi();
+      return y.lo >= lo && y.hi <= hi;
     }
   }
 
@@ -262,14 +305,14 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   public boolean interiorContains(final S1Interval y) {
     if (isInverted()) {
       if (!y.isInverted()) {
-        return y.lo() > lo() || y.hi() < hi();
+        return y.lo > lo || y.hi < hi;
       }
-      return (y.lo() > lo() && y.hi() < hi()) || y.isEmpty();
+      return (y.lo > lo && y.hi < hi) || y.isEmpty();
     } else {
       if (y.isInverted()) {
         return isFull() || y.isEmpty();
       }
-      return (y.lo() > lo() && y.hi() < hi()) || isFull();
+      return (y.lo > lo && y.hi < hi) || isFull();
     }
   }
 
@@ -284,12 +327,12 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     }
     if (isInverted()) {
       // Every non-empty inverted interval contains Pi.
-      return y.isInverted() || y.lo() <= hi() || y.hi() >= lo();
+      return y.isInverted() || y.lo <= hi || y.hi >= lo;
     } else {
       if (y.isInverted()) {
-        return y.lo() <= hi() || y.hi() >= lo();
+        return y.lo <= hi || y.hi >= lo;
       }
-      return y.lo() <= hi() && y.hi() >= lo();
+      return y.lo <= hi && y.hi >= lo;
     }
   }
 
@@ -299,16 +342,16 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * intervals.
    */
   public boolean interiorIntersects(final S1Interval y) {
-    if (isEmpty() || y.isEmpty() || lo() == hi()) {
+    if (isEmpty() || y.isEmpty() || lo == hi) {
       return false;
     }
     if (isInverted()) {
-      return y.isInverted() || y.lo() < hi() || y.hi() > lo();
+      return y.isInverted() || y.lo < hi || y.hi > lo;
     } else {
       if (y.isInverted()) {
-        return y.lo() < hi() || y.hi() > lo();
+        return y.lo < hi || y.hi > lo;
       }
-      return (y.lo() < hi() && y.hi() > lo()) || isFull();
+      return (y.lo < hi && y.hi > lo) || isFull();
     }
   }
 
@@ -330,84 +373,148 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
       return S1Interval.fromPoint(p);
     } else {
       // Compute distance from p to each endpoint.
-      double dlo = positiveDistance(p, lo());
-      double dhi = positiveDistance(hi(), p);
+      double dlo = positiveDistance(p, lo);
+      double dhi = positiveDistance(hi, p);
       if (dlo < dhi) {
-        return new S1Interval(p, hi());
+        return new S1Interval(p, hi);
       } else {
-        return new S1Interval(lo(), p);
+        return new S1Interval(lo, p);
       }
       // Adding a point can never turn a non-full interval into a full one.
     }
   }
 
   /**
-   * Return an interval that contains all points within a distance "radius" of
-   * a point in this interval. Note that the expansion of an empty interval is
-   * always empty. The radius must be non-negative.
+   * Returns the closest point in the interval to the given point "p". The interval must be
+   * non-empty.
    */
-  public S1Interval expanded(double radius) {
-    // assert (radius >= 0);
-    if (isEmpty()) {
-      return this;
+  public double clampPoint(double p) {
+    // assert (!isEmpty());
+    // assert (Math.abs(p) <= S2.M_PI);
+    if (p == -S2.M_PI) {
+      p = S2.M_PI;
     }
 
-    // Check whether this interval will be full after expansion, allowing
-    // for a 1-bit rounding error when computing each endpoint.
-    if (getLength() + 2 * radius >= 2 * S2.M_PI - 1e-15) {
-      return full();
+    if (fastContains(p)) {
+      return p;
     }
 
-    // NOTE(dbeaumont): Should this remainder be 2 * M_PI or just M_PI ??
-    double lo = Platform.IEEEremainder(lo() - radius, 2 * S2.M_PI);
-    double hi = Platform.IEEEremainder(hi() + radius, 2 * S2.M_PI);
-    if (lo == -S2.M_PI) {
+    // Compute distance from p to each endpoint.
+    double dlo = positiveDistance(p, lo);
+    double dhi = positiveDistance(hi, p);
+    return (dlo < dhi) ? lo : hi;
+  }
+
+  /**
+   * Returns a new interval that has been expanded on each side by the given distance "margin". If
+   * "margin" is negative, then shrink the interval on each side by "margin" instead. The resulting
+   * interval may be empty or full. Any expansion (positive or negative) of a full interval remains
+   * full, and any expansion of an empty interval remains empty.
+   */
+  public S1Interval expanded(double margin) {
+    S1Interval copy = new S1Interval(this);
+    copy.expandedInternal(margin);
+    return copy;
+  }
+
+  /**
+   * Expands this interval on each side by the given distance "margin". If "margin" is negative,
+   * then shrink the interval on each side by "margin" instead. The resulting interval may be empty
+   * or full. Any expansion (positive or negative) of a full interval remains full, and any
+   * expansion of an empty interval remains empty.
+   *
+   * <p>
+   * Package private since only S2 code should be mutating S1Intervals for now.
+   */
+  void expandedInternal(double margin) {
+    if (margin >= 0) {
+      if (isEmpty()) {
+        return;
+      }
+      // Check whether this interval will be full after expansion, allowing
+      // for a 1-bit rounding error when computing each endpoint.
+      if (getLength() + 2 * margin + 2 * S2.DBL_EPSILON >= 2 * S2.M_PI) {
+        setFull();
+        return;
+      }
+    } else {
+      if (isFull()) {
+        return;
+      }
+      // Check whether this interval will be empty after expansion, allowing
+      // for a 1-bit rounding error when computing each endpoint.
+      if (getLength() + 2 * margin - 2 * S2.DBL_EPSILON <= 0) {
+        setEmpty();
+        return;
+      }
+    }
+
+    set(Platform.IEEEremainder(lo - margin, 2 * S2.M_PI),
+        Platform.IEEEremainder(hi + margin, 2 * S2.M_PI), false);
+    if (lo <= -S2.M_PI) {
       lo = S2.M_PI;
     }
-    return new S1Interval(lo, hi);
   }
 
   /**
    * Return the smallest interval that contains this interval and the given
    * interval "y".
    */
-  public S1Interval union(final S1Interval y) {
-    // The y.is_full() case is handled correctly in all cases by the code
+  public S1Interval union(S1Interval y) {
+    S1Interval result = new S1Interval(this);
+    result.unionInternal(y);
+    return result;
+  }
+
+  /**
+   * Union this interval with the given other interval.
+   *
+   * <p>Package private since only S2 classes are intended to mutate S1Intervals for now.
+   */
+  void unionInternal(S1Interval y) {
+    // The y.isFull() case is handled correctly in all cases by the code
     // below, but can follow three separate code paths depending on whether
     // this interval is inverted, is non-inverted but contains Pi, or neither.
-
-    if (y.isEmpty()) {
-      return this;
-    }
-    if (fastContains(y.lo())) {
-      if (fastContains(y.hi())) {
-        // Either this interval contains y, or the union of the two
-        // intervals is the Full() interval.
-        if (contains(y)) {
-          return this; // is_full() code path
+    if (!y.isEmpty()) {
+      if (fastContains(y.lo)) {
+        if (fastContains(y.hi)) {
+          // Either this interval contains y, or the union of the two
+          // intervals is the full interval.
+          if (!contains(y)) {
+            setFull();
+          }
+        } else {
+          hi = y.hi;
         }
-        return full();
+      } else if (fastContains(y.hi)) {
+        lo = y.lo;
+      } else if (isEmpty() || y.fastContains(lo)) {
+        // This interval contains neither endpoint of y. This means that either y
+        // contains all of this interval, or the two intervals are disjoint.
+        lo = y.lo;
+        hi = y.hi;
+      } else {
+        // Check which pair of endpoints are closer together.
+        double dlo = positiveDistance(y.hi, lo);
+        double dhi = positiveDistance(hi, y.lo);
+        if (dlo < dhi) {
+          lo = y.lo;
+        } else {
+          hi = y.hi;
+        }
       }
-      return new S1Interval(lo(), y.hi(), true);
     }
-    if (fastContains(y.hi())) {
-      return new S1Interval(y.lo(), hi(), true);
-    }
+  }
 
-    // This interval contains neither endpoint of y. This means that either y
-    // contains all of this interval, or the two intervals are disjoint.
-    if (isEmpty() || y.fastContains(lo())) {
-      return y;
+  /**
+   * Returns the value of the given endpoint in this interval, which must be 0 for the low end, or 1
+   * for the high end.
+   */
+  public double get(int endpoint) {
+    if (endpoint < 0 || endpoint > 1) {
+      throw new ArrayIndexOutOfBoundsException();
     }
-
-    // Check which pair of endpoints are closer together.
-    double dlo = positiveDistance(y.hi(), lo());
-    double dhi = positiveDistance(hi(), y.lo());
-    if (dlo < dhi) {
-      return new S1Interval(y.lo(), hi(), true);
-    } else {
-      return new S1Interval(lo(), y.hi(), true);
-    }
+    return endpoint == 0 ? lo : hi;
   }
 
   /**
@@ -416,56 +523,74 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * disjoint intervals.
    */
   public S1Interval intersection(final S1Interval y) {
-    // The y.is_full() case is handled correctly in all cases by the code
+    // The y.isFull() case is handled correctly in all cases by the code
     // below, but can follow three separate code paths depending on whether
     // this interval is inverted, is non-inverted but contains Pi, or neither.
 
     if (y.isEmpty()) {
       return empty();
     }
-    if (fastContains(y.lo())) {
-      if (fastContains(y.hi())) {
+    if (fastContains(y.lo)) {
+      if (fastContains(y.hi)) {
         // Either this interval contains y, or the region of intersection
         // consists of two disjoint subintervals. In either case, we want
         // to return the shorter of the two original intervals.
         if (y.getLength() < getLength()) {
-          return y; // is_full() code path
+          return y; // isFull() code path
         }
         return this;
       }
-      return new S1Interval(y.lo(), hi(), true);
+      return new S1Interval(y.lo, hi, true);
     }
-    if (fastContains(y.hi())) {
-      return new S1Interval(lo(), y.hi(), true);
+    if (fastContains(y.hi)) {
+      return new S1Interval(lo, y.hi, true);
     }
 
     // This interval contains neither endpoint of y. This means that either y
     // contains all of this interval, or the two intervals are disjoint.
 
-    if (y.fastContains(lo())) {
-      return this; // is_empty() okay here
+    if (y.fastContains(lo)) {
+      return this; // isEmpty() okay here
     }
     // assert (!intersects(y));
     return empty();
   }
 
   /**
-   * Return true if the length of the symmetric difference between the two
-   * intervals is at most the given tolerance.
+   * Returns true if this interval can be transformed into the given interval by moving each
+   * endpoint by at most "maxError" (and without the endpoints crossing, which would invert the
+   * interval). Empty and full intervals are considered to start at an arbitrary point on the unit
+   * circle, thus any interval with (length <= 2*maxError) matches the empty interval, and any
+   * interval with (length >= 2*Pi - 2*maxError) matches the full interval.
    */
-  public boolean approxEquals(final S1Interval y, double maxError) {
+  public boolean approxEquals(S1Interval y, double maxError) {
+    // Full and empty intervals require special cases because the "endpoints"
+    // are considered to be positioned arbitrarily.
     if (isEmpty()) {
-      return y.getLength() <= maxError;
+      return y.getLength() <= 2 * maxError;
     }
     if (y.isEmpty()) {
-      return getLength() <= maxError;
+      return getLength() <= 2 * maxError;
     }
-    return (Math.abs(Platform.IEEEremainder(y.lo() - lo(), 2 * S2.M_PI))
-        + Math.abs(Platform.IEEEremainder(y.hi() - hi(), 2 * S2.M_PI))) <= maxError;
+    if (isFull()) {
+      return y.getLength() >= 2 * (S2.M_PI - maxError);
+    }
+    if (y.isFull()) {
+      return getLength() >= 2 * (S2.M_PI - maxError);
+    }
+
+    // The purpose of the last test below is to verify that moving the endpoints
+    // does not invert the interval, e.g. [-1e20, 1e20] vs. [1e20, -1e20].
+    return (Math.abs(Platform.IEEEremainder(y.lo - lo, 2 * S2.M_PI)) <= maxError &&
+        Math.abs(Platform.IEEEremainder(y.hi - hi, 2 * S2.M_PI)) <= maxError &&
+        Math.abs(getLength() - y.getLength()) <= 2 * maxError);
   }
 
+  /**
+   * As {@link #approxEquals(S1Interval, double)}, with a default maxError of 1e-15.
+   */
   public boolean approxEquals(final S1Interval y) {
-    return approxEquals(y, 1e-9);
+    return approxEquals(y, 1e-15);
   }
 
   /**
@@ -475,7 +600,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   public boolean equals(Object that) {
     if (that instanceof S1Interval) {
       S1Interval thatInterval = (S1Interval) that;
-      return lo() == thatInterval.lo() && hi() == thatInterval.hi();
+      return lo == thatInterval.lo && hi == thatInterval.hi;
     }
     return false;
   }
@@ -483,14 +608,14 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   @Override
   public int hashCode() {
     long value = 17;
-    value = 37 * value + Double.doubleToLongBits(lo());
-    value = 37 * value + Double.doubleToLongBits(hi());
+    value = 37 * value + Double.doubleToLongBits(lo);
+    value = 37 * value + Double.doubleToLongBits(hi);
     return (int) ((value >>> 32) ^ value);
   }
 
   @Override
   public String toString() {
-    return "[" + this.lo() + ", " + this.hi() + "]";
+    return "[" + this.lo + ", " + this.hi + "]";
   }
 
   /**

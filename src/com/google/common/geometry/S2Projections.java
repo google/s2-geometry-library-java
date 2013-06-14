@@ -43,12 +43,20 @@ import com.google.common.geometry.S2.Metric;
  * <li>(face, si, ti): Discrete cell-space coordinates. These are obtained by multiplying "s" and
  * "t" by 2**31 and rounding to the nearest unsigned integer. Discrete coordinates lie in the range
  * [0,2**31]. This coordinate system can represent the edge and center positions of all cells with
- * no loss of precision (including non-leaf cells).
+ * no loss of precision (including non-leaf cells). In binary, each coordinate of a level-k cell
+ * center ends with a 1 followed by (30 - k) 0s. The coordinates of its edges end with (at least)
+ * (31 - k) 0s.
  *
  * <li>(face, u, v): Cube-space coordinates. To make the cells at each level more uniform in size
- * after they are projected onto the sphere, we apply apply a nonlinear transformation of the form
+ * after they are projected onto the sphere, we apply a nonlinear transformation of the form
  * u=f(s), v=f(t). The (u, v) coordinates after this transformation give the actual coordinates on
  * the cube face (modulo some 90 degree rotations) before it is projected onto the unit sphere.
+ *
+ * <li>(face, u, v, w): Per-face coordinate frame. This is an extension of the (face, u, v)
+ * cube-space coordinates that adds a third axis "w" in the direction of the face normal. It is
+ * always a right-handed 3D coordinate system. Cube-space coordinates can be converted to this frame
+ * by setting w=1, while (u,v,w) coordinates can be projected onto the cube face by dividing by w,
+ * i.e. (face, u/w, v/w).
  *
  * <li>(x, y, z): Direction vector (S2Point). Direction vectors are not necessarily unit length, and
  * are often chosen to be points on the biunit cube [-1,+1]x[-1,+1]x[-1,+1]. They can be be
@@ -56,32 +64,20 @@ import com.google.common.geometry.S2.Metric;
  *
  * <li>(lat, lng): Latitude and longitude (S2LatLng). Latitudes must be between -90 and 90 degrees
  * inclusive, and longitudes must be between -180 and 180 degrees inclusive.
+ * </ul>
  *
  * <p>Note that the (i, j), (s, t), (si, ti), and (u, v) coordinate systems are right-handed on all
  * six faces.
  *
  * <p>We have implemented three different projections from cell-space (s,t) to cube-space (u,v):
- * linear, quadratic, and tangent. The default is in {@link S2Projections#PROJ}. These projections
- * have the following tradeoffs:
+ * {@link S2Projections#S2_LINEAR_PROJECTION}, {@link S2Projections#S2_TAN_PROJECTION}, and
+ * {@link S2Projections#S2_QUADRATIC_PROJECTION}. The default is in {@link S2Projections#PROJ}, and
+ * uses the quadratic projection since it has the best overall behavior.
  *
- * <ul>
- * <li>Linear - This is the fastest transformation, but also produces the least uniform cell sizes.
- * Cell areas vary by a factor of about 5.2, with the largest cells at the center of each face and
- * the smallest cells in the corners.
- * <li>Tangent - Transforming the coordinates via atan() makes the cell sizes more uniform. The
- * areas vary by a maximum ratio of 1.4 as opposed to a maximum ratio of 5.2. However, each call to
- * atan() is about as expensive as all of the other calculations combined when converting from
- * points to cell IDs, i.e. it reduces performance by a factor of 3.
- * <li>Quadratic - This is an approximation of the tangent projection that is much faster and
- * produces cells that are almost as uniform in size. It is about 3 times faster than the tangent
- * projection for converting cell IDs to points or vice versa. Cell areas vary by a maximum ratio of
- * about 2.1.
- * </ul>
- *
- * <p>Here is a table comparing the cell uniformity using each projection. "Area ratio" is the
+ * <p>Here is a table comparing the cell uniformity using each projection. "Area Ratio" is the
  * maximum ratio over all subdivision levels of the largest cell area to the smallest cell area at
- * that level, "edge ratio" is the maximum ratio of the longest edge of any cell to the shortest
- * edge of any cell at the same level, and "diag ratio" is the ratio of the longest diagonal of any
+ * that level, "Edge Ratio" is the maximum ratio of the longest edge of any cell to the shortest
+ * edge of any cell at the same level, and "Diag Ratio" is the ratio of the longest diagonal of any
  * cell to the shortest diagonal of any cell at the same level. "ToPoint" and "FromPoint" are the
  * times in microseconds required to convert cell IDs to and from points (unit vectors)
  * respectively. "ToPointRaw" is the time to convert to a non-unit-length vector, which is all that
@@ -93,7 +89,7 @@ import com.google.common.geometry.S2.Metric;
  * <th>Area Ratio</th>
  * <th>Edge Ratio</th>
  * <th>Diag Ratio</th>
- * <th>ToPointRaw</th>
+ * <th>ToPointRaw (microseconds)</th>
  * <th>ToPoint (microseconds)</th>
  * <th>FromPoint (microseconds)</th>
  * </tr>
@@ -141,6 +137,12 @@ public strictfp enum S2Projections {
   // shapes and sizes of cells, S2_LINEAR_PROJECTION is considerably worse, and
   // S2_QUADRATIC_PROJECTION is somewhere in between (but generally closer to
   // the tangent projection than the linear one).
+
+  /**
+   * This is the fastest transformation, but also produces the least uniform cell sizes.
+   * Cell areas vary by a factor of about 5.2, with the largest cells at the center of each face and
+   * the smallest cells in the corners.
+   */
   S2_LINEAR_PROJECTION(
       4 / (3 * Math.sqrt(3)), // minArea 0.770
       4, // maxArea 4.000
@@ -163,6 +165,12 @@ public strictfp enum S2Projections {
       return 0.5 * (u + 1);
     }
   },
+  /**
+   * Transforming the coordinates via atan() makes the cell sizes more uniform. The
+   * areas vary by a maximum ratio of 1.4 as opposed to a maximum ratio of 5.2. However, each call
+   * to atan() is about as expensive as all of the other calculations combined when converting from
+   * points to cell IDs, i.e. it reduces performance by a factor of 3.
+   */
   S2_TAN_PROJECTION(
       (S2.M_PI * S2.M_PI) / (4 * Math.sqrt(2)), // minArea 1.745
       S2.M_PI * S2.M_PI / 4, // maxArea 2.467
@@ -191,6 +199,12 @@ public strictfp enum S2Projections {
       return (2 * S2.M_1_PI) * (Math.atan(u) + S2.M_PI_4);
     }
   },
+  /**
+   * This is an approximation of the tangent projection that is much faster and
+   * produces cells that are almost as uniform in size. It is about 3 times faster than the tangent
+   * projection for converting cell IDs to points or vice versa. Cell areas vary by a maximum ratio
+   * of about 2.1.
+   */
   S2_QUADRATIC_PROJECTION(
       8 * Math.sqrt(2) / 9, // minArea 1.257
       2.635799256963161491, // maxArea 2.636
@@ -221,6 +235,30 @@ public strictfp enum S2Projections {
       }
     }
   };
+
+  /**
+   * The maximum value of an si- or ti-coordinate. The range of valid (si,ti) values is
+   * [0..MAX_SiTi].
+   */
+  public static final long MAX_SITI = 1L << (S2CellId.MAX_LEVEL + 1);
+
+  /** The U,V,W axes for each face. */
+  private static final S2Point[][] FACE_UVW_AXES = {
+    {S2Point.Y_POS, S2Point.Z_POS, S2Point.X_POS},
+    {S2Point.X_NEG, S2Point.Z_POS, S2Point.Y_POS},
+    {S2Point.X_NEG, S2Point.Y_NEG, S2Point.Z_POS},
+    {S2Point.Z_NEG, S2Point.Y_NEG, S2Point.X_NEG},
+    {S2Point.Z_NEG, S2Point.X_POS, S2Point.Y_NEG},
+    {S2Point.Y_POS, S2Point.X_POS, S2Point.Z_NEG}};
+
+  /** The precomputed neighbors of each face. See {@link #getUVWFace}. */
+  private static final int[][][] FACE_UVW_FACES = {
+    {{4, 1}, {5, 2}, {3, 0}},
+    {{0, 3}, {5, 2}, {4, 1}},
+    {{0, 3}, {1, 4}, {5, 2}},
+    {{2, 5}, {1, 4}, {0, 3}},
+    {{2, 5}, {3, 0}, {1, 4}},
+    {{4, 1}, {3, 0}, {2, 5}}};
 
   /** Minimum area of a cell at level k. */
   public final Metric minArea;
@@ -340,14 +378,49 @@ public strictfp enum S2Projections {
   public abstract double stToUV(double s);
 
   /**
+   * Returns the i- or j-index of the leaf cell containing the given s- or t-value. If the argument
+   * is outside the range spanned by valid leaf cell indices, return the index of the closest valid
+   * leaf cell (i.e., return values are clamped to the range of valid leaf cell indices).
+   */
+  public static int stToIj(double s) {
+    return Math.max(0, Math.min(S2CellId.MAX_SIZE - 1,
+        (int) Math.round(S2CellId.MAX_SIZE * s - 0.5)));
+  }
+
+  /**
+   * Converts the i- or j-index of a leaf cell to the minimum corresponding s- or t-value contained
+   * by that cell.  The argument must be in the range [0..2**30], i.e. up to one position beyond the
+   * normal range of valid leaf cell indices.
+   */
+  public static double ijToStMin(int i) {
+    // assert (i >= 0 && i <= S2CellId.MAX_SIZE);
+    return (1.0 / S2CellId.MAX_SIZE) * i;
+  }
+
+  /**
+   * Returns the s- or t-value corresponding to the given si- or ti-value.
+   */
+  public static double siTiToSt(long si) {
+    // assert (si >= 0 && si <= MAX_SITI);
+    return (1.0 / MAX_SITI) * si;
+  }
+
+  /**
+   * Returns the si- or ti-coordinate that is nearest to the given s- or t-value.  The result may be
+   * outside the range of valid (si,ti)-values.
+   */
+  public static long stToSiTi(double s) {
+    return Math.round(s * MAX_SITI);
+  }
+
+  /**
    * The inverse of {@link #stToUV(double)}. Note that it is not always true that
    * {@code uvToST(stToUV(x)) == x} due to numerical errors.
    */
   public abstract double uvToST(double u);
 
   /**
-   * Convert (face, u, v) coordinates to a direction vector (not necessarily
-   * unit length).
+   * Convert (face, u, v) coordinates to a direction vector (not necessarily unit length).
    */
   public static S2Point faceUvToXyz(int face, double u, double v) {
     switch (face) {
@@ -366,8 +439,47 @@ public strictfp enum S2Projections {
     }
   }
 
+  /**
+   * Convert (face, u, v) coordinates to a direction vector (not necessarily unit length).
+   */
+  public static S2Point faceUvToXyz(int face, R2Vector uv) {
+    return faceUvToXyz(face, uv.x(), uv.y());
+  }
+
+  /**
+   * If the dot product of p with the given face normal is positive, set the corresponding u and v
+   * values (which may lie outside the range [-1,1]) and return true. Otherwise return null.
+   */
+  public static R2Vector faceXyzToUv(int face, S2Point p) {
+    if (face < 3) {
+      if (p.get(face) <= 0) {
+        return null;
+      }
+    } else {
+      if (p.get(face - 3) >= 0) {
+        return null;
+      }
+    }
+    return validFaceXyzToUv(face, p);
+  }
+
+  /**
+   * Given a *valid* face for the given point p (meaning that dot product of p with the face normal
+   * is positive), return the corresponding u and v values (which may lie outside the range [-1,1]).
+   */
   public static R2Vector validFaceXyzToUv(int face, S2Point p) {
-    // assert (p.dotProd(faceUvToXyz(face, 0, 0)) > 0);
+    R2Vector result = new R2Vector();
+    validFaceXyzToUv(face, p, result);
+    return result;
+  }
+
+  /**
+   * As {@link #validFaceXyzToUv(int, S2Point)}, except {@code result} is updated, instead of a
+   * being returned in a new instance. Package-private because non-S2 classes should not be
+   * mutating R2Vectors.
+   */
+  static void validFaceXyzToUv(int face, S2Point p, R2Vector result) {
+    // assert (p.dotProd(getNorm(face)) > 0);
     double pu;
     double pv;
     switch (face) {
@@ -396,9 +508,96 @@ public strictfp enum S2Projections {
         pv = -p.x / p.z;
         break;
     }
-    return new R2Vector(pu, pv);
+    result.set(pu, pv);
   }
 
+  /**
+   * Returns the given point P transformed to the (u,v,w) coordinate frame of the given face (where
+   * the w-axis represents the face normal).
+   */
+  public static S2Point faceXyzToUvw(int face, S2Point p) {
+    // The result coordinates are simply the dot products of P with the (u,v,w) axes for the given
+    // face (see FACE_UVW_AXES).
+    switch (face) {
+      case 0:  return new S2Point(p.y,  p.z,  p.x);
+      case 1:  return new S2Point(-p.x,  p.z,  p.y);
+      case 2:  return new S2Point(-p.x, -p.y,  p.z);
+      case 3:  return new S2Point(-p.z, -p.y, -p.x);
+      case 4:  return new S2Point(-p.z,  p.x, -p.y);
+      default: return new S2Point(p.y, p.x, -p.z);
+    }
+  }
+
+  /** Returns the level of the given si or ti coordinate. */
+  private static final int siTiToLevel(long siTi) {
+    return S2CellId.MAX_LEVEL - Long.numberOfTrailingZeros(siTi | MAX_SITI);
+  }
+
+  /**
+   * A [face, si, ti] position. This is package private for now, since we may want to rework the
+   * class to use 32-bit ints instead.
+   */
+  static final class FaceSiTi {
+    /** The face on which the position exists. */
+    public final int face;
+    /** The si coordinate. See {@link S2Projections} for details. */
+    public final long si;
+    /** The ti coordinate. See {@link S2Projections} for details. */
+    public final long ti;
+
+    /** Package private constructor. Only S2 should create these for now. */
+    FaceSiTi(int face, long si, long ti) {
+      this.face = face;
+      this.si = si;
+      this.ti = ti;
+    }
+  }
+
+  /** Convert (face, si, ti) coordinates to a direction vector (not necessarily unit length.) */
+  public S2Point faceSiTiToXyz(int face, long si, long ti) {
+    double u = stToUV(siTiToSt(si));
+    double v = stToUV(siTiToSt(ti));
+    return faceUvToXyz(face, u, v);
+  }
+
+  /** Convert a direction vector (not necessarily unit length) to (face, si, ti) coordinates. */
+  FaceSiTi xyzToFaceSiTi(S2Point p) {
+    int face = xyzToFace(p);
+    R2Vector uv = validFaceXyzToUv(face, p);
+    long si = stToSiTi(uvToST(uv.x()));
+    long ti = stToSiTi(uvToST(uv.y()));
+    return new FaceSiTi(face, si, ti);
+  }
+
+  /** If p is exactly a cell center, returns the level of the cell, -1 otherwise. */
+  int levelIfCenter(FaceSiTi fst, S2Point p) {
+    // If the levels corresponding to si,ti are not equal, then p is not a cell
+    // center.  The si,ti values 0 and MAX_SITI need to be handled specially
+    // because they do not correspond to cell centers at any valid level; they
+    // are mapped to level -1 by the code below.
+    int level = siTiToLevel(fst.si);
+    if (level < 0 || level != siTiToLevel(fst.ti)) {
+      return -1;
+    } else {
+      // assert (level <= S2CellId.MAX_LEVEL);
+      // In infinite precision, this test could be changed to ST == SiTi. However,
+      // due to rounding errors, UVtoST(XYZtoFaceUV(FaceUVtoXYZ(STtoUV(...)))) is
+      // not idempotent. On the other hand, centerRaw is computed exactly the same
+      // way p was originally computed (if it is indeed the center of an S2Cell):
+      // the comparison can be exact.
+      S2Point center = S2Point.normalize(faceSiTiToXyz(fst.face, fst.si, fst.ti));
+      if (p.equals(center)) {
+        return level;
+      } else {
+        return -1;
+      }
+    }
+  }
+
+  /**
+   * Returns the face containing the given direction vector (for points on the boundary between
+   * faces, the result is arbitrary but repeatable.)
+   */
   public static int xyzToFace(S2Point p) {
     int face = p.largestAbsComponent();
     if (p.get(face) < 0) {
@@ -407,19 +606,11 @@ public strictfp enum S2Projections {
     return face;
   }
 
-  public static R2Vector faceXyzToUv(int face, S2Point p) {
-    if (face < 3) {
-      if (p.get(face) <= 0) {
-        return null;
-      }
-    } else {
-      if (p.get(face - 3) >= 0) {
-        return null;
-      }
-    }
-    return validFaceXyzToUv(face, p);
-  }
-
+  /**
+   * Returns the right-handed normal (not necessarily unit length) for an edge in the direction of
+   * the positive v-axis at the given u-value on the given face.  (This vector is perpendicular to
+   * the plane through the sphere origin that contains the given edge.)
+   */
   public static S2Point getUNorm(int face, double u) {
     switch (face) {
       case 0:
@@ -437,6 +628,10 @@ public strictfp enum S2Projections {
     }
   }
 
+  /**
+   * Returns the right-handed normal (not necessarily unit length) for an edge in the direction of
+   * the positive u-axis at the given v-value on the given face.
+   */
   public static S2Point getVNorm(int face, double v) {
     switch (face) {
       case 0:
@@ -454,42 +649,36 @@ public strictfp enum S2Projections {
     }
   }
 
-  public static S2Point getNorm(int face) {
-    return faceUvToXyz(face, 0, 0);
-  }
-
+  /** Returns the u-axis for the given face. */
   public static S2Point getUAxis(int face) {
-    switch (face) {
-      case 0:
-        return S2Point.Y_POS;
-      case 1:
-        return S2Point.X_NEG;
-      case 2:
-        return S2Point.X_NEG;
-      case 3:
-        return S2Point.Z_NEG;
-      case 4:
-        return S2Point.Z_NEG;
-      default:
-        return S2Point.Y_POS;
-    }
+    return getUVWAxis(face, 0);
   }
 
+  /** Returns the v-axis for the given face. */
   public static S2Point getVAxis(int face) {
-    switch (face) {
-      case 0:
-        return S2Point.Z_POS;
-      case 1:
-        return S2Point.Z_POS;
-      case 2:
-        return S2Point.Y_NEG;
-      case 3:
-        return S2Point.Y_NEG;
-      case 4:
-        return S2Point.X_POS;
-      default:
-        return S2Point.X_POS;
-    }
+    return getUVWAxis(face, 1);
+  }
+
+  /** Returns the unit-length normal for the given face. */
+  public static S2Point getNorm(int face) {
+    return getUVWAxis(face, 2);
+  }
+
+  /** Returns the given axis of the given face (u=0, v=1, w=2). */
+  static S2Point getUVWAxis(int face, int axis) {
+    return FACE_UVW_AXES[face][axis];
+  }
+
+  /**
+   * Returns the face that lies in the given direction (negative=0, positive=1) of the given axis
+   * (u=0, v=1, w=2) in the given face. For example, {@code getUVWFace(4, 0, 1)} returns the face
+   * that is adjacent to face 4 in the positive u-axis direction.
+   */
+  static int getUVWFace(int face, int axis, int direction) {
+    // assert (face >= 0 && face <= 5);
+    // assert (axis >= 0 && axis <= 2);
+    // assert (direction >= 0 && direction <= 1);
+    return FACE_UVW_FACES[face][axis][direction];
   }
 
   /** The default transformation between ST and UV coordinates. */

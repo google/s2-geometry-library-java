@@ -264,6 +264,37 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  public void testPolarClosure() {
+    assertEquals(rectFromDegrees(-89, 0, 89, 1),
+        rectFromDegrees(-89, 0, 89, 1).polarClosure());
+    assertEquals(rectFromDegrees(-90, -180, -45, 180),
+        rectFromDegrees(-90, -30, -45, 100).polarClosure());
+    assertEquals(rectFromDegrees(89, -180, 90, 180),
+        rectFromDegrees(89, 145, 90, 146).polarClosure());
+    assertEquals(S2LatLngRect.full(),
+        rectFromDegrees(-90, -145, 90, -144).polarClosure());
+  }
+
+  public void testApproxEquals() {
+    // S1Interval and R1Interval have additional testing.
+
+    assertTrue(S2LatLngRect.empty().approxEquals(rectFromDegrees(1, 5, 1, 5)));
+    assertTrue(rectFromDegrees(1, 5, 1, 5).approxEquals(S2LatLngRect.empty()));
+    assertFalse(rectFromDegrees(1, 5, 1, 5).approxEquals(rectFromDegrees(2, 7, 2, 7)));
+
+    // Test the maxError (double) parameter.
+    assertTrue(rectFromDegrees(10, 10, 20, 20).approxEquals(
+        rectFromDegrees(11, 11, 19, 19), S1Angle.degrees(1.001).radians()));
+    assertFalse(rectFromDegrees(10, 10, 20, 20).approxEquals(
+        rectFromDegrees(11, 11, 19, 19), S1Angle.degrees(0.999).radians()));
+
+    // Test the maxError (S2LatLng) parameter.
+    assertTrue(rectFromDegrees(0, 10, 20, 30).approxEquals(
+        rectFromDegrees(-1, 8, 21, 32), S2LatLng.fromDegrees(1.001, 2.001)));
+    assertFalse(rectFromDegrees(0, 10, 20, 30).approxEquals(
+        rectFromDegrees(-1, 8, 21, 32), S2LatLng.fromDegrees(0.999, 1.999)));
+  }
+
   public void testArea() {
     assertEquals(0.0, S2LatLngRect.empty().area());
     assertDoubleNear(4 * Math.PI, S2LatLngRect.full().area());
