@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 
 import java.util.ArrayList;
@@ -273,18 +274,24 @@ public strictfp class S2CellTest extends GeometryTestCase {
       // Check all children for the first few levels, and then sample randomly.
       // Also subdivide one corner cell, one edge cell, and one center cell
       // so that we have a better chance of sample the minimum metric values.
+      // We also always subdivide the cells containing a few chosen points so
+      // that we have a better chance of sampling the minimum and maximum metric
+      // values.  kMaxSizeUV is the absolute value of the u- and v-coordinate
+      // where the cell size at a given level is maximal.
+      double kMaxSizeUV = 0.3964182625366691;
+      R2Vector specialUv[] = {
+          new R2Vector(S2.DBL_EPSILON, S2.DBL_EPSILON), // Face center
+          new R2Vector(S2.DBL_EPSILON, 1), // Edge midpoint
+          new R2Vector(1, 1), // Face corner
+          new R2Vector(kMaxSizeUV, kMaxSizeUV), // Largest cell area
+          new R2Vector(S2.DBL_EPSILON, kMaxSizeUV)}; // Longest edge/diagonal
       boolean forceSubdivide = false;
-      S2Point center = S2Projections.getNorm(children[i].face());
-      S2Point edge = S2Point.add(center, S2Projections.getUAxis(children[i].face()));
-      S2Point corner = S2Point.add(edge, S2Projections.getVAxis(children[i].face()));
-      for (int j = 0; j < 4; ++j) {
-        S2Point p = children[i].getVertexRaw(j);
-        if (p.equals(center) || p.equals(edge) || p.equals(corner)) {
+      for (int k = 0; k < specialUv.length; k++) {
+        if (children[i].getBoundUV().contains(specialUv[k])) {
           forceSubdivide = true;
         }
       }
-      if (forceSubdivide || cell.level() < (DEBUG_MODE ? 5 : 6)
-        || random(DEBUG_MODE ? 10 : 4) == 0) {
+      if (forceSubdivide || cell.level() < (DEBUG_MODE ? 5 : 6) || oneIn(DEBUG_MODE ? 5 : 4)) {
         testSubdivide(children[i]);
       }
     }
@@ -352,7 +359,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
 
   public void testSubdivide() {
     for (int face = 0; face < 6; ++face) {
-      testSubdivide(S2Cell.fromFacePosLevel(face, (byte) 0, 0));
+      testSubdivide(S2Cell.fromFace(face));
     }
 
     // The maximum edge *ratio* is the ratio of the longest edge of any cell to
@@ -422,24 +429,46 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
-  static final int MAX_LEVEL = DEBUG_MODE ? 6 : 11;
+  public void testCellVsLoopRectBound() {
+    // This test verifies that the S2Cell and S2Loop bounds contain each other
+    // to within their maximum errors.
+    //
+    // The S2Cell and S2Loop calculations for the latitude of a vertex can differ
+    // by up to 2 * DBL_EPSILON, therefore the S2Cell bound should never exceed
+    // the S2Loop bound by more than this (the reverse is not true, because the
+    // S2Loop code sometimes thinks that the maximum occurs along an edge).
+    // Similarly, the longitude bounds can differ by up to 4 * DBL_EPSILON since
+    // the S2Cell bound has an error of 2 * DBL_EPSILON and then expands by this
+    // amount, while the S2Loop bound does no expansion at all.
 
-  public void expandChildren1(S2Cell cell) {
-    S2Cell[] children = new S2Cell[4];
-    assertTrue(cell.subdivide(children));
-    if (children[0].level() < MAX_LEVEL) {
-      for (int pos = 0; pos < 4; ++pos) {
-        expandChildren1(children[pos]);
-      }
+    // Possible additional S2Cell error compared to S2Loop error:
+    final S2LatLng kCellError = S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 4 * S2.DBL_EPSILON);
+    // Possible additional S2Loop error compared to S2Cell error:
+    final S2LatLng kLoopError = S2EdgeUtil.RectBounder.maxErrorForTests();
+
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      S2Loop loop = new S2Loop(cell);
+      S2LatLngRect cellBound = cell.getRectBound();
+      S2LatLngRect loopBound = loop.getRectBound();
+      assertTrue(loopBound.expanded(kCellError).contains(cellBound));
+      assertTrue(cellBound.expanded(kLoopError).contains(loopBound));
     }
   }
 
-  public void expandChildren2(S2Cell cell) {
-    S2CellId id = cell.id().childBegin();
-    for (int pos = 0; pos < 4; ++pos, id = id.next()) {
-      S2Cell child = new S2Cell(id);
-      if (child.level() < MAX_LEVEL) {
-        expandChildren2(child);
+  public void testRectBoundIsLargeEnough() {
+    // Construct many points that are nearly on an S2Cell edge, and verify that
+    // whenever the cell contains a point P then its bound contains S2LatLng(P).
+    for (int iter = 0; iter < 1000; /* advanced in loop below */) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      int i1 = rand.nextInt(4);
+      int i2 = (i1 + 1) & 3;
+      S2Point v1 = cell.getVertex(i1);
+      S2Point v2 = samplePoint(S2Cap.fromAxisAngle(cell.getVertex(i2), S1Angle.radians(1e-15)));
+      S2Point p = S2EdgeUtil.interpolate(rand.nextDouble(), v1, v2);
+      if (new S2Loop(cell).contains(p)) {
+        assertTrue(cell.getRectBound().contains(new S2LatLng(p)));
+        ++iter;
       }
     }
   }

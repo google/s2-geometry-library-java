@@ -70,4 +70,11 @@ final class Platform {
   static String formatString(String format, Object... params) {
     return String.format(format, params);
   }
+
+  /**
+   * A portable way to hash a double value.
+   */
+  public static long doubleHash(double value) {
+    return Double.doubleToLongBits(value);
+  }
 }

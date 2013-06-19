@@ -88,6 +88,54 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     cellIds.clear();
   }
 
+  /**
+   * Create a cell union that corresponds to a continuous range of cell ids. The output is a
+   * normalized collection of cell ids that covers the leaf cells between "minId" and "maxId"
+   * inclusive.
+   *
+   * <p>Requires that minId.isLeaf(), maxId.isLeaf(), and minId <= maxId.
+   */
+  public void initFromMinMax(S2CellId minId, S2CellId maxId) {
+    // assert minId.isLeaf();
+    // assert maxId.isLeaf();
+    // assert minId.compareTo(maxId) <= 0;
+    // assert minId.isValid() && maxId.isValid();
+    initFromBeginEnd(minId, maxId.next());
+  }
+
+  /**
+   * As {@link #initFromMinMax(S2CellId, S2CellId)}, except that the union covers the range of leaf
+   * cells from "begin" (inclusive) to "end" (exclusive.) If {@code begin.equals(end)}, the result
+   * is empty.
+   *
+   * <p>Requires that begin.isLeaf(), end.isLeaf(), and begin <= end.
+   */
+  public void initFromBeginEnd(S2CellId begin, S2CellId end) {
+    // assert (begin.isLeaf());
+    // assert (end.isLeaf());
+    // assert (begin.compareTo(end) <= 0);
+
+    // We repeatedly add the largest cell we can, in sorted order.
+    cellIds.clear();
+    for (S2CellId nextBegin = begin; nextBegin.compareTo(end) < 0; ) {
+      // assert(nextBegin.isLeaf());
+
+      // Find the largest cell that starts at "next_begin" and ends before "end".
+      S2CellId nextId = nextBegin;
+      while (!nextId.isFace() &&
+             nextId.parent().rangeMin().equals(nextBegin) &&
+             nextId.parent().rangeMax().compareTo(end) < 0) {
+        nextId = nextId.parent();
+      }
+      cellIds.add(nextId);
+      nextBegin = nextId.rangeMax().next();
+    }
+
+    // The output should already be sorted and normalized.
+    // assert(!normalize());
+  }
+
+
   public int size() {
     return cellIds.size();
   }

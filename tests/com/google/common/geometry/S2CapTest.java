@@ -178,7 +178,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
 
     for (int face = 0; face < 6; ++face) {
       // The cell consisting of the entire face.
-      S2Cell rootCell = S2Cell.fromFacePosLevel(face, (byte) 0, 0);
+      S2Cell rootCell = S2Cell.fromFace(face);
 
       // A leaf cell at the midpoint of the v=1 edge.
       S2Cell edgeCell = new S2Cell(S2Projections.faceUvToXyz(face, 0, 1 - EPS));

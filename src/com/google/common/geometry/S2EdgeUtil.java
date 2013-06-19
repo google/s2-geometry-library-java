@@ -250,6 +250,25 @@ public strictfp class S2EdgeUtil {
     public S2LatLngRect getBound() {
       return bound;
     }
+
+    /**
+     * Returns the maximum error in getBound() provided that the result does not include either
+     * pole. It is only to be used for testing purposes (e.g., by passing it to
+     * {@link S2LatLngRect#approxEquals}).
+     */
+    static S2LatLng maxErrorForTests() {
+      // The maximum error in the latitude calculation is
+      //    3.84 * DBL_EPSILON   for the robustCrossProd calculation
+      //    0.96 * DBL_EPSILON   for the latitude() calculation
+      //    5    * DBL_EPSILON   added by addPoint/getBound to compensate for error
+      //    ------------------
+      //    9.80 * DBL_EPSILON   maximum error in result
+      //
+      // The maximum error in the longitude calculation is DBL_EPSILON.  GetBound
+      // does not do any expansion because this isn't necessary in order to
+      // bound the *rounded* longitudes of contained points.
+      return S2LatLng.fromRadians(10 * S2.DBL_EPSILON, 1 * S2.DBL_EPSILON);
+    }
   }
 
   /**

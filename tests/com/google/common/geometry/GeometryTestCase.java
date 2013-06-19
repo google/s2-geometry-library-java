@@ -89,13 +89,22 @@ public strictfp class GeometryTestCase extends TestCase {
     return getRandomCellId(random(S2CellId.MAX_LEVEL + 1));
   }
 
+  /** Returns a randomly selected value between a and b. */
+  public double uniform(double a, double b) {
+    return a + (b - a) * rand.nextDouble();
+  }
+
+  /** Returns true randomly, approximately one time in {@code n} calls. */
+  public boolean oneIn(int n) {
+    return rand.nextInt(n) == 0;
+  }
+
   int random(int n) {
     if (n == 0) {
       return 0;
     }
     return rand.nextInt(n);
   }
-
 
   /**
    * Picks a "base" uniformly from range [0,maxLog] and then return "base" random bits. The effect
@@ -112,9 +121,17 @@ public strictfp class GeometryTestCase extends TestCase {
   }
 
   /**
-   * Checks that "covering" completely covers the given region. If "check_tight"
-   * is true, also checks that it does not contain any cells that do not
-   * intersect the given region. ("id" is only used internally.)
+   * As {@link #checkCovering(S2Region, S2CellUnion, boolean, S2CellId)}, but creates a default and
+   * invalid S2CellId for the last argument.
+   */
+  void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight) {
+    checkCovering(region, covering, checkTight, new S2CellId());
+  }
+
+  /**
+   * Checks that "covering" completely covers the given region. If "checkTight" is true, also checks
+   * that it does not contain any cells that do not intersect the given region. ("id" is only used
+   * internally.)
    */
   void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight, S2CellId id) {
     if (!id.isValid()) {
@@ -207,6 +224,16 @@ public strictfp class GeometryTestCase extends TestCase {
     return new S2Loop(vertices);
   }
 
+  /** Convert a distance on the Earth's surface to an angle. */
+  static S1Angle kmToAngle(double km) {
+    return metersToAngle(1000 * km);
+  }
+
+  /** Convert a distance on the Earth's surface to an angle. */
+  static S1Angle metersToAngle(double meters) {
+    return S1Angle.radians(meters / S2LatLng.EARTH_RADIUS_METERS);
+  }
+
   static S2Polygon makePolygon(String str) {
     List<S2Loop> loops = Lists.newArrayList();
 
@@ -224,7 +251,6 @@ public strictfp class GeometryTestCase extends TestCase {
     parseVertices(str, vertices);
     return new S2Polyline(vertices);
   }
-
 
   /**
    * Returns the result of encoding and immediately decoding the given value.

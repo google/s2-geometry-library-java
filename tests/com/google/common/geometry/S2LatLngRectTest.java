@@ -215,30 +215,30 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     // Contains(S2Cell), MayIntersect(S2Cell), Intersects(S2Cell)
 
     // Special cases.
-    testCellOps(empty, S2Cell.fromFacePosLevel(3, (byte) 0, 0), 0);
-    testCellOps(full, S2Cell.fromFacePosLevel(2, (byte) 0, 0), 4);
-    testCellOps(full, S2Cell.fromFacePosLevel(5, (byte) 0, 25), 4);
+    testCellOps(empty, S2Cell.fromFace(3), 0);
+    testCellOps(full, S2Cell.fromFacePosLevel(2, 0, 0), 4);
+    testCellOps(full, S2Cell.fromFacePosLevel(5, 0, 25), 4);
 
     // This rectangle includes the first quadrant of face 0. It's expanded
     // slightly because cell bounding rectangles are slightly conservative.
     S2LatLngRect r4 = rectFromDegrees(-45.1, -45.1, 0.1, 0.1);
-    testCellOps(r4, S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
-    testCellOps(r4, S2Cell.fromFacePosLevel(0, (byte) 0, 1), 4);
-    testCellOps(r4, S2Cell.fromFacePosLevel(1, (byte) 0, 1), 0);
+    testCellOps(r4, S2Cell.fromFace(0), 3);
+    testCellOps(r4, S2Cell.fromFacePosLevel(0, 0, 1), 4);
+    testCellOps(r4, S2Cell.fromFacePosLevel(1, 0, 1), 0);
 
     // This rectangle intersects the first quadrant of face 0.
     S2LatLngRect r5 = rectFromDegrees(-10, -45, 10, 0);
-    testCellOps(r5, S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
-    testCellOps(r5, S2Cell.fromFacePosLevel(0, (byte) 0, 1), 3);
-    testCellOps(r5, S2Cell.fromFacePosLevel(1, (byte) 0, 1), 0);
+    testCellOps(r5, S2Cell.fromFace(0), 3);
+    testCellOps(r5, S2Cell.fromFacePosLevel(0, 0, 1), 3);
+    testCellOps(r5, S2Cell.fromFacePosLevel(1, 0, 1), 0);
 
     // Rectangle consisting of a single point.
-    testCellOps(rectFromDegrees(4, 4, 4, 4), S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
+    testCellOps(rectFromDegrees(4, 4, 4, 4), S2Cell.fromFace(0), 3);
 
     // Rectangles that intersect the bounding rectangle of a face
     // but not the face itself.
-    testCellOps(rectFromDegrees(41, -87, 42, -79), S2Cell.fromFacePosLevel(2, (byte) 0, 0), 1);
-    testCellOps(rectFromDegrees(-41, 160, -40, -160), S2Cell.fromFacePosLevel(5, (byte) 0, 0), 1);
+    testCellOps(rectFromDegrees(41, -87, 42, -79), S2Cell.fromFace(2), 1);
+    testCellOps(rectFromDegrees(-41, 160, -40, -160), S2Cell.fromFace(5), 1);
     {
       // This is the leaf cell at the top right hand corner of face 0.
       // It has two angles of 60 degrees and two of 120 degrees.
@@ -253,10 +253,10 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     // Rectangles that intersect a face but where no vertex of one region
     // is contained by the other region. The first one passes through
     // a corner of one of the face cells.
-    testCellOps(rectFromDegrees(-37, -70, -36, -20), S2Cell.fromFacePosLevel(5, (byte) 0, 0), 2);
+    testCellOps(rectFromDegrees(-37, -70, -36, -20), S2Cell.fromFace(5), 2);
     {
       // These two intersect like a diamond and a square.
-      S2Cell cell202 = S2Cell.fromFacePosLevel(2, (byte) 0, 2);
+      S2Cell cell202 = S2Cell.fromFacePosLevel(2, 0, 2);
       S2LatLngRect bound202 = cell202.getRectBound();
       testCellOps(
           rectFromDegrees(bound202.lo().lat().degrees() + 3, bound202.lo().lng().degrees() + 3,

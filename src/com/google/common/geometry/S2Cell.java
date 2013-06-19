@@ -30,8 +30,6 @@ import java.io.Serializable;
  */
 @GwtCompatible(serializable = true)
 public final strictfp class S2Cell implements S2Region, Serializable {
-  private static final double CELL_SCALE = 1.0 / S2CellId.MAX_SIZE;
-
   byte face;
   byte level;
   byte orientation;
@@ -40,8 +38,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   double uMax;
   double vMin;
   double vMax;
-  double uMid;
-  double vMid;
 
   /**
    * Default constructor used only internally.
@@ -57,8 +53,19 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     init(id);
   }
 
-  // This is a static method in order to provide named parameters.
-  public static S2Cell fromFacePosLevel(int face, byte pos, int level) {
+  /** Returns the cell corresponding to the given S2 cube face. */
+  public static S2Cell fromFace(int face) {
+    return new S2Cell(S2CellId.fromFace(face));
+  }
+
+  /**
+   * Returns a cell given its face (range 0..5), Hilbert curve position within that face (an
+   * unsigned integer with {@link S2CellId#POS_BITS} bits), and level (range 0..kMaxLevel).  The
+   * given position will be modified to correspond to the Hilbert curve position at the center of
+   * the returned cell.  This is a static function rather than a constructor in order to indicate
+   * what the arguments represent.
+   */
+  public static S2Cell fromFacePosLevel(int face, long pos, int level) {
     return new S2Cell(S2CellId.fromFacePosLevel(face, pos, level));
   }
 
@@ -70,7 +77,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   public S2Cell(S2LatLng ll) {
     init(S2CellId.fromLatLng(ll));
   }
-
 
   public S2CellId id() {
     return cellId;
@@ -99,9 +105,9 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   }
 
   /**
-   * Return the k-th vertex of the cell (k = 0,1,2,3). Vertices are returned in
-   * CCW order. The points returned by GetVertexRaw are not necessarily unit
-   * length.
+   * Returns the k<super>th</super> vertex of the cell (k = 0,1,2,3).  Vertices are returned in CCW
+   * order (lower left, lower right, upper right, upper left in the UV plane). The points are not
+   * necessarily unit length.
    */
   public S2Point getVertexRaw(int k) {
     // Vertices are returned in the order SW, SE, NE, NW.
@@ -122,13 +128,13 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   public S2Point getEdgeRaw(int k) {
     switch (k) {
       case 0:
-        return S2Projections.getVNorm(face, vMin); // South
+        return S2Projections.getVNorm(face, vMin); // Bottom
       case 1:
-        return S2Projections.getUNorm(face, uMax); // East
+        return S2Projections.getUNorm(face, uMax); // Right
       case 2:
-        return S2Point.neg(S2Projections.getVNorm(face, vMax)); // North
+        return S2Point.neg(S2Projections.getVNorm(face, vMax)); // Top
       default:
-        return S2Point.neg(S2Projections.getUNorm(face, uMin)); // West
+        return S2Point.neg(S2Projections.getUNorm(face, uMin)); // Left
     }
   }
 
@@ -145,7 +151,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    * <p>This method is equivalent to the following:
    *
    * <pre>
-   * for (pos=0, id=child_begin(); id != child_end(); id = id.next(), ++pos) {
+   * for (pos=0, id=childBegin(); !id.equals(childEnd()); id = id.next(), ++pos) {
    *   children[i].init(id);
    * }
    * </pre>
@@ -162,6 +168,9 @@ public final strictfp class S2Cell implements S2Region, Serializable {
 
     // Create four children with the appropriate bounds.
     S2CellId id = cellId.childBegin();
+    R2Vector mid = getCenterUV();
+    double uMid = mid.x();
+    double vMid = mid.y();
     for (int pos = 0; pos < 4; ++pos, id = id.next()) {
       S2Cell child = children[pos];
       child.face = face;
@@ -173,23 +182,21 @@ public final strictfp class S2Cell implements S2Region, Serializable {
       // position within its parent.  The index for "i" is in bit 1 of ij.
       int ij = S2.posToIJ(orientation, pos);
       // The dimension 0 index (i/u) is in bit 1 of ij.
-      double u1, v1, u2, v2;
       if ((ij & 0x2) != 0) {
-        u1 = uMid;
-        u2 = uMax;
+        child.uMin = uMid;
+        child.uMax = uMax;
       } else {
-        u1 = uMin;
-        u2 = uMid;
+        child.uMin = uMin;
+        child.uMax = uMid;
       }
       // The dimension 1 index (j/v) is in bit 0 of ij.
       if ((ij & 0x1) != 0) {
-        v1 = vMid;
-        v2 = vMax;
+        child.vMin = vMid;
+        child.vMax = vMax;
       } else {
-        v1 = vMin;
-        v2 = vMid;
+        child.vMin = vMin;
+        child.vMax = vMid;
       }
-      child.setBounds(id.toFaceIJOrientation(), id.getSizeIJ(), u1, v1, u2, v2);
     }
     return true;
   }
@@ -209,6 +216,11 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     return cellId.toPointRaw();
   }
 
+  /** Returns the bounds of this cell in (u,v)-space. */
+  public R2Rect getBoundUV() {
+    return new R2Rect(new R1Interval(uMin, uMax), new R1Interval(vMin, vMax));
+  }
+
   /**
    * Return the center of the cell in (u,v) coordinates (see {@code
    * S2Projections}). Note that the center of the cell is defined as the point
@@ -216,7 +228,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    * not at the midpoint of the (u,v) rectangle covered by the cell
    */
   public R2Vector getCenterUV() {
-    return new R2Vector(uMid, vMid);
+    return cellId.getCenterUV();
   }
 
   /**
@@ -287,10 +299,8 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     clone.level = this.level;
     clone.orientation = this.orientation;
     clone.uMin = this.uMin;
-    clone.uMid = this.uMid;
     clone.uMax = this.uMax;
     clone.vMin = this.vMin;
-    clone.vMid = this.vMid;
     clone.vMax = this.vMax;
     return clone;
   }
@@ -306,83 +316,104 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     // the (u,v)-origin never determine the maximum cap size (this is a
     // possible future optimization).
 
-    double u = 0.5 * (uMin + uMax);
-    double v = 0.5 * (vMin + vMax);
-    S2Cap cap = S2Cap.fromAxisHeight(S2Point.normalize(S2Projections.faceUvToXyz(face, u, v)), 0);
+    S2Point center = S2Point.normalize(S2Projections.faceUvToXyz(face, getCenterUV()));
+    S2Cap cap = S2Cap.fromAxisHeight(center, 0);
     for (int k = 0; k < 4; ++k) {
       cap = cap.addPoint(getVertex(k));
     }
     return cap;
   }
 
-  // We grow the bounds slightly to make sure that the bounding rectangle
-  // also contains the normalized versions of the vertices. Note that the
-  // maximum result magnitude is Pi, with a floating-point exponent of 1.
-  // Therefore adding or subtracting 2**-51 will always change the result.
-  private static final double MAX_ERROR = 1.0 / (1L << 51);
-
-  // The 4 cells around the equator extend to +/-45 degrees latitude at the
-  // midpoints of their top and bottom edges. The two cells covering the
-  // poles extend down to +/-35.26 degrees at their vertices.
-  // adding kMaxError (as opposed to the C version) because of asin and atan2
-  // roundoff errors
-  private static final double POLE_MIN_LAT = Math.asin(Math.sqrt(1.0 / 3.0)) - MAX_ERROR;
-  // 35.26 degrees
-
+  /**
+   * The 4 cells around the equator extend to +/-45 degrees latitude at the midpoints of their top
+   * and bottom edges. The two cells covering the poles extend down to +/-35.26 degrees at their
+   * vertices. The maximum error in this calculation is 0.5 * DBL_EPSILON.
+   */
+  private static final double POLE_MIN_LAT = Math.asin(Math.sqrt(1. / 3)) - 0.5 * S2.DBL_EPSILON;
 
   @Override
   public S2LatLngRect getRectBound() {
     if (level > 0) {
       // Except for cells at level 0, the latitude and longitude extremes are
-      // attained at the vertices. Furthermore, the latitude range is
+      // attained at the vertices.  Furthermore, the latitude range is
       // determined by one pair of diagonally opposite vertices and the
       // longitude range is determined by the other pair.
       //
       // We first determine which corner (i,j) of the cell has the largest
-      // absolute latitude. To maximize latitude, we want to find the point in
+      // absolute latitude.  To maximize latitude, we want to find the point in
       // the cell that has the largest absolute z-coordinate and the smallest
-      // absolute x- and y-coordinates. To do this we look at each coordinate
+      // absolute x- and y-coordinates.  To do this we look at each coordinate
       // (u and v), and determine whether we want to minimize or maximize that
       // coordinate based on the axis direction and the cell's (u,v) quadrant.
       double u = uMin + uMax;
       double v = vMin + vMax;
-      int i = S2Projections.getUAxis(face).z == 0 ? (u < 0 ? 1 : 0) : (u > 0 ? 1 : 0);
-      int j = S2Projections.getVAxis(face).z == 0 ? (v < 0 ? 1 : 0) : (v > 0 ? 1 : 0);
+      int i = (S2Projections.getUAxis(face).z == 0 ? (u < 0) : (u > 0)) ? 1 : 0;
+      int j = (S2Projections.getVAxis(face).z == 0 ? (v < 0) : (v > 0)) ? 1 : 0;
+      R1Interval lat = R1Interval.fromPointPair(
+          S2LatLng.latitude(getPoint(i, j)).radians(),
+          S2LatLng.latitude(getPoint(1 - i, 1 - j)).radians());
+      S1Interval lng = S1Interval.fromPointPair(
+          S2LatLng.longitude(getPoint(i, 1 - j)).radians(),
+          S2LatLng.longitude(getPoint(1 - i, j)).radians());
 
-
-      R1Interval lat = R1Interval.fromPointPair(getLatitude(i, j), getLatitude(1 - i, 1 - j));
-      lat = lat.expanded(MAX_ERROR).intersection(S2LatLngRect.fullLat());
-      if (lat.lo() == -S2.M_PI_2 || lat.hi() == S2.M_PI_2) {
-        return new S2LatLngRect(lat, S1Interval.full());
-      }
-      S1Interval lng = S1Interval.fromPointPair(getLongitude(i, 1 - j), getLongitude(1 - i, j));
-      return new S2LatLngRect(lat, lng.expanded(MAX_ERROR));
+      // We grow the bounds slightly to make sure that the bounding rectangle
+      // contains S2LatLng(P) for any point P inside the loop L defined by the
+      // four *normalized* vertices.  Note that normalization of a vector can
+      // change its direction by up to 0.5 * DBL_EPSILON radians, and it is not
+      // enough just to add Normalize() calls to the code above because the
+      // latitude/longitude ranges are not necessarily determined by diagonally
+      // opposite vertex pairs after normalization.
+      //
+      // We would like to bound the amount by which the latitude/longitude of a
+      // contained point P can exceed the bounds computed above.  In the case of
+      // longitude, the normalization error can change the direction of rounding
+      // leading to a maximum difference in longitude of 2 * DBL_EPSILON.  In
+      // the case of latitude, the normalization error can shift the latitude by
+      // up to 0.5 * DBL_EPSILON and the other sources of error can cause the
+      // two latitudes to differ by up to another 1.5 * DBL_EPSILON, which also
+      // leads to a maximum difference of 2 * DBL_EPSILON.
+      return new S2LatLngRect(lat, lng)
+          .expanded(S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 2 * S2.DBL_EPSILON))
+          .polarClosure();
     }
-
 
     // The face centers are the +X, +Y, +Z, -X, -Y, -Z axes in that order.
-    // assert (S2Projections.getNorm(face).get(face % 3) == ((face < 3) ? 1 : -1));
+    // assert (((face < 3) ? 1 : -1) == S2Projections.getNorm(face).get(face % 3));
+
+    S2LatLngRect bound;
     switch (face) {
       case 0:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(-S2.M_PI_4, S2.M_PI_4));
+        break;
       case 1:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(S2.M_PI_4, 3 * S2.M_PI_4));
+        break;
       case 2:
-        return new S2LatLngRect(
-            new R1Interval(POLE_MIN_LAT, S2.M_PI_2), new S1Interval(-S2.M_PI, S2.M_PI));
+        bound = new S2LatLngRect(new R1Interval(POLE_MIN_LAT, S2.M_PI_2), S1Interval.full());
+        break;
       case 3:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(3 * S2.M_PI_4, -3 * S2.M_PI_4));
+        break;
       case 4:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(-3 * S2.M_PI_4, -S2.M_PI_4));
+        break;
       default:
-        return new S2LatLngRect(
-            new R1Interval(-S2.M_PI_2, -POLE_MIN_LAT), new S1Interval(-S2.M_PI, S2.M_PI));
+        bound = new S2LatLngRect(new R1Interval(-S2.M_PI_2, -POLE_MIN_LAT), S1Interval.full());
+        break;
     }
 
+    // Finally, we expand the bound to account for the error when a point P is
+    // converted to an S2LatLng to test for containment.  (The bound should be
+    // large enough so that it contains the computed S2LatLng of any contained
+    // point, not just the infinite-precision version.)  We don't need to expand
+    // longitude because longitude is calculated via a single call to atan2(),
+    // which is guaranteed to be semi-monotonic.  (In fact the Gnu implementation
+    // is also correctly rounded, but we don't even need that here.)
+    return bound.expanded(S2LatLng.fromRadians(S2.DBL_EPSILON, 0));
   }
 
   @Override
@@ -415,35 +446,13 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     face = (byte) fij.face;
     orientation = (byte) fij.orientation;
     level = (byte) id.level();
-    int cellSize = S2CellId.getSizeIJ(level);
-    int i1 = fij.i & -cellSize;
-    int i2 = i1 + cellSize;
-    int j1 = fij.j & -cellSize;
-    int j2 = j1 + cellSize;
-    setBounds(fij, cellSize, ijToUv(i1), ijToUv(j1), ijToUv(i2), ijToUv(j2));
-  }
-
-  /**
-   * Assigns the given min, mid, and max coordinates for each axis, computing the mid coordinates
-   * from the FaceIJ and cellSize.
-   */
-  private void setBounds(FaceIJ fij, int cellSize,
-      double uMin, double vMin, double uMax, double vMax) {
-    this.uMin = uMin;
-    this.vMin = vMin;
-    this.uMax = uMax;
-    this.vMax = vMax;
-
-    // Compute the center by masking off the bits of i and j below this level, which gives us the
-    // lower left corner, and adding half the cell size to get the center.
-    int halfSize = cellSize / 2;
-    this.uMid = ijToUv((fij.i & -cellSize) + halfSize);
-    this.vMid = ijToUv((fij.j & -cellSize) + halfSize);
-  }
-
-  /** Returns the UV coordinate given an I- or J-coordinate. */
-  private static final double ijToUv(int ij) {
-    return PROJ.stToUV(CELL_SCALE * ij);
+    R2Rect uv = S2CellId.ijLevelToBoundUv(fij.i, fij.j, level);
+    R1Interval u = uv.x();
+    this.uMin = u.lo();
+    this.uMax = u.hi();
+    R1Interval v = uv.y();
+    this.vMin = v.lo();
+    this.vMax = v.hi();
   }
 
   private S2Point getPoint(int i, int j) {
@@ -451,19 +460,6 @@ public final strictfp class S2Cell implements S2Region, Serializable {
         i == 0 ? uMin : uMax,
         j == 0 ? vMin : vMax);
   }
-
-  private double getLatitude(int i, int j) {
-    S2Point p = getPoint(i, j);
-    return Math.atan2(p.z, Math.sqrt(p.x * p.x + p.y * p.y));
-  }
-
-  private double getLongitude(int i, int j) {
-    S2Point p = getPoint(i, j);
-    return Math.atan2(p.y, p.x);
-  }
-
-  // Return the latitude or longitude of the cell vertex given by (i,j),
-  // where "i" and "j" are either 0 or 1.
 
   @Override
   public String toString() {
@@ -486,5 +482,4 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     }
     return false;
   }
-
 }

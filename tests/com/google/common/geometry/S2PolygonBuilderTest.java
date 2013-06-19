@@ -20,8 +20,6 @@ import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 
-import org.ejml.simple.SimpleMatrix;
-
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -282,7 +280,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * Parse the vertices in {@code str}, transforms them into the given
    * {@code basis}, and adds the resulting points to {@code vertices}.
    */
-  private static void getVertices(String str, SimpleMatrix basis, List<S2Point> vertices) {
+  private static void getVertices(String str, Matrix3x3 basis, List<S2Point> vertices) {
     S2Polyline line = makePolyline(str);
     for (int i = 0; i < line.numVertices(); ++i) {
       vertices.add(S2Point.normalize(rotate(line.vertex(i), basis)));
@@ -310,22 +308,21 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * Returns a copy of the given point {@code p} after rotating it by the
    * rotation matrix {@code r}.
    */
-  private static S2Point rotate(S2Point p, SimpleMatrix r) {
-    SimpleMatrix rotated = r.mult(new SimpleMatrix(3, 1, true, p.x, p.y, p.z));
+  private static S2Point rotate(S2Point p, Matrix3x3 r) {
+    Matrix3x3 rotated = r.mult(new Matrix3x3(1, p.x, p.y, p.z));
     return new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0));
   }
 
   /** Returns a random rotation matrix. */
-  private SimpleMatrix getRotationMatrix() {
-    final int k = 3;
+  private Matrix3x3 getRotationMatrix() {
     List<S2Point> points = getRandomFrame();
-    double[] coordinates = new double[points.size() * k];
-    for (int col = 0; col < points.size(); col++) {
-      for (int row = 0; row < 3; row++) {
-        coordinates[row * 3 + col] = points.get(col).get(row);
-      }
-    }
-    return new SimpleMatrix(3, 3, true, coordinates);
+    S2Point a = points.get(0);
+    S2Point b = points.get(1);
+    S2Point c = points.get(2);
+    return new Matrix3x3(3,
+        a.getX(), b.getX(), c.getX(),
+        a.getY(), b.getY(), c.getY(),
+        a.getZ(), b.getZ(), c.getZ());
   }
 
   /** Returns the point "x" randomly perturbed within a radius of maxPerturb. */
@@ -389,7 +386,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * "expected".
    */
   private static boolean findMissingLoops(List<S2Loop> actual, List<S2Loop> expected,
-      SimpleMatrix m, int maxSplits, double maxError, String label) {
+      Matrix3x3 m, int maxSplits, double maxError, String label) {
     for (int i = 0; i < actual.size(); ++i) {
       if (!findLoop(actual.get(i), expected, maxSplits, maxError)) {
         return true;
@@ -403,7 +400,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * {@code basis}, optionally split each edge into pieces and/or perturb the
    * vertices up to the given radius, and add them to the builder.
    */
-  private void addChain(Chain chain, SimpleMatrix basis, int maxSplits, double maxPerturb,
+  private void addChain(Chain chain, Matrix3x3 basis, int maxSplits, double maxPerturb,
       double minEdge, S2PolygonBuilder builder) {
     List<S2Point> vertices = Lists.newArrayList();
     getVertices(chain.str, basis, vertices);
@@ -437,13 +434,13 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * Print the unused edges, transformed back into their original
    * latitude-longitude space in degrees.
    */
-  private static String dumpUnusedEdges(List<S2Edge> unusedEdges, SimpleMatrix m, int numExpected) {
+  private static String dumpUnusedEdges(List<S2Edge> unusedEdges, Matrix3x3 m, int numExpected) {
     if (unusedEdges.size() == numExpected) {
       return "";
     }
     List<String> lines = Lists.newArrayList();
     // Get inverse to rotate coordinates back to starting location.
-    SimpleMatrix inverse = m.transpose();
+    Matrix3x3 inverse = m.transpose();
     lines.add(Platform.formatString("Wrong number of unused edges (%d expected, %d actual):",
         numExpected, unusedEdges.size()));
     for (int i = 0; i < unusedEdges.size(); ++i) {
@@ -606,7 +603,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // On each iteration we randomly rotate the test case around the sphere.
       // This causes the S2PolygonBuilder to choose different first edges when
       // trying to build loops.
-      SimpleMatrix m = getRotationMatrix();
+      Matrix3x3 m = getRotationMatrix();
       for (Chain chain : chainsIn) {
         addChain(chain, m, maxSplits, maxPerturb, minEdge, builder);
       }
@@ -663,12 +660,12 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     }
   }
 
-  private static String loopsToString(String label, SimpleMatrix m, List<S2Loop> actual) {
+  private static String loopsToString(String label, Matrix3x3 m, List<S2Loop> actual) {
     List<String> lines = Lists.newArrayList();
     for (int i = 0; i < actual.size(); i++) {
       lines.add(Platform.formatString("%s loop %d:", label, i));
       S2Loop loop = actual.get(i);
-      SimpleMatrix inverse = m.transpose();
+      Matrix3x3 inverse = m.transpose();
       for (int j = 0; j < loop.numVertices(); ++j) {
         S2LatLng ll = new S2LatLng(rotate(loop.vertex(j), inverse));
         lines.add(Platform.formatString("  [%.6f, %.6f]",

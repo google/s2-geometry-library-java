@@ -26,6 +26,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.PriorityQueue;
 
 /**
@@ -69,11 +70,11 @@ public final strictfp class S2RegionCoverer implements Serializable {
    */
   public static final int DEFAULT_MAX_CELLS = 8;
 
-  private static final ImmutableList<S2Cell> FACE_CELLS;
+  private static final List<S2Cell> FACE_CELLS;
   static {
     ImmutableList.Builder<S2Cell> builder = ImmutableList.builder();
     for (int face = 0; face < 6; ++face) {
-      builder.add(S2Cell.fromFacePosLevel(face, (byte) 0, 0));
+      builder.add(S2Cell.fromFace(face));
     }
     FACE_CELLS = builder.build();
   }

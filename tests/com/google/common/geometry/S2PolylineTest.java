@@ -77,7 +77,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     vertices.add(S2Point.normalize(new S2Point(1, -0.8, 1.1)));
     S2Polyline line = new S2Polyline(vertices);
     for (int face = 0; face < 6; ++face) {
-      S2Cell cell = S2Cell.fromFacePosLevel(face, (byte) 0, 0);
+      S2Cell cell = S2Cell.fromFace(face);
       assertEquals(line.mayIntersect(cell), (face & 1) == 0);
     }
   }
@@ -228,6 +228,47 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     S2Point projectedPoint = line.project(pointEquidistantFromABAndBC);
     assertTrue(
         S2.approxEquals(projectedPoint, pointMidAB) || S2.approxEquals(projectedPoint, pointMidBC));
+  }
+
+  public void testIntersectsEmptyPolyline() {
+    S2Polyline line1 = new S2Polyline(makePolyline("1:1, 4:4"));
+    S2Polyline emptyPolyline = new S2Polyline(Lists.<S2Point>newArrayList());
+    assertFalse(emptyPolyline.intersects(line1));
+  }
+
+  public void testIntersectsOnePointPolyline() {
+    S2Polyline line1 = new S2Polyline(makePolyline("1:1, 4:4"));
+    S2Polyline line2 = new S2Polyline(makePolyline("1:1"));
+    assertFalse(line1.intersects(line2));
+  }
+
+  public void testIntersects() {
+    S2Polyline line1 = makePolyline("1:1, 4:4");
+    S2Polyline smallCrossing = makePolyline("1:2, 2:1");
+    S2Polyline smallNonCrossing = makePolyline("1:2, 2:3");
+    S2Polyline bigCrossing = makePolyline("1:2, 2:3, 4:3");
+    assertTrue(line1.intersects(smallCrossing));
+    assertFalse(line1.intersects(smallNonCrossing));
+    assertTrue(line1.intersects(bigCrossing));
+  }
+
+  public void testIntersectsAtVertex() {
+    S2Polyline line1 = makePolyline("1:1, 4:4, 4:6");
+    S2Polyline line2 = makePolyline("1:1, 1:2");
+    S2Polyline line3 = makePolyline("5:1, 4:4, 2:2");
+    assertTrue(line1.intersects(line2));
+    assertTrue(line1.intersects(line3));
+  }
+
+  public void testIntersectsVertexOnEdge()  {
+    S2Polyline horizontalLeftToRight = makePolyline("0:1, 0:3");
+    S2Polyline verticalBottomToTop = makePolyline("-1:2, 0:2, 1:2");
+    S2Polyline horizontalRightToLeft = makePolyline("0:3, 0:1");
+    S2Polyline verticalTopToBottom = makePolyline("1:2, 0:2, -1:2");
+    assertTrue(horizontalLeftToRight.intersects(verticalBottomToTop));
+    assertTrue(horizontalLeftToRight.intersects(verticalTopToBottom));
+    assertTrue(horizontalRightToLeft.intersects(verticalBottomToTop));
+    assertTrue(horizontalRightToLeft.intersects(verticalTopToBottom));
   }
 
   public void testValid() {

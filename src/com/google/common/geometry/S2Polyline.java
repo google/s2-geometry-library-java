@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
 import java.io.Serializable;
 import java.util.Arrays;
@@ -315,6 +316,34 @@ public final strictfp class S2Polyline implements S2Region, Serializable {
       }
     }
     return true;
+  }
+
+  /**
+   * Return true if this polyline intersects the given polyline. If the polylines share a vertex
+   * they are considered to be intersecting. When a polyline endpoint is the only intersection with
+   * the other polyline, the function may return true or false arbitrarily.
+   *
+   * <p>The running time is quadratic in the number of vertices.
+   */
+  public boolean intersects(S2Polyline line) {
+    if (numVertices() <= 0 || line.numVertices() <= 0) {
+      return false;
+    }
+
+    if (!getRectBound().intersects(line.getRectBound())) {
+      return false;
+    }
+
+    // TODO(user): Use S2ShapeIndex here.
+    for (int i = 1; i < numVertices(); ++i) {
+      EdgeCrosser crosser = new EdgeCrosser(vertex(i - 1), vertex(i), line.vertex(0));
+      for (int j = 1; j < line.numVertices(); ++j) {
+        if (crosser.robustCrossing(line.vertex(j)) >= 0) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   @Override

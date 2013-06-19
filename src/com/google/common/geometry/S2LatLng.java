@@ -31,7 +31,6 @@ import java.io.Serializable;
  */
 @GwtCompatible(serializable = true, emulated = true)
 public strictfp class S2LatLng implements Serializable {
-
   /**
    * Approximate "effective" radius of the Earth in meters.
    */
@@ -84,8 +83,6 @@ public strictfp class S2LatLng implements Serializable {
   /**
    * Basic constructor. The latitude and longitude must be within the ranges
    * allowed by is_valid() below.
-   *
-   * TODO(dbeaumont): Make this a static factory method (fromLatLng() ?).
    */
   public S2LatLng(S1Angle lat, S1Angle lng) {
     this(lat.radians(), lng.radians());
@@ -93,8 +90,6 @@ public strictfp class S2LatLng implements Serializable {
 
   /**
    * Default constructor for convenience when declaring arrays, etc.
-   *
-   * TODO(dbeaumont): Remove the default constructor (just use CENTER).
    */
   public S2LatLng() {
     this(0, 0);
@@ -102,8 +97,6 @@ public strictfp class S2LatLng implements Serializable {
 
   /**
    * Convert a point (not necessarily normalized) to an S2LatLng.
-   *
-   * TODO(dbeaumont): Make this a static factory method (fromPoint() ?).
    */
   public S2LatLng(S2Point p) {
     this(Math.atan2(p.z, Math.sqrt(p.x * p.x + p.y * p.y)), Math.atan2(p.y, p.x));
@@ -187,13 +180,16 @@ public strictfp class S2LatLng implements Serializable {
   public S1Angle getDistance(final S2LatLng o) {
     // This implements the Haversine formula, which is numerically stable for
     // small distances but only gets about 8 digits of precision for very large
-    // distances (e.g. antipodal points). Note that 8 digits is still accurate
+    // distances (e.g. antipodal points).  Note that 8 digits is still accurate
     // to within about 10cm for a sphere the size of the Earth.
     //
     // This could be fixed with another sin() and cos() below, but at that point
     // you might as well just convert both arguments to S2Points and compute the
     // distance that way (which gives about 15 digits of accuracy for all
     // distances).
+
+    // assert isValid();
+    // assert o.isValid();
 
     double lat1 = lat().radians();
     double lat2 = o.lat().radians();
@@ -202,20 +198,13 @@ public strictfp class S2LatLng implements Serializable {
     double dlat = Math.sin(0.5 * (lat2 - lat1));
     double dlng = Math.sin(0.5 * (lng2 - lng1));
     double x = dlat * dlat + dlng * dlng * Math.cos(lat1) * Math.cos(lat2);
-    return S1Angle.radians(2 * Math.atan2(Math.sqrt(x), Math.sqrt(Math.max(0.0, 1.0 - x))));
-    // Return the distance (measured along the surface of the sphere) to the
-    // given S2LatLng. This is mathematically equivalent to:
-    //
-    // S1Angle::FromRadians(ToPoint().Angle(o.ToPoint())
-    //
-    // but this implementation is slightly more efficient.
+    return S1Angle.radians(2 * Math.asin(Math.sqrt(Math.min(1.0, x))));
   }
 
   /**
    * Returns the surface distance to the given point assuming a constant radius.
    */
   public double getDistance(final S2LatLng o, double radius) {
-    // TODO(dbeaumont): Maybe check that radius >= 0 ?
     return getDistance(o).radians() * radius;
   }
 
@@ -248,7 +237,6 @@ public strictfp class S2LatLng implements Serializable {
    * Note that there is no guarantee that the new point will be <em>valid</em>.
    */
   public S2LatLng mul(final double m) {
-    // TODO(dbeaumont): Maybe check that m >= 0 ?
     return new S2LatLng(latRadians * m, lngRadians * m);
   }
 
