@@ -1117,7 +1117,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
    * (returning immediately if any wedge returns -1). Returns +1 if there are no
    * intersections and no shared vertices.
    */
-  private int checkEdgeCrossings(S2Loop b, S2EdgeUtil.WedgeRelation relation) {
+  private int checkEdgeCrossings(S2Loop b, S2EdgeUtil.WedgeProcessor relation) {
     DataEdgeIterator it = getEdgeIterator(b.numVertices);
     int result = 1;
     // since 'this' usually has many more vertices than 'b', use the index on

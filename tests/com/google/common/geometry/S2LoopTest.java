@@ -110,15 +110,29 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     farHemi.invert();
   }
 
+  /** Verifies that a is a loose bound of b, with boundaries at most maxError apart. */
+  private static void assertBoundsEqual(S2LatLngRect a, S2LatLngRect b, S2LatLng maxError) {
+    assertTrue(a.approxEquals(b, maxError));
+    assertTrue(a.contains(b));
+  }
+
+  /** Verifies that a is a loose bound of b, with boundaries at most maxError apart. */
+  private static void assertBoundsEqual(R1Interval a, R1Interval b, double radianError) {
+    assertTrue(a.approxEquals(b, radianError));
+    assertTrue(a.contains(b));
+  }
+
   public void testBounds() {
     assertTrue(candyCane.getRectBound().lng().isFull());
     assertTrue(candyCane.getRectBound().latLo().degrees() < -20);
     assertTrue(candyCane.getRectBound().latHi().degrees() > 10);
     assertTrue(smallNeCw.getRectBound().isFull());
-    assertEquals(arctic80.getRectBound(),
-        new S2LatLngRect(S2LatLng.fromDegrees(80, -180), S2LatLng.fromDegrees(90, 180)));
-    assertEquals(antarctic80.getRectBound(),
-        new S2LatLngRect(S2LatLng.fromDegrees(-90, -180), S2LatLng.fromDegrees(-80, 180)));
+    // Permit small latitude error since we pad the loop bounds a bit, but longitude must be exact.
+    double latError = 2E-15;
+    assertBoundsEqual(arctic80.getRectBound(), new S2LatLngRect(S2LatLng.fromDegrees(80, -180),
+        S2LatLng.fromDegrees(90, 180)), S2LatLng.fromRadians(latError, 0));
+    assertBoundsEqual(antarctic80.getRectBound(), new S2LatLngRect(S2LatLng.fromDegrees(-90, -180),
+        S2LatLng.fromDegrees(-80, 180)), S2LatLng.fromRadians(latError, 0));
 
     arctic80.invert();
     // The highest latitude of each edge is attained at its midpoint.
@@ -127,7 +141,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     arctic80.invert();
 
     assertTrue(southHemi.getRectBound().lng().isFull());
-    assertEquals(southHemi.getRectBound().lat(), new R1Interval(-S2.M_PI_2, 0));
+    assertBoundsEqual(southHemi.getRectBound().lat(), new R1Interval(-S2.M_PI_2, 0), latError);
   }
 
   public void testFastConstructor() {
