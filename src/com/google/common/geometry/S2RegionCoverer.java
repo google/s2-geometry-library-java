@@ -218,7 +218,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
    * region is convex (e.g. an S2Cap or S2LatLngRect).
    * </ul>
    *
-   * Accuracy is measured by dividing the area of the covering by the area of
+   * <p>Accuracy is measured by dividing the area of the covering by the area of
    * the original region. The following table shows the median and worst case
    * values for this area ratio on a test case consisting of 100,000 spherical
    * caps of random size (generated using s2regioncoverer_unittest):
