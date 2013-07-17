@@ -109,8 +109,7 @@ public final strictfp class S2PolygonBuilder {
    *         .setXorEdges(true)
    *         .setMergeDistance(vertexMergeRadius)
    *         .build();
-   * S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);
-   * }</pre>
+   * S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);}</pre>
    */
   public static final class Options {
     /**
