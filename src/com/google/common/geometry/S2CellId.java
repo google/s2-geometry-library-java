@@ -38,7 +38,7 @@ import java.util.NoSuchElementException;
  * id = [face][face_pos]
  * </pre>
  *
- * face: a 3-bit number (range 0..5) encoding the cube face.
+ * <p>face: a 3-bit number (range 0..5) encoding the cube face.
  *
  * face_pos: a 61-bit number encoding the position of the center of this cell
  * along the Hilbert curve over this face (see the Wiki pages for details).

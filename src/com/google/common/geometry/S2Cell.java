@@ -156,7 +156,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
    * }
    * </pre>
    *
-   * except that it is more than two times faster.
+   * <p>except that it is more than two times faster.
    */
   public boolean subdivide(S2Cell children[]) {
     // This function is equivalent to just iterating over the child cell ids
