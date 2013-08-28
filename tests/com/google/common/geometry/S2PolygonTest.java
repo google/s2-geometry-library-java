@@ -300,7 +300,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     farSouth.initToIntersection(farH, southH);
     checkEqual(farSouth, farHSouthH);
 
-    for(int testNumber = 0; testNumber < testCases.length; testNumber++) {
+    for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
       TestCase test = testCases[testNumber];
       logger.info("Polygon operation test case " + testNumber);
       S2Polygon a = makePolygon(test.a);
@@ -369,7 +369,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     // it with A. It then feeds all of the results into a polygon builder and
     // tests that the output is equal to doing an intersection between A and B.
 
-    for(int testNumber = 0; testNumber < testCases.length; testNumber++) {
+    for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
       TestCase test = testCases[testNumber];
       logger.info("Polyline intersection test case " + testNumber);
       S2Polygon a = makePolygon(test.a);

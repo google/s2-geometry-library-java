@@ -447,7 +447,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   // iterators, and may not even be a valid cell id. You should iterate using
   // code like this:
   //
-  // for(S2CellId c = id.childBegin(); !c.equals(id.childEnd()); c = c.next())
+  // for (S2CellId c = id.childBegin(); !c.equals(id.childEnd()); c = c.next())
   // ...
   //
   // The convention for advancing the iterator is "c = c.next()", so be sure

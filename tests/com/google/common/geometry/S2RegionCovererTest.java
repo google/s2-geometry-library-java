@@ -177,7 +177,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     for (S2CellId id = largeCell.childBegin(level + 2);
          !id.equals(largeCell.childEnd(level + 2));
          id = id.next()) {
-      if(!id.equals(smallCell)) {
+      if (!id.equals(smallCell)) {
         diffList.add(id);
       }
     }
