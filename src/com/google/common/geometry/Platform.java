@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import java.io.PrintStream;
 import java.util.logging.Logger;
 
@@ -22,6 +24,7 @@ import java.util.logging.Logger;
  * Contains utility methods which require different GWT client and server implementations.
  * This contains the server side implementations.
  */
+@GwtCompatible(emulated = true)
 final class Platform {
 
   private Platform() {}
