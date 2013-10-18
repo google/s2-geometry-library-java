@@ -771,4 +771,8 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
   public String toString() {
     return "[Lo=" + lo() + ", Hi=" + hi() + "]";
   }
+
+  public String toStringDegrees() {
+    return "[Lo=" + lo().toStringDegrees() + ", Hi=" + hi().toStringDegrees() + "]";
+  }
 }
