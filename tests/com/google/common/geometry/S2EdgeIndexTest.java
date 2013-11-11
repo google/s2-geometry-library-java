@@ -113,7 +113,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
           sbError
               .append("\n==CHECK_ERROR===================================\n")
               .append("CandidateSet: ")
-              .append(sb.toString())
+              .append(sb)
               .append("\nin=")
               .append(in)
               .append(" i=")

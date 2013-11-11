@@ -308,11 +308,11 @@ public strictfp class S2CellTest extends GeometryTestCase {
     // the average area of a parent is exactly 4 times the area of a child.
 
     assertTrue(Math.abs(Math.log(exactArea / cell.exactArea())) <= Math
-      .abs(Math.log(1 + 1e-6)));
+        .abs(Math.log1p(1e-6)));
     assertTrue(Math.abs(Math.log(approxArea / cell.approxArea())) <= Math
       .abs(Math.log(1.03)));
     assertTrue(Math.abs(Math.log(averageArea / cell.averageArea())) <= Math
-      .abs(Math.log(1 + 1e-15)));
+        .abs(Math.log1p(1e-15)));
   }
 
   public void testMinMaxAvg(String label, int level, double count,
