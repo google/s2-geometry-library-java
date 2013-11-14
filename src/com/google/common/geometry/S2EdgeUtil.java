@@ -1345,8 +1345,8 @@ public strictfp class S2EdgeUtil {
     // TODO(user): This is a temporary hack until I rewrite S2.RobustCrossProd;
     // it avoids loss of precision in normalize() when the vector is so small
     // that it underflows.
-    if (Math.max(Math.abs(n.x), Math.max(Math.abs(n.y), Math.abs(n.z))) < Platform.scalb(1, -511)) {
-      n = S2Point.mul(n, Platform.scalb(1, 563));
+    if (Math.max(Math.abs(n.x), Math.max(Math.abs(n.y), Math.abs(n.z))) < Math.scalb(1d, -511)) {
+      n = S2Point.mul(n, Math.scalb(1d, 563));
     }  // END OF HACK
 
     n = S2Point.normalize(n);

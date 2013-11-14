@@ -1256,8 +1256,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
 
   /**
    * We implement this in terms of DBL_EPSILON, because we don't have universal support for
-   * Math.nextAfter, and unlike more common tools like Math.scalb, it's not worth implementing in
-   * Platform.
+   * Math.nextAfter, and it's not worth implementing in Platform.
    */
   private static double nextAfter(double x, double direction) {
     return direction < x ? x - S2.DBL_EPSILON : x + S2.DBL_EPSILON;

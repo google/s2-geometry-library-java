@@ -147,7 +147,7 @@ public final strictfp class S2 {
 
     /** Return the value of a metric for cells at the given level. */
     public double getValue(int level) {
-      return Platform.scalb(deriv, -dim * level);
+      return Math.scalb(deriv, -dim * level);
     }
 
     /**

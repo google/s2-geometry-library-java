@@ -34,11 +34,6 @@ final class Platform {
     return Math.IEEEremainder(f1, f2);
   }
 
-  /** @see StrictMath#scalb(double, int) */
-  static double scalb(double d, int scaleFactor) {
-    return StrictMath.scalb(d, scaleFactor);
-  }
-
   /** @see Math#getExponent(double) */
   static int getExponent(double d) {
     return Math.getExponent(d);
