@@ -384,7 +384,7 @@ public strictfp class S2Test extends GeometryTestCase {
     // S2CellTest, since S2Cell has methods to compute the cell vertices, etc.
 
     for (int level = -2; level <= S2CellId.MAX_LEVEL + 3; ++level) {
-      double dWidth = PROJ.minWidth.deriv() * Math.pow(2, -level);
+      double dWidth = Math.scalb(PROJ.minWidth.deriv(), -level);
       // Check lengths.
       if (level >= S2CellId.MAX_LEVEL + 3) {
         dWidth = 0;
