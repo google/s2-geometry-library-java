@@ -213,6 +213,23 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
     return result;
   }
 
+  /**
+   * Rotates this point around an arbitrary axis.
+   *
+   * @param axis point around which rotation should be performed.
+   * @param radians radians to rotate the point counterclockwise around the given axis.
+   */
+  public S2Point rotate(S2Point axis, double radians) {
+    S2Point point = S2Point.normalize(this);
+    S2Point normAxis = S2Point.normalize(axis);
+    S2Point pointOnAxis = S2Point.mul(normAxis, point.dotProd(normAxis));
+    S2Point axisToPoint = S2Point.sub(point, pointOnAxis);
+    S2Point axisToPointNormal = S2Point.crossProd(normAxis, axisToPoint);
+    axisToPoint = S2Point.mul(axisToPoint, Math.cos(radians));
+    axisToPointNormal = S2Point.mul(axisToPointNormal, Math.sin(radians));
+    return S2Point.add(S2Point.add(axisToPoint, axisToPointNormal), pointOnAxis);
+  }
+
   /** Return the angle between two vectors in radians */
   public final double angle(S2Point va) {
     return Math.atan2(this.crossProdNorm(va), this.dotProd(va));
@@ -266,7 +283,7 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
   // Required for Comparable
   @Override
   public int compareTo(S2Point other) {
-    return (lessThan(other) ? -1 : (equals(other) ? 0 : 1));
+    return (lessThan(other) ? -1 : (equalsPoint(other) ? 0 : 1));
   }
 
   @Override

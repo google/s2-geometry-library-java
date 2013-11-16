@@ -54,6 +54,15 @@ public strictfp class GeometryTestCase extends TestCase {
     assertTrue(a < b + error);
   }
 
+  /**
+   * Checks that the 3D distance between {@code expected} and {@code actual} is
+   * at most {@code eps} units.
+   */
+  public void assertEquals(S2Point expected, S2Point actual, double eps) {
+    assertTrue("expected: " + expected + " but was: " + actual,
+        expected.getDistance2(actual) < eps * eps);
+  }
+
   // maybe these should be put in a special testing util class
   /** Return a random unit-length vector. */
   public S2Point randomPoint() {
