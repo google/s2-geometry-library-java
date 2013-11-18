@@ -19,7 +19,9 @@ import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Ascii;
+import com.google.common.base.CharMatcher;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.UnmodifiableIterator;
 import com.google.common.geometry.S2Projections.FaceSiTi;
@@ -626,29 +628,36 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * @throws NumberFormatException if the token is not formatted correctly
    */
   public static S2CellId fromToken(String token) {
+    return fromTokenImpl(token, true);
+  }
+
+  /**
+   * Returns the cell id for the given token, which will be implicitly
+   * zero-right-padded to length 16 if 'implicitZeroes' is true.
+   */
+  private static S2CellId fromTokenImpl(String token, boolean implicitZeroes) {
     if (token == null) {
       throw new NumberFormatException("Null string in S2CellId.fromToken");
     }
-    if (token.length() == 0) {
+    if (token.isEmpty()) {
       throw new NumberFormatException("Empty string in S2CellId.fromToken");
     }
-    if (token.length() > 16 || "X".equals(token)) {
+    int length = token.length();
+    if (length > 16 || "X".equals(token)) {
       return none();
     }
 
     long value = 0;
-    for (int pos = 0; pos < 16; pos++) {
-      int digit = 0;
-      if (pos < token.length()) {
-        digit = Character.digit(token.charAt(pos), 16);
-        if (digit == -1) {
-          throw new NumberFormatException(token);
-        }
-        if (overflowInParse(value, digit)) {
-          throw new NumberFormatException("Too large for unsigned long: " + token);
-        }
+    for (int pos = 0; pos < length; pos++) {
+      int digitValue = Character.digit(token.charAt(pos), 16);
+      if (digitValue == -1) {
+        throw new NumberFormatException(token);
       }
-      value = (value * 16) + digit;
+      value = value * 16 + digitValue;
+    }
+
+    if (implicitZeroes) {
+      value = value << (4 * (16 - length));
     }
 
     return new S2CellId(value);
@@ -671,6 +680,18 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
       return "X";
     }
 
+    // Convert to a hex string with as many digits as necessary.
+    String hex = Ascii.toLowerCase(Long.toHexString(id));
+    // Prefix 0s to get a length 16 string.
+    String padded = Strings.padStart(hex, 16, '0');
+    // Trim zeroes off the end.
+    return MATCHES_ZERO.trimTrailingFrom(padded);
+  }
+
+  /** Matches literal '0' characters. */
+  private static final CharMatcher MATCHES_ZERO = CharMatcher.is('0');
+
+  public String toTokenOld() {
     String hex = Ascii.toLowerCase(Long.toHexString(id));
     StringBuilder sb = new StringBuilder(16);
     for (int i = hex.length(); i < 16; i++) {
@@ -685,58 +706,6 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
     throw new RuntimeException("Shouldn't make it here");
   }
-
-  /**
-   * Returns true if (current * 10) + digit is a number too large to be
-   * represented by an unsigned long.  This is useful for detecting overflow
-   * while parsing a string representation of a number.
-   */
-  private static boolean overflowInParse(long current, int digit) {
-    return overflowInParse(current, digit, 10);
-  }
-
-  /**
-   * Returns true if (current * radix) + digit is a number too large to be
-   * represented by an unsigned long.  This is useful for detecting overflow
-   * while parsing a string representation of a number.
-   * Does not verify whether supplied radix is valid, passing an invalid radix
-   * will give undefined results or an ArrayIndexOutOfBoundsException.
-   */
-  private static boolean overflowInParse(long current, int digit, int radix) {
-    if (current >= 0) {
-      if (current < maxValueDivs[radix]) {
-        return false;
-      }
-      if (current > maxValueDivs[radix]) {
-        return true;
-      }
-      // current == maxValueDivs[radix]
-      return (digit > maxValueMods[radix]);
-    }
-
-    // current < 0: high bit is set
-    return true;
-  }
-
-  // calculated as 0xffffffffffffffff / radix
-  private static final long maxValueDivs[] = {0, 0, // 0 and 1 are invalid
-      9223372036854775807L, 6148914691236517205L, 4611686018427387903L, // 2-4
-      3689348814741910323L, 3074457345618258602L, 2635249153387078802L, // 5-7
-      2305843009213693951L, 2049638230412172401L, 1844674407370955161L, // 8-10
-      1676976733973595601L, 1537228672809129301L, 1418980313362273201L, // 11-13
-      1317624576693539401L, 1229782938247303441L, 1152921504606846975L, // 14-16
-      1085102592571150095L, 1024819115206086200L, 970881267037344821L, // 17-19
-      922337203685477580L, 878416384462359600L, 838488366986797800L, // 20-22
-      802032351030850070L, 768614336404564650L, 737869762948382064L, // 23-25
-      709490156681136600L, 683212743470724133L, 658812288346769700L, // 26-28
-      636094623231363848L, 614891469123651720L, 595056260442243600L, // 29-31
-      576460752303423487L, 558992244657865200L, 542551296285575047L, // 32-34
-      527049830677415760L, 512409557603043100L }; // 35-36
-
-  // calculated as 0xffffffffffffffff % radix
-  private static final int maxValueMods[] = {0, 0, // 0 and 1 are invalid
-      1, 0, 3, 0, 3, 1, 7, 6, 5, 4, 3, 2, 1, 0, 15, 0, 15, 16, 15, 15, // 2-21
-      15, 5, 15, 15, 15, 24, 15, 23, 15, 15, 31, 15, 17, 15, 15 }; // 22-36
 
   /**
    * Return the four cells that are adjacent across the cell's four edges.
