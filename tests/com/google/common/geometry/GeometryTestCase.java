@@ -215,7 +215,7 @@ public strictfp class GeometryTestCase extends TestCase {
       double lat = Double.parseDouble(token.substring(0, colon));
       double lng = Double.parseDouble(token.substring(colon + 1));
       vertices.add(S2LatLng.fromDegrees(lat, lng).toPoint());
-      bound.addPoint(S2LatLng.fromDegrees(lat, lng));
+      bound = bound.addPoint(S2LatLng.fromDegrees(lat, lng));
     }
 
     return bound;

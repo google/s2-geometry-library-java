@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * An S2Point represents a point on the unit sphere as a 3D vector. Usually
  * points are normalized to be unit length, but some methods do not require
@@ -150,6 +152,7 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
   }
 
   /** return a vector orthogonal to this one */
+  @CheckReturnValue
   public final S2Point ortho() {
     int k = largestAbsComponent();
     S2Point temp;
@@ -219,6 +222,7 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
    * @param axis point around which rotation should be performed.
    * @param radians radians to rotate the point counterclockwise around the given axis.
    */
+  @CheckReturnValue
   public S2Point rotate(S2Point axis, double radians) {
     S2Point point = S2Point.normalize(this);
     S2Point normAxis = S2Point.normalize(axis);

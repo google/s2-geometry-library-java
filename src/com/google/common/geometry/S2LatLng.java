@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * This class represents a point on the unit sphere as a pair of
  * latitude-longitude coordinates. Like the rest of the "geometry" package, the
@@ -154,6 +156,7 @@ public strictfp class S2LatLng implements Serializable {
    * <p>If the current point is valid then the returned point will have the same
    * coordinates.
    */
+  @CheckReturnValue
   public S2LatLng normalized() {
     // drem(x, 2 * S2.M_PI) reduces its argument to the range
     // [-S2.M_PI, S2.M_PI] inclusive, which is what we want here.
@@ -220,6 +223,7 @@ public strictfp class S2LatLng implements Serializable {
    * Adds the given point to this point.
    * Note that there is no guarantee that the new point will be <em>valid</em>.
    */
+  @CheckReturnValue
   public S2LatLng add(final S2LatLng o) {
     return new S2LatLng(latRadians + o.latRadians, lngRadians + o.lngRadians);
   }
@@ -228,6 +232,7 @@ public strictfp class S2LatLng implements Serializable {
    * Subtracts the given point from this point.
    * Note that there is no guarantee that the new point will be <em>valid</em>.
    */
+  @CheckReturnValue
   public S2LatLng sub(final S2LatLng o) {
     return new S2LatLng(latRadians - o.latRadians, lngRadians - o.lngRadians);
   }
@@ -236,6 +241,7 @@ public strictfp class S2LatLng implements Serializable {
    * Scales this point by the given scaling factor.
    * Note that there is no guarantee that the new point will be <em>valid</em>.
    */
+  @CheckReturnValue
   public S2LatLng mul(final double m) {
     return new S2LatLng(latRadians * m, lngRadians * m);
   }

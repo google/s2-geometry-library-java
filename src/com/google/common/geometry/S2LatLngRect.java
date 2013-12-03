@@ -20,6 +20,8 @@ import com.google.common.base.Preconditions;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * An S2LatLngRect represents a latitude-longitude rectangle. It is capable of representing the
  * empty and full rectangles as well as single points.
@@ -463,12 +465,14 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
       .interiorIntersects(other.lng));
   }
 
+  @CheckReturnValue
   public S2LatLngRect addPoint(S2Point p) {
     return addPoint(new S2LatLng(p));
   }
 
   // Increase the size of the bounding rectangle to include the given point.
   // The rectangle is expanded by the minimum amount possible.
+  @CheckReturnValue
   public S2LatLngRect addPoint(S2LatLng ll) {
     // assert (ll.isValid());
     R1Interval newLat = lat.addPoint(ll.lat().radians());
@@ -487,6 +491,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    * NOTE: If you are trying to grow a rectangle by a certain *distance* on the
    * sphere (e.g. 5km), use the ConvolveWithCap() method instead.
    */
+  @CheckReturnValue
   public S2LatLngRect expanded(S2LatLng margin) {
     // assert (margin.lat().radians() >= 0 && margin.lng().radians() >= 0);
     return new S2LatLngRect(
@@ -499,6 +504,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    * longitude range to full() so that the rectangle contains all possible representations of the
    * contained pole(s).
    */
+  @CheckReturnValue
   public S2LatLngRect polarClosure() {
     if (lat.lo() == -S2.M_PI_2 || lat.hi() == S2.M_PI_2) {
       return new S2LatLngRect(lat, S1Interval.full());
@@ -511,6 +517,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    * Return the smallest rectangle containing the union of this rectangle and
    * the given rectangle.
    */
+  @CheckReturnValue
   public S2LatLngRect union(S2LatLngRect other) {
     return new S2LatLngRect(lat.union(other.lat), lng.union(other.lng));
   }
@@ -521,6 +528,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    * of two disjoint rectangles, in which case a single rectangle spanning both
    * of them is returned.
    */
+  @CheckReturnValue
   public S2LatLngRect intersection(S2LatLngRect other) {
     R1Interval intersectLat = lat.intersection(other.lat);
     S1Interval intersectLng = lng.intersection(other.lng);
@@ -538,6 +546,7 @@ public strictfp class S2LatLngRect implements S2Region, Serializable {
    * rectangle includes all points whose minimum distance to the original
    * rectangle is at most the given angle.
    */
+  @CheckReturnValue
   public S2LatLngRect convolveWithCap(S1Angle angle) {
     // The most straightforward approach is to build a cap centered on each
     // vertex and take the union of all the bounding rectangles (including the

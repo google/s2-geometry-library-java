@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * An R1Interval represents a closed, bounded interval on the real line. It is
  * capable of representing the empty interval (containing no points) and
@@ -264,6 +266,7 @@ public final strictfp class R1Interval implements Serializable {
    * point in this interval. Note that the expansion of an empty interval is
    * always empty.
    */
+  @CheckReturnValue
   public R1Interval expanded(double radius) {
     // assert (radius >= 0);
     if (isEmpty()) {
@@ -276,6 +279,7 @@ public final strictfp class R1Interval implements Serializable {
    * Return the smallest interval that contains this interval and the given
    * interval "y".
    */
+  @CheckReturnValue
   public R1Interval union(R1Interval y) {
     if (isEmpty()) {
       return y;
@@ -305,11 +309,13 @@ public final strictfp class R1Interval implements Serializable {
    * Return the intersection of this interval with the given interval. Empty
    * intervals do not need to be special-cased.
    */
+  @CheckReturnValue
   public R1Interval intersection(R1Interval y) {
     return new R1Interval(Math.max(lo, y.lo), Math.min(hi, y.hi));
   }
 
   /** Returns the smallest interval that contains this interval and the given point. */
+  @CheckReturnValue
   public R1Interval addPoint(double p) {
     if (isEmpty()) {
       return R1Interval.fromPoint(p);

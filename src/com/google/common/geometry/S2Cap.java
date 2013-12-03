@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * This class represents a spherical cap, i.e. a portion of a sphere cut off by
  * a plane. The cap is defined by its axis and height. This representation has
@@ -156,6 +158,7 @@ public final strictfp class S2Cap implements S2Region, Serializable {
    * operator is not a bijection, since the complement of a singleton cap
    * (containing a single point) is the same as the complement of an empty cap.
    */
+  @CheckReturnValue
   public S2Cap complement() {
     // The complement of a full cap is an empty cap, not a singleton.
     // Also make sure that the complement of an empty cap has height 2.
@@ -201,6 +204,7 @@ public final strictfp class S2Cap implements S2Region, Serializable {
    * is empty the axis is set to the given point, but otherwise it is left
    * unchanged. 'p' should be a unit-length vector.
    */
+  @CheckReturnValue
   public S2Cap addPoint(S2Point p) {
     // Compute the squared chord length, then convert it into a height.
     // assert (S2.isUnitLength(p));
@@ -218,6 +222,7 @@ public final strictfp class S2Cap implements S2Region, Serializable {
 
   // Increase the cap height if necessary to include "other". If the current
   // cap is empty it is set to the given other cap.
+  @CheckReturnValue
   public S2Cap addCap(S2Cap other) {
     if (isEmpty()) {
       return new S2Cap(other.axis, other.height);

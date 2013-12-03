@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * An R2Rect represents a closed axis-aligned rectangle in the (x,y) plane. This class is mutable
  * to allow iteratively constructing bounds via e.g. {@link #addPoint(R2Vector)}.
@@ -244,6 +246,7 @@ final strictfp class R2Rect implements Serializable {
    * interval on the corresponding sides instead.  The resulting rectangle may be empty.  Any
    * expansion of an empty rectangle remains empty.
    */
+  @CheckReturnValue
   public R2Rect expanded(R2Vector margin) {
     R1Interval xx = x().expanded(margin.x());
     R1Interval yy = y().expanded(margin.y());
@@ -258,6 +261,7 @@ final strictfp class R2Rect implements Serializable {
    * Returns a rectangle that has been expanded on both sides by the given margin.  Any expansion of
    * an empty rectangle remains empty.
    */
+  @CheckReturnValue
   public R2Rect expanded(double margin) {
     return expanded(new R2Vector(margin, margin));
   }
@@ -265,6 +269,7 @@ final strictfp class R2Rect implements Serializable {
   /**
    * Returns the smallest rectangle containing the union of this rectangle and the given rectangle.
    */
+  @CheckReturnValue
   public R2Rect union(R2Rect other) {
     return new R2Rect(x().union(other.x()), y().union(other.y()));
   }
@@ -273,6 +278,7 @@ final strictfp class R2Rect implements Serializable {
    * Returns the smallest rectangle containing the intersection of this rectangle and the given
    * rectangle.
    */
+  @CheckReturnValue
   public R2Rect intersection(R2Rect other) {
     R1Interval xx = x().intersection(other.x());
     R1Interval yy = y().intersection(other.y());

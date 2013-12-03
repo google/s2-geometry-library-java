@@ -18,6 +18,8 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 
+import javax.annotation.CheckReturnValue;
+
 /** A simple 3x3 matrix. */
 @GwtCompatible
 public final class Matrix3x3 {
@@ -75,6 +77,7 @@ public final class Matrix3x3 {
   }
 
   /** Returns the transpose of this. */
+  @CheckReturnValue
   public Matrix3x3 transpose() {
     Matrix3x3 result = new Matrix3x3(cols, rows);
     for (int row = 0; row < result.rows; row++) {
@@ -86,6 +89,7 @@ public final class Matrix3x3 {
   }
 
   /** Returns the result of multiplying this x m. */
+  @CheckReturnValue
   public Matrix3x3 mult(Matrix3x3 m) {
     Preconditions.checkArgument(cols == m.rows);
     Matrix3x3 result = new Matrix3x3(rows, m.cols);

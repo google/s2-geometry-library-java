@@ -19,6 +19,8 @@ import com.google.common.annotations.GwtCompatible;
 
 import java.io.Serializable;
 
+import javax.annotation.CheckReturnValue;
+
 /**
  * An S1Interval represents a closed interval on a unit circle (also known as a
  * 1-dimensional sphere). It is capable of representing the empty interval
@@ -359,6 +361,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * Expand the interval by the minimum amount necessary so that it contains the
    * given point "p" (an angle in the range [-Pi, Pi]).
    */
+  @CheckReturnValue
   public S1Interval addPoint(double p) {
     // assert (Math.abs(p) <= S2.M_PI);
     if (p == -S2.M_PI) {
@@ -411,6 +414,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * interval may be empty or full. Any expansion (positive or negative) of a full interval remains
    * full, and any expansion of an empty interval remains empty.
    */
+  @CheckReturnValue
   public S1Interval expanded(double margin) {
     S1Interval copy = new S1Interval(this);
     copy.expandedInternal(margin);
@@ -460,6 +464,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * Return the smallest interval that contains this interval and the given
    * interval "y".
    */
+  @CheckReturnValue
   public S1Interval union(S1Interval y) {
     S1Interval result = new S1Interval(this);
     result.unionInternal(y);
@@ -522,6 +527,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * interval with "y". Note that the region of intersection may consist of two
    * disjoint intervals.
    */
+  @CheckReturnValue
   public S1Interval intersection(final S1Interval y) {
     // The y.isFull() case is handled correctly in all cases by the code
     // below, but can follow three separate code paths depending on whether
