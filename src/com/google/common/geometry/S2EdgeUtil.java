@@ -1781,9 +1781,9 @@ public strictfp class S2EdgeUtil {
    * length.
    */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b) {
-    Preconditions.checkArgument(S2.isUnitLength(x));
-    Preconditions.checkArgument(S2.isUnitLength(a));
-    Preconditions.checkArgument(S2.isUnitLength(b));
+    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: " + x);
+    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: " + a);
+    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: " + b);
     return S1Angle.radians(getDistanceRadians(x, a, b, S2.robustCrossProd(a, b)));
   }
 
@@ -1797,9 +1797,9 @@ public strictfp class S2EdgeUtil {
    * length.
   */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
-    Preconditions.checkArgument(S2.isUnitLength(x));
-    Preconditions.checkArgument(S2.isUnitLength(a));
-    Preconditions.checkArgument(S2.isUnitLength(b));
+    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: " + x);
+    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: " + a);
+    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: " + b);
     return S1Angle.radians(getDistanceRadians(x, a, b, aCrossB));
   }
 
