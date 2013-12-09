@@ -1074,12 +1074,12 @@ public strictfp class S2EdgeUtil {
   static int getExitAxis(S2Point n) {
     // assert (intersectsFace(n));
     if (intersectsOppositeEdges(n)) {
-      // The line passes through through opposite edges of the face.
+      // The line passes through opposite edges of the face.
       // It exits through the v=+1 or v=-1 edge if the u-component of N has a
       // larger absolute magnitude than the v-component.
       return (Math.abs(n.x) >= Math.abs(n.y)) ? 1 : 0;
     } else {
-      // The line passes through through two adjacent edges of the face.
+      // The line passes through two adjacent edges of the face.
       // It exits the v=+1 or v=-1 edge if an even number of the components of N
       // are negative.  We test this using signbit() rather than multiplication
       // to avoid the possibility of underflow.

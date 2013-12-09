@@ -59,7 +59,7 @@ import com.google.common.geometry.S2.Metric;
  * i.e. (face, u/w, v/w).
  *
  * <li>(x, y, z): Direction vector (S2Point). Direction vectors are not necessarily unit length, and
- * are often chosen to be points on the biunit cube [-1,+1]x[-1,+1]x[-1,+1]. They can be be
+ * are often chosen to be points on the biunit cube [-1,+1]x[-1,+1]x[-1,+1]. They can be
  * normalized to obtain the corresponding point on the unit sphere.
  *
  * <li>(lat, lng): Latitude and longitude (S2LatLng). Latitudes must be between -90 and 90 degrees
