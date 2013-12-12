@@ -1711,7 +1711,7 @@ public strictfp class S2EdgeUtil {
    */
   public static S2Point getIntersection(S2Point a0, S2Point a1, S2Point b0, S2Point b1) {
     Preconditions.checkArgument(robustCrossing(a0, a1, b0, b1) > 0,
-        "Input edges a0a1 and b0b1 muct have a true robustCrossing.");
+        "Input edges a0a1 and b0b1 must have a true robustCrossing.");
 
     // We use robustCrossProd() to get accurate results even when two endpoints
     // are close together, or when the two line segments are nearly parallel.
@@ -1781,9 +1781,9 @@ public strictfp class S2EdgeUtil {
    * length.
    */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b) {
-    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: " + x);
-    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: " + a);
-    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: " + b);
+    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: %s", x);
+    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: %s", a);
+    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: %s", b);
     return S1Angle.radians(getDistanceRadians(x, a, b, S2.robustCrossProd(a, b)));
   }
 
@@ -1797,9 +1797,9 @@ public strictfp class S2EdgeUtil {
    * length.
   */
   public static S1Angle getDistance(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
-    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: " + x);
-    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: " + a);
-    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: " + b);
+    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: %s", x);
+    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: %s", a);
+    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: %s", b);
     return S1Angle.radians(getDistanceRadians(x, a, b, aCrossB));
   }
 
