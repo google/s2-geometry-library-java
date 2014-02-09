@@ -40,6 +40,14 @@ public final strictfp class S2 {
     DBL_EPSILON = machEps;
   }
 
+  // This point is about 66km from the north pole towards the East Siberian Sea.  See the unit test
+  // for more details. It is written here using constant components to avoid computational errors
+  // from producting a different value than other implementations of S2.
+  private static final S2Point ORIGIN = new S2Point(
+      -0.0099994664350250197,
+      0.0025924542609324121,
+      0.99994664350250195);
+
   // Together these flags define a cell orientation. If SWAP_MASK
   // is true, then canonical traversal order is flipped around the
   // diagonal (i.e. i and j are swapped with each other). If
@@ -211,7 +219,7 @@ public final strictfp class S2 {
    * rules out the north and south poles.)
    */
   public static S2Point origin() {
-    return S2Point.Y_POS;
+    return ORIGIN;
   }
 
   /**
@@ -568,7 +576,7 @@ public final strictfp class S2 {
     // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
     int ccw = triageCCW(S2Point.scalarTripleProduct(c, a, b));
     if (ccw == 0) {
-      ccw = expensiveCCW(a, b, c);
+       ccw = expensiveCCW(a, b, c);
     }
     return ccw;
   }

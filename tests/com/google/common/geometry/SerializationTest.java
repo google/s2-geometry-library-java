@@ -98,8 +98,7 @@ public class SerializationTest extends TestCase {
   }
 
   public void testS2Polygon() {
-    S2Loop loop1 = new S2Loop(new S2Cell(new S2Point(0.1, 0.2, 0.3)),
-        new S2LatLngRect(S2LatLng.CENTER, S2LatLng.fromRadians(1, 2)));
+    S2Loop loop1 = new S2Loop(new S2Cell(new S2Point(0.1, 0.2, 0.3)));
     S2Loop loop2 = new S2Loop(ImmutableList.of(
         new S2Point(0.1, 0.2, 0.3),
         new S2Point(0.5, 0, 0),

@@ -175,7 +175,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "0:0, 2:8, 8:8, 8:2",
         "0:0, 3:7, 7:7, 7:3",
         "0:0, 4:6, 6:6, 6:4"};
-    runTest(0, 0, true, 0.0, 0.8, 5.0, chainsIn, loopsOut, 0, true);
+    runTest(1, 0, true, 0.0, 0.8, 5.0, chainsIn, loopsOut, 0, true);
   }
 
   /** Test 7: Four diamonds nested within each other touching at two points. */
@@ -215,7 +215,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         "0:-30, -30:0, 0:30, 40:0",
         "0:-20, -20:0, 0:30, 20:0",
         "0:-10, -20:0, 0:10, 10:0"};
-    runTest(0, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0, true);
+    runTest(1, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0, true);
   }
 
   /** Test 9: A triangle and a self-intersecting bowtie. */
@@ -385,8 +385,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * {@code expected}, and log any loops from "actual" that are not present in
    * "expected".
    */
-  private static boolean findMissingLoops(List<S2Loop> actual, List<S2Loop> expected,
-      Matrix3x3 m, int maxSplits, double maxError, String label) {
+  private static boolean findMissingLoops(
+      List<S2Loop> actual, List<S2Loop> expected, int maxSplits, double maxError) {
     for (int i = 0; i < actual.size(); ++i) {
       if (!findLoop(actual.get(i), expected, maxSplits, maxError)) {
         return true;
@@ -615,6 +615,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         S2Polygon polygon = new S2Polygon();
         builder.assemblePolygon(polygon, unusedEdges);
         polygon.release(loops);
+        for (S2Loop loop : loops) {
+          loop.normalize();
+        }
       }
       List<S2Loop> expected = Lists.newArrayList();
       for (String loop : loopsOut) {
@@ -653,10 +656,10 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
               loopsToString("Expected", m, expected),
               loopsToString("Actual", m, loops),
               dumpUnusedEdges(unusedEdges, m, numUnusedEdges)),
-          !findMissingLoops(loops, expected, m, maxSplits, maxError, "Actual") &&
-              !findMissingLoops(expected, loops, m, maxSplits, maxError, "Expected") &&
-              !unexpectedUnusedEdgeCount(unusedEdges.size(), numUnusedEdges, maxSplits) &&
-              makesPolygon == new S2Polygon(loops).isValid());
+          !findMissingLoops(loops, expected, maxSplits, maxError) &&
+          !findMissingLoops(expected, loops, maxSplits, maxError) &&
+          !unexpectedUnusedEdgeCount(unusedEdges.size(), numUnusedEdges, maxSplits) &&
+          makesPolygon == new S2Polygon(loops).isValid());
     }
   }
 
