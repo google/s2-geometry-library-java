@@ -53,11 +53,10 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   // A set of nested loops around the point 0:0 (lat:lng).
   // Every vertex of NEAR0 is a vertex of NEAR1.
-  private static final String NEAR_POINT = "0:0";
   private static final String NEAR0 = "-1:0, 0:1, 1:0, 0:-1;";
   private static final String NEAR1 = "-1:-1, -1:0, -1:1, 0:1, 1:1, 1:0, 1:-1, 0:-1;";
-  private static final String NEAR2 = "-1:-2, -2:5, 5:-2;";
-  private static final String NEAR3 = "-2:-2, -3:6, 6:-3;";
+  private static final String NEAR2 = "5:-2, -2:5, -1:-2;";
+  private static final String NEAR3 = "6:-3, -3:6, -2:-2;";
   private static final String NEAR_HEMI = "0:-90, -90:0, 0:90, 90:0;";
 
   // A set of nested loops around the point 0:180 (lat:lng).
@@ -66,48 +65,35 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private static final String FAR0 = "0:179, 1:180, 0:-179, 2:-180;";
   private static final String FAR1 =
       "0:179, -1:179, 1:180, -1:-179, 0:-179, 3:-178, 2:-180, 3:178;";
-  private static final String FAR2 = "3:-178, 3:178, -1:179, -1:-179;";
-  private static final String FAR3 = "-3:-178, 4:-177, 4:177, -3:178, -2:179;";
+  private static final String FAR2 = "-1:-179, -1:179, 3:178, 3:-178;"; // opposite
+                                                                        // direction
+  private static final String FAR3 = "-3:-178, -2:179, -3:178, 4:177, 4:-177;";
   private static final String FAR_HEMI = "0:-90, 60:90, -60:90;";
 
   // A set of nested loops around the point -90:0 (lat:lng).
-  private static final String SOUTH_POINT = "-89.9999:0.001";
-  private static final String SOUTH0A = "-90:0, -89.99:0.01, -89.99:0;";
-  private static final String SOUTH0B = "-90:0, -89.99:0.03, -89.99:0.02;";
-  private static final String SOUTH0C = "-90:0, -89.99:0.05, -89.99:0.04;";
-  private static final String SOUTH1 = "-90:0, -89.9:0.1, -89.9:-0.1;";
-  private static final String SOUTH2 = "-90:0, -89.8:0.2, -89.8:-0.2;";
+  private static final String SOUTH0a = "-90:0, -89.99:0, -89.99:0.01;";
+  private static final String SOUTH0b = "-90:0, -89.99:0.02, -89.99:0.03;";
+  private static final String SOUTH0c = "-90:0, -89.99:0.04, -89.99:0.05;";
+  private static final String SOUTH1 = "-90:0, -89.9:-0.1, -89.9:0.1;";
+  private static final String SOUTH2 = "-90:0, -89.8:-0.2, -89.8:0.2;";
   private static final String SOUTH_HEMI = "0:-180, 0:60, 0:-60;";
 
-  // Two different loops that surround all the NEAR and FAR loops except
+  // Two different loops that surround all the Near and Far loops except
   // for the hemispheres.
-  private static final String NEAR_FAR1 = "-1:-9, -9:-9, -9:9, 9:9, 9:-9, 1:-9, "
-      + "1:-175, 9:-175, 9:175, -9:175, -9:-175, -1:-175;";
+  private static final String NEAR_FAR1 =
+      "-1:-9, -9:-9, -9:9, 9:9, 9:-9, 1:-9, " + "1:-175, 9:-175, 9:175, -9:175, -9:-175, -1:-175;";
   private static final String NEAR_FAR2 =
-      "-2:15, -2:170, -8:-175, 8:-175, 2:170, 2:15, 8:-4, -8:-4;";
+      "-8:-4, 8:-4, 2:15, 2:170, 8:-175, -8:-175, -2:170, -2:15;";
 
   // Loops that result from intersection of other loops.
   private static final String FAR_SOUTH_H = "0:-180, 0:90, -60:90, 0:-90;";
 
   // Rectangles that form a cross, with only shared vertices, no crossing edges.
-  // Optional holes outside the intersecting region.
-  private static final String CROSS1 = "-2:1, -1:1, 1:1, 2:1, 2:-1, 1:-1, -1:-1, -2:-1;";
-  private static final String CROSS1_SIDE_HOLE = "-1.5:0.5, -1.2:0.5, -1.2:-0.5, -1.5:-0.5;";
-  private static final String CROSS2 = "1:-2, 1:-1, 1:1, 1:2, -1:2, -1:1, -1:-1, -1:-2;";
-  private static final String CROSS2_SIDE_HOLE = "0.5:-1.5, 0.5:-1.2, -0.5:-1.2, -0.5:-1.5;";
-  private static final String CROSS_CENTER_HOLE = "-0.5:0.5, 0.5:0.5, 0.5:-0.5, -0.5:-0.5;";
-
-  //Two rectangles that intersect, but no edges cross and there's always
-  //local containment (rather than crossing) at each shared vertex.
-  //In this ugly ASCII art, 1 is A+B, 2 is B+C:
-  //     +---+---+---+
-  //     | A | B | C |
-  //     +---+---+---+
-  private static final String OVERLAP1 = "0:1, 1:1, 2:1, 2:0, 1:0, 0:0;";
-  private static final String OVERLAP1_SIDE_HOLE = "0.2:0.8, 0.8:0.8, 0.8:0.2, 0.2:0.2;";
-  private static final String OVERLAP2 = "1:1, 2:1, 3:1, 3:0, 2:0, 1:0;";
-  private static final String OVERLAP2_SIDE_HOLE = "2.2:0.8, 2.8:0.8, 2.8:0.2, 2.2:0.2;";
-  private static final String OVERLAP_CENTER_HOLE = "1.2:0.8, 1.8:0.8, 1.8:0.2, 1.2:0.2;";
+  private static final String CROSS1 =
+      "-2:1, -1:1, 1:1, 2:1, 2:-1, 1:-1, -1:-1, -2:-1;";
+  // A hole outside the intersecting region.
+  private static final String CROSS1_SIDE_HOLE =
+      "-1.5:0.5, -1.2:0.5, -1.2:-0.5, -1.5:-0.5;";
 
   // Two rectangles that are "adjacent", but rather than having common edges,
   // those edges are slighly off. A third rectangle that is not adjacent to
@@ -122,109 +108,121 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private static final String TRIANGLE = "15:0, 17:0, 16:2;";
   private static final String TRIANGLE_ROT = "17:0, 16:2, 15:0;";
 
-  private final S2Polygon near10 = makeVerbatimPolygon(NEAR0 + NEAR1);
-  private final S2Polygon near30 = makeVerbatimPolygon(NEAR3 + NEAR0);
-  private final S2Polygon near32 = makeVerbatimPolygon(NEAR2 + NEAR3);
-  private final S2Polygon near3210 = makeVerbatimPolygon(NEAR0 + NEAR2 + NEAR3 + NEAR1);
-  private final S2Polygon nearH3210 = makeVerbatimPolygon(
-      NEAR0 + NEAR2 + NEAR3 + NEAR_HEMI + NEAR1);
-
-  private final S2Polygon far10 = makeVerbatimPolygon(FAR0 + FAR1);
-  private final S2Polygon far21 = makeVerbatimPolygon(FAR2 + FAR1);
-  private final S2Polygon far321 = makeVerbatimPolygon(FAR2 + FAR3 + FAR1);
-  private final S2Polygon farH20 = makeVerbatimPolygon(FAR2 + FAR_HEMI + FAR0);
-  private final S2Polygon farH3210 = makeVerbatimPolygon(FAR2 + FAR_HEMI + FAR0 + FAR1 + FAR3);
-
-  private final S2Polygon south0ab = makeVerbatimPolygon(SOUTH0A + SOUTH0B);
-  private final S2Polygon south2 = makeVerbatimPolygon(SOUTH2);
-  private final S2Polygon south210b = makeVerbatimPolygon(SOUTH2 + SOUTH0B + SOUTH1);
-  private final S2Polygon southH21 = makeVerbatimPolygon(SOUTH2 + SOUTH_HEMI + SOUTH1);
-  private final S2Polygon southH20abc = makeVerbatimPolygon(
-      SOUTH2 + SOUTH0B + SOUTH_HEMI + SOUTH0A + SOUTH0C);
-
-  private final S2Polygon nf1n10f2s10abc = makeVerbatimPolygon(
-      SOUTH0C + FAR2 + NEAR1 + NEAR_FAR1 + NEAR0 + SOUTH1 + SOUTH0B + SOUTH0A);
-
-  private final S2Polygon nf2n2f210s210ab = makeVerbatimPolygon(
-      FAR2 + SOUTH0A + FAR1 + SOUTH1 + FAR0 + SOUTH0B + NEAR_FAR2 + SOUTH2 + NEAR2);
-
-  private final S2Polygon f32n0 = makeVerbatimPolygon(FAR2 + NEAR0 + FAR3);
-  private final S2Polygon n32s0b = makeVerbatimPolygon(NEAR3 + SOUTH0B + NEAR2);
-
-  private final S2Polygon adj0 = makeVerbatimPolygon(ADJACENT0);
-  private final S2Polygon adj1 = makeVerbatimPolygon(ADJACENT1);
-  private final S2Polygon unAdj = makeVerbatimPolygon(UN_ADJACENT);
-
-  private final S2Polygon farH = makeVerbatimPolygon(FAR_HEMI);
-  private final S2Polygon southH = makeVerbatimPolygon(SOUTH_HEMI);
-  private final S2Polygon farHSouthH = makeVerbatimPolygon(FAR_SOUTH_H);
-
-  private final S2Polygon cross1 = makeVerbatimPolygon(CROSS1);
-  private final S2Polygon cross1SideHole = makeVerbatimPolygon(CROSS1 + CROSS1_SIDE_HOLE);
-  private final S2Polygon cross1CenterHole = makeVerbatimPolygon(CROSS1 + CROSS_CENTER_HOLE);
-  private final S2Polygon cross2 = makeVerbatimPolygon(CROSS2);
-  private final S2Polygon cross2SideHole = makeVerbatimPolygon(CROSS2 + CROSS2_SIDE_HOLE);
-  private final S2Polygon cross2CenterHole = makeVerbatimPolygon(CROSS2 + CROSS_CENTER_HOLE);
-
-  private final S2Polygon overlap1 = makeVerbatimPolygon(OVERLAP1);
-  private final S2Polygon overlap1SideHole = makeVerbatimPolygon(OVERLAP1 + OVERLAP1_SIDE_HOLE);
-  private final S2Polygon overlap2 = makeVerbatimPolygon(OVERLAP2);
-  private final S2Polygon overlap2SideHole = makeVerbatimPolygon(OVERLAP2 + OVERLAP2_SIDE_HOLE);
-  private final S2Polygon overlap1CenterHole = makeVerbatimPolygon(OVERLAP1 + OVERLAP_CENTER_HOLE);
-  private final S2Polygon overlap2CenterHole = makeVerbatimPolygon(OVERLAP2 + OVERLAP_CENTER_HOLE);
-
-  private final S2Polygon empty = new S2Polygon();
-  private final S2Polygon full = new S2Polygon(S2Loop.full());
-
-  private static void checkContains(String aText, String bText) {
-    S2Polygon a = makeVerbatimPolygon(aText);
-    S2Polygon b = makeVerbatimPolygon(bText);
+  private void assertContains(String aStr, String bStr) {
+    S2Polygon a = makePolygon(aStr);
+    S2Polygon b = makePolygon(bStr);
     assertTrue(a.contains(b));
-    assertTrue(a.approxContains(b, S1Angle.radians(1e-15)));
-  }
-
-  private static void checkContainsPoint(String aText, String bText) {
-    S2Polygon a = makePolygon(aText);
-    assertTrue(a.contains(makePoint(bText)));
   }
 
   // Make sure we've set things up correctly.
   public void testInit() {
-    checkContains(NEAR1, NEAR0);
-    checkContains(NEAR2, NEAR1);
-    checkContains(NEAR3, NEAR2);
-    checkContains(NEAR_HEMI, NEAR3);
-    checkContains(FAR1, FAR0);
-    checkContains(FAR2, FAR1);
-    checkContains(FAR3, FAR2);
-    checkContains(FAR_HEMI, FAR3);
-    checkContains(SOUTH1, SOUTH0A);
-    checkContains(SOUTH1, SOUTH0B);
-    checkContains(SOUTH1, SOUTH0C);
-    checkContains(SOUTH_HEMI, SOUTH2);
-    checkContains(NEAR_FAR1, NEAR3);
-    checkContains(NEAR_FAR1, FAR3);
-    checkContains(NEAR_FAR2, NEAR3);
-    checkContains(NEAR_FAR2, FAR3);
-
-    checkContainsPoint(NEAR0, NEAR_POINT);
-    checkContainsPoint(NEAR1, NEAR_POINT);
-    checkContainsPoint(NEAR2, NEAR_POINT);
-    checkContainsPoint(NEAR3, NEAR_POINT);
-    checkContainsPoint(NEAR_HEMI, NEAR_POINT);
-    checkContainsPoint(SOUTH0A, SOUTH_POINT);
-    checkContainsPoint(SOUTH1, SOUTH_POINT);
-    checkContainsPoint(SOUTH2, SOUTH_POINT);
-    checkContainsPoint(SOUTH_HEMI, SOUTH_POINT);
+    assertContains(NEAR1, NEAR0);
+    assertContains(NEAR2, NEAR1);
+    assertContains(NEAR3, NEAR2);
+    assertContains(NEAR_HEMI, NEAR3);
+    assertContains(FAR1, FAR0);
+    assertContains(FAR2, FAR1);
+    assertContains(FAR3, FAR2);
+    assertContains(FAR_HEMI, FAR3);
+    assertContains(SOUTH1, SOUTH0a);
+    assertContains(SOUTH1, SOUTH0b);
+    assertContains(SOUTH1, SOUTH0c);
+    assertContains(SOUTH_HEMI, SOUTH2);
+    assertContains(NEAR_FAR1, NEAR3);
+    assertContains(NEAR_FAR1, FAR3);
+    assertContains(NEAR_FAR2, NEAR3);
+    assertContains(NEAR_FAR2, FAR3);
   }
 
-  public void testOriginNearPole() {
-    // S2Polygon operations are more efficient if S2.origin() is near a pole.
-    // (Loops that contain a pole tend to have very loose bounding boxes because
-    // they span the full longitude range.  S2Polygon canonicalizes all loops so
-    // that they don't contain S2.origin(), thus by placing S2.origin() near a
-    // pole we minimize the number of canonical loops which contain that pole.)
-    assertTrue(S2LatLng.latitude(S2.origin()).degrees() >= 80);
+  S2Polygon near10 = makePolygon(NEAR0 + NEAR1);
+  S2Polygon near30 = makePolygon(NEAR3 + NEAR0);
+  S2Polygon near32 = makePolygon(NEAR2 + NEAR3);
+  S2Polygon near3210 = makePolygon(NEAR0 + NEAR2 + NEAR3 + NEAR1);
+  S2Polygon nearH3210 = makePolygon(NEAR0 + NEAR2 + NEAR3 + NEAR_HEMI + NEAR1);
+
+  S2Polygon far10 = makePolygon(FAR0 + FAR1);
+  S2Polygon far21 = makePolygon(FAR2 + FAR1);
+  S2Polygon far321 = makePolygon(FAR2 + FAR3 + FAR1);
+  S2Polygon farH20 = makePolygon(FAR2 + FAR_HEMI + FAR0);
+  S2Polygon farH3210 = makePolygon(FAR2 + FAR_HEMI + FAR0 + FAR1 + FAR3);
+
+  S2Polygon south0ab = makePolygon(SOUTH0a + SOUTH0b);
+  S2Polygon south2 = makePolygon(SOUTH2);
+  S2Polygon south210b = makePolygon(SOUTH2 + SOUTH0b + SOUTH1);
+  S2Polygon southH21 = makePolygon(SOUTH2 + SOUTH_HEMI + SOUTH1);
+  S2Polygon southH20abc = makePolygon(SOUTH2 + SOUTH0b + SOUTH_HEMI + SOUTH0a + SOUTH0c);
+
+  S2Polygon nf1n10f2s10abc =
+      makePolygon(SOUTH0c + FAR2 + NEAR1 + NEAR_FAR1 + NEAR0 + SOUTH1 + SOUTH0b + SOUTH0a);
+
+  S2Polygon nf2n2f210s210ab =
+      makePolygon(FAR2 + SOUTH0a + FAR1 + SOUTH1 + FAR0 + SOUTH0b + NEAR_FAR2 + SOUTH2 + NEAR2);
+
+  S2Polygon f32n0 = makePolygon(FAR2 + NEAR0 + FAR3);
+  S2Polygon n32s0b = makePolygon(NEAR3 + SOUTH0b + NEAR2);
+
+  S2Polygon adj0 = makePolygon(ADJACENT0);
+  S2Polygon adj1 = makePolygon(ADJACENT1);
+  S2Polygon unAdj = makePolygon(UN_ADJACENT);
+
+  S2Polygon farH = makePolygon(FAR_HEMI);
+  S2Polygon southH = makePolygon(SOUTH_HEMI);
+  S2Polygon farHSouthH = makePolygon(FAR_SOUTH_H);
+
+  S2Polygon cross1 = makePolygon(CROSS1);
+  S2Polygon cross1SideHole = makePolygon(CROSS1_SIDE_HOLE);
+
+  private void assertRelation(S2Polygon a, S2Polygon b, int contains, boolean intersects) {
+    assertEquals(a.contains(b), contains > 0);
+    assertEquals(b.contains(a), contains < 0);
+    assertEquals(a.intersects(b), intersects);
+  }
+
+  public void testRelations() {
+    assertRelation(near10, near30, -1, true);
+    assertRelation(near10, near32, 0, false);
+    assertRelation(near10, near3210, -1, true);
+    assertRelation(near10, nearH3210, 0, false);
+    assertRelation(near30, near32, 1, true);
+    assertRelation(near30, near3210, 1, true);
+    assertRelation(near30, nearH3210, 0, true);
+    assertRelation(near32, near3210, -1, true);
+    assertRelation(near32, nearH3210, 0, false);
+    assertRelation(near3210, nearH3210, 0, false);
+
+    assertRelation(far10, far21, 0, false);
+    assertRelation(far10, far321, -1, true);
+    assertRelation(far10, farH20, 0, false);
+    assertRelation(far10, farH3210, 0, false);
+    assertRelation(far21, far321, 0, false);
+    assertRelation(far21, farH20, 0, false);
+    assertRelation(far21, farH3210, -1, true);
+    assertRelation(far321, farH20, 0, true);
+    assertRelation(far321, farH3210, 0, true);
+    assertRelation(farH20, farH3210, 0, true);
+
+    assertRelation(south0ab, south2, -1, true);
+    assertRelation(south0ab, south210b, 0, true);
+    assertRelation(south0ab, southH21, -1, true);
+    assertRelation(south0ab, southH20abc, -1, true);
+    assertRelation(south2, south210b, 1, true);
+    assertRelation(south2, southH21, 0, true);
+    assertRelation(south2, southH20abc, 0, true);
+    assertRelation(south210b, southH21, 0, true);
+    assertRelation(south210b, southH20abc, 0, true);
+    assertRelation(southH21, southH20abc, 1, true);
+
+    assertRelation(nf1n10f2s10abc, nf2n2f210s210ab, 0, true);
+    assertRelation(nf1n10f2s10abc, near32, 1, true);
+    assertRelation(nf1n10f2s10abc, far21, 0, false);
+    assertRelation(nf1n10f2s10abc, south0ab, 0, false);
+    assertRelation(nf1n10f2s10abc, f32n0, 1, true);
+
+    assertRelation(nf2n2f210s210ab, near10, 0, false);
+    assertRelation(nf2n2f210s210ab, far10, 1, true);
+    assertRelation(nf2n2f210s210ab, south210b, 1, true);
+    assertRelation(nf2n2f210s210ab, south0ab, 1, true);
+    assertRelation(nf2n2f210s210ab, n32s0b, 1, true);
   }
 
   private static class TestCase {
@@ -300,27 +298,27 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   public void testOperations() {
     S2Polygon farSouth = new S2Polygon();
     farSouth.initToIntersection(farH, southH);
-    checkEqual(farSouth, farHSouthH, 1e-15);
+    checkEqual(farSouth, farHSouthH);
 
     for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
       TestCase test = testCases[testNumber];
       logger.info("Polygon operation test case " + testNumber);
-      S2Polygon a = makeVerbatimPolygon(test.a);
-      S2Polygon b = makeVerbatimPolygon(test.b);
-      S2Polygon expectedAAndB = makeVerbatimPolygon(test.a_and_b);
-      S2Polygon expectedAOrB = makeVerbatimPolygon(test.a_or_b);
-      S2Polygon expectedAMinusB = makeVerbatimPolygon(test.a_minus_b);
+      S2Polygon a = makePolygon(test.a);
+      S2Polygon b = makePolygon(test.b);
+      S2Polygon expected_a_and_b = makePolygon(test.a_and_b);
+      S2Polygon expected_a_or_b = makePolygon(test.a_or_b);
+      S2Polygon expected_a_minus_b = makePolygon(test.a_minus_b);
 
-      S2Polygon aAndB = new S2Polygon();
-      S2Polygon aOrB = new S2Polygon();
-      S2Polygon aMinusB = new S2Polygon();
-      aAndB.initToIntersection(a, b);
-      checkEqual(aAndB, expectedAAndB, OPERATIONS_MAX_ERROR);
-      aOrB.initToUnion(a, b);
-      checkEqual(aOrB, expectedAOrB, OPERATIONS_MAX_ERROR);
-      checkDestructiveUnion(a, b);
-      aMinusB.initToDifference(a, b);
-      checkEqual(aMinusB, expectedAMinusB, OPERATIONS_MAX_ERROR);
+      S2Polygon a_and_b = new S2Polygon();
+      S2Polygon a_or_b = new S2Polygon();
+      S2Polygon a_minus_b = new S2Polygon();
+      a_and_b.initToIntersection(a, b);
+      checkEqual(a_and_b, expected_a_and_b, OPERATIONS_MAX_ERROR);
+      a_or_b.initToUnion(a, b);
+      tryUnion(a, b);
+      checkEqual(a_or_b, expected_a_or_b, OPERATIONS_MAX_ERROR);
+      a_minus_b.initToDifference(a, b);
+      checkEqual(a_minus_b, expected_a_minus_b, OPERATIONS_MAX_ERROR);
     }
   }
 
@@ -374,9 +372,9 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
       TestCase test = testCases[testNumber];
       logger.info("Polyline intersection test case " + testNumber);
-      S2Polygon a = makeVerbatimPolygon(test.a);
-      S2Polygon b = makeVerbatimPolygon(test.b);
-      S2Polygon expectedAAndB = makeVerbatimPolygon(test.a_and_b);
+      S2Polygon a = makePolygon(test.a);
+      S2Polygon b = makePolygon(test.b);
+      S2Polygon expected_a_and_b = makePolygon(test.a_and_b);
 
       List<S2Point> points = Lists.newArrayList();
       List<S2Polyline> polylines = Lists.newArrayList();
@@ -411,66 +409,28 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
       S2Polygon a_and_b = new S2Polygon();
       assertTrue(builder.assemblePolygon(a_and_b, null));
-      checkEqual(a_and_b, expectedAAndB, OPERATIONS_MAX_ERROR);
+      checkEqual(a_and_b, expected_a_and_b, OPERATIONS_MAX_ERROR);
     }
   }
 
-  private static void checkEqual(S2Polygon a, S2Polygon b) {
-    checkEqual(a, b, 0);
+  private void checkEqual(S2Polygon a, S2Polygon b) {
+    checkEqual(a, b, 1e-31);
   }
 
-  private static void checkEqual(S2Polygon a, S2Polygon b, final double maxError) {
-    if (a.boundaryApproxEquals(b, maxError)) {
-      return;
+  private void checkEqual(S2Polygon a, S2Polygon b, final double maxError) {
+    if (a.isNormalized() && b.isNormalized()) {
+      boolean r = a.boundaryApproxEquals(b, maxError);
+      assertTrue(r);
+    } else {
+      S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.UNDIRECTED_XOR);
+      S2Polygon a2 = new S2Polygon();
+      S2Polygon b2 = new S2Polygon();
+      builder.addPolygon(a);
+      assertTrue(builder.assemblePolygon(a2, null));
+      builder.addPolygon(b);
+      assertTrue(builder.assemblePolygon(b2, null));
+      assertTrue(a2.boundaryApproxEquals(b2, maxError));
     }
-
-    S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_XOR);
-    builder.addPolygon(a);
-    S2Polygon a2 = new S2Polygon();
-    assertTrue(builder.assemblePolygon(a2, null));
-    builder.addPolygon(b);
-    S2Polygon b2 = new S2Polygon();
-    assertTrue(builder.assemblePolygon(b2, null));
-    assertTrue(a2.boundaryApproxEquals(b2, maxError));
-  }
-
-  private static void checkComplementary(S2Polygon a, S2Polygon b) {
-    S2Polygon b1 = new S2Polygon();
-    b1.initToComplement(b);
-    checkEqual(a, b1);
-  }
-
-  public void testApproxContains() {
-    // Get a random S2Cell as a polygon.
-    S2CellId id = S2CellId.fromLatLng(S2LatLng.fromE6(69852241, 6751108));
-    S2Cell cell = new S2Cell(id.parent(10));
-    S2Polygon cellAsPolygon = new S2Polygon(cell);
-
-    // We want to roughly bisect the polygon, so we make a rectangle that is the
-    // top half of the current polygon's bounding rectangle.
-    S2LatLngRect bounds = cellAsPolygon.getRectBound();
-    S2LatLngRect upperHalf = new S2LatLngRect(
-        new R1Interval(
-            bounds.lat().getCenter(),
-            bounds.lat().hi()),
-        bounds.lng());
-
-    // Turn the S2LatLngRect into an S2Polygon
-    List<S2Point> points = Lists.newArrayList();
-    for (int i = 0; i < 4; i++) {
-      points.add(upperHalf.getVertex(i).toPoint());
-    }
-    List<S2Loop> loops = Lists.newArrayList();
-    loops.add(new S2Loop(points));
-    S2Polygon upperHalfPolygon = new S2Polygon(loops);
-
-    // Get the intersection. There is no guarantee that the intersection will be
-    // contained by A or B.
-    S2Polygon intersection = new S2Polygon();
-    intersection.initToIntersection(cellAsPolygon, upperHalfPolygon);
-    assertFalse(cellAsPolygon.contains(intersection));
-    assertTrue(cellAsPolygon.approxContains(
-        intersection, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE));
   }
 
   public void tryUnion(S2Polygon a, S2Polygon b) {
@@ -485,290 +445,19 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     checkEqual(union, destructiveUnion);
   }
 
-  /**
-   * Given a pair of polygons where A contains B, check that various identities involving union,
-   * intersection, and difference operations hold true.
-   */
-  private static void checkOneNestedPair(S2Polygon a, S2Polygon b) {
-    assertTrue(a.contains(b));
-    assertEquals(!b.isEmpty(), a.intersects(b));
-    assertEquals(!b.isEmpty(), b.intersects(a));
-
-    S2Polygon c = new S2Polygon();
-    c.initToUnion(a, b);
-    checkEqual(c, a);
-
-    S2Polygon d = new S2Polygon();
-    d.initToIntersection(a, b);
-    checkEqual(d, b);
-
-    S2Polygon e = new S2Polygon();
-    e.initToDifference(b, a);
-    assertTrue(e.isEmpty());
-  }
-
-  /**
-   * Given a pair of disjoint polygons A and B, check that various identities involving union,
-   * intersection, and difference operations hold true.
-   */
-  private static void checkOneDisjointPair(S2Polygon a, S2Polygon b) {
-    assertFalse(a.intersects(b));
-    assertFalse(b.intersects(a));
-    assertEquals(b.isEmpty(), a.contains(b));
-    assertEquals(a.isEmpty(), b.contains(a));
-
+  public void testDisjoint() {
+    S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.UNDIRECTED_XOR);
+    builder.addPolygon(adj0);
+    builder.addPolygon(unAdj);
     S2Polygon ab = new S2Polygon();
-    S2Polygon c = new S2Polygon();
-    S2Polygon d = new S2Polygon();
-    S2Polygon e = new S2Polygon();
-    S2Polygon f = new S2Polygon();
-    S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_XOR);
-    builder.addPolygon(a);
-    builder.addPolygon(b);
     assertTrue(builder.assemblePolygon(ab, null));
 
-    c.initToUnion(a, b);
-    checkEqual(c, ab);
+    S2Polygon union = new S2Polygon();
+    union.initToUnion(adj0, unAdj);
+    assertEquals(2, union.numLoops());
 
-    d.initToIntersection(a, b);
-    assertTrue(d.isEmpty());
-
-    e.initToDifference(a, b);
-    checkEqual(e, a);
-
-    f.initToDifference(b, a);
-    checkEqual(f, b);
-  }
-
-  /**
-   * Given polygons A and B whose union covers the sphere, check that various identities involving
-   * union, intersection, and difference hold true.
-   */
-  private static void checkOneCoveringPair(S2Polygon a, S2Polygon b) {
-    assertEquals(a.isFull(), a.contains(b));
-    assertEquals(b.isFull(), b.contains(a));
-    S2Polygon c = new S2Polygon();
-    c.initToUnion(a, b);
-    assertTrue(c.isFull());
-  }
-
-  /**
-   * Given polygons A and B such that both A and its complement intersect both B and its complement,
-   * check that various identities involving union, intersection, and difference hold true.
-   */
-  private static void checkOneOverlappingPair(S2Polygon a, S2Polygon b) {
-    assertFalse(a.contains(b));
-    assertFalse(b.contains(a));
-    assertTrue(a.intersects(b));
-
-    S2Polygon c = new S2Polygon();
-    c.initToUnion(a, b);
-    assertFalse(c.isFull());
-
-    S2Polygon d = new S2Polygon();
-    d.initToIntersection(a, b);
-    assertFalse(d.isEmpty());
-
-    S2Polygon e = new S2Polygon();
-    e.initToDifference(b, a);
-    assertFalse(e.isEmpty());
-  }
-
-  /**
-   * Given a pair of polygons where A contains B, test various identities involving A, B, and their
-   * complements.
-   */
-  private static void checkNestedPair(S2Polygon a, S2Polygon b) {
-    S2Polygon a1 = new S2Polygon();
-    S2Polygon b1 = new S2Polygon();
-    a1.initToComplement(a);
-    b1.initToComplement(b);
-    checkOneNestedPair(a, b);
-    checkOneNestedPair(b1, a1);
-    checkOneDisjointPair(a1, b);
-    checkOneCoveringPair(a, b1);
-  }
-
-  /**
-   * Given a pair of disjoint polygons A and B, test various identities involving A, B, and their
-   * complements.
-   */
-  private static void checkDisjointPair(S2Polygon a, S2Polygon b) {
-    S2Polygon a1 = new S2Polygon();
-    a1.initToComplement(a);
-    S2Polygon b1 = new S2Polygon();
-    b1.initToComplement(b);
-    checkOneDisjointPair(a, b);
-    checkOneCoveringPair(a1, b1);
-    checkOneNestedPair(a1, b);
-    checkOneNestedPair(b1, a);
-  }
-
-  /**
-   * Given polygons A and B such that both A and its complement intersect both B and its complement,
-   * test various identities involving these four polygons.
-   */
-  private static void checkOverlappingPair(S2Polygon a, S2Polygon b) {
-    S2Polygon a1 = new S2Polygon();
-    a1.initToComplement(a);
-    S2Polygon b1 = new S2Polygon();
-    b1.initToComplement(b);
-    checkOneOverlappingPair(a, b);
-    checkOneOverlappingPair(a1, b1);
-    checkOneOverlappingPair(a1, b);
-    checkOneOverlappingPair(a, b1);
-  }
-
-  /** "a1" is the complement of "a", and "b1" is the complement of "b". */
-  private static void checkOneComplementPair(S2Polygon a, S2Polygon a1, S2Polygon b, S2Polygon b1) {
-    // Check DeMorgan's Law and that subtraction is the same as intersection
-    // with the complement.  This function is called multiple times in order to
-    // test the various combinations of complements.
-    S2Polygon aOrB = new S2Polygon();
-    S2Polygon aAndB1 = new S2Polygon();
-    S2Polygon aMinusB = new S2Polygon();
-    aAndB1.initToIntersection(a, b1);
-    aOrB.initToUnion(a1, b);
-    aMinusB.initToDifference(a, b);
-    checkComplementary(aOrB, aAndB1);
-    checkEqual(aMinusB, aAndB1);
-  }
-
-  /**
-   * Test identities that should hold for any pair of polygons A, B and their complements.
-   */
-  private static void checkComplements(S2Polygon a, S2Polygon b) {
-    S2Polygon a1 = new S2Polygon();
-    a1.initToComplement(a);
-    S2Polygon b1 = new S2Polygon();
-    b1.initToComplement(b);
-    checkOneComplementPair(a, a1, b, b1);
-    checkOneComplementPair(a1, a, b, b1);
-    checkOneComplementPair(a, a1, b1, b);
-    checkOneComplementPair(a1, a, b1, b);
-  }
-
-  private static void checkDestructiveUnion(S2Polygon a, S2Polygon b) {
-    S2Polygon c = new S2Polygon();
-    c.initToUnion(a, b);
-    List<S2Polygon> polygons = Lists.newArrayList();
-    polygons.add(new S2Polygon(a));
-    polygons.add(new S2Polygon(b));
-    S2Polygon cDestructive = S2Polygon.destructiveUnion(polygons);
-    checkEqual(c, cDestructive);
-  }
-
-  private static void checkRelationImpl(S2Polygon a, S2Polygon b,
-      boolean contains, boolean contained, boolean intersects) {
-    assertEquals(contains, a.contains(b));
-    assertEquals(contained, b.contains(a));
-    assertEquals(intersects, a.intersects(b));
-    if (contains) {
-      checkNestedPair(a, b);
-    }
-    if (contained) {
-      checkNestedPair(b, a);
-    }
-    if (!intersects) {
-      checkDisjointPair(a, b);
-    }
-    if (intersects && !(contains | contained)) {
-      checkOverlappingPair(a, b);
-    }
-    checkDestructiveUnion(a, b);
-    checkComplements(a, b);
-  }
-
-  private static void checkRelation(S2Polygon a, S2Polygon b,
-      boolean contains, boolean contained, boolean intersects) {
-    try {
-      checkRelationImpl(a, b, contains, contained, intersects);
-    } catch (AssertionError e) {
-      System.err.println("args " + a  + ", " + b);
-      throw e;
-    }
-  }
-
-  public void testRelations() {
-    checkRelation(near10, empty, true, false, false);
-    checkRelation(near10, near10, true, true, true);
-    checkRelation(full, near10, true, false, true);
-    checkRelation(near10, near30, false, true, true);
-    checkRelation(near10, near32, false, false, false);
-    checkRelation(near10, near3210, false, true, true);
-    checkRelation(near10, nearH3210, false, false, false);
-    checkRelation(near30, near32, true, false, true);
-    checkRelation(near30, near3210, true, false, true);
-    checkRelation(near30, nearH3210, false, false, true);
-    checkRelation(near32, near3210, false, true, true);
-    checkRelation(near32, nearH3210, false, false, false);
-    checkRelation(near3210, nearH3210, false, false, false);
-
-    checkRelation(far10, far21, false, false, false);
-    checkRelation(far10, far321, false, true, true);
-    checkRelation(far10, farH20, false, false, false);
-    checkRelation(far10, farH3210, false, false, false);
-    checkRelation(far21, far321, false, false, false);
-    checkRelation(far21, farH20, false, false, false);
-    checkRelation(far21, farH3210, false, true, true);
-    checkRelation(far321, farH20, false, false, true);
-    checkRelation(far321, farH3210, false, false, true);
-    checkRelation(farH20, farH3210, false, false, true);
-
-    checkRelation(south0ab, south2, false, true, true);
-    checkRelation(south0ab, south210b, false, false, true);
-    checkRelation(south0ab, southH21, false, true, true);
-    checkRelation(south0ab, southH20abc, false, true, true);
-    checkRelation(south2, south210b, true, false, true);
-    checkRelation(south2, southH21, false, false, true);
-    checkRelation(south2, southH20abc, false, false, true);
-    checkRelation(south210b, southH21, false, false, true);
-    checkRelation(south210b, southH20abc, false, false, true);
-    checkRelation(southH21, southH20abc, true, false, true);
-
-    checkRelation(nf1n10f2s10abc, nf2n2f210s210ab, false, false, true);
-    checkRelation(nf1n10f2s10abc, near32, true, false, true);
-    checkRelation(nf1n10f2s10abc, far21, false, false, false);
-    checkRelation(nf1n10f2s10abc, south0ab, false, false, false);
-    checkRelation(nf1n10f2s10abc, f32n0, true, false, true);
-
-    checkRelation(nf2n2f210s210ab, near10, false, false, false);
-    checkRelation(nf2n2f210s210ab, far10, true, false, true);
-    checkRelation(nf2n2f210s210ab, south210b, true, false, true);
-    checkRelation(nf2n2f210s210ab, south0ab, true, false, true);
-    checkRelation(nf2n2f210s210ab, n32s0b, true, false, true);
-
-    checkRelation(cross1, cross2, false, false, true);
-    checkRelation(cross1SideHole, cross2, false, false, true);
-    checkRelation(cross1CenterHole, cross2, false, false, true);
-    checkRelation(cross1, cross2SideHole, false, false, true);
-    checkRelation(cross1, cross2CenterHole, false, false, true);
-    checkRelation(cross1SideHole, cross2SideHole, false, false, true);
-    checkRelation(cross1CenterHole, cross2SideHole, false, false, true);
-    checkRelation(cross1SideHole, cross2CenterHole, false, false, true);
-    checkRelation(cross1CenterHole, cross2CenterHole, false, false, true);
-
-    // These cases, when either polygon has a hole, test a different code path
-    // from the other cases.
-    checkRelation(overlap1, overlap2, false, false, true);
-    checkRelation(overlap1SideHole, overlap2, false, false, true);
-    checkRelation(overlap1CenterHole, overlap2, false, false, true);
-    checkRelation(overlap1, overlap2SideHole, false, false, true);
-    checkRelation(overlap1, overlap2CenterHole, false, false, true);
-    checkRelation(overlap1SideHole, overlap2SideHole, false, false, true);
-    checkRelation(overlap1CenterHole, overlap2SideHole, false, false, true);
-    checkRelation(overlap1SideHole, overlap2CenterHole, false, false, true);
-    checkRelation(overlap1CenterHole, overlap2CenterHole, false, false, true);
-  }
-
-  public void testEmptyAndFull() {
-    assertTrue(empty.isEmpty());
-    assertFalse(full.isEmpty());
-    assertFalse(empty.isFull());
-    assertTrue(full.isFull());
-    checkNestedPair(empty, empty);
-    checkNestedPair(full, empty);
-    checkNestedPair(full, full);
+    checkEqual(ab, union);
+    tryUnion(adj0, unAdj);
   }
 
   public void testUnionSloppySuccess() {
@@ -867,25 +556,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(1d, shell.getDistance(origin).degrees(), epsilon);
   }
 
-  public void testMultipleInit() {
-    S2Polygon polygon = makePolygon("0:0, 0:2, 2:0");
-    assertEquals(1, polygon.numLoops());
-    assertEquals(3, polygon.getNumVertices());
-    S2LatLngRect bound1 = polygon.getRectBound();
-
-    List<S2Loop> loops = Lists.newArrayList();
-    loops.add(makeLoop("10:0, -10:-20, -10:20"));
-    loops.add(makeLoop("40:30, 20:10, 20:50"));
-    polygon.initNested(loops);
-    assertTrue(polygon.isValid());
-    assertTrue(loops.isEmpty());
-    assertEquals(2, polygon.numLoops());
-    assertEquals(6, polygon.getNumVertices());
-    assertTrue(!bound1.equals(polygon.getRectBound()));
-  }
-
   public void testProject() {
-    S2Polygon polygon = makeVerbatimPolygon(NEAR0 + NEAR2);
+    S2Polygon polygon = makePolygon(NEAR0 + NEAR2);
     double epsilon = 1e-15;
     S2Point point;
     S2Point projected;
@@ -964,4 +636,5 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, polygon.loop(2).depth());
     assertDoubleNear(0.003821967440517272, polygon.getArea());
   }
+
 }

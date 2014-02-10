@@ -17,12 +17,10 @@
 package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,7 +51,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
 
   // A completely degenerate triangle along the equator that RobustCCW()
   // considers to be CCW.
-  private S2Loop lineTriangle = makeLoop("0:1, 0:2, 0:3");
+  private S2Loop lineTriangle = makeLoop("0:1, 0:3, 0:2");
 
   // A nearly-degenerate CCW chevron near the equator with very long sides
   // (about 80 degrees).  Note that the precision is less than the C++
@@ -79,45 +77,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   // Another diamond-shaped loop around the point 0:180.
   private S2Loop loopB = makeLoop("0:179, -1:180, 0:-178, 1:-180");
 
-  // A shape gotten from A by adding a triangle to one edge, and
-  // subtracting a triangle from the opposite edge.
-  private S2Loop loopC = makeLoop("0:178, 0:180, -1:180, 0:-179, 1:-179, 1:-180");
-
-  // A shape gotten from A by adding a triangle to one edge, and
-  // adding another triangle to the opposite edge.
-  private S2Loop loopD = makeLoop("0:178, -1:178, -1:180, 0:-179, 1:-179, 1:-180");
-
-  //   3------------2
-  //   |            |               ^
-  //   |  7-8  b-c  |               |
-  //   |  | |  | |  |      Latitude |
-  //   0--6-9--a-d--1               |
-  //   |  | |       |               |
-  //   |  f-e       |               +----------->
-  //   |            |                 Longitude
-  //   4------------5
-  //
-  // Important: It is not okay to skip over collinear vertices when
-  // defining these loops (e.g. to define loop E as "0,1,2,3") because S2
-  // uses symbolic perturbations to ensure that no three vertices are
-  // *ever* considered collinear (e.g., vertices 0, 6, 9 are not
-  // collinear).  In other words, it is unpredictable (modulo knowing the
-  // details of the symbolic perturbations) whether 0123 contains 06123,
-  // for example.
-  //
-  // Loop E:  0,6,9,a,d,1,2,3
-  // Loop F:  0,4,5,1,d,a,9,6
-  // Loop G:  0,6,7,8,9,a,b,c,d,1,2,3
-  // Loop H:  0,6,f,e,9,a,b,c,d,1,2,3
-  // Loop I:  7,6,f,e,9,8
-  private S2Loop loopE = makeLoop("0:30, 0:34, 0:36, 0:39, 0:41, 0:44, 30:44, 30:30");
-  private S2Loop loopF = makeLoop("0:30, -30:30, -30:44, 0:44, 0:41, 0:39, 0:36, 0:34");
-  private S2Loop loopG = makeLoop(
-      "0:30, 0:34, 10:34, 10:36, 0:36, 0:39, 10:39, 10:41, 0:41, 0:44, 30:44, 30:30");
-  private S2Loop loopH = makeLoop(
-      "0:30, 0:34, -10:34, -10:36, 0:36, 0:39, 10:39, 10:41, 0:41, 0:44, 30:44, 30:30");
-  private S2Loop loopI = makeLoop("10:34, 0:34, -10:34, -10:36, 0:36, 10:36");
-
   // The intersection of A and B.
   private S2Loop aIntersectB = makeLoop("0:179, -1:180, 0:-179, 1:-180");
 
@@ -133,14 +92,22 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   // A self-crossing loop with a duplicated vertex
   private S2Loop bowtie = makeLoop("0:0, 2:0, 1:1, 0:2, 2:2, 1:1");
 
-  private S2Loop southHemi = invert(northHemi);
-  private S2Loop eastHemi = invert(westHemi);
-  private S2Loop farHemi = invert(nearHemi);
+  // Initialized below.
+  private S2Loop southHemi;
+  private S2Loop eastHemi;
+  private S2Loop farHemi;
 
-  private static S2Loop invert(S2Loop loop) {
-    S2Loop copy = new S2Loop(loop);
-    copy.invert();
-    return copy;
+  @Override
+  public void setUp() {
+    super.setUp();
+    southHemi = new S2Loop(northHemi);
+    southHemi.invert();
+
+    eastHemi = new S2Loop(westHemi);
+    eastHemi.invert();
+
+    farHemi = new S2Loop(nearHemi);
+    farHemi.invert();
   }
 
   /** Verifies that a is a loose bound of b, with boundaries at most maxError apart. */
@@ -156,8 +123,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   public void testBounds() {
-    assertTrue(S2Loop.empty().getRectBound().isEmpty());
-    assertTrue(S2Loop.full().getRectBound().isFull());
     assertTrue(candyCane.getRectBound().lng().isFull());
     assertTrue(candyCane.getRectBound().latLo().degrees() < -20);
     assertTrue(candyCane.getRectBound().latHi().degrees() > 10);
@@ -188,11 +153,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   public void testAreaCentroid() {
-    assertEquals(0.0, S2Loop.empty().getArea());
-    assertEquals(4 * S2.M_PI, S2Loop.full().getArea());
-    assertEquals(null, S2Loop.empty().getCentroid());
-    assertEquals(null, S2Loop.full().getCentroid());
-
     assertDoubleNear(northHemi.getArea(), 2 * S2.M_PI);
     assertDoubleNear(eastHemi.getArea(), 2 * S2.M_PI);
 
@@ -261,11 +221,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   public void testContains() {
-    // Check the full and empty loops have the correct containment relationship
-    // with the special "vertex" that defines them.
-    assertFalse(S2Loop.empty().contains(S2Loop.EMPTY_VERTEX));
-    assertTrue(S2Loop.full().contains(S2Loop.FULL_VERTEX));
-
     assertTrue(candyCane.contains(S2LatLng.fromDegrees(5, 71).toPoint()));
     for (int i = 0; i < 4; ++i) {
       assertTrue(northHemi.contains(new S2Point(0, 0, 1)));
@@ -310,70 +265,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
-  public void testContainsMatchesRobustCrossing() {
-    // This test demonstrates a former incompatibility between robustCrossing()
-    // and contains(S2Point).  It constructs an S2Cell-based loop L and
-    // an edge E from Origin to a0 that crosses exactly one edge of L.  Yet
-    // previously, contains() returned false for both endpoints of E.
-    //
-    // The reason for the bug was that the loop bound was sometimes too tight.
-    // The contains() code for a0 bailed out early because a0 was found not to
-    // be inside the bound of L.
-
-    // Start with a cell that ends up producing the problem.
-    S2CellId cellId = S2CellId.fromPoint(new S2Point(1, 1, 1)).parent(21);
-
-    S2Cell[] children = {new S2Cell(), new S2Cell(), new S2Cell(), new S2Cell()};
-    new S2Cell(cellId).subdivide(children);
-
-    S2Point[] points = new S2Point[4];
-    for (int i = 0; i < 4; ++i) {
-      // Note extra normalization. GetCenter() is already normalized.
-      // The test results will no longer be inconsistent if the extra
-      // Normalize() is removed.
-      points[i] = S2Point.normalize(children[i].getCenter());
-    }
-
-    S2Loop loop = new S2Loop(Arrays.asList(points));
-
-    // Get a vertex from a grandchild cell.  Mathematically, a0 should be the
-    // same as points[0], but rounding errors make it slightly different.
-    // +---------------+---------------+
-    // |               |               |
-    // |    points[3]  |   points[2]   |
-    // |       v       |       v       |
-    // |       +-------+------ +       |
-    // |       |       |       |       |
-    // |       |       |       |       |
-    // |       |       |       |       |
-    // +-------+-------+-------+-------+
-    // |       |       |       |       |
-    // |       |    <----------------------- grandchild_cell
-    // |       |       |       |       |
-    // |       +-------+------ +       |
-    // |       ^       |       ^       | <-- cell
-    // | points[0]/a0  |     points[1] |
-    // |               |               |
-    // +---------------+---------------+
-
-    S2Cell grandchildCell = new S2Cell(cellId.child(0).child(2));
-    S2Point a0 = grandchildCell.getVertex(0);
-
-    // The edge from a0 to the origin crosses one boundary.
-    assertEquals(-1, S2EdgeUtil.robustCrossing(a0, S2.origin(), loop.vertex(0), loop.vertex(1)));
-    assertEquals(1, S2EdgeUtil.robustCrossing(a0, S2.origin(), loop.vertex(1), loop.vertex(2)));
-    assertEquals(-1, S2EdgeUtil.robustCrossing(a0, S2.origin(), loop.vertex(2), loop.vertex(3)));
-    assertEquals(-1, S2EdgeUtil.robustCrossing(a0, S2.origin(), loop.vertex(3), loop.vertex(4)));
-
-    // Contains should return false for the origin, and true for a0.
-    assertFalse(loop.contains(S2.origin()));
-    assertTrue(loop.contains(a0));
-
-    // Since a0 is inside the loop, it should be inside the bound.
-    S2LatLngRect bound = loop.getRectBound();
-    assertTrue(bound.contains(a0));
-  }
-
   private S2CellId advance(S2CellId id, int n) {
     while (id.isValid() && --n >= 0) {
       id = id.next();
@@ -385,6 +276,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     // Construct a CCW polygon whose boundary is the union of the cell ids
     // in the range [begin, end). We add the edges one by one, removing
     // any edges that are already present in the opposite direction.
+
     Map<S2Point, Set<S2Point>> edges = Maps.newHashMap();
     for (S2CellId id = begin; !id.equals(end); id = id.next()) {
       S2Cell cell = new S2Cell(id);
@@ -394,7 +286,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
         if (edges.get(b) == null) {
           edges.put(b, Sets.<S2Point>newHashSet());
         }
-
         // if a is in b's set, remove it and remove b's set if it's empty
         // otherwise, add b to a's set
         if (!edges.get(b).remove(a)) {
@@ -410,6 +301,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
 
     // The remaining edges form a single loop. We simply follow it starting
     // at an arbitrary vertex and build up a list of vertices.
+
     List<S2Point> vertices = Lists.newArrayList();
     S2Point p = edges.keySet().iterator().next();
     while (!edges.isEmpty()) {
@@ -419,268 +311,97 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       edges.remove(p);
       p = next;
     }
-
     return new S2Loop(vertices);
   }
 
-  /** Given a pair of loops where A contains B, check various identities. */
-  private static void checkOneNestedPair(S2Loop a, S2Loop b) {
-    assertTrue(a.contains(b));
-    assertEquals(a.boundaryEquals(b), b.contains(a));
-    assertEquals(!b.isEmpty(), a.intersects(b));
-    assertEquals(!b.isEmpty(), b.intersects(a));
-  }
-
-  /** Given a pair of disjoint loops A and B, check various identities. */
-  private static void checkOneDisjointPair(S2Loop a, S2Loop b) {
-    assertFalse(a.intersects(b));
-    assertFalse(b.intersects(a));
-    assertEquals(b.isEmpty(), a.contains(b));
-    assertEquals(a.isEmpty(), b.contains(a));
-  }
-
-  /** Given loops A and B whose union covers the sphere, check various identities. */
-  private static void checkOneCoveringPair(S2Loop a, S2Loop b) {
-    assertEquals(a.isFull(), a.contains(b));
-    assertEquals(b.isFull(), b.contains(a));
-    S2Loop a1 = invert(a);
-    boolean complementary = a1.boundaryEquals(b);
-    assertEquals(!complementary, a.intersects(b));
-    assertEquals(!complementary, b.intersects(a));
-  }
-
-  /**
-   * Given loops A and B such that both A and its complement intersect both B and its complement,
-   * check various identities.
-   */
-  private static void checkOneOverlappingPair(S2Loop a, S2Loop b) {
-    assertFalse(a.contains(b));
-    assertFalse(b.contains(a));
-    assertTrue(a.intersects(b));
-    assertTrue(b.intersects(a));
-  }
-
-  /**
-   * Given a pair of loops where A contains B, test various identities involving A, B, and their
-   * complements.
-   */
-  private static void checkNestedPair(S2Loop a, S2Loop b) {
-    S2Loop a1 = invert(a);
-    S2Loop b1 = invert(b);
-    checkOneNestedPair(a, b);
-    checkOneNestedPair(b1, a1);
-    checkOneDisjointPair(a1, b);
-    checkOneCoveringPair(a, b1);
-  }
-
-  /**
-   * Given a pair of disjoint loops A and B, test various identities involving A, B, and their
-   * complements.
-   */
-  private static void checkDisjointPair(S2Loop a, S2Loop b) {
-    S2Loop a1 = new S2Loop(a);
-    a1.invert();
-    checkNestedPair(a1, b);
-  }
-
-  /**
-   * Given loops A and B whose union covers the sphere, test various identities involving A, B, and
-   * their complements.
-   */
-  private static void checkCoveringPair(S2Loop a, S2Loop b) {
-    S2Loop b1 = new S2Loop(b);
-    b1.invert();
-    checkNestedPair(a, b1);
-  }
-
-  /**
-   * Given loops A and B such that both A and its complement intersect both B and its complement,
-   * test various identities involving these four loops.
-   */
-  private static void checkOverlappingPair(S2Loop a, S2Loop b) {
-    S2Loop a1 = invert(a);
-    S2Loop b1 = invert(b);
-    checkOneOverlappingPair(a, b);
-    checkOneOverlappingPair(a1, b1);
-    checkOneOverlappingPair(a1, b);
-    checkOneOverlappingPair(a, b1);
-  }
-
-  /** A contains B. */
-  private static final int CONTAINS = 0x1;
-  /** B contains A. */
-  private static final int CONTAINED = 0x2;
-  /** A and B are disjoint (intersection is empty.) */
-  private static final int DISJOINT = 0x4;
-  /** (A union B) covers the entire sphere. */
-  private static final int COVERS = 0x8;
-
-  /** Returns true if any of the bits in needles are set in haystack. */
-  private static final boolean test(int haystack, int needles) {
-    return (haystack & needles) != 0;
-  }
-
-  /**
-   * Verifies the relationship between two loops A and B.  "flags" is the set of RelationFlags that
-   * apply.  "shared_edge" means that the loops share at least one edge (possibly reversed.)
-   */
-  private static void checkRelationImpl(S2Loop a, S2Loop b, int flags, boolean sharedEdge) {
-    if (test(flags, CONTAINS)) {
-      checkNestedPair(a, b);
+  private void assertRelation(
+      S2Loop a, S2Loop b, int containsOrCrosses, boolean intersects, boolean nestable) {
+    assertEquals(a.contains(b), containsOrCrosses == 1);
+    assertEquals(a.intersects(b), intersects);
+    if (nestable) {
+      assertEquals(a.containsNested(b), a.contains(b));
     }
-    if (test(flags, CONTAINED)) {
-      checkNestedPair(b, a);
-    }
-    if (test(flags, COVERS)) {
-      checkCoveringPair(a, b);
-    }
-    if (test(flags, DISJOINT)) {
-      checkDisjointPair(a, b);
-    } else if (!(test(flags, (CONTAINS | CONTAINED | COVERS)))) {
-      checkOverlappingPair(a, b);
-    }
-    if (!sharedEdge && (test(flags, (CONTAINS | CONTAINED | DISJOINT)))) {
-      assertEquals(a.contains(b), a.containsNested(b));
-    }
-    // A contains the boundary of B if either A contains B, or the two loops
-    // contain each other's boundaries and there are no shared edges (since at
-    // least one such edge must be reversed, and therefore is not considered to
-    // be contained according to the rules of CompareBoundary).
-    int comparison = 0;
-    if (test(flags, CONTAINS) || ((test(flags, COVERS) && !sharedEdge))) {
-      comparison = 1;
-    }
-    // Similarly, A excludes the boundary of B if either A and B are disjoint,
-    // or B contains A and there are no shared edges (since A is considered to
-    // contain such edges according to the rules of CompareBoundary).
-    if (test(flags, DISJOINT) || (test(flags, CONTAINED) && !sharedEdge)) {
-      comparison = -1;
-    }
-    // CompareBoundary requires that neither loop is empty.
-    if (!a.isEmpty() && !b.isEmpty()) {
-      assertEquals(comparison, a.compareBoundary(b));
-    }
-  }
-
-  private void checkRelation(S2Loop a, S2Loop b, int flags, boolean sharedEdge) {
-    try {
-      checkRelationImpl(a, b, flags, sharedEdge);
-    } catch (AssertionError e) {
-      System.err.println("args "  + a + ", " + b);
-      throw e;
+    if (containsOrCrosses >= -1) {
+      assertEquals(a.containsOrCrosses(b), containsOrCrosses);
     }
   }
 
   public void testLoopRelations() {
-    // Check full and empty relationships with normal loops and each other.
-    checkRelation(S2Loop.full(), S2Loop.full(), CONTAINS | CONTAINED | COVERS, true);
-    checkRelation(S2Loop.full(), northHemi, CONTAINS | COVERS, false);
-    checkRelation(S2Loop.full(), S2Loop.empty(), CONTAINS | DISJOINT | COVERS, false);
-    checkRelation(northHemi, S2Loop.full(), CONTAINED | COVERS, false);
-    checkRelation(northHemi, S2Loop.empty(), CONTAINS | DISJOINT, false);
-    checkRelation(S2Loop.empty(), S2Loop.full(), CONTAINED | DISJOINT | COVERS, false);
-    checkRelation(S2Loop.empty(), northHemi, CONTAINED | DISJOINT, false);
-    checkRelation(S2Loop.empty(), S2Loop.empty(), CONTAINS | CONTAINED | DISJOINT, false);
+    assertRelation(northHemi, northHemi, 1, true, false);
+    assertRelation(northHemi, southHemi, 0, false, false);
+    assertRelation(northHemi, eastHemi, -1, true, false);
+    assertRelation(northHemi, arctic80, 1, true, true);
+    assertRelation(northHemi, antarctic80, 0, false, true);
+    assertRelation(northHemi, candyCane, -1, true, false);
 
-    checkRelation(northHemi, northHemi, CONTAINS | CONTAINED, true);
-    checkRelation(northHemi, southHemi, DISJOINT | COVERS, true);
-    checkRelation(northHemi, eastHemi, 0, false);
-    checkRelation(northHemi, arctic80, CONTAINS, false);
-    checkRelation(northHemi, antarctic80, DISJOINT, false);
-    checkRelation(northHemi, candyCane, 0, false);
+    // We can't compare northHemi3 vs. northHemi or southHemi.
+    assertRelation(northHemi3, northHemi3, 1, true, false);
+    assertRelation(northHemi3, eastHemi, -1, true, false);
+    assertRelation(northHemi3, arctic80, 1, true, true);
+    assertRelation(northHemi3, antarctic80, 0, false, true);
+    assertRelation(northHemi3, candyCane, -1, true, false);
 
-    // We can't compare north_hemi3 vs. north_hemi or south_hemi because the
-    // result depends on the "simulation of simplicity" implementation details.
-    checkRelation(northHemi3, northHemi3, CONTAINS | CONTAINED, true);
-    checkRelation(northHemi3, eastHemi, 0, false);
-    checkRelation(northHemi3, arctic80, CONTAINS, false);
-    checkRelation(northHemi3, antarctic80, DISJOINT, false);
-    checkRelation(northHemi3, candyCane, 0, false);
+    assertRelation(southHemi, northHemi, 0, false, false);
+    assertRelation(southHemi, southHemi, 1, true, false);
+    assertRelation(southHemi, farHemi, -1, true, false);
+    assertRelation(southHemi, arctic80, 0, false, true);
+    assertRelation(southHemi, antarctic80, 1, true, true);
+    assertRelation(southHemi, candyCane, -1, true, false);
 
-    checkRelation(southHemi, northHemi, DISJOINT | COVERS, true);
-    checkRelation(southHemi, southHemi, CONTAINS | CONTAINED, true);
-    checkRelation(southHemi, farHemi, 0, false);
-    checkRelation(southHemi, arctic80, DISJOINT, false);
-    checkRelation(southHemi, antarctic80, CONTAINS, false);
-    checkRelation(southHemi, candyCane, 0, false);
+    assertRelation(candyCane, northHemi, -1, true, false);
+    assertRelation(candyCane, southHemi, -1, true, false);
+    assertRelation(candyCane, arctic80, 0, false, true);
+    assertRelation(candyCane, antarctic80, 0, false, true);
+    assertRelation(candyCane, candyCane, 1, true, false);
 
-    checkRelation(candyCane, northHemi, 0, false);
-    checkRelation(candyCane, southHemi, 0, false);
-    checkRelation(candyCane, arctic80, DISJOINT, false);
-    checkRelation(candyCane, antarctic80, DISJOINT, false);
-    checkRelation(candyCane, candyCane, CONTAINS | CONTAINED, true);
+    assertRelation(nearHemi, westHemi, -1, true, false);
 
-    checkRelation(nearHemi, westHemi, 0, false);
+    assertRelation(smallNeCw, southHemi, 1, true, false);
+    assertRelation(smallNeCw, westHemi, 1, true, false);
+    assertRelation(smallNeCw, northHemi, -2, true, false);
+    assertRelation(smallNeCw, eastHemi, -2, true, false);
 
-    checkRelation(smallNeCw, southHemi, CONTAINS, false);
-    checkRelation(smallNeCw, westHemi, CONTAINS, false);
+    assertRelation(loopA, loopA, 1, true, false);
+    assertRelation(loopA, loopB, -1, true, false);
+    assertRelation(loopA, aIntersectB, 1, true, false);
+    assertRelation(loopA, aUnionB, 0, true, false);
+    assertRelation(loopA, aMinusB, 1, true, false);
+    assertRelation(loopA, bMinusA, 0, false, false);
 
-    checkRelation(smallNeCw, northHemi, COVERS, false);
-    checkRelation(smallNeCw, eastHemi, COVERS, false);
+    assertRelation(loopB, loopA, -1, true, false);
+    assertRelation(loopB, loopB, 1, true, false);
+    assertRelation(loopB, aIntersectB, 1, true, false);
+    assertRelation(loopB, aUnionB, 0, true, false);
+    assertRelation(loopB, aMinusB, 0, false, false);
+    assertRelation(loopB, bMinusA, 1, true, false);
 
-    checkRelation(loopA, loopA, CONTAINS | CONTAINED, true);
-    checkRelation(loopA, loopB, 0, false);
-    checkRelation(loopA, aIntersectB, CONTAINS, true);
-    checkRelation(loopA, aUnionB, CONTAINED, true);
-    checkRelation(loopA, aMinusB, CONTAINS, true);
-    checkRelation(loopA, bMinusA, DISJOINT, true);
+    assertRelation(aIntersectB, loopA, 0, true, false);
+    assertRelation(aIntersectB, loopB, 0, true, false);
+    assertRelation(aIntersectB, aIntersectB, 1, true, false);
+    assertRelation(aIntersectB, aUnionB, 0, true, true);
+    assertRelation(aIntersectB, aMinusB, 0, false, false);
+    assertRelation(aIntersectB, bMinusA, 0, false, false);
 
-    checkRelation(loopB, loopA, 0, false);
-    checkRelation(loopB, loopB, CONTAINS | CONTAINED, true);
-    checkRelation(loopB, aIntersectB, CONTAINS, true);
-    checkRelation(loopB, aUnionB, CONTAINED, true);
-    checkRelation(loopB, aMinusB, DISJOINT, true);
-    checkRelation(loopB, bMinusA, CONTAINS, true);
+    assertRelation(aUnionB, loopA, 1, true, false);
+    assertRelation(aUnionB, loopB, 1, true, false);
+    assertRelation(aUnionB, aIntersectB, 1, true, true);
+    assertRelation(aUnionB, aUnionB, 1, true, false);
+    assertRelation(aUnionB, aMinusB, 1, true, false);
+    assertRelation(aUnionB, bMinusA, 1, true, false);
 
-    checkRelation(aIntersectB, loopA, CONTAINED, true);
-    checkRelation(aIntersectB, loopB, CONTAINED, true);
-    checkRelation(aIntersectB, aIntersectB, CONTAINS | CONTAINED, true);
-    checkRelation(aIntersectB, aUnionB, CONTAINED, false);
-    checkRelation(aIntersectB, aMinusB, DISJOINT, true);
-    checkRelation(aIntersectB, bMinusA, DISJOINT, true);
+    assertRelation(aMinusB, loopA, 0, true, false);
+    assertRelation(aMinusB, loopB, 0, false, false);
+    assertRelation(aMinusB, aIntersectB, 0, false, false);
+    assertRelation(aMinusB, aUnionB, 0, true, false);
+    assertRelation(aMinusB, aMinusB, 1, true, false);
+    assertRelation(aMinusB, bMinusA, 0, false, true);
 
-    checkRelation(aUnionB, loopA, CONTAINS, true);
-    checkRelation(aUnionB, loopB, CONTAINS, true);
-    checkRelation(aUnionB, aIntersectB, CONTAINS, false);
-    checkRelation(aUnionB, aUnionB, CONTAINS | CONTAINED, true);
-    checkRelation(aUnionB, aMinusB, CONTAINS, true);
-    checkRelation(aUnionB, bMinusA, CONTAINS, true);
-
-    checkRelation(aMinusB, loopA, CONTAINED, true);
-    checkRelation(aMinusB, loopB, DISJOINT, true);
-    checkRelation(aMinusB, aIntersectB, DISJOINT, true);
-    checkRelation(aMinusB, aUnionB, CONTAINED, true);
-    checkRelation(aMinusB, aMinusB, CONTAINS | CONTAINED, true);
-    checkRelation(aMinusB, bMinusA, DISJOINT, false);
-
-    checkRelation(bMinusA, loopA, DISJOINT, true);
-    checkRelation(bMinusA, loopB, CONTAINED, true);
-    checkRelation(bMinusA, aIntersectB, DISJOINT, true);
-    checkRelation(bMinusA, aUnionB, CONTAINED, true);
-    checkRelation(bMinusA, aMinusB, DISJOINT, false);
-    checkRelation(bMinusA, bMinusA, CONTAINS | CONTAINED, true);
-  }
-
-  /**
-   * Make sure the relations are correct if the loop crossing happens on two ends of a shared
-   * boundary segment.
-   */
-  public void testLoopRelationsWhenSameExceptPiecesStickingOutAndIn() {
-    checkRelation(loopA, loopC, 0, true);
-    checkRelation(loopC, loopA, 0, true);
-    checkRelation(loopA, loopD, CONTAINED, true);
-    checkRelation(loopD, loopA, CONTAINS, true);
-    checkRelation(loopE, loopF, DISJOINT, true);
-    checkRelation(loopE, loopG, CONTAINS, true);
-    checkRelation(loopE, loopH, 0, true);
-    checkRelation(loopE, loopI, 0, false);
-    checkRelation(loopF, loopG, DISJOINT, true);
-    checkRelation(loopF, loopH, 0, true);
-    checkRelation(loopF, loopI, 0, false);
-    checkRelation(loopG, loopH, CONTAINED, true);
-    checkRelation(loopH, loopG, CONTAINS, true);
-    checkRelation(loopG, loopI, DISJOINT, true);
-    checkRelation(loopH, loopI, CONTAINS, true);
+    assertRelation(bMinusA, loopA, 0, false, false);
+    assertRelation(bMinusA, loopB, 0, true, false);
+    assertRelation(bMinusA, aIntersectB, 0, false, false);
+    assertRelation(bMinusA, aUnionB, 0, true, false);
+    assertRelation(bMinusA, aMinusB, 0, false, true);
+    assertRelation(bMinusA, bMinusA, 1, true, false);
   }
 
   /**
@@ -733,40 +454,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
-  public void testBoundsForLoopContainment() {
-    // To reliably test whether one loop contains another, the bounds of the
-    // outer loop are expanded slightly.  This test constructs examples where
-    // this expansion is necessary and verifies that it is sufficient.
-    for (int iter = 0; iter < 1000; ++iter) {
-      // We construct a triangle ABC such that A,B,C are nearly colinear, B is
-      // the point of maximum latitude, and the edge AC passes very slightly
-      // below B (i.e., ABC is CCW).
-      S2Point b = S2Point.normalize(S2Point.add(randomPoint(), S2Point.Z_POS));
-      S2Point v = S2Point.normalize(S2Point.crossProd(b, S2Point.Z_POS));
-      S2Point a = S2EdgeUtil.interpolate(rand.nextDouble(), S2Point.neg(v), b);
-      S2Point c = S2EdgeUtil.interpolate(rand.nextDouble(), b, v);
-      if (S2.robustCCW(a, b, c) < 0) {
-        --iter;
-        continue;
-      }
-      // Now construct another point D directly below B, and create two loops
-      // ABCD and ACD.
-      S2Point d = S2Point.normalize(new S2Point(b.getX(), b.getY(), 0));
-      List<S2Point> vertices = ImmutableList.of(c, d, a, b);  // Reordered for convenience
-      S2Loop outer = new S2Loop(vertices);
-      S2Loop inner = new S2Loop(vertices.subList(0, 3));
-      // Now because the bounds calculation is less accurate when the maximum is
-      // attained along an edge (rather than at a vertex), sometimes the inner
-      // loop will have a *larger* bounding box than the outer loop.  We look
-      // only for those cases.
-      if (outer.getRectBound().contains(inner.getRectBound())) {
-        --iter;
-        continue;
-      }
-      assertTrue(outer.contains(inner));
-    }
-  }
-
   private static void testNear(String a_str, String b_str, double max_error, boolean expected) {
     S2Loop a = makeLoop(a_str);
     S2Loop b = makeLoop(b_str);
@@ -797,38 +484,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
         "0.2:4, 1:4.1, 2:4, 3:4, 4:4, 5:4";
     testNear(t1, t2, 1.5 * degree, true);
     testNear(t1, t2, 0.5 * degree, false);
-  }
-
-  static void checkEmptyFullSnapped(S2Loop loop, int level) {
-    assertTrue(loop.isEmptyOrFull());
-    S2CellId cellid = S2CellId.fromPoint(loop.vertex(0)).parent(level);
-    S2Loop loop2 = new S2Loop(ImmutableList.of(cellid.toPoint()));
-    assertTrue(loop.boundaryEquals(loop2));
-    assertTrue(loop.boundaryApproxEquals(loop2));
-    assertTrue(loop.boundaryNear(loop2));
-  }
-
-  // Test converting the empty/full loops to S2LatLng representations.  (We
-  // don't bother testing E5/E6/E7 because that test is less demanding.)
-  static void checkEmptyFullLatLng(S2Loop loop) {
-    assertTrue(loop.isEmptyOrFull());
-    S2Loop loop2 = new S2Loop(ImmutableList.of(new S2LatLng(loop.vertex(0)).toPoint()));
-    assertTrue(loop.boundaryEquals(loop2));
-    assertTrue(loop.boundaryApproxEquals(loop2));
-    assertTrue(loop.boundaryNear(loop2));
-  }
-
-  static void checkEmptyFullConversions(S2Loop loop) {
-    checkEmptyFullSnapped(loop, S2CellId.MAX_LEVEL);
-    checkEmptyFullSnapped(loop, 1);  // Worst case for approximation
-    checkEmptyFullSnapped(loop, 0);
-    checkEmptyFullLatLng(loop);
-  }
-
-  public void testEmptyFullLossyConversions() {
-    // Verify that the empty and full loops can be encoded lossily.
-    checkEmptyFullConversions(S2Loop.empty());
-    checkEmptyFullConversions(S2Loop.full());
   }
 
   /**
@@ -930,9 +585,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   public void testTurningAngle() {
-    assertEquals(2 * S2.M_PI, S2Loop.empty().getTurningAngle());
-    assertEquals(-2 * S2.M_PI, S2Loop.full().getTurningAngle());
-
     assertDoubleNear(0, northHemi3.getTurningAngle(), 1e-15);
     checkTurningAngleInvariants(northHemi3);
 
@@ -943,40 +595,16 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     // we can still check that the expected invariants hold.
     checkTurningAngleInvariants(candyCane);
 
-    assertEquals(2 * S2.M_PI, lineTriangle.getTurningAngle());
+    assertEquals(-2 * S2.M_PI, lineTriangle.getTurningAngle());
     checkTurningAngleInvariants(lineTriangle);
 
     assertEquals(2 * S2.M_PI, skinnyChevron.getTurningAngle());
     checkTurningAngleInvariants(skinnyChevron);
   }
 
-  /**
-   * Checks that if a loop is normalized, it doesn't contain a point outside of it, and vice versa.
-   */
-  private static void checkNormalizeAndContains(S2Loop loop) {
-    S2Point p = makePoint("40:40");
-    S2Loop flip = new S2Loop(loop);
-
-    flip.invert();
-    assertTrue(loop.isNormalized() ^ loop.contains(p));
-    assertTrue(flip.isNormalized() ^ flip.contains(p));
-    assertTrue(loop.isNormalized() ^ flip.isNormalized());
-
-    flip.normalize();
-    assertFalse(flip.contains(p));
-  }
-
-  public void testNormalizedCompatibleWithContains() {
-    checkNormalizeAndContains(lineTriangle);
-    checkNormalizeAndContains(skinnyChevron);
-  }
-
   public void testIsOriginInside() {
     assertEquals(eastHemi.contains(S2.origin()), eastHemi.isOriginInside());
     assertEquals(arctic80.contains(S2.origin()), arctic80.isOriginInside());
-    assertFalse(S2Loop.empty().hasInterior());
-    assertTrue(S2Loop.full().hasInterior());
-    assertTrue(eastHemi.hasInterior());
   }
 
   /**

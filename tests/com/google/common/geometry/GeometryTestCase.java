@@ -227,18 +227,7 @@ public strictfp class GeometryTestCase extends TestCase {
     return Iterables.getOnlyElement(vertices);
   }
 
-  /**
-   * Given a string of latitude-longitude coordinates in degrees, returns a newly allocated loop.
-   * Example of the input format: {@code -20:150, 10:-120, 0.123:-170.652}.
-   *
-   * <p>The exact strings "empty" or "full" create the empty or full loop, respectively.
-   */
   static S2Loop makeLoop(String str) {
-    if ("empty".equalsIgnoreCase(str)) {
-      return S2Loop.empty();
-    } else if ("full".equalsIgnoreCase(str)) {
-      return S2Loop.full();
-    }
     List<S2Point> vertices = Lists.newArrayList();
     parseVertices(str, vertices);
     return new S2Loop(vertices);
@@ -254,44 +243,12 @@ public strictfp class GeometryTestCase extends TestCase {
     return S1Angle.radians(meters / S2LatLng.EARTH_RADIUS_METERS);
   }
 
-  /**
-   * Given a sequence of loops separated by semicolons, returns a newly allocated polygon.  Loops
-   * are automatically normalized by inverting them if necessary so that they enclose at most half
-   * of the unit sphere.
-   *
-   * <p>Historically this was once a requirement of polygon loops.  It also hides the problem that
-   * if the user thinks of the coordinates as X:Y rather than LAT:LNG, it yields a loop with the
-   * opposite orientation.
-   *
-   * <p>Examples of the input format:
-   * <ul>
-   * <li>"10:20, 90:0, 20:30" <=> one loop
-   * <li>"10:20, 90:0, 20:30; 5.5:6.5, -90:-180, -15.2" <=> >two loops
-   * <li>"" <=> the empty string results in the empty polygon (consisting of no loops)
-   * <li>"full" <=> the full polygon (consisting of one full loop)
-   * <li>"empty" <=> **INVALID** the empty polygon has no loops.
-   * </ul>
-   */
   static S2Polygon makePolygon(String str) {
-    return internalMakePolygon(str, true);
-  }
-
-  /**
-   * Like makePolygon(), except that it does not normalize loops (i.e., it gives you exactly what
-   * you asked for).
-   */
-  static S2Polygon makeVerbatimPolygon(String str) {
-    return internalMakePolygon(str, false);
-  }
-
-  private static final S2Polygon internalMakePolygon(String str, boolean normalizeLoops) {
     List<S2Loop> loops = Lists.newArrayList();
 
     for (String token : Splitter.on(';').omitEmptyStrings().split(str)) {
       S2Loop loop = makeLoop(token);
-      if (normalizeLoops) {
-        loop.normalize();
-      }
+      loop.normalize();
       loops.add(loop);
     }
 

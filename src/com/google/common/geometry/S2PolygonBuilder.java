@@ -59,11 +59,6 @@ import javax.annotation.Nullable;
  *     collection of directed edges and then assembling them into loops.
  * </ol>
  *
- * Caveat: Because S2PolygonBuilder only works with polygon boundaries, it
- * cannot distinguish between the empty and full polygon.  If your application
- * can generate both the empty and full polygons, you must implement logic
- * outside of this class (see {@link #assemblePolygon()}).
- *
  */
 @GwtCompatible(serializable = false)
 public final strictfp class S2PolygonBuilder {
@@ -437,20 +432,17 @@ public final strictfp class S2PolygonBuilder {
    * <p>This method does not take ownership of the loop.
    */
   public void addLoop(S2Loop loop) {
-    // Only add loops that have edges to add.
-    if (!loop.isEmptyOrFull()) {
-      int sign = loop.sign();
-      for (int i = loop.numVertices(); i > 0; --i) {
-        // Vertex indices need to be in the range [0, 2*num_vertices()-1].
-        addEdge(loop.vertex(i), loop.vertex(i + sign));
-      }
+    int sign = loop.sign();
+    for (int i = loop.numVertices(); i > 0; --i) {
+      // Vertex indices need to be in the range [0, 2*num_vertices()-1].
+      addEdge(loop.vertex(i), loop.vertex(i + sign));
     }
   }
 
   /**
-   * Add all loops in the given polygon. Shells and holes are added with opposite orientations as
-   * described for {@link #addLoop(S2Loop)}. Note that this method does not distinguish between the
-   * empty and full polygons, i.e. adding a full polygon has the same effect as adding an empty one.
+   * Adds all loops in the given polygon. Shells and holes are added with
+   * opposite orientations as described for {@link #addLoop}. This method does
+   * not take ownership of the polygon.
    */
   public void addPolygon(S2Polygon polygon) {
     for (int i = 0; i < polygon.numLoops(); ++i) {
@@ -487,15 +479,18 @@ public final strictfp class S2PolygonBuilder {
       }
     }
 
+    List<S2Edge> dummyUnusedEdges = Lists.newArrayList();
+    if (unusedEdges == null) {
+      unusedEdges = dummyUnusedEdges;
+    }
+
     // We repeatedly choose an edge and attempt to assemble a loop
     // starting from that edge.  (This is always possible unless the
     // input includes extra edges that are not part of any loop.)  To
     // maintain a consistent scanning order over edges between
     // different machine architectures (e.g. 'clovertown' vs. 'opteron'),
     // we follow the order they were added to the builder.
-    if (unusedEdges != null) {
-      unusedEdges.clear();
-    }
+    unusedEdges.clear();
     for (int i = 0; i < startingVertices.size(); ) {
       S2Point v0 = startingVertices.get(i);
       Multiset<S2Point> candidates = edges.get(v0);
@@ -510,45 +505,47 @@ public final strictfp class S2PolygonBuilder {
         loops.add(loop);
       }
     }
-    return unusedEdges == null || unusedEdges.isEmpty();
+    return unusedEdges.isEmpty();
   }
 
   /**
-   * Like AssembleLoops, but then assembles the loops into a polygon. If the edges were directed,
-   * then it is expected that holes and shells will have opposite orientations, and the polygon
-   * interior is to the left of all edges. If the edges were undirected, then all loops are first
-   * normalized so that they enclose at most half of the sphere, and the polygon interior consists
-   * of points enclosed by an odd number of loops.
+   * Like {@link #assembleLoops}, but normalizes all the loops so that they
+   * enclose less than half the sphere, and then assembles the loops into a
+   * polygon.
    *
-   * <p>For this method to succeed, there should be no duplicate edges in the input. If this is not
-   * known to be true, then the "xor_edges" option should be set (which is true by default).
+   * <p>For this method to succeed, there should be no duplicate edges in the
+   * input. If this is not known to be true, then use
+   * {@link Options.Builder#setXorEdges} to set it to true (which is true by
+   * default).
    *
-   * <p>Note that because the polygon is constructed from its boundary, this method cannot
-   * distinguish between the empty and full polygons. An empty boundary always yields an empty
-   * polygon. If the result should sometimes be the full polygon, such logic must be implemented
-   * outside of this class (and will need to consider factors other than the polygon's boundary).
-   * For example, it is often possible to estimate the polygon area.
+   * <p>Note that {@link S2Polygon}s cannot represent arbitrary regions on the
+   * sphere, because of the limitation that no loop encloses more than half of
+   * the sphere. For example, an {@link S2Polygon} cannot represent a 100km wide
+   * band around the equator. In such cases, this method will return the
+   * *complement* of the expected region. So, for example, if all the world's
+   * coastlines were assembled, the output S2Polygon would represent the land
+   * area (irrespective of the input edge or loop orientations).
    */
   public boolean assemblePolygon(S2Polygon polygon, @Nullable List<S2Edge> unusedEdges) {
     List<S2Loop> loops = Lists.newArrayList();
     boolean success = assembleLoops(loops, unusedEdges);
-    if (options.getValidate() && !S2Polygon.isValid(loops) && unusedEdges != null) {
+
+    // If edges are undirected, then all loops are already CCW. Otherwise we
+    // need to make sure the loops are normalized.
+    if (!options.getUndirectedEdges()) {
       for (S2Loop loop : loops) {
-        rejectLoop(loop, loop.numVertices(), unusedEdges);
+        loop.normalize();
+      }
+    }
+    if (options.getValidate() && !S2Polygon.isValid(loops)) {
+      if (unusedEdges != null) {
+        for (S2Loop loop : loops) {
+          rejectLoop(loop, loop.numVertices(), unusedEdges);
+        }
       }
       return false;
     }
-    if (options.getUndirectedEdges()) {
-      // If edges are undirected, then all loops are already normalized (i.e.,
-      // contain at most half the sphere).  This implies that no loop contains
-      // the complement of any other loop, and therefore we can call the normal
-      // Init() method.
-      polygon.init(loops);
-    } else {
-      // If edges are directed, then shells and holes have opposite orientations
-      // such that the polygon interior is always on their left-hand side.
-      polygon.initOriented(loops);
-    }
+    polygon.init(loops);
     return success;
   }
 
@@ -557,7 +554,10 @@ public final strictfp class S2PolygonBuilder {
    */
   public S2Polygon assemblePolygon() {
     S2Polygon polygon = new S2Polygon();
-    assemblePolygon(polygon, null);
+    List<S2Edge> unusedEdges = Lists.newArrayList();
+
+    assemblePolygon(polygon, unusedEdges);
+
     return polygon;
   }
 
@@ -600,7 +600,8 @@ public final strictfp class S2PolygonBuilder {
    * seen before *except* for the first vertex (v0). This ensures that only CCW
    * loops are constructed when possible.
    */
-  private S2Loop assembleLoop(S2Point v0, S2Point v1, @Nullable List<S2Edge> unusedEdges) {
+  private S2Loop assembleLoop(S2Point v0, S2Point v1, List<S2Edge> unusedEdges) {
+
     // The path so far.
     List<S2Point> path = Lists.newArrayList();
 
@@ -633,9 +634,7 @@ public final strictfp class S2PolygonBuilder {
       }
       if (!v2Found) {
         // We've hit a dead end. Remove this edge and backtrack.
-        if (unusedEdges != null) {
-          unusedEdges.add(new S2Edge(v0, v1));
-        }
+        unusedEdges.add(new S2Edge(v0, v1));
         eraseEdge(v0, v1);
         index.remove(v1);
         path.remove(path.size() - 1);
@@ -663,9 +662,7 @@ public final strictfp class S2PolygonBuilder {
         if (options.getValidate() && !loop.isValid()) {
           // We've constructed a loop that crosses itself, which can only happen
           // if there is bad input data. Throw away the whole loop.
-          if (unusedEdges != null) {
-            rejectLoop(path, path.size(), unusedEdges);
-          }
+          rejectLoop(path, path.size(), unusedEdges);
           eraseLoop(path, path.size());
           return null;
         }
@@ -692,7 +689,7 @@ public final strictfp class S2PolygonBuilder {
     }
   }
 
-  /** Marks all edges of the given loop as unused. */
+  /** Erases all edges of the given loop and marks them as unused. */
   private void rejectLoop(List<S2Point> v, int n, List<S2Edge> unusedEdges) {
     for (int i = n - 1, j = 0; j < n; i = j++) {
       unusedEdges.add(new S2Edge(v.get(i), v.get(j)));
