@@ -28,7 +28,7 @@ import java.util.List;
  * Tests for {@link S2EdgeUtil}.
  *
  */
-@GwtCompatible
+@GwtCompatible(emulated = true)
 public strictfp class S2EdgeUtilTest extends GeometryTestCase {
   /**
    * S2.robustCrossing() is allowed to return 0 or -1 if either edge is degenerate. We use this
@@ -1072,7 +1072,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return a;
   }
 
-  public void testFaceClipping () {
+  public void testFaceClipping() {
     // Start with a few simple cases.
     // An edge that is entirely contained within one cube face:
     checkFaceClippingEdgePair(new S2Point(1, -0.5, -0.5), new S2Point(1, 0.5, 0.5));
