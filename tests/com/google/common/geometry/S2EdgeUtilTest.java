@@ -17,6 +17,7 @@
 package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2EdgeUtil.LongitudePruner;
@@ -1072,6 +1073,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return a;
   }
 
+  @GwtIncompatible("flaky for reasons to be determined")
   public void testFaceClipping() {
     // Start with a few simple cases.
     // An edge that is entirely contained within one cube face:
