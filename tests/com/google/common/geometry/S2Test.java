@@ -422,7 +422,10 @@ public strictfp class S2Test extends GeometryTestCase {
         S2LatLng.fromE7(0x2094588f, 0xfc9edbe6).toPoint(),
         S2LatLng.fromE7(0x209456c4, 0xfc9ee491).toPoint(),
         S2LatLng.fromE7(0x20945e7f, 0xfc9ee954).toPoint()))));
-    assertTrue(smallPoly.contains(smallPoly.getCentroid()));
+    // We shouldn't have to normalize, but the centroid is scaled by the area, and this triangle is
+    // SO small that the magnitude is insufficient to get good precision in the contains() test, so
+    // we actually should normalize in this case.
+    assertTrue(smallPoly.contains(S2Point.normalize(smallPoly.getCentroid())));
   }
 
   // TODO(eengle): Move this to a new test file PlatformTest.java.
