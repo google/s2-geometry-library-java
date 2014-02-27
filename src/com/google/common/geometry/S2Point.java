@@ -28,7 +28,7 @@ import javax.annotation.CheckReturnValue;
  *
  */
 @GwtCompatible(serializable = true)
-public strictfp class S2Point implements Comparable<S2Point>, Serializable {
+public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializable {
   /** Origin of the coordinate system, [0,0,0]. */
   public static final S2Point ORIGIN = new S2Point(0, 0, 0);
 
@@ -312,5 +312,27 @@ public strictfp class S2Point implements Comparable<S2Point>, Serializable {
     value += 37 * value + Double.doubleToLongBits(Math.abs(y));
     value += 37 * value + Double.doubleToLongBits(Math.abs(z));
     return (int) (value ^ (value >>> 32));
+  }
+
+  // S2Region implementation.
+  @Override
+  public boolean contains(S2Cell cell) {
+    return false;
+  }
+
+  @Override
+  public S2Cap getCapBound() {
+    return S2Cap.fromAxisHeight(this, 0);
+  }
+
+  @Override
+  public S2LatLngRect getRectBound() {
+    S2LatLng latLng = new S2LatLng(this);
+    return S2LatLngRect.fromPoint(latLng);
+  }
+
+  @Override
+  public boolean mayIntersect(S2Cell cell) {
+    return cell.contains(this);
   }
 }

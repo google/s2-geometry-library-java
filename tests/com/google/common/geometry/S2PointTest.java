@@ -46,4 +46,20 @@ public class S2PointTest extends GeometryTestCase {
       assertEquals(S2Point.neg(a), b.rotate(axis, Math.PI - angle), 1e-14);
     }
   }
+
+  public void testS2Region() {
+    S2Point point = new S2Point(1, 0, 0);
+
+    S2Cap expectedCapBound = S2Cap.fromAxisHeight(point, 0);
+    assertEquals(expectedCapBound, point.getCapBound());
+
+    S2LatLng ll = new S2LatLng(point);
+    S2LatLngRect expectedRect = new S2LatLngRect(ll, ll);
+    assertEquals(expectedRect, point.getRectBound());
+
+    // The leaf cell containing a point is still much larger than the point.
+    S2Cell cell = new S2Cell(point);
+    assertFalse(point.contains(cell));
+    assertTrue(point.mayIntersect(cell));
+  }
 }

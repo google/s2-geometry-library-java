@@ -7,6 +7,7 @@ import com.google.common.collect.Ordering;
 
 import junit.framework.TestCase;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -123,5 +124,46 @@ public class SerializationTest extends TestCase {
     coverer.setMinLevel(50);
     coverer.setMaxLevel(500);
     doTest(coverer);
+  }
+
+  public void testS2RegionUnion() {
+    List<S2Point> vertices = ImmutableList.of(
+        new S2Point(0, 1, 2),
+        new S2Point(.3, .4, 0),
+        new S2Point(5, 6, 7));
+    S2Loop loop = new S2Loop(vertices);
+    S2Polyline polyline = new S2Polyline(vertices);
+    S2Cap cap = S2Cap.fromAxisHeight(new S2Point(2, 2, 2), 0);
+    S2Cell cell = S2Cell.fromFace(0);
+
+    List<S2Loop> loops = new ArrayList<>();
+    loops.add(loop);
+    S2Polygon polygon = new S2Polygon(loops);
+
+    ArrayList<Long> cellIds = new ArrayList<>();
+    cellIds.add(1L);
+    cellIds.add(2L);
+    S2CellUnion cellUnion = new S2CellUnion();
+    cellUnion.initFromIds(cellIds);
+
+    S2Point point = new S2Point(3, 1, 0);
+    S2LatLngRect rect = S2LatLngRect.full();
+    List<S2Region> subRegions = new ArrayList<>();
+    subRegions.add(point);
+    subRegions.add(rect);
+    S2RegionUnion regionUnion = new S2RegionUnion(subRegions);
+
+    List<S2Region> regions = new ArrayList<>();
+    regions.add(loop);
+    regions.add(polyline);
+    regions.add(regionUnion);
+    regions.add(cap);
+    regions.add(cell);
+    regions.add(cellUnion);
+    regions.add(point);
+    // TODO(eengle): Re-enable the polygon test once S2Polygon supports
+    // .equals().
+    // regions.add(polygon);
+    doTest(new S2RegionUnion(regions));
   }
 }
