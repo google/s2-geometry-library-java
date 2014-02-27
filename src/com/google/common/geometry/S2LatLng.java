@@ -33,10 +33,9 @@ import javax.annotation.CheckReturnValue;
  */
 @GwtCompatible(serializable = true, emulated = true)
 public strictfp class S2LatLng implements Serializable {
-  /**
-   * Approximate "effective" radius of the Earth in meters.
-   */
-  public static final double EARTH_RADIUS_METERS = 6367000.0;
+
+  /** Approximate "effective" radius of the Earth in meters. */
+  public static final double EARTH_RADIUS_METERS = S1Angle.EARTH_RADIUS_METERS;
 
   /** The center point the lat/lng coordinate system. */
   public static final S2LatLng CENTER = new S2LatLng(0.0, 0.0);
@@ -208,15 +207,15 @@ public strictfp class S2LatLng implements Serializable {
    * Returns the surface distance to the given point assuming a constant radius.
    */
   public double getDistance(final S2LatLng o, double radius) {
-    return getDistance(o).radians() * radius;
+    return getDistance(o).distance(radius);
   }
 
   /**
    * Returns the surface distance to the given point assuming the default Earth
-   * radius of {@link #EARTH_RADIUS_METERS}.
+   * radius of {@link S1Angle#EARTH_RADIUS_METERS}.
    */
   public double getEarthDistance(final S2LatLng o) {
-    return getDistance(o, EARTH_RADIUS_METERS);
+    return getDistance(o).earthDistance();
   }
 
   /**
