@@ -159,6 +159,23 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
+  @Override
+  public boolean equals(Object o) {
+    if (o instanceof S2Polygon) {
+      S2Polygon that = (S2Polygon) o;
+      return this.numVertices == that.numVertices
+          && this.bound.equals(that.bound)
+          && this.loops.equals(that.loops);
+    } else {
+      return false;
+    }
+  }
+
+  @Override
+  public int hashCode() {
+    return bound.hashCode();
+  }
+
   /**
    * Comparator (needed by Comparable interface). For two polygons to be
    * compared as equal:
