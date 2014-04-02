@@ -217,7 +217,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   }
 
   /**
-   * Rotates this point around an arbitrary axis.
+   * Rotates this point around an arbitrary axis. The result is normalized.
    *
    * @param axis point around which rotation should be performed.
    * @param radians radians to rotate the point counterclockwise around the given axis.
@@ -231,7 +231,10 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     S2Point axisToPointNormal = S2Point.crossProd(normAxis, axisToPoint);
     axisToPoint = S2Point.mul(axisToPoint, Math.cos(radians));
     axisToPointNormal = S2Point.mul(axisToPointNormal, Math.sin(radians));
-    return S2Point.add(S2Point.add(axisToPoint, axisToPointNormal), pointOnAxis);
+    // Explicitly normalize the result because there are cases where the accumulated error is
+    // a bit larger than the tolerance of isUnitLength().
+    return S2Point.normalize(
+      S2Point.add(S2Point.add(axisToPoint, axisToPointNormal), pointOnAxis));
   }
 
   /** Return the angle between two vectors in radians */
