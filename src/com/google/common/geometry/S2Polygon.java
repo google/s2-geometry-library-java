@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -945,6 +947,40 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     invert();
   }
 
+  /**
+   * Use S2PolygonBuilder to build this polygon by assembling the edges of a given polygon after
+   * snapping its vertices to the center of leaf cells.  This will simplify the polygon with a
+   * tolerance of {@code S2Projections.maxDiag.getValue(S2CellId.MAX_LEVEL)}, or approximately 0.13
+   * microdegrees, or 1.5cm on the surface of the Earth.  Such a polygon can be efficiently
+   * compressed when serialized.  The snap level can be changed to a non-leaf level if needed.
+   */
+  public void initToSnapped(final S2Polygon a, int snapLevel) {
+    // Ensure that there will be no two vertices within the max leaf cell diagonal of each other,
+    // therefore no two vertices in the same leaf cell, and that no vertex will cross an edge after
+    // the points have been snapped to the centers of leaf cells.  Add 1e-15 to the tolerance so we
+    // don't set a tighter than leaf cell level because of numerical inaccuracy.
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.builder()
+        .setRobustnessRadius(
+            S1Angle.radians(PROJ.maxDiag.getValue(snapLevel) / 2.0 + 1e-15))
+        .setSnapToCellCenters(true)
+        .build();
+
+    S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);
+    polygonBuilder.addPolygon(a);
+
+    if (!polygonBuilder.assemblePolygon(this, null)) {
+      log.severe("assemblePolygon failed in initToSnapped");
+    }
+
+    // If there are no loops, check whether the result should be the full
+    // polygon rather than the empty one. (See InitToIntersectionSloppy.)
+    if (numLoops() == 0) {
+      if (a.bound.area() > 2.0 * S2.M_PI && a.getArea() > 2.0 * S2.M_PI) {
+        invert();
+      }
+    }
+  }
+
   /** Inverts this polygon (replacing it by its complement.) */
   private void invert() {
     // Inverting any one loop will invert the polygon.  The best loop to invert
@@ -1175,9 +1211,10 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       // From the check above, this polygon is already empty.
     } else if (a.isFull()) {
       initToComplement(b);
-    } else if (b.isEmpty()) {
-      copy(a);
     } else {
+      // Note that we cannot short circuit the b.isEmpty() case because even something and
+      // nothing might have no difference if the difference falls within the merge distance.
+
       // We want the boundary of A clipped to the exterior of B,
       // plus the reversed boundary of B clipped to the interior of A,
       // plus one copy of any edge in A that is also a reverse edge in B.

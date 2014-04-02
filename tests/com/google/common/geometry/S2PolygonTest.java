@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -927,7 +929,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     point = makePoint("10:15");
     projected = polygon.project(point);
     assertEquals(polygon.getDistance(point).radians(), point.angle(projected), epsilon);
-}
+  }
 
   public void testFastInit() {
     S2LatLngRect bound = null;
@@ -963,5 +965,22 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(1, polygon.loop(1).depth());
     assertEquals(2, polygon.loop(2).depth());
     assertDoubleNear(0.003821967440517272, polygon.getArea());
+  }
+
+  public void testInitToSnappedWithSnapLevel() {
+    S2Polygon polygon = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0");
+
+    for (int level = 0; level <= S2CellId.MAX_LEVEL; level++) {
+      S2Polygon snappedPolygon = new S2Polygon();
+      snappedPolygon.initToSnapped(polygon, level);
+      assertTrue(snappedPolygon.isValid());
+      double cellAngle = PROJ.maxDiag.getValue(level);
+      S1Angle mergeRadius = S1Angle.radians(cellAngle);
+      assertTrue("snapped polygon should approx contain original polygon for"
+          + "\nsnap level = " + level + ", mergeRadius = " + mergeRadius
+          + "\noriginal polygon: " + polygon
+          + "\nsnapped polygon: " + snappedPolygon,
+          snappedPolygon.approxContains(polygon, mergeRadius));
+    }
   }
 }

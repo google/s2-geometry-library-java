@@ -16,6 +16,8 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
@@ -485,6 +487,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       S2PolygonBuilder.Options options = S2PolygonBuilder.Options.builder()
           .setUndirectedEdges(evalTristate(undirectedEdges))
           .setXorEdges(evalTristate(xorEdges))
+          .setSnapToCellCenters(rand.nextBoolean())
           .build();
 
       // Each test has a minimum and a maximum merge radius.  The merge
@@ -593,12 +596,13 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       // merging and/or splicing (the "g" value mentioned above).
       double minEdge = minMergeRadians + (vertexMerge + 2 * maxPerturb) / minSin;
 
-      S2PolygonBuilder.Options newOptions = options.toBuilder()
+      // Replace immutable options with new version
+      options = options.toBuilder()
           .setMergeDistance(S1Angle.radians(vertexMerge))
           .setEdgeSpliceFraction(edgeFraction)
           .setValidate(true)
           .build();
-      S2PolygonBuilder builder = new S2PolygonBuilder(newOptions);
+      S2PolygonBuilder builder = new S2PolygonBuilder(options);
 
       // On each iteration we randomly rotate the test case around the sphere.
       // This causes the S2PolygonBuilder to choose different first edges when
@@ -639,6 +643,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       double maxError = 0.5 * minMergeRadians + maxPerturb;
       if (maxSplits > 0 || maxPerturb > 0) {
         maxError += 1e-15;
+      }
+      if (options.getSnapToCellCenters()) {
+        maxError += options.getRobustnessRadius().radians();
       }
 
       assertTrue(
@@ -732,5 +739,39 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
         assertEquals(a.loop(i).vertex(j), b.loop(i).vertex(j));
       }
     }
+  }
+
+  public void testSnapLevel() {
+    // Snapping is off.
+    S2PolygonBuilder.Options options = S2PolygonBuilder.Options.builder()
+        .setRobustnessRadius(S1Angle.degrees(180.0))
+        .build();
+    assertEquals(-1, options.getSnapLevel());
+
+    // Top level.
+    options = options.toBuilder()
+        .setSnapToCellCenters(true)
+        .build();
+    assertEquals(0, options.getSnapLevel());
+    assertTrue(
+        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel()) / 2.0).lessOrEquals(
+            options.getRobustnessRadius()));
+
+    // Something smallish.
+    options = options.toBuilder()
+        .setRobustnessRadius(S1Angle.degrees(0.1))
+        .build();
+    assertTrue(
+        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel()) / 2.0).lessOrEquals(
+            options.getRobustnessRadius()));
+    assertTrue(
+        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel() - 1) / 2.0).greaterThan(
+            options.getRobustnessRadius()));
+
+    // Too small for a leaf cell.
+    options = options.toBuilder()
+        .setRobustnessRadius(S1Angle.radians(PROJ.maxDiag.getValue(S2CellId.MAX_LEVEL) / 2.1))
+        .build();
+    assertEquals(-1, options.getSnapLevel());
   }
 }

@@ -160,15 +160,12 @@ public final strictfp class S2PolygonBuilder {
         .setXorEdges(false)
         .build();
 
+    // See get methods below for documentation of these fields
     private final boolean undirectedEdges;
     private final boolean xorEdges;
     private final boolean validate;
     private final S1Angle mergeDistance;
-
-    /**
-     * If positive, this is the fraction of {@link #mergeDistance} that a point
-     * can be from an edge before it will be snapped to the edge.
-     */
+    private final boolean snapToCellCenters;
     private final double edgeSpliceFraction;
 
     /**
@@ -179,6 +176,7 @@ public final strictfp class S2PolygonBuilder {
       this.xorEdges = builder.xorEdges;
       this.validate = builder.validate;
       this.mergeDistance = builder.mergeDistance;
+      this.snapToCellCenters = builder.snapToCellCenters;
       this.edgeSpliceFraction = builder.edgeSpliceFraction;
     }
 
@@ -201,6 +199,7 @@ public final strictfp class S2PolygonBuilder {
           .setXorEdges(xorEdges)
           .setValidate(validate)
           .setMergeDistance(mergeDistance)
+          .setSnapToCellCenters(snapToCellCenters)
           .setEdgeSpliceFraction(edgeSpliceFraction);
     }
 
@@ -272,6 +271,20 @@ public final strictfp class S2PolygonBuilder {
     }
 
     /**
+     * If true, the built polygon will have its vertices snapped to the centers
+     * of s2 cells at the smallest level number such that no vertex will move
+     * by more than the robustness radius.  If the robustness radius is smaller
+     * than half the leaf cell diameter, no snapping will occur.  This is useful
+     * because snapped polygons can be {@code Encode()}d using less space.
+     * See {@code S2EncodePointsCompressed} in C++.
+     *
+     * <p>Default value: false
+     */
+    public boolean getSnapToCellCenters() {
+      return snapToCellCenters;
+    }
+
+    /**
      * Returns the edge splice fraction, which defaults to 0.866 (approximately
      * {@code sqrt(3)/2}).
      *
@@ -293,7 +306,7 @@ public final strictfp class S2PolygonBuilder {
      *
      * <p>The only reason to reduce the edge splice fraction is if you want to
      * limit changes in edge direction due to splicing. The direction of an edge
-     * can change by up to {@code asin(edge_splice_fraction)} due to each
+     * can change by up to {@code asin(edgeSpliceFraction)} due to each
      * splice. Thus, by default, edges are allowed to change direction by up to
      * 60 degrees per splice. However, note that most direction changes are much
      * smaller than this: the worst case occurs only if the vertex being spliced
@@ -304,6 +317,47 @@ public final strictfp class S2PolygonBuilder {
     }
 
     /**
+     * Returns robustness radius computed from {@code mergeDistance} and
+     * {@code edgeSpliceFraction}.
+     *
+     * <p>The lossless way to serialize a polygon takes 24 bytes per vertex (3 doubles).  If you
+     * want a representation with fewer bits, you need to snap your vertices to a grid.  If a
+     * vertex is very close to an edge, the snapping operation can lead to self-intersection. The
+     * {@code edgeSpliceFraction} cannot be zero to have a robustness guarantee. See
+     * {@link Builder#setRobustnessRadius}.
+     */
+    public S1Angle getRobustnessRadius() {
+      return S1Angle.radians(mergeDistance.radians() * edgeSpliceFraction / 2.0);
+    }
+
+    /**
+     * If {@code snapToCellCenters} is true, returns the minimum level at which
+     * snapping a point to the center of a cell at that level will move the
+     * point by no more than the robustness radius.  Returns -1 if there is
+     * no such level, or if {@code snapToCellCenters} is false.
+     */
+    public int getSnapLevel() {
+      if (!getSnapToCellCenters()) {
+        return -1;
+      }
+
+      final S1Angle tolerance = getRobustnessRadius();
+      // The distance from a point in the cell to the center is at most {@code maxDiag / 2}.  See
+      // the comment for {@link S2Projections.maxDiag}.
+      //
+      // TODO(user): Verify and understand this. [todo copied from C++]
+      final int level = PROJ.maxDiag.getMinLevel(tolerance.radians() * 2.0);
+
+      // getMinLevel will return MAX_LEVEL even if the max level does not satisfy the condition.
+      if (level == S2CellId.MAX_LEVEL &&
+          tolerance.radians() < (PROJ.maxDiag.getValue(level) / 2.0)) {
+        return -1;
+      }
+
+      return level;
+    }
+
+    /**
      * Builder class for {@link Options}.
      */
     public static class Builder {
@@ -311,6 +365,7 @@ public final strictfp class S2PolygonBuilder {
       private boolean xorEdges = true;
       private boolean validate = false;
       private S1Angle mergeDistance = S1Angle.radians(0);
+      private boolean snapToCellCenters = false;
       private double edgeSpliceFraction = 0.866;
 
       /**
@@ -363,10 +418,23 @@ public final strictfp class S2PolygonBuilder {
        * Sets the threshold angle at which to merge vertex pairs. See
        * {@link Options#getMergeDistance}.
        *
-       * Default value: 0.
+       * <p>Default value: 0.
        */
       public Builder setMergeDistance(S1Angle mergeDistance) {
         this.mergeDistance = mergeDistance;
+        return this;
+      }
+
+      /**
+       * Sets whether a polygon will snap its vertices to the centers of s2 cells at the smallest
+       * level number such that no vertex will move by more than the robustness radius.  If the
+       * robustness radius is smaller than half the leaf cell diameter, no snapping will occur. See
+       * {@link Options#getSnapToCellCenters()}.
+       *
+       * <p>Default value: false
+       */
+      public Builder setSnapToCellCenters(boolean snapToCellCenters) {
+        this.snapToCellCenters = snapToCellCenters;
         return this;
       }
 
@@ -384,6 +452,24 @@ public final strictfp class S2PolygonBuilder {
         this.edgeSpliceFraction = edgeSpliceFraction;
         return this;
       }
+
+      /**
+       * Sets {@code mergeDistance} computed from robustness radius and edge splice fraction.  The
+       * {@code edgeSpliceFraction} cannot be zero to have a robustness guarantee.
+       *
+       * <p>See {@link Options#getRobustnessRadius}. To guarantee that a polygon remains valid when
+       * its vertices are moved by an angle of up to epsilon, you need
+       * {@code mergeDistance * edgeSpliceFraction >= 2 * epsilon}, as the edge and the vertex
+       * can each move by epsilon upon snapping.
+       *
+       * <p>If your grid has maximum diameter {@code d}, call {@code setRobustnessRadius(d/2)}.
+       */
+      public Builder setRobustnessRadius(S1Angle robustnessRadius) {
+        this.mergeDistance =
+            S1Angle.radians(2.0 * robustnessRadius.radians() / edgeSpliceFraction);
+        return this;
+      }
+
     }
   }
 
@@ -459,6 +545,26 @@ public final strictfp class S2PolygonBuilder {
   }
 
   /**
+   * Returns a new point, snapped to the center of the cell containing the given point at the
+   * specified level.
+   */
+  private S2Point snapPointToLevel(final S2Point p, int level) {
+    return S2CellId.fromPoint(p).parent(level).toPoint();
+  }
+
+  /**
+   * Returns a new loop where the vertices of the given loop have been snapped to the centers of
+   * cells at the specified level.
+   */
+  private S2Loop snapLoopToLevel(final S2Loop loop, int level) {
+    List<S2Point> snappedVertices = Lists.newArrayListWithCapacity(loop.numVertices());
+    for (int i = 0; i < loop.numVertices(); i++) {
+      snappedVertices.add(snapPointToLevel(loop.vertex(i), level));
+    }
+    return new S2Loop(snappedVertices);
+  }
+
+  /**
    * Assembles the given edges into as many non-crossing loops as possible. When
    * there is a choice about how to assemble the loops, then CCW loops are
    * preferred. Returns true if all edges were assembled. If {@code unusedEdges}
@@ -487,6 +593,8 @@ public final strictfp class S2PolygonBuilder {
       }
     }
 
+    final int snapLevel = options.getSnapLevel();
+
     // We repeatedly choose an edge and attempt to assemble a loop
     // starting from that edge.  (This is always possible unless the
     // input includes extra edges that are not part of any loop.)  To
@@ -507,6 +615,14 @@ public final strictfp class S2PolygonBuilder {
       S2Loop loop = assembleLoop(v0, v1, unusedEdges);
       if (loop != null) {
         eraseLoop(loop, loop.numVertices());
+
+        if (snapLevel >= 0) {
+          // TODO(user): Change AssembleLoop to return a List<S2Point>, then optionally snap
+          // that before constructing the loop.  This would prevent us from constructing two
+          // loops. [todo copied from C++]
+          loop = snapLoopToLevel(loop, snapLevel);
+        }
+
         loops.add(loop);
       }
     }
@@ -706,7 +822,7 @@ public final strictfp class S2PolygonBuilder {
     }
 
     // We need to copy the set of edges affected by the move, since
-    // this.edges_could be reallocated when we start modifying it.
+    // this.edges could be reallocated when we start modifying it.
     List<S2Edge> edgesCopy = Lists.newArrayList();
     for (Map.Entry<S2Point, Multiset<S2Point>> edge : this.edges.entrySet()) {
       S2Point v0 = edge.getKey();
