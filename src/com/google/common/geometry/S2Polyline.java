@@ -295,6 +295,11 @@ public final strictfp class S2Polyline implements S2Region, Serializable {
    * is returned in a deterministic but otherwise unpredictable way.
    */
   public S2Point project(S2Point queryPoint) {
+    Preconditions.checkState(numVertices() > 0, "Empty polyline");
+    if (numVertices() == 1) {
+      // If there is only one vertex, it is always closest to any given point.
+      return vertex(0);
+    }
     int i = getNearestEdgeIndex(queryPoint);
     return S2EdgeUtil.getClosestPoint(queryPoint, vertex(i), vertex(i + 1));
   }

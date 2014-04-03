@@ -228,6 +228,10 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     S2Point projectedPoint = line.project(pointEquidistantFromABAndBC);
     assertTrue(
         S2.approxEquals(projectedPoint, pointMidAB) || S2.approxEquals(projectedPoint, pointMidBC));
+
+    // Test projecting on a degenerate polyline
+    S2Polyline degenerateLine = new S2Polyline(ImmutableList.of(pointA));
+    assertTrue(degenerateLine.project(pointB).equals(pointA));
   }
 
   public void testIntersectsEmptyPolyline() {
