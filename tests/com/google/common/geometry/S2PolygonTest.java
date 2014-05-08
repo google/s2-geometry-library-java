@@ -983,4 +983,16 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
           snappedPolygon.approxContains(polygon, mergeRadius));
     }
   }
+
+  /**
+   * Verifies that clipBoundary can succeed with duplicate adjacent vertices. Although such a case
+   * means the polygon is invalid, it is common to fix invalidity issues by doign a self-
+   * intersection to node crossings and drop duplicates.
+   */
+  public void testDuplicatePointClipping() {
+    S2Polygon p = makePolygon("0:0, 0:0, 0:4, 4:4, 4:0");
+    S2Polygon fixed = new S2Polygon();
+    fixed.initToIntersection(p, p);
+    assertEquals(makePolygon("0:0, 0:4, 4:4, 4:0"), fixed);
+  }
 }

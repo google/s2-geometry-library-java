@@ -912,22 +912,24 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       for (int j = (dir > 0) ? 0 : n; n > 0; --n, j += dir) {
         S2Point a0 = aLoop.vertex(j);
         S2Point a1 = aLoop.vertex(j + dir);
-        intersections.clear();
-        bIndex.clipEdge(a0, a1, addSharedEdges, intersections);
+        if (!a0.equalsPoint(a1)) {
+          intersections.clear();
+          bIndex.clipEdge(a0, a1, addSharedEdges, intersections);
 
-        if (inside) {
-          intersections.add(new ParametrizedS2Point(0.0, a0));
-        }
-        inside = ((intersections.size() & 0x1) == 0x1);
-        // assert ((b.contains(a1) ^ invertB) == inside);
-        if (inside) {
-          intersections.add(new ParametrizedS2Point(1.0, a1));
-        }
+          if (inside) {
+            intersections.add(new ParametrizedS2Point(0.0, a0));
+          }
+          inside = ((intersections.size() & 0x1) == 0x1);
+          // assert ((b.contains(a1) ^ invertB) == inside);
+          if (inside) {
+            intersections.add(new ParametrizedS2Point(1.0, a1));
+          }
 
-        // Remove duplicates and produce a list of unique intersections.
-        Collections.sort(intersections);
-        for (int size = intersections.size(), i = 1; i < size; i += 2) {
-          builder.addEdge(intersections.get(i - 1).getPoint(), intersections.get(i).getPoint());
+          // Remove duplicates and produce a list of unique intersections.
+          Collections.sort(intersections);
+          for (int size = intersections.size(), i = 1; i < size; i += 2) {
+            builder.addEdge(intersections.get(i - 1).getPoint(), intersections.get(i).getPoint());
+          }
         }
       }
     }
