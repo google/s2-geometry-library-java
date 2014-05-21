@@ -18,7 +18,6 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
@@ -71,18 +70,7 @@ public strictfp class GeometryTestCase extends TestCase {
         2 * rand.nextDouble() - 1,
         2 * rand.nextDouble() - 1));
   }
-
-  /**
-   * Return a right-handed coordinate frame (three orthonormal vectors). Returns
-   * an array of three points: x,y,z
-   */
-  public ImmutableList<S2Point> getRandomFrame() {
-    S2Point p0 = randomPoint();
-    S2Point p1 = S2Point.normalize(S2Point.crossProd(p0, randomPoint()));
-    S2Point p2 = S2Point.normalize(S2Point.crossProd(p0, p1));
-    return ImmutableList.of(p0, p1, p2);
-  }
-
+  
   /**
    * Return a random cell id at the given level or at a randomly chosen level.
    * The distribution is uniform over the space of cell ids, but only

@@ -17,6 +17,7 @@ package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 @GwtCompatible
 public final strictfp class S2 {
@@ -797,6 +798,25 @@ public final strictfp class S2 {
     // it ensures that turnAngle(a,b,c) == -turnAngle(c,b,a) for all a,b,c.
     double outAngle = S2Point.crossProd(b, a).angle(S2Point.crossProd(c, b));
     return (robustCCW(a, b, c) > 0) ? outAngle : -outAngle;
+  }
+
+  /**
+   * Returns a right-handed coordinate frame (three orthonormal vectors) based on a single point,
+   * which will become the third axis.
+   */
+  public static ImmutableList<S2Point> getFrame(S2Point p0) {
+    S2Point p1 = p0.ortho();
+    S2Point p2 = S2Point.normalize(S2Point.crossProd(p1, p0));
+    return ImmutableList.of(p2, p1, p0);
+  }
+
+  /**
+   * Returns a copy of the given point {@code p} after rotating it by the
+   * rotation matrix {@code r}.
+   */
+  static S2Point rotate(S2Point p, Matrix3x3 r) {
+    Matrix3x3 rotated = r.mult(new Matrix3x3(1, p.x, p.y, p.z));
+    return new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0));
   }
 
   /**

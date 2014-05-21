@@ -285,7 +285,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   private static void getVertices(String str, Matrix3x3 basis, List<S2Point> vertices) {
     S2Polyline line = makePolyline(str);
     for (int i = 0; i < line.numVertices(); ++i) {
-      vertices.add(S2Point.normalize(rotate(line.vertex(i), basis)));
+      vertices.add(S2Point.normalize(S2.rotate(line.vertex(i), basis)));
     }
   }
 
@@ -306,25 +306,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     return Math.pow(1e-10, u);
   }
 
-  /**
-   * Returns a copy of the given point {@code p} after rotating it by the
-   * rotation matrix {@code r}.
-   */
-  private static S2Point rotate(S2Point p, Matrix3x3 r) {
-    Matrix3x3 rotated = r.mult(new Matrix3x3(1, p.x, p.y, p.z));
-    return new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0));
-  }
-
   /** Returns a random rotation matrix. */
   private Matrix3x3 getRotationMatrix() {
-    List<S2Point> points = getRandomFrame();
-    S2Point a = points.get(0);
-    S2Point b = points.get(1);
-    S2Point c = points.get(2);
-    return new Matrix3x3(3,
-        a.getX(), b.getX(), c.getX(),
-        a.getY(), b.getY(), c.getY(),
-        a.getZ(), b.getZ(), c.getZ());
+    return Matrix3x3.fromCols(S2.getFrame(randomPoint()));
   }
 
   /** Returns the point "x" randomly perturbed within a radius of maxPerturb. */
@@ -446,8 +430,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     lines.add(Platform.formatString("Wrong number of unused edges (%d expected, %d actual):",
         numExpected, unusedEdges.size()));
     for (int i = 0; i < unusedEdges.size(); ++i) {
-      S2LatLng p0 = new S2LatLng(rotate(unusedEdges.get(i).getStart(), inverse));
-      S2LatLng p1 = new S2LatLng(rotate(unusedEdges.get(i).getEnd(), inverse));
+      S2LatLng p0 = new S2LatLng(S2.rotate(unusedEdges.get(i).getStart(), inverse));
+      S2LatLng p1 = new S2LatLng(S2.rotate(unusedEdges.get(i).getEnd(), inverse));
       lines.add(Platform.formatString("  [%.6f, %.6f] -> [%.6f, %.5f]",
           p0.lat().degrees(), p0.lng().degrees(),
           p1.lat().degrees(), p1.lng().degrees()));
@@ -677,7 +661,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
       S2Loop loop = actual.get(i);
       Matrix3x3 inverse = m.transpose();
       for (int j = 0; j < loop.numVertices(); ++j) {
-        S2LatLng ll = new S2LatLng(rotate(loop.vertex(j), inverse));
+        S2LatLng ll = new S2LatLng(S2.rotate(loop.vertex(j), inverse));
         lines.add(Platform.formatString("  [%.6f, %.6f]",
             ll.lat().degrees(), ll.lng().degrees()));
       }

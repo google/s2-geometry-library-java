@@ -979,6 +979,48 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(eastHemi.hasInterior());
   }
 
+  public void testMakeRegularLoop() {
+    S2Point center = S2LatLng.fromDegrees(80, 135).toPoint();
+    S1Angle radius = S1Angle.degrees(20);
+    S2Loop loop = S2Loop.makeRegularLoop(center, radius, 4);
+
+    assertEquals(4, loop.numVertices());
+    S2Point p0 = loop.vertex(0);
+    S2Point p1 = loop.vertex(1);
+    S2Point p2 = loop.vertex(2);
+    S2Point p3 = loop.vertex(3);
+
+    // Make sure that the radius is correct.
+    assertDoubleNear(20.0, Math.toDegrees(center.angle(p0)));
+    assertDoubleNear(20.0, Math.toDegrees(center.angle(p1)));
+    assertDoubleNear(20.0, Math.toDegrees(center.angle(p2)));
+    assertDoubleNear(20.0, Math.toDegrees(center.angle(p3)));
+
+    // Make sure that all the angles of the polygon are the same.
+    assertDoubleNear(S2.M_PI_2, S2Point.minus(p1, p0).angle(S2Point.minus(p3, p0)));
+    assertDoubleNear(S2.M_PI_2, S2Point.minus(p2, p1).angle(S2Point.minus(p0, p1)));
+    assertDoubleNear(S2.M_PI_2, S2Point.minus(p3, p2).angle(S2Point.minus(p1, p2)));
+    assertDoubleNear(S2.M_PI_2, S2Point.minus(p0, p3).angle(S2Point.minus(p2, p3)));
+
+    // Make sure that all the edges of the polygon have the same length.
+    assertDoubleNear(27.990890717782829, Math.toDegrees(p0.angle(p1)));
+    assertDoubleNear(27.990890717782829, Math.toDegrees(p1.angle(p2)));
+    assertDoubleNear(27.990890717782829, Math.toDegrees(p2.angle(p3)));
+    assertDoubleNear(27.990890717782829, Math.toDegrees(p3.angle(p0)));
+
+    // Check actual coordinates.  This may change if we switch the algorithm intentionally.
+    // These values are slightly different than the values expected in the C++ version because
+    // of different implementations of S2.Ortho().
+    assertDoubleNear(62.09727137765423, new S2LatLng(p0).lat().degrees());
+    assertDoubleNear(103.61851639321812, new S2LatLng(p0).lng().degrees());
+    assertDoubleNear(62.018663060050024, new S2LatLng(p1).lat().degrees());
+    assertDoubleNear(165.76365451515582, new S2LatLng(p1).lng().degrees());
+    assertDoubleNear(75.25987649102252, new S2LatLng(p2).lat().degrees());
+    assertDoubleNear(-118.2882216994918, new S2LatLng(p2).lng().degrees());
+    assertDoubleNear(75.40534674246688, new S2LatLng(p3).lat().degrees());
+    assertDoubleNear(27.252086622064205, new S2LatLng(p3).lng().degrees());
+  }
+
   /**
    * This function is useful for debugging.
    */

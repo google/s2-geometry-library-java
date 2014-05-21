@@ -150,6 +150,24 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     return new S2Loop(vertices, originInside, bound);
   }
 
+  /**
+   * Create a circle of points with a given center, radius, and number of vertices.
+   */
+  public static S2Loop makeRegularLoop(S2Point center, S1Angle radius, int numVertices) {
+    Matrix3x3 m = Matrix3x3.fromCols(S2.getFrame(center));
+    List<S2Point> vertices = Lists.newArrayList();
+    double radianStep = 2 * Math.PI / numVertices;
+    // We create the vertices on the plane tangent to 'center', so the radius on that plane is
+    // larger.
+    double planarRadius = Math.tan(radius.radians());
+    for (int vi = 0; vi < numVertices; ++vi) {
+      double angle = vi * radianStep;
+      S2Point p = new S2Point(planarRadius * Math.cos(angle), planarRadius * Math.sin(angle), 1);
+      vertices.add(S2Point.normalize(S2.rotate(p, m)));
+    }
+    return new S2Loop(vertices);
+  }
+
   private S2Loop(List<S2Point> vertices, boolean originInside, S2LatLngRect bound) {
     this.numVertices = vertices.size();
     this.vertices = new S2Point[numVertices];

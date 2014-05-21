@@ -683,7 +683,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       // This ensures that we test both long and very short segments that
       // intersect at both large and very small angles.
 
-      List<S2Point> points = getRandomFrame();
+      List<S2Point> points = S2.getFrame(randomPoint());
       S2Point p = points.get(0);
       S2Point d1 = points.get(1);
       S2Point d2 = points.get(2);

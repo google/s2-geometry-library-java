@@ -18,6 +18,8 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 
+import java.util.List;
+
 import javax.annotation.CheckReturnValue;
 
 /** A simple 3x3 matrix. */
@@ -35,6 +37,11 @@ public final class Matrix3x3 {
       }
     }
     return result;
+  }
+  
+  /** Constructs a matrix from a series of column vectors. */
+  public static Matrix3x3 fromCols(List<S2Point> frame) {
+    return fromCols(frame.toArray(new S2Point[frame.size()]));
   }
 
   /** Constructs a 2D matrix of the given width and values. */
