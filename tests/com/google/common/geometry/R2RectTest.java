@@ -50,8 +50,11 @@ public class R2RectTest extends GeometryTestCase {
     assertEquals(expectedUnion, x.union(y));
     assertEquals(expectedIntersection, x.intersection(y));
 
+    R2Rect r = new R2Rect(x);
+    r.addRect(y);
+    assertEquals(expectedUnion, r);
     if (y.getSize().equals(new R2Vector(0, 0))) {
-      R2Rect r = x;
+      r = new R2Rect(x);
       r.addPoint(y.lo());
       assertEquals(expectedUnion, r);
     }

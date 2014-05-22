@@ -49,6 +49,12 @@ public final strictfp class R1Interval implements Serializable {
     this.hi = hi;
   }
 
+  /** Copy constructor. */
+  public R1Interval(R1Interval interval) {
+    this.lo = interval.lo;
+    this.hi = interval.hi;
+  }
+
   /**
    * Returns an empty interval. (Any interval where lo > hi is considered
    * empty.)

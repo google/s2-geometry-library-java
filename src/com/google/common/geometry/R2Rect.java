@@ -57,6 +57,12 @@ final strictfp class R2Rect implements Serializable {
     // assert (isValid());
   }
 
+  /** Copy constructor. */
+  public R2Rect(R2Rect rect) {
+    this.x = new R1Interval(rect.x);
+    this.y = new R1Interval(rect.y);
+  }
+
   /**
    * Returns a new instance of the canonical empty rectangle.  Use isEmpty() to test for empty
    * rectangles, since they have more than one representation.
@@ -230,6 +236,15 @@ final strictfp class R2Rect implements Serializable {
   public void addPoint(R2Vector p) {
     x.unionInternal(p.x());
     y.unionInternal(p.y());
+  }
+
+  /**
+   * Expand the rectangle to include the given other rectangle.  This is the same as replacing the
+   * rectangle by the union of the two rectangles, but is somewhat more efficient.
+   */
+  public void addRect(R2Rect other) {
+    x.unionInternal(other.x);
+    y.unionInternal(other.y);
   }
 
   /**
