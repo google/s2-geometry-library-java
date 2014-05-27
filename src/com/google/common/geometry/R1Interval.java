@@ -111,6 +111,10 @@ public final strictfp class R1Interval implements Serializable {
       public void setValue(R1Interval interval, double value) {
         interval.lo = value;
       }
+      @Override
+      public Endpoint opposite() {
+        return HI;
+      }
     },
     /** The high end of the interval. */
     HI {
@@ -122,9 +126,14 @@ public final strictfp class R1Interval implements Serializable {
       public void setValue(R1Interval interval, double value) {
         interval.hi = value;
       }
+      @Override
+      public Endpoint opposite() {
+        return LO;
+      }
     };
     public abstract double getValue(R1Interval interval);
     public abstract void setValue(R1Interval interval, double value);
+    public abstract Endpoint opposite();
   }
 
   /**

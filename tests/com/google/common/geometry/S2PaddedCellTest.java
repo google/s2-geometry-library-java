@@ -36,8 +36,7 @@ public class S2PaddedCellTest extends GeometryTestCase {
         S2Cell[] children = new S2Cell[] {new S2Cell(), new S2Cell(), new S2Cell(), new S2Cell()};
         assertTrue(cell.subdivide(children));
         for (int pos = 0; pos < 4; ++pos) {
-          int ij = S2.posToIJ(pcell.orientation(), pos);
-          compareS2CellToPadded(children[pos], new S2PaddedCell(pcell, ij >> 1, ij & 1), padding);
+          compareS2CellToPadded(children[pos], pcell.childAtPos(pos), padding);
         }
       }
     }

@@ -78,11 +78,22 @@ public class S2PaddedCell {
   }
 
   /**
-   * Construct the child of "parent" with the given (i,j) index. The four child cells have indices
+   * Construct the child of this cell with the given (i,j) index. The four child cells have indices
    * of (0,0), (0,1), (1,0), (1,1), where the i and j indices correspond to increasing u- and
    * v-values respectively.
    */
-  public S2PaddedCell(S2PaddedCell parent, int i, int j) {
+  public S2PaddedCell childAtIJ(int i, int j) {
+    return new S2PaddedCell(this, i, j);
+  }
+
+  /** Construct the child of this cell with the given Hilbert curve position, from 0 to 3. */
+  public S2PaddedCell childAtPos(int pos) {
+    int ij = S2.posToIJ(orientation, pos);
+    return new S2PaddedCell(this, ij >> 1, ij & 1);
+  }
+
+  /** Private constructor to create a new S2PaddedCell for the child at the given (i,j) position. */
+  private S2PaddedCell(S2PaddedCell parent, int i, int j) {
     this.padding = parent.padding;
     this.bound = new R2Rect(parent.bound);
     this.level = parent.level + 1;
