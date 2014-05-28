@@ -191,4 +191,11 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
     assertFalse(new R1Interval(1 - kLo, 2 + kHi).approxEquals(new R1Interval(1, 2)));
     assertFalse(new R1Interval(1 + kLo, 2 - kHi).approxEquals(new R1Interval(1, 2)));
   }
+
+  public void testOpposites() {
+    assertEquals(Endpoint.LO, Endpoint.HI.opposite());
+    assertEquals(Endpoint.HI, Endpoint.LO.opposite());
+    assertEquals(Endpoint.LO, Endpoint.LO.opposite().opposite());
+    assertEquals(Endpoint.HI, Endpoint.HI.opposite().opposite());
+  }
 }
