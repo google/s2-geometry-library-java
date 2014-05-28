@@ -58,33 +58,23 @@ public interface S2Shape {
    * triggers allocations. This class is intended to allow fast retrieval of the endpoints in a
    * single call.
    */
-  public static final class MutableEdge {
-    private S2Point a;
-    private S2Point b;
-
+  public interface MutableEdge {
     /**
      * Returns the leading point of the last edge retrieved via
      * {@link S2Shape#getEdge(int, MutableEdge)}, or null if no edge has been retrieved.
      */
-    public S2Point a() {
-      return a;
-    }
+    public S2Point getStart();
 
     /**
      * Returns the trailing point of the last edge retrieved via
      * {@link S2Shape#getEdge(int, MutableEdge)}, or null if no edge has been retrieved.
      */
-    public S2Point b() {
-      return b;
-    }
+    public S2Point getEnd();
 
     /**
      * Called by implementations of {@link S2Shape#getEdge(int, MutableEdge)} to update the
      * endpoints of this mutable edge to the given values.
      */
-    public void set(S2Point a, S2Point b) {
-      this.a = a;
-      this.b = b;
-    }
+    public void set(S2Point start, S2Point end);
   }
 }
