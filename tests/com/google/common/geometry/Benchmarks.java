@@ -15,6 +15,7 @@ import java.io.PrintWriter;
 public class Benchmarks {  
   public static void main(String[] args) throws Exception {
     run(S2CellIdBenchmark.class);
+    run(S2CellIdBenchmark.Level.class);
     run(S2LoopBenchmark.class);
     run(S2LoopBenchmark.LoopConstructor.class);
     run(S2LoopBenchmark.IsValid.class);
