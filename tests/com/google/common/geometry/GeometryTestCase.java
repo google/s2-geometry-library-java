@@ -187,6 +187,20 @@ public strictfp class GeometryTestCase extends TestCase {
         S2Point.add(S2Point.mul(x, Math.cos(theta) * r), S2Point.mul(y, Math.sin(theta) * r)),
         S2Point.mul(z, (1 - h))));
   }
+  
+  
+  /** Return a random point within the given S2LatLngRect. */
+  S2Point samplePoint(S2LatLngRect rect) {
+    // First choose a latitude uniformly with respect to area on the sphere.
+    double sinLo = Math.sin(rect.lat().lo());
+    double sinHi = Math.sin(rect.lat().hi());
+    double lat = Math.asin(sinLo + rand.nextDouble() * (sinHi - sinLo));
+    
+    // Now choose longitude uniformly within the given range.
+    double lng = rect.lng().lo() + rand.nextDouble() * rect.lng().getLength();
+    
+    return S2LatLng.fromRadians(lat, lng).normalized().toPoint();
+  }
 
   static S2LatLngRect parseVertices(String str, List<S2Point> vertices) {
     if (str == null) {
