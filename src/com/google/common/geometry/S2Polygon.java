@@ -151,7 +151,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /** Initialize this polygon to a copy of the given polygon. */
-  private void copy(S2Polygon src) {
+  void copy(S2Polygon src) {
     this.bound = src.bound;
     this.subregionBound = src.subregionBound;
     this.hasHoles = src.hasHoles;
