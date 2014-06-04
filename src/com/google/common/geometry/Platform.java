@@ -75,4 +75,26 @@ final class Platform {
   public static long doubleHash(double value) {
     return Double.doubleToLongBits(value);
   }
+
+  /**
+   * Returns the sign of the determinant of the matrix constructed from the three column vectors
+   * {@code a}, {@code b}, and {@code c}. This operation is very robust for small determinants,
+   * but is extremely slow and should only be used if performance is not a concern or all faster
+   * techniques have been exhausted.
+   */
+  public static int sign(S2Point a, S2Point b, S2Point c) {
+    Real bycz = Real.mul(b.y, c.z);
+    Real bzcy = Real.mul(b.z, c.y);
+    Real bzcx = Real.mul(b.z, c.x);
+    Real bxcz = Real.mul(b.x, c.z);
+    Real bxcy = Real.mul(b.x, c.y);
+    Real bycx = Real.mul(b.y, c.x);
+    Real bcx = bycz.sub(bzcy);
+    Real bcy = bzcx.sub(bxcz);
+    Real bcz = bxcy.sub(bycx);
+    Real x = bcx.mul(a.x);
+    Real y = bcy.mul(a.y);
+    Real z = bcz.mul(a.z);
+    return x.add(y).add(z).signum();
+  }
 }

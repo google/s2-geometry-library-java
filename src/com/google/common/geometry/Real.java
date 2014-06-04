@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtIncompatible;
+
 import java.math.BigDecimal;
 
 /**
@@ -46,7 +48,8 @@ import java.math.BigDecimal;
  *
  * <p>Faster adaptive techniques are also presented in that paper, but are not implemented here.
  */
-class Real extends Number {
+@GwtIncompatible(value = "No javascript support for strictfp.")
+strictfp class Real extends Number {
   private static final long serialVersionUID = 1L;
 
   /**

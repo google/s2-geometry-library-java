@@ -547,10 +547,6 @@ public final strictfp class S2 {
   }
 
   /**
-   * WARNING! This requires arbitrary precision arithmetic to be truly robust.
-   * This means that for nearly colinear AB and AC, this function may return the
-   * wrong answer.
-   *
    * <p>
    * Like SimpleCCW(), but returns +1 if the points are counterclockwise and -1
    * if the points are clockwise. It satisfies the following conditions:
@@ -599,43 +595,114 @@ public final strictfp class S2 {
   }
 
   /**
-   * A relatively expensive calculation invoked by RobustCCW() if the sign of
-   * the determinant is uncertain.
+   * Returns the sign of the determinant using more expensive techniques. To be used when the
+   * magnitude of the determinant is close enough to zero that its value is uncertain using faster
+   * but less robust techniques.
    */
-  public static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
+  static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
     // Return zero if and only if two points are the same. This ensures (1).
     if (a.equalsPoint(b) || b.equalsPoint(c) || c.equalsPoint(a)) {
       return 0;
     }
 
-    // Now compute the determinant in a stable way. Since all three points are
-    // unit length and we know that the determinant is very close to zero, this
-    // means that points are very nearly colinear. Furthermore, the most common
-    // situation is where two points are nearly identical or nearly antipodal.
-    // To get the best accuracy in this situation, it is important to
-    // immediately reduce the magnitude of the arguments by computing either
-    // A+B or A-B for each pair of points. Note that even if A and B differ
-    // only in their low bits, A-B can be computed very accurately. On the
-    // other hand we can't accurately represent an arbitrary linear combination
-    // of two vectors as would be required for Gaussian elimination. The code
-    // below chooses the vertex opposite the longest edge as the "origin" for
-    // the calculation, and computes the different vectors to the other two
-    // vertices. This minimizes the sum of the lengths of these vectors.
-    //
-    // This implementation is very stable numerically, but it still does not
-    // return consistent results in all cases. For example, if three points are
-    // spaced far apart from each other along a great circle, the sign of the
-    // result will basically be random (although it will still satisfy the
-    // conditions documented in the header file). The only way to return
-    // consistent results in all cases is to compute the result using
-    // arbitrary-precision arithmetic. I considered using the Gnu MP library,
-    // but this would be very expensive (up to 2000 bits of precision may be
-    // needed to store the intermediate results) and seems like overkill for
-    // this problem. The MP library is apparently also quite particular about
-    // compilers and compilation options and would be a pain to maintain.
+    int sign = stableCCW(a, b, c);
+    if (sign != 0) {
+      return sign;
+    }
 
-    // We want to handle the case of nearby points and nearly antipodal points
-    // accurately, so determine whether A+B or A-B is smaller in each case.
+    // Otherwise fall back to exact arithmetic and symbolic permutations.
+    return exactCCW(a, b, c);
+  }
+
+  /**
+   * Compute the determinant in a numerically stable way. Unlike triageCCW(), this method can
+   * usually compute the correct determinant sign even when all three points are as collinear as
+   * possible. For example if three points are spaced 1km apart along a random line on the Earth's
+   * surface using the nearest representable points, there is only a 0.4% chance that this method
+   * will not be able to find the determinant sign. The probability of failure decreases as the
+   * points get closer together; if the collinear points are 1 meter apart, the failure rate drops
+   * to 0.0004%.
+   *
+   * <p>This method could be extended to also handle nearly-antipodal points (and in fact an earlier
+   * version of this code did exactly that), but antipodal points are rare in practice so it seems
+   * better to simply fall back to exact arithmetic in that case.
+   */
+  private static final int stableCCW(S2Point a, S2Point b, S2Point c) {
+    S2Point ab = S2Point.sub(b, a);
+    S2Point bc = S2Point.sub(c, b);
+    S2Point ca = S2Point.sub(a, c);
+    double ab2 = ab.norm2();
+    double bc2 = bc.norm2();
+    double ca2 = ca.norm2();
+
+    // Now compute the determinant ((A-C)x(B-C)).C, where the vertices have been cyclically permuted
+    // if necessary so that AB is the longest edge.  (This minimizes the magnitude of cross
+    // product.)  At the same time we also compute the maximum error in the determinant.  Using a
+    // similar technique to the one used for kMaxDetError, the error is at most
+    //
+    //   |d| <= (3 + 6/sqrt(3)) * |A-C| * |B-C| * e
+    //
+    // where e = 0.5 * DBL_EPSILON.  If the determinant magnitude is larger than this value then we
+    // know its sign with certainty.
+    final double detErrorMultiplier = 3.2321 * DBL_EPSILON;  // see above
+    double det, maxError;
+    if (ab2 >= bc2 && ab2 >= ca2) {
+      // AB is the longest edge, so compute (A-C)x(B-C).C.
+      det = -S2Point.scalarTripleProduct(c, ca, bc);
+      maxError = detErrorMultiplier * Math.sqrt(ca2 * bc2);
+    } else if (bc2 >= ca2) {
+      // BC is the longest edge, so compute (B-A)x(C-A).A.
+      det = -S2Point.scalarTripleProduct(a, ab, ca);
+      maxError = detErrorMultiplier * Math.sqrt(ab2 * ca2);
+    } else {
+      // CA is the longest edge, so compute (C-B)x(A-B).B.
+      det = -S2Point.scalarTripleProduct(b, bc, ab);
+      maxError = detErrorMultiplier * Math.sqrt(bc2 * ab2);
+    }
+    return (Math.abs(det) <= maxError) ? 0 : (det > 0) ? 1 : -1;
+  }
+
+  /**
+   * Computes the determinant using exact arithmetic and/or symbolic permutations. Requires that the
+   * three points are distinct.
+   */
+  private static final int exactCCW(S2Point a, S2Point b, S2Point c) {
+    // assert !a.equalsPoint(b) && !b.equalsPoint(c) && !c.equalsPoint(a);
+    int sign = Platform.sign(a, b, c);
+    if (sign != 0) {
+      return sign;
+    } else {
+      // Else fall back to symbolic perturbation.
+      return symbolicCCW(a, b, c);
+    }
+  }
+
+  /**
+   * Computes the sign of the determinant in a stable way. All three points must be unit length, and
+   * this method should only be invoked when the determinant is very close to zero, so the points
+   * are very nearly collinear. Furthermore, the most common situation is where two points are
+   * nearly identical or nearly antipodal.
+   *
+   * <p>To get the best accuracy in this situation, it is important to immediately reduce the
+   * magnitude of the arguments by computing either A+B or A-B for each pair of points. Note that
+   * even if A and B differ only in their low bits, A-B can be computed very accurately. On the
+   * other hand we can't accurately represent an arbitrary linear combination of two vectors as
+   * would be required for Gaussian elimination. The code below chooses the vertex opposite the
+   * longest edge as the "origin" for the calculation, and computes the different vectors to the
+   * other two vertices. This minimizes the sum of the lengths of these vectors.
+   *
+   * <p>This implementation is very stable numerically, but it still does not return consistent
+   * results in all cases. For example, if three points are spaced far apart from each other along a
+   * great circle, the sign of the result will basically be random. The only way to return
+   * consistent results in all cases is to compute the result using arbitrary-precision arithmetic.
+   *
+   * <p>In particular, this method is now used after arbitrary-precision arithmetic has been tried,
+   * so the usual case coming through here is to essentially "break a tie" in the event of truly
+   * coplanar points, with the requirement that the result of S2.robustCCW() be nonzero.
+   */
+  private static final int symbolicCCW(S2Point a, S2Point b, S2Point c) {
+    // We want to handle the case of nearby points and nearly antipodal points accurately, so
+    // determine whether A+B or A-B is smaller in each case.
     double sab = (a.dotProd(b) > 0) ? -1 : 1;
     double sbc = (b.dotProd(c) > 0) ? -1 : 1;
     double sca = (c.dotProd(a) > 0) ? -1 : 1;
@@ -646,10 +713,9 @@ public final strictfp class S2 {
     double dbc = vbc.norm2();
     double dca = vca.norm2();
 
-    // Sort the difference vectors to find the longest edge, and use the
-    // opposite vertex as the origin. If two difference vectors are the same
-    // length, we break ties deterministically to ensure that the symmetry
-    // properties guaranteed in the header file will be true.
+    // Sort the difference vectors to find the longest edge, and use the opposite vertex as the
+    // origin. If two difference vectors are the same length, we break ties deterministically to
+    // ensure that the symmetry properties guaranteed in the header file will be true.
     double sign;
     if (dca < dbc || (dca == dbc && a.lessThan(b))) {
       if (dab < dbc || (dab == dbc && a.lessThan(c))) {
@@ -685,7 +751,6 @@ public final strictfp class S2 {
     // perturbed by this amount. It turns out that this is equivalent to
     // checking whether the points are ordered CCW around the origin first in
     // the Y-Z plane, then in the Z-X plane, and then in the X-Y plane.
-
     int ccw =
         planarOrderedCCW(new R2Vector(a.y, a.z), new R2Vector(b.y, b.z), new R2Vector(c.y, c.z));
     if (ccw == 0) {
@@ -700,9 +765,11 @@ public final strictfp class S2 {
     return ccw;
   }
 
-
+  /**
+   * Returns +1 if the edge AB is CCW around the origin, -1 if its clockwise, and 0 if the result is
+   * indeterminate.
+   */
   public static int planarCCW(R2Vector a, R2Vector b) {
-    // Return +1 if the edge AB is CCW around the origin, etc.
     double sab = (a.dotProd(b) > 0) ? -1 : 1;
     R2Vector vab = R2Vector.add(a, R2Vector.mul(b, sab));
     double da = a.norm2();

@@ -26,7 +26,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /**
  * Tests for {@link S2Loop}.
@@ -37,8 +36,6 @@ import java.util.logging.Logger;
  */
 @GwtCompatible
 public strictfp class S2LoopTest extends GeometryTestCase {
-  private static final Logger log = Platform.getLoggerForClass(S2LoopTest.class);
-
   // A stripe that slightly over-wraps the equator.
   private S2Loop candyCane = makeLoop("-20:150, -20:-70, 0:70, 10:-150, 10:70, -10:-70");
 
@@ -683,25 +680,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     checkRelation(loopH, loopI, CONTAINS, true);
   }
 
-  /**
-   * TODO(user, ericv) Fix this test. It fails sporadically.
-   * <p>
-   * The problem is not in this test, it is that
-   * {@link S2#robustCCW(S2Point, S2Point, S2Point)} currently requires
-   * arbitrary-precision arithmetic to be truly robust. That means it can give
-   * the wrong answers in cases where we are trying to determine edge
-   * intersections.
-   * <p>
-   * It seems the strictfp modifier here in java (required for correctness in
-   * other areas of the library) restricts the size of temporary registers,
-   * causing us to lose some of the precision that the C++ version gets.
-   * <p>
-   * This test fails when it randomly chooses a cell loop with nearly colinear
-   * edges. That's where S2.robustCCW provides the wrong answer. Note that there
-   * is an attempted workaround in {@link S2Loop#isValid()}, but it
-   * does not cover all cases.
-   */
-  public void suppressedTestLoopRelations2() {
+  public void testLoopRelations2() {
     // Construct polygons consisting of a sequence of adjacent cell ids
     // at some fixed level. Comparing two polygons at the same level
     // ensures that there are no T-vertices.
@@ -711,7 +690,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       if (!begin.isValid()) {
         continue;
       }
-      begin = begin.parent((int) Math.round(rand.nextDouble() * S2CellId.MAX_LEVEL));
+      begin = begin.parent(random(S2CellId.MAX_LEVEL));
       S2CellId aBegin = advance(begin, skewed(6));
       S2CellId aEnd = advance(aBegin, skewed(6) + 1);
       S2CellId bBegin = advance(begin, skewed(6));
@@ -724,12 +703,9 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       S2Loop b = makeCellLoop(bBegin, bEnd);
       boolean contained = (aBegin.lessOrEquals(bBegin) && bEnd.lessOrEquals(aEnd));
       boolean intersects = (aBegin.lessThan(bEnd) && bBegin.lessThan(aEnd));
-      log.info(
-          "Checking " + a.numVertices() + " vs. " + b.numVertices() + ", contained = " + contained
-              + ", intersects = " + intersects);
-
-      assertEquals(contained, a.contains(b));
-      assertEquals(intersects, a.intersects(b));
+      String message = "Failed with " + a.numVertices() + " vs. " + b.numVertices();
+      assertEquals(message, contained, a.contains(b));
+      assertEquals(message, intersects, a.intersects(b));
     }
   }
 
