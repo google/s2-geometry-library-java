@@ -83,24 +83,23 @@ public class S2PaddedCell {
    * v-values respectively.
    */
   public S2PaddedCell childAtIJ(int i, int j) {
-    return new S2PaddedCell(this, i, j);
+    return new S2PaddedCell(this, S2.ijToPos(orientation, i * 2 + j), i, j);
   }
 
   /** Construct the child of this cell with the given Hilbert curve position, from 0 to 3. */
   public S2PaddedCell childAtPos(int pos) {
     int ij = S2.posToIJ(orientation, pos);
-    return new S2PaddedCell(this, ij >> 1, ij & 1);
+    return new S2PaddedCell(this, pos, ij >> 1, ij & 1);
   }
 
   /** Private constructor to create a new S2PaddedCell for the child at the given (i,j) position. */
-  private S2PaddedCell(S2PaddedCell parent, int i, int j) {
+  private S2PaddedCell(S2PaddedCell parent, int pos, int i, int j) {
     this.padding = parent.padding;
     this.bound = new R2Rect(parent.bound);
     this.level = parent.level + 1;
 
     // Compute the position and orientation of the child incrementally from the orientation of the
     // parent.
-    int pos = S2.ijToPos(parent.orientation, 2 * i + j);
     id = parent.id.child(pos);
     int ijSize = S2CellId.getSizeIJ(level);
     iLo = parent.iLo + i * ijSize;
