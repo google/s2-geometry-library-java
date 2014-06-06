@@ -16,6 +16,9 @@ public class Benchmarks {
   public static void main(String[] args) throws Exception {
     run(S2CellIdBenchmark.class);
     run(S2CellIdBenchmark.Level.class);
+    run(S2CellUnionBenchmark.class);
+    run(S2EdgeUtilBenchmark.class);
+    run(S2LatLngBenchmark.class);
     run(S2LoopBenchmark.class);
     run(S2LoopBenchmark.LoopConstructor.class);
     run(S2LoopBenchmark.IsValid.class);
@@ -26,12 +29,10 @@ public class Benchmarks {
     run(S2LoopBenchmark.ContainsVsGapEdgeMultiple.class);
     run(S2LoopBenchmark.IntersectsCrossesVsLogRadiusRatio.class);
     run(S2PolygonBenchmark.ConstructorSingleLoop.class);
-    run(S2PolygonBenchmark.ConstructorLoopGrid.class);
     run(S2PolygonBenchmark.IsValidConcentricLoops.class);
     run(S2PolygonBenchmark.ContainsPointLoopGrid.class);
     run(S2PolygonBenchmark.ContainsPointNestedFractals.class);
     run(S2PolygonBenchmark.Covering.class);
-    run(S2PolygonBenchmark.ContainsSelfLoopGrid.class);
     run(S2PolygonBenchmark.ContainsSelfNestedFractals.class);
     run(S2PolygonBenchmark.IntersectsCmplLoopGrid.class);
     run(S2PolygonBenchmark.IntersectsCmplNestedFractals.class);
