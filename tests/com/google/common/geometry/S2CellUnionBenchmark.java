@@ -31,7 +31,6 @@ public class S2CellUnionBenchmark {
       } else {
         aCells.add(a);
         bCells.add(b);
-    
       }
     }
   }
