@@ -3,8 +3,11 @@ package com.google.common.geometry;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.google.caliper.BeforeExperiment;
 import com.google.caliper.Benchmark;
 import com.google.caliper.Param;
+import com.google.caliper.api.BeforeRep;
+import com.google.caliper.api.Macrobenchmark;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -34,7 +37,7 @@ public class S2PolygonBenchmark {
     @Param({"8", "1024", "1048576"})
     int numVertices;
 
-    GeometryTestCase testUtils;
+    private GeometryTestCase testUtils;
 
     void setUp() {
       testUtils = new GeometryTestCase();
@@ -60,7 +63,7 @@ public class S2PolygonBenchmark {
     @Param({"2", "64", "4096"})
     int numLoops;
 
-    GeometryTestCase testUtils;
+    private GeometryTestCase testUtils;
 
     void setUp() {
       testUtils = new GeometryTestCase();
@@ -142,27 +145,7 @@ public class S2PolygonBenchmark {
       benchmarkContainsPoint(reps, factory, testUtils);
     }
   }
-
-  /** Mainly measures contains(S2Cell) and MayIntersect(S2Cell). */
-  protected static void benchmarkCovering(int reps, int maxCells, PolygonFactory factory,
-      GeometryTestCase testUtils) {
-    S2RegionCoverer coverer = new S2RegionCoverer();
-    coverer.setMaxCells(maxCells);
-    S2Polygon polygon = new S2Polygon();
-    // Bresenham-type algorithm for polygon sampling.
-    int delta = 0;
-    for (int r = reps; r > 0; --r) {
-      delta -= NUM_POLYGON_SAMPLES;
-      if (delta < 0) {
-        delta += reps;
-        polygon = new S2Polygon(factory.newPolygon(testUtils));
-      }
-
-      ArrayList<S2CellId> covering = new ArrayList<>();
-      coverer.getCovering(polygon, covering);
-    }
-  }
-
+  
   static class Covering {
     @Param({"8", "64", "512"})
     int maxCells;
@@ -170,22 +153,36 @@ public class S2PolygonBenchmark {
     @Param({"8", "128", "2048", "32768", "524288"})
     int numVertices;
 
-    GeometryTestCase testUtils;
+    private GeometryTestCase testUtils; 
+    private NestedLoopsPolygonFactory nestedLoopsPolygonFactory;
+    private NestedFractalsPolygonFactory nestedFractalsPolygonFactory;
+    private S2Polygon nestedLoopsPolygon;
+    private S2Polygon nestedFractalsPolygon;
+    private S2RegionCoverer coverer;
 
-    void setUp() {
+    @BeforeExperiment void setUpExperiment() {
       testUtils = new GeometryTestCase();
       testUtils.setUp();
+      nestedLoopsPolygonFactory = new NestedLoopsPolygonFactory(2, numVertices);
+      nestedFractalsPolygonFactory = new NestedFractalsPolygonFactory(1, numVertices);
+      coverer = new S2RegionCoverer();
+      coverer.setMaxCells(maxCells);
     }
-
-    @Benchmark void fractalCovering(int reps) {
-      setUp();
-      NestedFractalsPolygonFactory factory = new NestedFractalsPolygonFactory(1, numVertices);
-      benchmarkCovering(reps, maxCells, factory, testUtils);
+    
+    /** We create both polygons, although only one is needed for each macrobenchmark. */
+    @BeforeRep void setUpRep() {
+      nestedLoopsPolygon = nestedLoopsPolygonFactory.newPolygon(testUtils);
+      nestedFractalsPolygon = nestedFractalsPolygonFactory.newPolygon(testUtils);
     }
-    @Benchmark void annulusCovering(int reps) {
-      setUp();
-      NestedLoopsPolygonFactory factory = new NestedLoopsPolygonFactory(2, numVertices);
-      benchmarkCovering(reps, maxCells, factory, testUtils);
+    
+    @Macrobenchmark void annulusCovering() {
+      ArrayList<S2CellId> covering = new ArrayList<>();
+      coverer.getCovering(nestedLoopsPolygon, covering);
+    }
+    
+    @Macrobenchmark void fractalCovering() {
+      ArrayList<S2CellId> covering = new ArrayList<>();
+      coverer.getCovering(nestedFractalsPolygon, covering);
     }
   }
 
@@ -230,16 +227,31 @@ public class S2PolygonBenchmark {
 
     @Param({"64", "512", "4096", "32768"})
     int totalNumVertices;
+    
+    private GeometryTestCase testUtils;
+    private LoopGridPolygonFactory factory;
+    private S2Polygon polygon;
+    private S2Polygon complement;
 
+    @BeforeExperiment void setUpExperiment() {
+      testUtils = new GeometryTestCase();
+      testUtils.setUp();
+      factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
+    }
+    
+    @BeforeRep void setUpRep() {
+      polygon = factory.newPolygon(testUtils);
+      S2Polygon bound = getBoundingPolygon(polygon);
+      complement = new S2Polygon();
+      complement.initToDifference(bound,  polygon);
+    }
+    
     /**
      * Benchmarks whether a loop grid polygon intersects() its complement (obtained by subtracting
      * the polygon from a simple bound).
      */
-    @Benchmark void intersectsCmplLoopGrid(int reps) {
-      GeometryTestCase testUtils = new GeometryTestCase();
-      testUtils.setUp();
-      LoopGridPolygonFactory factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
-      benchmarkIntersectsCmpl(reps, factory, testUtils);
+    @Macrobenchmark void intersectsCmplLoopGrid() {
+      assertFalse(polygon.intersects(complement));
     }
   }
 
@@ -250,44 +262,34 @@ public class S2PolygonBenchmark {
     @Param({"512", "262144"})
     int totalNumVertices;
 
-    /** Similar to ContainsSelfNestedFractals, so we just do some spot checks. */
-    @Benchmark void intersectsCmplNestedFractals(int reps) {
-      GeometryTestCase testUtils = new GeometryTestCase();
+    private GeometryTestCase testUtils;
+    private NestedFractalsPolygonFactory factory;
+    private S2Polygon polygon;
+    private S2Polygon complement;
+
+    @BeforeExperiment void setUpExperiment() {
+      testUtils = new GeometryTestCase();
       testUtils.setUp();
-      NestedFractalsPolygonFactory factory =
-          new NestedFractalsPolygonFactory(numLoops, totalNumVertices);
-      benchmarkIntersectsCmpl(reps, factory, testUtils);
+      factory = new NestedFractalsPolygonFactory(numLoops, totalNumVertices);
+    }
+
+    @BeforeRep void setUpRep() {
+      polygon = factory.newPolygon(testUtils);
+      S2Polygon bound = getBoundingPolygon(polygon);
+      complement = new S2Polygon();
+      complement.initToDifference(bound,  polygon);
+    }
+    
+    /** Similar to containsSelfNestedFractals, so we just do some spot checks. */
+    @Macrobenchmark void intersectsCmplNestedFractals() {
+      assertFalse(polygon.intersects(complement));
     }
   }
 
-  private interface PolygonOperation {
-    S2Polygon operation(S2Polygon a, S2Polygon b);
-  }
-
-  private static class InitToIntersection implements PolygonOperation {
-    @Override public S2Polygon operation(S2Polygon a, S2Polygon b) {
-      S2Polygon c = new S2Polygon();
-      c.initToIntersection(a,  b);
-      return c;
-    }
-  }
-
-  private static class InitToUnion implements PolygonOperation {
-    @Override public S2Polygon operation (S2Polygon a, S2Polygon b) {
-      S2Polygon c = new S2Polygon();
-      c.initToUnion(a, b);
-      return c;
-    }
-  }
-
-  private static class InitToDifference implements PolygonOperation {
-    @Override public S2Polygon operation (S2Polygon a, S2Polygon b) {
-      S2Polygon c = new S2Polygon();
-      c.initToDifference(a, b);
-      return c;
-    }
-  }
-
+  /** 
+   * The only interesting case is intersection, since for union and difference the output polygon
+   * includes almost all of the input polygon.
+   */
   static class IntersectFractalWithCovering {
     @Param({"1", "2", "32", "128", "4096"})
     int maxCells;
@@ -295,33 +297,92 @@ public class S2PolygonBenchmark {
     @Param({"128", "32768"})
     int totalNumVertices;
 
-    GeometryTestCase testUtils;
+    private GeometryTestCase testUtils;
+    private NestedFractalsPolygonFactory factory;
+    private S2RegionCoverer coverer;
+    private S2Polygon polygon, cellPoly, result;
+    private ArrayList<S2CellId> covering;
+    /** The index of the cell of the current covering. */
+    private int icover;
+    /** True if we should get a new polygon before the next rep. */
+    private boolean getNewPolygon;
 
-    void setUp() {
+    @BeforeExperiment void setUpExperiment() {
       testUtils = new GeometryTestCase();
       testUtils.setUp();
+      factory = new NestedFractalsPolygonFactory(1, totalNumVertices);
+      getNewPolygon = true;
+      icover = 0;
+      result = new S2Polygon();
     }
 
-    /** 
-     * The only interesting case is intersection, since for union and difference the output polygon
-     * includes almost all of the input polygon.
-     */
-    @Benchmark void intersetFractalWithCovering(int reps) {
-      setUp();
-      NestedFractalsPolygonFactory factory = new NestedFractalsPolygonFactory(1, totalNumVertices);
-      benchmarkOpWithCovering(reps, maxCells, factory, new InitToIntersection(), testUtils);
+    @BeforeRep void setUpRep() {
+      if (getNewPolygon) {
+        icover = 0;
+        polygon = factory.newPolygon(testUtils);
+        covering = new ArrayList<>(16);
+        coverer = new S2RegionCoverer();
+        coverer.setMaxCells(maxCells);
+        coverer.getCovering(polygon, covering);
+      }
+      S2Cell cell = new S2Cell(covering.get(icover++));
+      cellPoly = new S2Polygon(cell);
+      getNewPolygon = (icover == covering.size());
+      result = new S2Polygon();
     }
-
-    @Benchmark void intersectLoopGridWithCovering(int reps) {
-      setUp();
-      int numVerticesPerLoop = 4;
-      int numLoops = totalNumVertices / numVerticesPerLoop;
-      LoopGridPolygonFactory factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
-      benchmarkOpWithCovering(reps, maxCells, factory, new InitToIntersection(), testUtils);
+    
+    @Macrobenchmark void intersectFractalWithCovering() {
+      result.initToIntersection(polygon, cellPoly);
     }
   }
 
+  static class IntersectLoopGridWithCovering {
+    @Param({"1", "2", "32", "128", "4096"})
+    int maxCells;
 
+    @Param({"128", "32768"})
+    int totalNumVertices;
+
+    private static final int NUM_VERTICES_PER_LOOP = 4;
+    private GeometryTestCase testUtils;
+    private LoopGridPolygonFactory factory;
+    private S2RegionCoverer coverer;
+    private S2Polygon polygon, cellPoly, result;
+    private ArrayList<S2CellId> covering;
+    /** The index of the cell of the current covering. */
+    private int icover;
+    /** True if we should get a new polygon before the next rep. */
+    private boolean getNewPolygon;
+
+    @BeforeExperiment void setUpExperiment() {
+      testUtils = new GeometryTestCase();
+      testUtils.setUp();
+      int numLoops = totalNumVertices / NUM_VERTICES_PER_LOOP;
+      factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
+      getNewPolygon = true;
+      icover = 0;
+      result = new S2Polygon();
+    }
+
+    @BeforeRep void setUpRep() {
+      if (getNewPolygon) {
+        icover = 0;
+        polygon = factory.newPolygon(testUtils);
+        covering = new ArrayList<>(16);
+        coverer = new S2RegionCoverer();
+        coverer.setMaxCells(maxCells);
+        coverer.getCovering(polygon, covering);
+      }
+      S2Cell cell = new S2Cell(covering.get(icover++));
+      cellPoly = new S2Polygon(cell);
+      getNewPolygon = (icover == covering.size());
+      result = new S2Polygon();
+    }
+    
+    @Macrobenchmark void intersectLoopGridWithCovering() {
+      result.initToIntersection(polygon, cellPoly);
+    }
+  }
 
   static class UnionNestedFractalWithSelf {
     @Param({"1", "16"})
@@ -329,29 +390,35 @@ public class S2PolygonBenchmark {
 
     @Param({"32768"})
     int totalNumVertices;
-
-    GeometryTestCase testUtils;
-
-    void setUp() {
+    
+    private GeometryTestCase testUtils;
+    private NestedFractalsPolygonFactory factory;
+    private S2Polygon polygon;
+    private S2Polygon copy;
+    private S2Polygon result;
+    
+    @BeforeExperiment void setUpExperiment() {
       testUtils = new GeometryTestCase();
       testUtils.setUp();
+      factory = new NestedFractalsPolygonFactory(numLoops, totalNumVertices);  
+    }
+    
+    @BeforeRep void setUpRep() {
+      polygon = factory.newPolygon(testUtils);
+      copy = new S2Polygon();
+      copy.copy(polygon);
+      result = new S2Polygon();
+    }
+    
+    @Macrobenchmark void unionNestedFractalWithSelf() {   
+      result.initToUnion(polygon, copy);
     }
 
-    @Benchmark void unionNestedFractalWithSelf(int reps) {
-      setUp();
-      NestedFractalsPolygonFactory factory 
-      = new NestedFractalsPolygonFactory(numLoops, totalNumVertices);
-      benchmarkOpWithSelf(reps, factory, new InitToUnion(), testUtils);
-    }
-
-    @Benchmark void subtractNestedFractalFromSelf(int reps) {
-      setUp();
-      NestedFractalsPolygonFactory factory =
-          new NestedFractalsPolygonFactory(numLoops, totalNumVertices);
-      benchmarkOpWithSelf(reps, factory, new InitToDifference(), testUtils);
+    @Macrobenchmark void subtractNestedFractalFromSelf() {   
+      result.initToDifference(polygon, copy);
     }
   }
-
+  
   static class UnionLoopGridWithBound {
     @Param({"1", "8", "64", "512", "4096"})
     int numLoops;
@@ -359,23 +426,30 @@ public class S2PolygonBenchmark {
     @Param({"32768"})
     int totalNumVertices;
 
-    GeometryTestCase testUtils;
+    private GeometryTestCase testUtils;
+    private LoopGridPolygonFactory factory;
+    private S2Polygon polygon;
+    private S2Polygon bound;
+    private S2Polygon result;
 
-    void setUp() {
+    @BeforeExperiment void setUpExperiment() {
       testUtils = new GeometryTestCase();
       testUtils.setUp();
+      factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
     }
 
-    @Benchmark void unionLoopGridWithBound(int reps) {
-      setUp();
-      LoopGridPolygonFactory factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
-      benchmarkOpWithBound(reps, factory, new InitToUnion(), testUtils);
+    @BeforeRep void setUpRep() {
+      polygon = factory.newPolygon(testUtils);
+      bound = getBoundingPolygon(polygon);
+      result = new S2Polygon();
     }
 
-    @Benchmark void subtractBoundFromLoopGrid(int reps) {
-      setUp();
-      LoopGridPolygonFactory factory = new LoopGridPolygonFactory(numLoops, totalNumVertices);
-      benchmarkOpWithBound(reps, factory, new InitToDifference(), testUtils);
+    @Macrobenchmark void unionLoopGridWithBound() {
+      result.initToUnion(polygon, bound);
+    }
+
+    @Macrobenchmark void subtractBoundFromLoopGrid() {
+      result.initToDifference(polygon, bound);
     }
   }
 
@@ -619,100 +693,5 @@ public class S2PolygonBenchmark {
     loops.add(S2Loop.makeRegularLoop(cap.axis(),
         S1Angle.radians(cap.angle().radians() / Math.cos(Math.PI / numCapEdges)), numCapEdges));
     return new S2Polygon(loops);
-  }
-
-  /** 
-   * Benchmarks whether a polygon generated by 'factory' intersects() its 'complement' (obtained
-   * by subtracting the polygon from a simple bound).
-   */
-  private static void benchmarkIntersectsCmpl(int reps, PolygonFactory factory,
-      GeometryTestCase testUtils) {
-    S2Polygon polygon = factory.newPolygon(testUtils);
-    S2Polygon bound = getBoundingPolygon(polygon);
-    S2Polygon complement = new S2Polygon();
-    complement.initToDifference(bound,  polygon);
-    for (int r = reps; r > 0; --r) {
-      assertFalse(polygon.intersects(complement));
-    }
-  }
-
-  /**
-   * Benchmarks an operation (initToIntersection, etc.) between a polygon generated by 'factory'
-   * and every cell in a covering of that polygon.
-   */
-  private static int benchmarkOpWithCovering(int reps, int maxCells, PolygonFactory factory,
-      PolygonOperation operation, GeometryTestCase testUtils) {
-    S2RegionCoverer coverer = new S2RegionCoverer();
-    coverer.setMaxCells(maxCells);
-    S2Polygon polygon = new S2Polygon();
-    S2Polygon result = new S2Polygon();
-    // Initialize the ArrayList covering to have some size greater than 0.
-    ArrayList<S2CellId> covering = new ArrayList<>(16);
-    // Bresenham-type algorithm for polygon sampling.
-    int delta = 0;
-    for (int r = reps, icover = 0; r > 0; --r, ++icover) {
-      delta -= NUM_POLYGON_SAMPLES;
-      if (delta < 0) {
-        delta += reps;
-        polygon = factory.newPolygon(testUtils);
-        coverer.getCovering(polygon, covering);
-      }
-      if (icover >= covering.size()) {
-        icover = 0;
-      }
-      S2Cell cell = new S2Cell(covering.get(icover));
-      S2Polygon cellPoly = new S2Polygon(cell);
-      // Suppress the warning here and elsewhere because we just want to time the operation.
-      result = operation.operation(polygon, cellPoly);
-    }
-    
-    return result.numLoops();
-  }
-
-  /** Benchmarks an operation between a polygon generated by 'factory' and itself. */
-  private static int benchmarkOpWithSelf(int reps, PolygonFactory factory,
-      PolygonOperation operation, GeometryTestCase testUtils) {
-    S2Polygon polygon = new S2Polygon();
-    S2Polygon copy = new S2Polygon();
-    S2Polygon result = new S2Polygon();
-    // Bresenham-type algorithm for polygon sampling.
-    int delta = 0;
-    for (int r = reps; r > 0; --r) {
-      delta -= NUM_POLYGON_SAMPLES;
-      if (delta < 0) {
-        delta += reps;
-        polygon = factory.newPolygon(testUtils);
-        // Make a separate copy to avoid any special optimizations for operations between a polygon
-        // and itself.
-        copy.copy(polygon);
-      }
-      result = operation.operation(polygon, copy);
-    }
-    
-    return result.numLoops();
-  }
-
-  /**
-   * Benchmarks an operation between a polygon generated by 'factory' and a simple bounding
-   * polygon.
-   */
-  private static int benchmarkOpWithBound(int reps, PolygonFactory factory,
-      PolygonOperation operation, GeometryTestCase testUtils) {
-    S2Polygon polygon = new S2Polygon();
-    S2Polygon bound = new S2Polygon();
-    S2Polygon result = new S2Polygon();
-    // Bresenham-type algorithm for polygon-sampling.
-    int delta = 0;
-    for (int r = reps; r > 0; --r) {
-      delta -= NUM_POLYGON_SAMPLES;
-      if (delta < 0) {
-        delta += reps;
-        polygon = factory.newPolygon(testUtils);
-        bound = getBoundingPolygon(polygon);
-      }
-      result = operation.operation(polygon, bound);
-    }
-    
-    return result.numLoops();
   }
 }

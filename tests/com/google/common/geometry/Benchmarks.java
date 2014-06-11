@@ -47,6 +47,7 @@ public class Benchmarks {
     run(S2PolygonBenchmark.IntersectsCmplLoopGrid.class);
     run(S2PolygonBenchmark.IntersectsCmplNestedFractals.class);
     run(S2PolygonBenchmark.IntersectFractalWithCovering.class);
+    run(S2PolygonBenchmark.IntersectLoopGridWithCovering.class);
     run(S2PolygonBenchmark.UnionNestedFractalWithSelf.class);
     run(S2PolygonBenchmark.UnionLoopGridWithBound.class);
   }
