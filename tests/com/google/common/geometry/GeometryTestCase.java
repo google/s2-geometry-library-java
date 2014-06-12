@@ -225,7 +225,7 @@ public strictfp class GeometryTestCase extends TestCase {
       return null;
     }
 
-    S2LatLngRect bound = S2LatLngRect.empty();
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
     for (String token : Splitter.on(',').trimResults().omitEmptyStrings().split(str)) {
       int colon = token.indexOf(':');
       if (colon == -1) {
@@ -235,10 +235,10 @@ public strictfp class GeometryTestCase extends TestCase {
       double lat = Double.parseDouble(token.substring(0, colon));
       double lng = Double.parseDouble(token.substring(colon + 1));
       vertices.add(S2LatLng.fromDegrees(lat, lng).toPoint());
-      bound = bound.addPoint(S2LatLng.fromDegrees(lat, lng));
+      builder.addPoint(S2LatLng.fromDegrees(lat, lng));
     }
 
-    return bound;
+    return builder.build();
   }
 
   static S2Point makePoint(String str) {

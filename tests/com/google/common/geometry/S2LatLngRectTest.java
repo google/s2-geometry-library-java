@@ -170,12 +170,12 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         rectFromDegrees(0, 0, 42, 60), empty);
 
     // AddPoint()
-    S2LatLngRect p = S2LatLngRect.empty();
-    p = p.addPoint(S2LatLng.fromDegrees(0, 0));
-    p = p.addPoint(S2LatLng.fromRadians(0, -S2.M_PI_2));
-    p = p.addPoint(S2LatLng.fromRadians(S2.M_PI_4, -S2.M_PI));
-    p = p.addPoint(new S2Point(0, 0, 1));
-    assertTrue(p.equals(r1));
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
+    builder.addPoint(S2LatLng.fromDegrees(0, 0));
+    builder.addPoint(S2LatLng.fromRadians(0, -S2.M_PI_2));
+    builder.addPoint(S2LatLng.fromRadians(S2.M_PI_4, -S2.M_PI));
+    builder.addPoint(new S2Point(0, 0, 1));
+    assertTrue(builder.build().equals(r1));
 
     // Expanded()
     assertTrue(
@@ -188,15 +188,15 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             rectFromDegrees(-90, -180, 40, 180)));
 
     // ConvolveWithCap()
-    S2LatLngRect llr1 =
-        new S2LatLngRect(S2LatLng.fromDegrees(0, 170), S2LatLng.fromDegrees(0, -170))
-            .convolveWithCap(S1Angle.degrees(15));
+    S2LatLngRect.Builder llr1 =
+        new S2LatLngRect.Builder(S2LatLng.fromDegrees(0, 170), S2LatLng.fromDegrees(0, -170));
+    llr1.convolveWithCap(S1Angle.degrees(15));
     S2LatLngRect llr2 =
         new S2LatLngRect(S2LatLng.fromDegrees(-15, 155), S2LatLng.fromDegrees(15, -155));
     assertTrue(llr1.approxEquals(llr2));
 
-    llr1 = new S2LatLngRect(S2LatLng.fromDegrees(60, 150), S2LatLng.fromDegrees(80, 10))
-        .convolveWithCap(S1Angle.degrees(15));
+    llr1 = new S2LatLngRect.Builder(S2LatLng.fromDegrees(60, 150), S2LatLng.fromDegrees(80, 10));
+    llr1.convolveWithCap(S1Angle.degrees(15));
     llr2 = new S2LatLngRect(S2LatLng.fromDegrees(45, -180), S2LatLng.fromDegrees(90, 180));
     assertTrue(llr1.approxEquals(llr2));
 

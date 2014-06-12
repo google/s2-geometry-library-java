@@ -22,9 +22,9 @@ import java.io.Serializable;
 import javax.annotation.CheckReturnValue;
 
 /**
- * An R1Interval represents a closed, bounded interval on the real line. It is
- * capable of representing the empty interval (containing no points) and
- * zero-length intervals (containing a single point).
+ * An R1Interval represents a closed, bounded interval on the real line. It is capable of
+ * representing the empty interval (containing no points) and zero-length intervals (containing a
+ * single point).
  *
  */
 @GwtCompatible(serializable = true)
@@ -35,8 +35,8 @@ public final strictfp class R1Interval implements Serializable {
   /**
    * Default constructor, contains the empty interval.
    *
-   * Package private since only the S2 library needs to mutate R1Intervals. External code that needs
-   * an empty interval should call {@link #empty()}.
+   * <p>Package private since only the S2 library needs to mutate R1Intervals. External code that
+   * needs an empty interval should call {@link #empty()}.
    */
   R1Interval() {
     lo = 1;
@@ -55,25 +55,20 @@ public final strictfp class R1Interval implements Serializable {
     this.hi = interval.hi;
   }
 
-  /**
-   * Returns an empty interval. (Any interval where lo > hi is considered
-   * empty.)
-   */
+  /** Returns an empty interval. (Any interval where lo > hi is considered empty.) */
   public static R1Interval empty() {
     return new R1Interval(1, 0);
   }
 
-  /**
-   * Convenience method to construct an interval containing a single point.
-   */
+  /** Convenience method to construct an interval containing a single point. */
   public static R1Interval fromPoint(double p) {
     return new R1Interval(p, p);
   }
 
   /**
-   * Convenience method to construct the minimal interval containing the two
-   * given points. This is equivalent to starting with an empty interval and
-   * calling AddPoint() twice, but it is more efficient.
+   * Convenience method to construct the minimal interval containing the two given points. This is
+   * equivalent to starting with an empty interval and calling AddPoint() twice, but it is more
+   * efficient.
    */
   public static R1Interval fromPointPair(double p1, double p2) {
     R1Interval result = new R1Interval();
@@ -136,39 +131,27 @@ public final strictfp class R1Interval implements Serializable {
     public abstract Endpoint opposite();
   }
 
-  /**
-   * Returns the value at the given Endpoint, which must not be null.
-   */
+  /** Returns the value at the given Endpoint, which must not be null. */
   double getValue(Endpoint endpoint) {
     return endpoint.getValue(this);
   }
 
-  /**
-   * Sets the value of the given Endpoint, which must not be null.
-   */
+  /** Sets the value of the given Endpoint, which must not be null. */
   void setValue(Endpoint endpoint, double value) {
     endpoint.setValue(this, value);
   }
 
-  /**
-   * Return true if the interval is empty, i.e. it contains no points.
-   */
+  /** Returns true if the interval is empty, i.e. it contains no points. */
   public boolean isEmpty() {
     return lo > hi;
   }
 
-  /**
-   * Return the center of the interval. For empty intervals, the result is
-   * arbitrary.
-   */
+  /** Returns the center of the interval. For empty intervals, the result is arbitrary. */
   public double getCenter() {
     return 0.5 * (lo + hi);
   }
 
-  /**
-   * Return the length of the interval. The length of an empty interval is
-   * negative.
-   */
+  /** Returns the length of the interval. The length of an empty interval is negative. */
   public double getLength() {
     return hi - lo;
   }
@@ -181,7 +164,7 @@ public final strictfp class R1Interval implements Serializable {
     return p > lo && p < hi;
   }
 
-  /** Return true if this interval contains the interval 'y'. */
+  /** Returns true if this interval contains the interval {@code y}. */
   public boolean contains(R1Interval y) {
     if (y.isEmpty()) {
       return true;
@@ -190,8 +173,8 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Return true if the interior of this interval contains the entire interval
-   * 'y' (including its boundary).
+   * Returns true if the interior of this interval contains the entire interval {@code y}
+   * (including its boundary).
    */
   public boolean interiorContains(R1Interval y) {
     if (y.isEmpty()) {
@@ -201,8 +184,8 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Return true if this interval intersects the given interval, i.e. if they
-   * have any points in common.
+   * Returns true if this interval intersects {@code y}, i.e. if they have any points in
+   * common.
    */
   public boolean intersects(R1Interval y) {
     if (lo <= y.lo) {
@@ -213,8 +196,8 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Return true if the interior of this interval intersects any point of the
-   * given interval (including its boundary).
+   * Returns true if the interior of this interval intersects any point of {@code y} (including its
+   * boundary).
    */
   public boolean interiorIntersects(R1Interval y) {
     return y.lo < hi && lo < y.hi && lo < hi && y.lo <= y.hi;
@@ -252,7 +235,17 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Expand this interval so that it contains the given point "p".
+   * Sets the current interval to the empty interval.
+   *
+   * <p>Package private since only the S2 libraries have a current need to mutate R1Intervals.
+   */
+  void setEmpty() {
+    this.lo = 1;
+    this.hi = 0;
+  }
+
+  /**
+   * Expands this interval so that it contains the point {@code p}.
    *
    * <p>Package private since only the S2 library needs to mutate R1Intervals.
    */
@@ -268,7 +261,7 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Returns the closest point in the interval to the given point "p". The interval must be
+   * Returns the closest point in the interval to the point {@code p}. The interval must be
    * non-empty.
    */
   public double clampPoint(double p) {
@@ -291,9 +284,17 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Return the smallest interval that contains this interval and the given
-   * interval "y".
+   * Expands this interval to contain all points within a distance "radius" of a point in this
+   * interval.
+   *
+   * <p>Package private since only S2 classes are intended to mutate R1Intervals for now.
    */
+  void expandedInternal(double radius) {
+    lo -= radius;
+    hi += radius;
+  }
+
+  /** Returns the smallest interval that contains this interval and {@code y}. */
   @CheckReturnValue
   public R1Interval union(R1Interval y) {
     if (isEmpty()) {
@@ -306,7 +307,7 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Union this interval with the given other interval.
+   * Sets this interval to the union of this interval and {@code y}.
    *
    * <p>Package private since only S2 classes are intended to mutate R11Intervals for now.
    */
@@ -321,15 +322,25 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Return the intersection of this interval with the given interval. Empty
-   * intervals do not need to be special-cased.
+   * Returns the intersection of this interval with {@code y}. Empty intervals do not need to be
+   * special-cased.
    */
   @CheckReturnValue
   public R1Interval intersection(R1Interval y) {
     return new R1Interval(Math.max(lo, y.lo), Math.min(hi, y.hi));
   }
 
-  /** Returns the smallest interval that contains this interval and the given point. */
+  /**
+   * Sets this interval to the intersection of the current interval and {@code y}.
+   *
+   * <p>Package private since only S2 classes are intended to mutate R1 intervals for now.
+   */
+  void intersectionInternal(R1Interval y) {
+    lo = Math.max(lo, y.lo);
+    hi = Math.min(hi, y.hi);
+  }
+
+  /** Returns the smallest interval that contains this interval and the point {@code p}. */
   @CheckReturnValue
   public R1Interval addPoint(double p) {
     if (isEmpty()) {
@@ -375,10 +386,10 @@ public final strictfp class R1Interval implements Serializable {
   }
 
   /**
-   * Returns true if this interval can be transformed into the given interval by moving each
-   * endpoint by at most "maxError". The empty interval is considered to be positioned arbitrarily
-   * on the real line, thus any interval for which {@code length <= 2*maxError} is true matches the
-   * empty interval.
+   * Returns true if this interval can be transformed into {@code y} by moving each endpoint by at
+   * most {@code maxError}. The empty interval is considered to be positioned arbitrarily on the
+   * real line, thus any interval for which {@code length <= 2*maxError} is true matches the empty
+   * interval.
    */
   public boolean approxEquals(R1Interval y, double maxError) {
     if (isEmpty()) {

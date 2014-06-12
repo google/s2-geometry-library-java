@@ -356,15 +356,16 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   private void initLoopProperties() {
     hasHoles = false;
     numVertices = 0;
-    bound = S2LatLngRect.empty();
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
     for (S2Loop loop : loops) {
       if (loop.isHole()) {
         hasHoles = true;
       } else {
-        bound = bound.union(loop.getRectBound());
+        builder.union(loop.getRectBound());
       }
       numVertices += loop.numVertices();
     }
+    bound = builder.build();
     subregionBound = S2EdgeUtil.RectBounder.expandForSubregions(bound);
   }
 

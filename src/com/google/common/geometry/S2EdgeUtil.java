@@ -281,7 +281,7 @@ public strictfp class S2EdgeUtil {
    */
   public static class RectBounder {
     /** The accumulated bounds, initially empty. */
-    private S2LatLngRect bounds = S2LatLngRect.empty();
+    private S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
 
     /** The previous vertex in the chain. */
     private S2Point a;
@@ -321,17 +321,15 @@ public strictfp class S2EdgeUtil {
      */
     private void addPoint(S2Point b, S2LatLng bLatLng) {
       // assert (S2.isUnitLength(b));
-      if (bounds.isEmpty()) {
-        double lat = bLatLng.latRadians();
-        bounds.lat().set(lat, lat);
-        double lng = bLatLng.lngRadians();
-        bounds.lng().set(lng, lng, false);
+      if (builder.isEmpty()) {
+        builder.addPoint(bLatLng);
       } else {
         // First compute the cross product N = A x B robustly.  This is the normal
         // to the great circle through A and B.  We don't use S2.RobustCrossProd()
         // since that method returns an arbitrary vector orthogonal to A if the two
         // vectors are proportional, and we want the zero vector in that case.
-        S2Point n = S2Point.crossProd(S2Point.sub(a, b), S2Point.add(a, b));  // N = 2 * (A x B)
+        // N = 2 * (A x B)
+        S2Point n = S2Point.crossProd(S2Point.sub(a, b), S2Point.add(a, b));
 
         // The relative error in N gets large as its norm gets very small (i.e.,
         // when the two points are nearly identical or antipodal).  We handle this
@@ -352,16 +350,13 @@ public strictfp class S2EdgeUtil {
             // The two points are nearly antipodal.  The easiest solution is to
             // assume that the edge between A and B could go in any direction
             // around the sphere.
-            bounds.lat().set(-S2.M_PI_2, S2.M_PI_2);
-            bounds.lng().setFull();
+            builder.setFull();
           } else {
             // The two points are nearly identical (to within 4.309 * DBL_EPSILON).
             // In this case we can just use the bounding rectangle of the points,
             // since after the expansion done by GetBound() this rectangle is
             // guaranteed to include the (lat,lng) values of all points along AB.
-            S2LatLngRect span = S2LatLngRect.fromPointPair(aLatLng, bLatLng);
-            bounds.lat().unionInternal(span.lat());
-            bounds.lng().unionInternal(span.lng());
+            builder.union(S2LatLngRect.fromPointPair(aLatLng, bLatLng));
           }
         } else {
           // Compute the longitude range spanned by AB.
@@ -442,8 +437,7 @@ public strictfp class S2EdgeUtil {
               latAB.setLo(Math.max(-maxLat, latAB.lo() - maxDelta));
             }
           }
-          bounds.lat().unionInternal(latAB);
-          bounds.lng().unionInternal(lngAB);
+          builder.union(new S2LatLngRect(latAB, lngAB));
         }
       }
       a = b;
@@ -471,15 +465,15 @@ public strictfp class S2EdgeUtil {
       // is simply the maximum rounding error for results in the range [-Pi, Pi].
       // This is true because the Gnu implementation of atan2() comes from the IBM
       // Accurate Mathematical Library, which implements correct rounding for this
-      // instrinsic (i.e., it returns the infinite precision result rounded to the
+      // intrinsic (i.e., it returns the infinite precision result rounded to the
       // nearest representable value, with ties rounded to even values).  This
       // implies that we don't need to expand the longitude bounds at all, since
       // we only guarantee that the bound contains the *rounded* latitudes of
       // contained points.  The *true* latitudes of contained points may lie up to
       // S2.DBL_EPSILON outside of the returned bound.
 
-      S2LatLng kExpansion = S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 0);
-      return bounds.expanded(kExpansion).polarClosure();
+      S2LatLng expansion = S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 0);
+      return builder.build().expanded(expansion).polarClosure();
     }
 
     /**

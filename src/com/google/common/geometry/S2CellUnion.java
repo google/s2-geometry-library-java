@@ -493,11 +493,11 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
 
   @Override
   public S2LatLngRect getRectBound() {
-    S2LatLngRect bound = S2LatLngRect.empty();
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
     for (S2CellId id : this) {
-      bound = bound.union(new S2Cell(id).getRectBound());
+      builder.union(new S2Cell(id).getRectBound());
     }
-    return bound;
+    return builder.build();
   }
 
 

@@ -22,22 +22,19 @@ import java.io.Serializable;
 import javax.annotation.CheckReturnValue;
 
 /**
- * An S1Interval represents a closed interval on a unit circle (also known as a
- * 1-dimensional sphere). It is capable of representing the empty interval
- * (containing no points), the full interval (containing all points), and
- * zero-length intervals (containing a single point).
+ * An S1Interval represents a closed interval on a unit circle (also known as a 1-dimensional
+ * sphere). It is capable of representing the empty interval (containing no points), the full
+ * interval (containing all points), and zero-length intervals (containing a single point).
  *
- *  Points are represented by the angle they make with the positive x-axis in
- * the range [-Pi, Pi]. An interval is represented by its lower and upper bounds
- * (both inclusive, since the interval is closed). The lower bound may be
- * greater than the upper bound, in which case the interval is "inverted" (i.e.
- * it passes through the point (-1, 0)).
+ * <p>Points are represented by the angle they make with the positive x-axis in the range [-Pi, Pi].
+ * An interval is represented by its lower and upper bounds (both inclusive, since the interval is
+ * closed). The lower bound may be greater than the upper bound, in which case the interval is
+ * "inverted" (i.e. it passes through the point (-1, 0)).
  *
- *  Note that the point (-1, 0) has two valid representations, Pi and -Pi. The
- * normalized representation of this point internally is Pi, so that endpoints
- * of normal intervals are in the range (-Pi, Pi]. However, we take advantage of
- * the point -Pi to construct two special intervals: the full() interval is
- * [-Pi, Pi], and the Empty() interval is [Pi, -Pi].
+ * <p>Note that the point (-1, 0) has two valid representations, Pi and -Pi. The normalized
+ * representation of this point internally is Pi, so that endpoints of normal intervals are in the
+ * range (-Pi, Pi]. However, we take advantage of the point -Pi to construct two special intervals:
+ * the full() interval is [-Pi, Pi], and the Empty() interval is [Pi, -Pi].
  *
  */
 @GwtCompatible(serializable = true)
@@ -50,16 +47,14 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Both endpoints must be in the range -Pi to Pi inclusive. The value -Pi is
-   * converted internally to Pi except for the full() and empty() intervals.
+   * Both endpoints must be in the range -Pi to Pi inclusive. The value -Pi is converted internally
+   * to Pi except for the full() and empty() intervals.
    */
   public S1Interval(double lo, double hi) {
     this(lo, hi, false);
   }
 
-  /**
-   * Copy constructor. Assumes that the given interval is valid.
-   */
+  /** Copy constructor. Assumes that the {@code interval} is valid. */
   public S1Interval(S1Interval interval) {
     this.lo = interval.lo;
     this.hi = interval.hi;
@@ -127,17 +122,17 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /** Convenience method to construct an interval containing a single point. */
-  public static S1Interval fromPoint(double p) {
-    if (p == -S2.M_PI) {
-      p = S2.M_PI;
+  public static S1Interval fromPoint(double radians) {
+    if (radians == -S2.M_PI) {
+      radians = S2.M_PI;
     }
-    return new S1Interval(p, p, true);
+    return new S1Interval(radians, radians, true);
   }
 
   /**
-   * Convenience method to construct the minimal interval containing the two
-   * given points. This is equivalent to starting with an empty interval and
-   * calling addPoint() twice, but it is more efficient.
+   * Convenience method to construct the minimal interval containing the two given points. This is
+   * equivalent to starting with an empty interval and calling addPoint() twice, but it is more
+   * efficient.
    */
   public static S1Interval fromPointPair(double p1, double p2) {
     // assert (Math.abs(p1) <= S2.M_PI && Math.abs(p2) <= S2.M_PI);
@@ -171,34 +166,33 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * An interval is valid if neither bound exceeds Pi in absolute value, and the
-   * value -Pi appears only in the Empty() and full() intervals.
+   * An interval is valid if neither bound exceeds Pi in absolute value, and the value -Pi appears
+   * only in the Empty() and full() intervals.
    */
   public boolean isValid() {
     return (Math.abs(lo) <= S2.M_PI && Math.abs(hi) <= S2.M_PI
         && !(lo == -S2.M_PI && hi != S2.M_PI) && !(hi == -S2.M_PI && lo != S2.M_PI));
   }
 
-  /** Return true if the interval contains all points on the unit circle. */
+  /** Returns true if the interval contains all points on the unit circle. */
   public boolean isFull() {
     return hi - lo == 2 * S2.M_PI;
   }
 
 
-  /** Return true if the interval is empty, i.e. it contains no points. */
+  /** Returns true if the interval is empty, i.e. it contains no points. */
   public boolean isEmpty() {
     return lo - hi == 2 * S2.M_PI;
   }
 
 
-  /* Return true if lo() > hi(). (This is true for empty intervals.) */
+  /** Returns true if lo() > hi(). (This is true for empty intervals.) */
   public boolean isInverted() {
     return lo > hi;
   }
 
   /**
-   * Return the midpoint of the interval. For full and empty intervals, the
-   * result is arbitrary.
+   * Returns the midpoint of the interval. For full and empty intervals, the result is arbitrary.
    */
   public double getCenter() {
     double center = 0.5 * (lo + hi);
@@ -209,10 +203,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     return (center <= 0) ? (center + S2.M_PI) : (center - S2.M_PI);
   }
 
-  /**
-   * Return the length of the interval. The length of an empty interval is
-   * negative.
-   */
+  /** Returns the length of the interval. The length of an empty interval is negative. */
   public double getLength() {
     double length = hi - lo;
     if (length >= 0) {
@@ -224,11 +215,10 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return the complement of the interior of the interval. An interval and its
-   * complement have the same boundary but do not share any interior values. The
-   * complement operator is not a bijection, since the complement of a singleton
-   * interval (containing a single value) is the same as the complement of an
-   * empty interval.
+   * Return the complement of the interior of the interval. An interval and its complement have the
+   * same boundary but do not share any interior values. The complement operator is not a bijection,
+   * since the complement of a singleton interval (containing a single value) is the same as the
+   * complement of an empty interval.
    */
   public S1Interval complement() {
     if (lo == hi) {
@@ -239,7 +229,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     // full.
   }
 
-  /** Return true if the interval (which is closed) contains the point 'p'. */
+  /** Returns true if the interval (which is closed) contains the point 'p'. */
   public boolean contains(double p) {
     // Works for empty, full, and singleton intervals.
     // assert (Math.abs(p) <= S2.M_PI);
@@ -250,9 +240,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return true if the interval (which is closed) contains the point 'p'. Skips
-   * the normalization of 'p' from -Pi to Pi.
-   *
+   * Returns true if the interval (which is closed) contains the point 'p'. Skips the normalization
+   * of 'p' from -Pi to Pi.
    */
   public boolean fastContains(double p) {
     if (isInverted()) {
@@ -262,7 +251,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     }
   }
 
-  /** Return true if the interior of the interval contains the point 'p'. */
+  /** Returns true if the interior of the interval contains the point 'p'. */
   public boolean interiorContains(double p) {
     // Works for empty, full, and singleton intervals.
     // assert (Math.abs(p) <= S2.M_PI);
@@ -278,8 +267,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return true if the interval contains the given interval 'y'. Works for
-   * empty, full, and singleton intervals.
+   * Returns true if the interval contains the interval {@code y}. Works for empty, full, and
+   * singleton intervals.
    */
   public boolean contains(final S1Interval y) {
     // It might be helpful to compare the structure of these tests to
@@ -299,10 +288,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Returns true if the interior of this interval contains the entire interval
-   * 'y'. Note that x.InteriorContains(x) is true only when x is the empty or
-   * full interval, and x.InteriorContains(S1Interval(p,p)) is equivalent to
-   * x.InteriorContains(p).
+   * Returns true if the interior of this interval contains the entire interval 'y'. Note that
+   * x.interiorContains(x) is true only when x is the empty or full interval, and
+   * x.interiorContains(S1Interval(p,p)) is equivalent to x.InteriorContains(p).
    */
   public boolean interiorContains(final S1Interval y) {
     if (isInverted()) {
@@ -319,9 +307,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return true if the two intervals contain any points in common. Note that
-   * the point +/-Pi has two representations, so the intervals [-Pi,-3] and
-   * [2,Pi] intersect, for example.
+   * Returns true if the two intervals contain any points in common. Note that the point +/-Pi has
+   * two representations, so the intervals [-Pi,-3] and [2,Pi] intersect, for example.
    */
   public boolean intersects(final S1Interval y) {
     if (isEmpty() || y.isEmpty()) {
@@ -339,9 +326,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return true if the interior of this interval contains any point of the
-   * interval 'y' (including its boundary). Works for empty, full, and singleton
-   * intervals.
+   * Returns true if the interior of this interval contains any point of the interval {@code y}
+   * (including its boundary). Works for empty, full, and singleton intervals.
    */
   public boolean interiorIntersects(final S1Interval y) {
     if (isEmpty() || y.isEmpty() || lo == hi) {
@@ -358,8 +344,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Expand the interval by the minimum amount necessary so that it contains the
-   * given point "p" (an angle in the range [-Pi, Pi]).
+   * Expands the interval by the minimum amount necessary so that it contains the point {@code p}
+   * (an angle in the range [-Pi, Pi]).
    */
   @CheckReturnValue
   public S1Interval addPoint(double p) {
@@ -388,7 +374,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Returns the closest point in the interval to the given point "p". The interval must be
+   * Returns the closest point in the interval to the point {@code p}. The interval must be
    * non-empty.
    */
   public double clampPoint(double p) {
@@ -409,7 +395,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Returns a new interval that has been expanded on each side by the given distance "margin". If
+   * Returns a new interval that has been expanded on each side by the distance {@code margin}. If
    * "margin" is negative, then shrink the interval on each side by "margin" instead. The resulting
    * interval may be empty or full. Any expansion (positive or negative) of a full interval remains
    * full, and any expansion of an empty interval remains empty.
@@ -422,7 +408,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Expands this interval on each side by the given distance "margin". If "margin" is negative,
+   * Expands this interval on each side by the distance {@code margin}. If "margin" is negative,
    * then shrink the interval on each side by "margin" instead. The resulting interval may be empty
    * or full. Any expansion (positive or negative) of a full interval remains full, and any
    * expansion of an empty interval remains empty.
@@ -460,10 +446,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
     }
   }
 
-  /**
-   * Return the smallest interval that contains this interval and the given
-   * interval "y".
-   */
+  /** Returns the smallest interval that contains this interval and the interval {@code y}. */
   @CheckReturnValue
   public S1Interval union(S1Interval y) {
     S1Interval result = new S1Interval(this);
@@ -472,7 +455,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Union this interval with the given other interval.
+   * Sets this interval to the union of the current interval and {@code y}.
    *
    * <p>Package private since only S2 classes are intended to mutate S1Intervals for now.
    */
@@ -523,47 +506,53 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Return the smallest interval that contains the intersection of this
-   * interval with "y". Note that the region of intersection may consist of two
-   * disjoint intervals.
+   * Returns the smallest interval that contains the intersection of this interval with {@code y}.
+   * Note that the region of intersection may consist of two disjoint intervals.
    */
   @CheckReturnValue
   public S1Interval intersection(final S1Interval y) {
-    // The y.isFull() case is handled correctly in all cases by the code
-    // below, but can follow three separate code paths depending on whether
-    // this interval is inverted, is non-inverted but contains Pi, or neither.
-
-    if (y.isEmpty()) {
-      return empty();
-    }
-    if (fastContains(y.lo)) {
-      if (fastContains(y.hi)) {
-        // Either this interval contains y, or the region of intersection
-        // consists of two disjoint subintervals. In either case, we want
-        // to return the shorter of the two original intervals.
-        if (y.getLength() < getLength()) {
-          return y; // isFull() code path
-        }
-        return this;
-      }
-      return new S1Interval(y.lo, hi, true);
-    }
-    if (fastContains(y.hi)) {
-      return new S1Interval(lo, y.hi, true);
-    }
-
-    // This interval contains neither endpoint of y. This means that either y
-    // contains all of this interval, or the two intervals are disjoint.
-
-    if (y.fastContains(lo)) {
-      return this; // isEmpty() okay here
-    }
-    // assert (!intersects(y));
-    return empty();
+    S1Interval result = new S1Interval(this);
+    result.intersectionInternal(y);
+    return result;
   }
 
   /**
-   * Returns true if this interval can be transformed into the given interval by moving each
+   * Sets this interval to the intersection of the current interval and {@code y}.
+   *
+   * <p>Package private since only S2 classes are intended to mutate S1Intervals for now.
+   */
+  void intersectionInternal(final S1Interval y) {
+    // The y.isFull() case is handled correctly in all cases by the code below, but can follow three
+    // separate code paths depending on whether this interval is inverted, is non-inverted but
+    // contains Pi, or neither.
+
+    if (y.isEmpty()) {
+      this.setEmpty();
+    } else if (fastContains(y.lo)) {
+      if (fastContains(y.hi)) {
+        // Either this interval contains y, or the region of intersection consists of two disjoint
+        // subintervals. In either case, we want to set the interval to the shorter of the two
+        // original intervals.
+        if (y.getLength() < getLength()) {
+          this.set(y.lo, y.hi, true); // isFull() code path
+        }
+      } else {
+        this.set(y.lo, hi, true);
+      }
+    } else if (fastContains(y.hi)) {
+        this.set(lo, y.hi, true);
+    } else {
+      // This interval contains neither endpoint of y. This means that either y
+      // contains all of this interval, or the two intervals are disjoint.
+      if (!y.fastContains(lo)) {
+        // assert (!intersects(y));
+        this.setEmpty();
+      }
+    }
+  }
+
+  /**
+   * Returns true if this interval can be transformed into the interval {@code y} by moving each
    * endpoint by at most "maxError" (and without the endpoints crossing, which would invert the
    * interval). Empty and full intervals are considered to start at an arbitrary point on the unit
    * circle, thus any interval with (length <= 2*maxError) matches the empty interval, and any
@@ -592,16 +581,12 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
         Math.abs(getLength() - y.getLength()) <= 2 * maxError);
   }
 
-  /**
-   * As {@link #approxEquals(S1Interval, double)}, with a default maxError of 1e-15.
-   */
+  /** As {@link #approxEquals(S1Interval, double)}, with a default maxError of 1e-15. */
   public boolean approxEquals(final S1Interval y) {
     return approxEquals(y, 1e-15);
   }
 
-  /**
-   * Return true if two intervals contains the same set of points.
-   */
+  /** Returns true if two intervals contains the same set of points. */
   @Override
   public boolean equals(Object that) {
     if (that instanceof S1Interval) {
@@ -625,10 +610,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Compute the distance from "a" to "b" in the range [0, 2*Pi). This is
-   * equivalent to (drem(b - a - S2.M_PI, 2 * S2.M_PI) + S2.M_PI), except that
-   * it is more numerically stable (it does not lose precision for very small
-   * positive distances).
+   * Computes the distance from {@code a} to {@code b} in the range [0, 2*Pi). This is equivalent to
+   * {@code drem(b - a - S2.M_PI, 2 * S2.M_PI) + S2.M_PI}, except that it is more numerically stable
+   * (it does not lose precision for very small positive distances).
    */
   public static double positiveDistance(double a, double b) {
     double d = b - a;
