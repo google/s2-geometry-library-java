@@ -371,7 +371,7 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
   /** Returns true if these are the same type of rectangle and contain the same set of points. */
   @Override
   public final boolean equals(Object that) {
-    if (this.getClass() != that.getClass()) {
+    if ((that == null) || this.getClass() != that.getClass()) {
       return false;
     }
     S2LatLngRectBase otherRect = (S2LatLngRectBase) that;
