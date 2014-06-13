@@ -170,9 +170,9 @@ public strictfp class GeometryTestCase extends TestCase {
   /** Returns a polygon with given center, number of concentric loops, and vertices per loop. */
   static S2Polygon concentricLoopsPolygon(S2Point center, int numLoops, int numVerticesPerLoop) {
     Matrix3x3 m = Matrix3x3.fromCols(S2.getFrame(center));
-    List<S2Loop> loops = new ArrayList<>(numLoops);
+    List<S2Loop> loops = new ArrayList<S2Loop>(numLoops);
     for (int li = 0; li < numLoops; ++li) {
-      List<S2Point> vertices = new ArrayList<>(numVerticesPerLoop);
+      List<S2Point> vertices = new ArrayList<S2Point>(numVerticesPerLoop);
       double radius = 0.005 * (li + 1) / numLoops;
       double radianStep = 2 * S2.M_PI / numVerticesPerLoop;
       for (int vi = 0; vi < numVerticesPerLoop; ++vi) {

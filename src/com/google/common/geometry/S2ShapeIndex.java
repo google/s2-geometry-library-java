@@ -24,7 +24,6 @@ import com.google.common.collect.Lists;
 import com.google.common.primitives.UnsignedLongs;
 
 import java.util.AbstractList;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -62,7 +61,7 @@ strictfp class S2ShapeIndex {
    * Shapes currently in the index.
    */
   @VisibleForTesting
-  final List<IdShape> shapes = new ArrayList<>();
+  final List<IdShape> shapes = Lists.newArrayList();
 
   /**
    * Essentially a map from each non-overlapping cell id to the shapes that intersect that cell,
@@ -86,7 +85,7 @@ strictfp class S2ShapeIndex {
   /**
    * The shapes that have been queued for removal but not processed yet (not yet used.)
    */
-  private final List<S2Shape> pendingRemovals = new ArrayList<>(0);
+  private final List<S2Shape> pendingRemovals = Lists.newArrayList();
 
   /**
    * If true, the index is up to date. If false the index is updating or stale and requires an
@@ -279,7 +278,7 @@ strictfp class S2ShapeIndex {
     final int maxCheapNumEdges = maxCheapMemoryBytes / (6 * faceEdgeSize);
     if (numEdges <= maxCheapNumEdges) {
       for (int face = 0; face < 6; face++) {
-        List<FaceEdge> edges = new SimpleList<>(numEdges);
+        List<FaceEdge> edges = new SimpleList<FaceEdge>(numEdges);
         allEdges.add(edges);
       }
       return;
@@ -337,9 +336,9 @@ strictfp class S2ShapeIndex {
       List<FaceEdge> edges;
       if (faceCount[face] > 0) {
         double fraction = sampleRatio * faceCount[face] + maxSemiWidth;
-        edges = new SimpleList<>(1 + (int) fraction * numEdges);
+        edges = new SimpleList<FaceEdge>(1 + (int) fraction * numEdges);
       } else {
-        edges = new SimpleList<>(1);
+        edges = new SimpleList<FaceEdge>(1);
       }
       allEdges.add(edges);
     }
