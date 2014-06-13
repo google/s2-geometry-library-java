@@ -1,9 +1,6 @@
 package com.google.common.geometry;
 
-import com.google.caliper.config.InvalidConfigurationException;
 import com.google.caliper.runner.CaliperMain;
-import com.google.caliper.runner.InvalidBenchmarkException;
-import com.google.caliper.util.InvalidCommandException;
 
 import java.io.PrintWriter;
 
@@ -50,10 +47,10 @@ public class Benchmarks {
     run(S2PolygonBenchmark.IntersectLoopGridWithCovering.class);
     run(S2PolygonBenchmark.UnionNestedFractalWithSelf.class);
     run(S2PolygonBenchmark.UnionLoopGridWithBound.class);
+    run(S2ShapeIndexBenchmark.class);
   }
-  
-  private static void run(Class<?> benchmarkClass)
-      throws InvalidCommandException, InvalidBenchmarkException, InvalidConfigurationException {
+
+  static void run(Class<?> benchmarkClass) throws Exception {
     // Invoke exitlessMain so we can run additional experiments in this binary.
     CaliperMain.exitlessMain(new String[] {
         // Run only the runtime instrument.  The allocation instrument

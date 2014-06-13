@@ -166,18 +166,19 @@ public strictfp class GeometryTestCase extends TestCase {
     // The surface area of a cap is 2*Pi times its height.
     return S2Cap.fromAxisArea(randomPoint(), capArea);
   }
-  
-  S2Polygon concentricLoopsPolygon(S2Point center, int numLoops, int numVerticesPerLoop) {
+
+  /** Returns a polygon with given center, number of concentric loops, and vertices per loop. */
+  static S2Polygon concentricLoopsPolygon(S2Point center, int numLoops, int numVerticesPerLoop) {
     Matrix3x3 m = Matrix3x3.fromCols(S2.getFrame(center));
     List<S2Loop> loops = new ArrayList<>(numLoops);
     for (int li = 0; li < numLoops; ++li) {
       List<S2Point> vertices = new ArrayList<>(numVerticesPerLoop);
       double radius = 0.005 * (li + 1) / numLoops;
-      double radianStep = 2 * Math.PI / numVerticesPerLoop;
+      double radianStep = 2 * S2.M_PI / numVerticesPerLoop;
       for (int vi = 0; vi < numVerticesPerLoop; ++vi) {
         double angle = vi * radianStep;
         S2Point p = new S2Point(radius * Math.cos(angle), radius * Math.sin(angle), 1);
-        vertices.add(S2Point.normalize(S2.rotate(p, m)));
+        vertices.add(S2.rotate(p, m));
       }
       loops.add(new S2Loop(vertices));
     }

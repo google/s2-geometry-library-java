@@ -35,7 +35,6 @@ import javax.annotation.Nullable;
  * <p>This contains the non-GWT-client version.
  */
 class TestPlatform {
-
   /**
    * Maximum amount to increase angle by in S2LoopTest.testAreaCentroid.  This needs to be different
    * for the Java and Javascript test versions since this test does a bunch of math, and the
@@ -45,6 +44,9 @@ class TestPlatform {
 
   /** Number of iterations to run in S2LoopTest.testLoopRelations2. */
   static final int S2_LOOP_TEST_LOOP_RELATIONS2_ITERATIONS = 1000;
+
+  /** Number of S2ShapeIndex edges to validate quadratically. */
+  static final int S2_SHAPEINDEX_NUM_EDGES = 100;
 
   /**
    * Tests Java serialization of the object. If comparator is null, uses the object's equals method.
