@@ -148,6 +148,13 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     super(lat, lng);
     // assert (isValid());
   }
+  
+  /** Creates a new S2LatLngRect as a copy of {@code b}. */
+  public S2LatLngRect(S2LatLngRectBase b) {
+    lat.setLo(b.lat.lo());
+    lat.setHi(b.lat.hi());
+    lng.set(b.lng.lo(), b.lng.hi(), true);
+  }
 
   @Override
   public final R1Interval lat() {
@@ -159,6 +166,11 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
   public final S1Interval lng() {
     // It is OK to return the instance field because S2LatLngRect won't mutate its 'lng' field.
     return lng;
+  }
+  
+  /** Returns a new {@link S2LatLngRect.Builder} initialized as a copy of {@code r}. */
+  public S2LatLngRect.Builder toBuilder(S2LatLngRectBase r) {
+    return new S2LatLngRect.Builder(r);
   }
   
   /**
@@ -298,6 +310,13 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
 
     public Builder(R1Interval lat, S1Interval lng) {
       super(lat, lng);
+    }
+
+    /** Creates a new S2LatLngRect.Builder as a copy of {@code b}. */
+    public Builder(S2LatLngRectBase b) {
+      lat.setLo(b.lat.lo());
+      lat.setHi(b.lat.hi());
+      lng.set(b.lng.lo(), b.lng.hi(), true);
     }
 
     @Override

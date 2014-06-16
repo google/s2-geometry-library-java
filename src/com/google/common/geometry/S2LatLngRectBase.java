@@ -51,6 +51,15 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     this.lng = lng;
     // assert (isValid());
   }
+  
+  /**
+   * Constructs a rectangle with lat and lng fields set to empty intervals, as defined in
+   * {@link R1Interval} and {@link S1Interval}.
+   */
+  S2LatLngRectBase() {
+    lat = R1Interval.empty();
+    lng = S1Interval.empty();
+  }
 
   /**
    * Returns true if the rectangle is valid, which essentially just means that the latitude bounds
