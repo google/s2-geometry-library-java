@@ -168,9 +168,9 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     return lng;
   }
   
-  /** Returns a new {@link S2LatLngRect.Builder} initialized as a copy of {@code r}. */
-  public S2LatLngRect.Builder toBuilder(S2LatLngRectBase r) {
-    return new S2LatLngRect.Builder(r);
+  /** Returns a new {@link Builder} initialized as a copy of {@code r}. */
+  public S2LatLngRect.Builder toBuilder() {
+    return new S2LatLngRect.Builder(this);
   }
   
   /**
