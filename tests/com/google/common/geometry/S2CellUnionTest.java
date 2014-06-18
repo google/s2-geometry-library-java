@@ -162,14 +162,11 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     // statistics for normalization (to see if they agree with the
     // analysis above).
     S2CellUnion cellunion = new S2CellUnion();
-    double inSum = 0, outSum = 0;
     final int kIters = 2000;
     for (int i = 0; i < kIters; ++i) {
       ArrayList<S2CellId> input = Lists.newArrayList();
       ArrayList<S2CellId> expected = Lists.newArrayList();
       addCells(S2CellId.none(), false, input, expected);
-      inSum += input.size();
-      outSum += expected.size();
       cellunion.initFromCellIds(input);
       assertEquals(cellunion.size(), expected.size());
 

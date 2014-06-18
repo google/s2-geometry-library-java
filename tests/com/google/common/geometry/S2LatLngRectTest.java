@@ -243,7 +243,6 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
       // This is the leaf cell at the top right hand corner of face 0.
       // It has two angles of 60 degrees and two of 120 degrees.
       S2Cell cell0tr = new S2Cell(new S2Point(1 + 1e-12, 1, 1));
-      S2LatLngRect bound0tr = cell0tr.getRectBound();
       S2LatLng v0 = new S2LatLng(cell0tr.getVertexRaw(0));
       testCellOps(
           rectFromDegrees(v0.lat().degrees() - 1e-8, v0.lng().degrees() - 1e-8,

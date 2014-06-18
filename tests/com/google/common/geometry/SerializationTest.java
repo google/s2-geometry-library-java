@@ -161,9 +161,7 @@ public class SerializationTest extends TestCase {
     regions.add(cell);
     regions.add(cellUnion);
     regions.add(point);
-    // TODO(eengle): Re-enable the polygon test once S2Polygon supports
-    // .equals().
-    // regions.add(polygon);
+    regions.add(polygon);
     doTest(new S2RegionUnion(regions));
   }
 }

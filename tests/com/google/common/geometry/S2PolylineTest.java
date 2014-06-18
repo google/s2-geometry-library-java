@@ -54,7 +54,6 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
       // Choose a coordinate frame for the great circle.
       S2Point x = randomPoint();
       S2Point y = S2Point.normalize(S2Point.crossProd(x, randomPoint()));
-      S2Point z = S2Point.normalize(S2Point.crossProd(x, y));
 
       List<S2Point> vertices = Lists.newArrayList();
       for (double theta = 0; theta < 2 * S2.M_PI; theta += Math.pow(rand.nextDouble(), 10)) {

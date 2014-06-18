@@ -561,7 +561,6 @@ public final strictfp class S2RegionCoverer implements Serializable {
       id.getEdgeNeighbors(neighbors);
       for (int edge = 0; edge < 4; ++edge) {
         S2CellId nbr = neighbors[edge];
-        boolean hasNbr = all.contains(nbr);
         if (!all.contains(nbr)) {
           frontier.add(nbr);
           all.add(nbr);

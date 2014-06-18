@@ -98,8 +98,8 @@ public class S2PolygonBenchmark {
       GeometryTestCase testUtils = new GeometryTestCase();
       testUtils.setUp();
       int numVertices = Math.max(totalNumVertices / numLoops, 3);
-      S2Polygon polygon = testUtils.concentricLoopsPolygon(testUtils.randomPoint(), numLoops,
-          numVertices);
+      S2Polygon polygon = 
+         GeometryTestCase.concentricLoopsPolygon(testUtils.randomPoint(), numLoops, numVertices);
       for (int r = reps; r > 0; --r) {
         assertTrue(polygon.isValid());
       }
