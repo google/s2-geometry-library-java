@@ -24,7 +24,7 @@ import java.io.Serializable;
  * Base class for methods shared between the immutable {@link S2LatLngRect} and the mutable
  * {@link S2LatLngRect.Builder}.
  */
-@GwtCompatible(serializable = true)
+@GwtCompatible(serializable = false)
 public abstract strictfp class S2LatLngRectBase implements S2Region, Serializable {
   protected final R1Interval lat;
   protected final S1Interval lng;
