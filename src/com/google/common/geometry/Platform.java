@@ -97,4 +97,12 @@ final class Platform {
     Real z = bcz.mul(a.z);
     return x.add(y).add(z).signum();
   }
+  
+  /**
+   * Returns the size of an ulp of the argument. An ulp of a double value is the positive distance
+   * between this floating-point value and the double next larger in magnitude.
+   */
+  public static double ulp(double x) {
+    return Math.ulp(x);
+  }
 }

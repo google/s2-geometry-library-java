@@ -131,10 +131,10 @@ strictfp class S2ShapeIndex {
   }
 
   /**
-   * Returns the S2Shape for the given shape ID.
+   * Returns the IdShape for the given shape ID.
    */
-  S2Shape shape(int id) {
-    return shapes.get(id).shape;
+  IdShape shape(int id) {
+    return shapes.get(id);
     // TODO(eengle): When we implement incremental add and remove methods, we will be allowing the
     // set of shape IDs in the index to become very sparse. The eventual lookup code we will need
     // will be:
@@ -146,12 +146,10 @@ strictfp class S2ShapeIndex {
     //    }
   }
 
-  /**
-   * Adds the given shape to this index. Invalidates all iterators and their associated data.
-   */
+  /** Adds the given shape to this index. Invalidates all iterators and their associated data. */
   public void add(S2Shape shape) {
     // Insertions are processed lazily by applyUpdates(). All we do now is assign a unique id to the
-    // shape, sequentially starting from 0  in the order shapes are inserted.
+    // shape, sequentially starting from 0 in the order shapes are inserted.
     shapes.add(new IdShape(nextShapeId++, shape));
     isIndexFresh = false;
   }

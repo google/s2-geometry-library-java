@@ -67,7 +67,7 @@ public strictfp class S2Test extends GeometryTestCase {
       assertDoubleNear(PROJ.uvToST(2 * x - 1), x);
     }
     // Check that UVtoST and STtoUV are inverses.
-    for (double x = 0; x <= 1; x += 0.0001 ) {
+    for (double x = 0; x <= 1; x += 0.0001) {
       assertDoubleNear(PROJ.uvToST(PROJ.stToUV(x)), x);
       assertDoubleNear(PROJ.stToUV(PROJ.uvToST(2 * x - 1)), 2 * x - 1);
     }
@@ -476,5 +476,13 @@ public strictfp class S2Test extends GeometryTestCase {
         assertTrue(Double.isNaN(expected) ? Double.isNaN(actual) : expected == actual);
       }
     }
+  }
+  
+  public void testUlp() {
+    assertEquals(1.2689709186578246e-116, Platform.ulp(1e-100));
+    assertEquals(1.2924697071141057E-26, Platform.ulp(1e-10));
+    assertEquals(4.440892098500626e-16, Platform.ulp(Math.PI));
+    assertEquals(1.9073486328125e-6, Platform.ulp(1e10));
+    assertEquals(1.942668892225729e84, Platform.ulp(1e100));
   }
 }
