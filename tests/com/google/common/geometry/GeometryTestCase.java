@@ -190,7 +190,7 @@ public strictfp class GeometryTestCase extends TestCase {
     // complete the coordinate frame.
 
     S2Point z = cap.axis();
-    S2Point x = z.ortho();
+    S2Point x = S2.ortho(z);
     S2Point y = S2Point.crossProd(z, x);
 
     // The surface area of a spherical cap is directly proportional to its

@@ -985,16 +985,16 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertDoubleNear(27.990890717782829, Math.toDegrees(p3.angle(p0)));
 
     // Check actual coordinates.  This may change if we switch the algorithm intentionally.
-    // These values are slightly different than the values expected in the C++ version because
-    // of different implementations of S2.Ortho().
-    assertDoubleNear(62.09727137765423, new S2LatLng(p0).lat().degrees());
-    assertDoubleNear(103.61851639321812, new S2LatLng(p0).lng().degrees());
-    assertDoubleNear(62.018663060050024, new S2LatLng(p1).lat().degrees());
-    assertDoubleNear(165.76365451515582, new S2LatLng(p1).lng().degrees());
-    assertDoubleNear(75.25987649102252, new S2LatLng(p2).lat().degrees());
-    assertDoubleNear(-118.2882216994918, new S2LatLng(p2).lng().degrees());
-    assertDoubleNear(75.40534674246688, new S2LatLng(p3).lat().degrees());
-    assertDoubleNear(27.252086622064205, new S2LatLng(p3).lng().degrees());
+    // These values are exactly the same as the C++ versions, but with slight tolerances in
+    // a couple of places where we lose precision at different points due to using strictfp.
+    assertEquals(62.162880741097204, new S2LatLng(p0).lat().degrees());
+    assertEquals(103.11051028343407, new S2LatLng(p0).lng().degrees());
+    assertEquals(61.955157772928345, new S2LatLng(p1).lat().degrees());
+    assertEquals(165.25681963683536, new S2LatLng(p1).lng().degrees());
+    assertEquals(75.139812547718478, new S2LatLng(p2).lat().degrees(), 2e-14);
+    assertEquals(-119.13042521187423, new S2LatLng(p2).lng().degrees());
+    assertEquals(75.524190079054392, new S2LatLng(p3).lat().degrees(), 2e-14);
+    assertEquals(26.392175948257943, new S2LatLng(p3).lng().degrees());
   }
 
   /**

@@ -295,14 +295,22 @@ public final strictfp class S2 {
     return ortho(a);
   }
 
+  private static final S2Point[] ORTHO_BASES = {
+    new S2Point(1, 0.0053, 0.00457),
+    new S2Point(0.012, 1, 0.00457),
+    new S2Point(0.012, 0.0053, 1)
+  };
+
   /**
-   * Return a unit-length vector that is orthogonal to "a". Satisfies Ortho(-a)
-   * = -Ortho(a) for all a.
+   * Returns a unit-length vector that is orthogonal to {@code a}. Satisfies
+   * {@code ortho(-a) = -ortho(a)} for all {@code a}.
    */
   public static S2Point ortho(S2Point a) {
-    // The current implementation in S2Point has the property we need,
-    // i.e. Ortho(-a) = -Ortho(a) for all a.
-    return a.ortho();
+    int k = a.largestAbsComponent() - 1;
+    if (k < 0) {
+      k = 2;
+    }
+    return S2Point.normalize(S2Point.crossProd(a, ORTHO_BASES[k]));
   }
 
   /**
@@ -872,7 +880,7 @@ public final strictfp class S2 {
    * which will become the third axis.
    */
   public static ImmutableList<S2Point> getFrame(S2Point p0) {
-    S2Point p1 = p0.ortho();
+    S2Point p1 = ortho(p0);
     S2Point p2 = S2Point.normalize(S2Point.crossProd(p1, p0));
     return ImmutableList.of(p2, p1, p0);
   }
