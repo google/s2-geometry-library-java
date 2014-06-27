@@ -94,8 +94,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   private final List<S2Loop> loops = Lists.newArrayList();
 
   /**
-   * "bound" is a conservative bound on all points contained by this polygon: if A.contains(P),
-   * then A.bound.contains(new S2LatLng(P)).
+   * {@code bound} is a conservative bound on all points contained by this polygon:
+   * If A.contains(P), then A.bound.contains(new S2LatLng(P)).
    */
   private S2LatLngRect bound;
 
@@ -132,9 +132,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     initNested(loops);
   }
 
-  /**
-   * Copy constructor.
-   */
+  /** Copy constructor. */
   public S2Polygon(S2Loop loop) {
     this.bound = loop.getRectBound();
     this.numVertices = loop.numVertices();
@@ -143,14 +141,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     loops.add(loop);
   }
 
-  /**
-   * Copy constructor.
-   */
+  /** Copy constructor. */
   public S2Polygon(S2Polygon src) {
     copy(src);
   }
 
-  /** Initialize this polygon to a copy of the given polygon. */
+  /** Initializes this polygon to a copy of the given polygon. */
   void copy(S2Polygon src) {
     this.bound = src.bound;
     this.subregionBound = src.subregionBound;
@@ -179,14 +175,13 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Comparator (needed by Comparable interface). For two polygons to be
-   * compared as equal:
+   * Comparator (needed by Comparable interface). For two polygons to be compared as equal:
    * <ul>
    * <li>They must have the same number of loops
-   * <li>The loops must be ordered in the same way (this is guaranteed by the
-   *     total ordering imposed by {@link #sortValueLoops})
-   * <li>Loops must be logically equivalent (even if ordered with a different
-   *     starting point, e.g. ABCD and BCDA).
+   * <li>The loops must be ordered in the same way (this is guaranteed by the total ordering imposed
+   *     by {@link #sortValueLoops})
+   * <li>Loops must be logically equivalent (even if ordered with a different starting point, e.g.
+   *     ABCD and BCDA).
    * </ul>
    */
   @Override
@@ -236,8 +231,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
 
     Map<S2Loop, List<S2Loop>> loopMap = Maps.newHashMap();
-    // Yes, a null key is valid. It is used here to refer to the root of the
-    // loopMap
+    // Yes, a null key is valid. It is used here to refer to the root of the loopMap.
     loopMap.put(null, Lists.<S2Loop>newArrayList());
 
     for (S2Loop loop : loops) {
@@ -245,22 +239,20 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
     loops.clear();
 
-    // Sort all of the lists of loops; in this way we guarantee a total ordering
-    // on loops in the polygon. Loops will be sorted by their natural ordering,
-    // while also preserving the requirement that each loop is immediately
-    // followed by its descendants in the nesting hierarchy.
+    // Sort all of the lists of loops; in this way we guarantee a total ordering on loops in the
+    // polygon. Loops will be sorted by their natural ordering, while also preserving the
+    // requirement that each loop is immediately followed by its descendants in the nesting
+    // hierarchy.
     //
-    // TODO(andriy): as per kirilll in CL 18750833 code review comments:
-    // This should work for now, but I think it's possible to guarantee the
-    // correct order inside insertLoop by searching for the correct position in
-    // the children list before inserting.
+    // TODO(andriy): as per kirilll in CL 18750833 code review comments: This should work for now,
+    // but I think it's possible to guarantee the correct order inside insertLoop by searching for
+    // the correct position in the children list before inserting.
     sortValueLoops(loopMap);
 
-    // Reorder the loops in depth-first traversal order.
-    // Starting at null == starting at the root
+    // Reorder the loops in depth-first traversal order. Starting at null == starting at the root.
     initLoop(null, -1, loopMap);
 
-    // TODO(dbeaumont): Add tests or preconditions for these asserts (here and elesewhere).
+    // TODO(dbeaumont): Add tests or preconditions for these asserts (here and elsewhere).
     // forall i != j : containsChild(loop(i), loop(j), loopMap) == loop(i).containsNested(loop(j)));
 
     initLoopProperties();
@@ -277,37 +269,30 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     //
     // 1. Remember which of the given loops contain S2.origin().
     //
-    // 2. Invert loops as necessary to ensure that they are nestable (i.e., no
-    //    loop contains the complement of any other loop).  This may result in a
-    //    set of loops corresponding to the complement of the given polygon, but
-    //    we will fix that problem later.
+    // 2. Invert loops as necessary to ensure that they are nestable (i.e., no loop contains the
+    //    complement of any other loop).  This may result in a set of loops corresponding to the
+    //    complement of the given polygon, but we will fix that problem later.
     //
-    //    We make the loops nestable by first normalizing all the loops (i.e.,
-    //    inverting any loops whose turning angle is negative).  This handles
-    //    all loops except those whose turning angle is very close to zero
-    //    (within the maximum error tolerance).  Any such loops are inverted if
-    //    and only if they contain S2.origin().  (In theory this step is only
-    //    necessary if there are at least two such loops.)  The resulting set of
-    //    loops is guaranteed to be nestable.
+    //    We make the loops nestable by first normalizing all the loops (i.e., inverting any loops
+    //    whose turning angle is negative).  This handles all loops except those whose turning angle
+    //    is very close to zero (within the maximum error tolerance).  Any such loops are inverted
+    //    if and only if they contain S2.origin().  (In theory this step is only necessary if there
+    //    are at least two such loops.)  The resulting set of loops is guaranteed to be nestable.
     //
-    // 3. Build the polygon.  This yields either the desired polygon or its
-    //    complement.
+    // 3. Build the polygon.  This yields either the desired polygon or its complement.
     //
-    // 4. If there is at least one loop, we find a loop L that is adjacent to
-    //    S2.origin() (where "adjacent" means that there exists a path
-    //    connecting S2::Origin() to some vertex of L such that the path does
-    //    not cross any loop).  There may be a single such adjacent loop, or
-    //    there may be several (in which case they should all have the same
-    //    contains_origin() value).  We choose L to be the loop containing the
-    //    origin whose depth is greatest, or loop(0) (a top-level shell) if no
-    //    such loop exists.
+    // 4. If there is at least one loop, we find a loop L that is adjacent to S2.origin() (where
+    //    "adjacent" means that there exists a path connecting S2.origin() to some vertex of L such
+    //    that the path does not cross any loop).  There may be a single such adjacent loop, or
+    //    there may be several (in which case they should all have the same contains_origin()
+    //    value).  We choose L to be the loop containing the origin whose depth is greatest, or
+    //    loop(0) (a top-level shell) if no such loop exists.
     //
-    // 5. If (L originally contained origin) != (polygon contains origin), we
-    //    invert the polygon.  This is done by inverting a top-level shell whose
-    //    turning angle is minimal and then fixing the nesting hierarchy.  Note
-    //    that because we normalized all the loops initially, this step is only
-    //    necessary if the polygon requires at least one non-normalized loop to
-    //    represent it.
+    // 5. If (L originally contained origin) != (polygon contains origin), we invert the polygon.
+    //    This is done by inverting a top-level shell whose turning angle is minimal and then fixing
+    //    the nesting hierarchy.  Note that because we normalized all the loops initially, this step
+    //    is only necessary if the polygon requires at least one non-normalized loop to represent
+    //    it.
     Preconditions.checkState(this.loops.isEmpty());
 
     Set<S2Loop> containedOrigin = Sets.newIdentityHashSet();
@@ -344,9 +329,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
     }
 
-    // Verify that the original loops had consistent shell/hole orientations.
-    // Each original loop L should have been inverted if and only if it now
-    // represents a hole.
+    // Verify that the original loops had consistent shell/hole orientations. Each original loop L
+    // should have been inverted if and only if it now represents a hole.
     for (S2Loop loop : loops) {
       assert (containedOrigin.contains(loop) != loop.containsOrigin()) == loop.isHole();
     }
@@ -369,7 +353,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     subregionBound = S2EdgeUtil.RectBounder.expandForSubregions(bound);
   }
 
-  /** Given that loops contains a single loop, initialize all other fields. */
+  /** Given that loops contains a single loop, initializes all other fields. */
   private void initOneLoop() {
     assert 1 == loops.size();
     S2Loop loop = loops.get(0);
@@ -383,18 +367,17 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   /**
    * Initializes a polygon from a set of {@link S2Loop}s.
    *
-   * <p>Unlike {@link #init} this method assumes the caller already knows the
-   * nesting of loops within other loops.  The passed-in map maps from parents
-   * to their immediate child loops, with {@code null} mapping to the list of
-   * top-most shell loops.  Immediate child loops must be completely spatially
-   * contained within their parent loop, but not contained in any other loop,
-   * except for ancestors of the parent.  This method avoids the cost of
-   * determining nesting internally, but if the passed in nesting is wrong,
-   * future operations on the S2Polygon may be arbitrarily incorrect.
+   * <p>Unlike {@link #init} this method assumes the caller already knows the nesting of loops
+   * within other loops.  The passed-in map maps from parents to their immediate child loops, with
+   * {@code null} mapping to the list of top-most shell loops.  Immediate child loops must be
+   * completely spatially contained within their parent loop, but not contained in any other loop,
+   * except for ancestors of the parent.  This method avoids the cost of determining nesting
+   * internally, but if the passed in nesting is wrong, future operations on the S2Polygon may be
+   * arbitrarily incorrect.
    *
-   * <p>Note that unlike {@link #init}, the passed-in container of loops is not
-   * cleared; however, the passed-in loops become owned by the S2Polygon and
-   * should not be modified by the caller after calling this method.
+   * <p>Note that unlike {@link #init}, the passed-in container of loops is not cleared; however,
+   * the passed-in loops become owned by the S2Polygon and should not be modified by the caller
+   * after calling this method.
    *
    * @param nestedLoops loops with nesting.
    */
@@ -409,8 +392,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Releases ownership of the loops of this polygon by appending them to the
-   * given list. Resets the polygon to be empty.
+   * Releases ownership of the loops of this polygon by appending them to the given list. Resets the
+   * polygon to be empty.
    */
   public void release(List<S2Loop> loops) {
     loops.addAll(this.loops);
@@ -427,12 +410,11 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns true if each loop on this polygon is valid, and if the
-   * relationships between all loops are valid.
+   * Returns true if each loop on this polygon is valid, and if the relationships between all loops
+   * are valid.
    *
-   * <p>Specifically, this verifies that {@link S2Loop#isValid} is true for each
-   * {@link S2Loop}, and that {@link S2Polygon#isValid(List)} is true for the
-   * whole list of loops.
+   * <p>Specifically, this verifies that {@link S2Loop#isValid} is true for each {@link S2Loop}, and
+   * that {@link S2Polygon#isValid(List)} is true for the whole list of loops.
    */
   public boolean isValid() {
     for (S2Loop loop : loops) {
@@ -444,8 +426,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns true if the given loops form a valid polygon. Assumes that all
-   * of the given loops have already been validated.
+   * Returns true if the given loops form a valid polygon. Assumes that all of the given loops have
+   * already been validated.
    */
   public static boolean isValid(List<S2Loop> loops) {
     // Checks that no loop is empty, and that the full loop only appears in the full polygon.
@@ -460,9 +442,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
     }
 
-    // If a loop contains an edge AB, then no other loop may contain AB or BA.
-    // We only need this test if there are at least two loops, assuming that
-    // each loop has already been validated.
+    // If a loop contains an edge AB, then no other loop may contain AB or BA. We only need this
+    // test if there are at least two loops, assuming that each loop has already been validated.
     if (loops.size() > 1) {
       Map<UndirectedEdge, LoopVertexIndexPair> edges = Maps.newHashMap();
       for (int i = 0; i < loops.size(); ++i) {
@@ -486,8 +467,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // Verify that no two loops cross.
     for (int i = 0; i < loops.size(); ++i) {
       for (int j = i + 1; j < loops.size(); ++j) {
-        // This test not only checks for edge crossings, it also detects
-        // cases where the two boundaries cross at a shared vertex.
+        // This test not only checks for edge crossings, it also detects cases where the two
+        // boundaries cross at a shared vertex.
         if (loops.get(i).compareBoundary(loops.get(j)) == 0) {
           log.info("Loop " + i + " crosses loop " + j);
           return false;
@@ -520,10 +501,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     return loops.get(k);
   }
 
-  /**
-   * Returns the index of the parent of loop {@code k}, or -1 if it has no
-   * parent.
-   */
+  /** Returns the index of the parent of loop {@code k}, or -1 if it has no parent. */
   public int getParent(int k) {
     int depth = loop(k).depth();
     if (depth == 0) {
@@ -536,12 +514,11 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns the index of the last loop that is contained within loop {@code k}.
-   * Returns {@code numLoops() - 1} if {@code k < 0}. Note that loops
-   * are indexed according to a preorder traversal of the nesting hierarchy, so
-   * the immediate children of loop {@code k} can be found by iterating over
-   * loops {@code (k+1)..getLastDescendant(k)} and selecting those whose depth
-   * is equal to {@code (loop(k).depth() + 1)}.
+   * Returns the index of the last loop that is contained within loop {@code k}. Returns {@code
+   * numLoops() - 1} if {@code k < 0}. Note that loops are indexed according to a preorder traversal
+   * of the nesting hierarchy, so the immediate children of loop {@code k} can be found by iterating
+   * over loops {@code (k+1)..getLastDescendant(k)} and selecting those whose depth is equal to
+   * {@code (loop(k).depth() + 1)}.
    */
   public int getLastDescendant(int k) {
     if (k < 0) {
@@ -576,10 +553,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns the area of the polygon interior, i.e. the region on the left side
-   * of an odd number of loops (the area is between 0 and 4*Pi) and the true
-   * centroid of the polygon, weighted by the area of the polygon
-   * (see s2.h for details on centroids). Note that the centroid might not be
+   * Returns the area of the polygon interior, i.e. the region on the left side of an odd number of
+   * loops (the area is between 0 and 4*Pi) and the true centroid of the polygon, weighted by the
+   * area of the polygon (see s2.h for details on centroids). Note that the centroid might not be
    * contained by the polygon.
    */
   public S2AreaCentroid getAreaAndCentroid() {
@@ -587,38 +563,35 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns the area of the polygon interior, i.e. the region on the left side
-   * of an odd number of loops. The return value is between 0 and 4*Pi.
+   * Returns the area of the polygon interior, i.e. the region on the left side of an odd number of
+   * loops. The return value is between 0 and 4*Pi.
    */
   public double getArea() {
     return getAreaCentroid(false).getArea();
   }
 
   /**
-   * Returns the true centroid of the polygon, weighted by the area of the
-   * polygon (see s2.h for details on centroids). Note that the centroid might
-   * not be contained by the polygon.
+   * Returns the true centroid of the polygon, weighted by the area of the polygon (see s2.h for
+   * details on centroids). Note that the centroid might not be contained by the polygon.
    */
   public S2Point getCentroid() {
     return getAreaCentroid(true).getCentroid();
   }
 
   /**
-   * Returns the shortest distance from a point P to this polygon, given as the
-   * angle formed between P, the origin, and the nearest point on the polygon to
-   * P. This angle in radians is equivalent to the arclength along the unit
-   * sphere.
+   * Returns the shortest distance from a point P to this polygon, given as the angle formed between
+   * P, the origin, and the nearest point on the polygon to P. This angle in radians is equivalent
+   * to the arclength along the unit sphere.
    *
-   * <p>If the point is contained inside the polygon, the distance returned is
-   * 0.
+   * <p>If the point is contained inside the polygon, the distance returned is 0.
    */
   public S1Angle getDistance(S2Point p) {
     if (contains(p)) {
       return S1Angle.radians(0);
     }
 
-    // The furthest point from p on the sphere is its antipode, which is an
-    // angle of PI radians. This is an upper bound on the angle.
+    // The furthest point from p on the sphere is its antipode, which is an angle of PI radians.
+    // This is an upper bound on the angle.
     S1Angle minDistance = S1Angle.radians(Math.PI);
     for (int i = 0; i < numLoops(); i++) {
       minDistance = S1Angle.min(minDistance, loop(i).getDistance(p));
@@ -628,9 +601,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns a point on the polygon that is closest to point P. The distance
-   * between these two points should be the result of
-   * {@link #getDistance(S2Point)}.
+   * Returns a point on the polygon that is closest to point P. The distance between these two
+   * points should be the result of {@link #getDistance(S2Point)}.
    *
    * <p>If point P is contained within the loop, it is returned.
    *
@@ -643,8 +615,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
     S2Point normalized = S2Point.normalize(p);
 
-    // The furthest point from p on the sphere is its antipode, which is an
-    // angle of PI radians. This is an upper bound on the angle.
+    // The farthest point from p on the sphere is its antipode, which is an angle of PI radians.
+    // This is an upper bound on the angle.
     S1Angle minDistance = S1Angle.radians(Math.PI);
     int minLoopIndex = 0;
     int minVertexIndex = 0;
@@ -668,8 +640,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
 
   /**
-   * Returns true if this polygon contains the given other polygon, i.e., if
-   * polygon A contains all points contained by polygon B.
+   * Returns true if this polygon contains the given other polygon, i.e., if polygon A contains all
+   * points contained by polygon B.
    */
   public boolean contains(S2Polygon b) {
     // If both polygons have one loop, use the more efficient S2Loop method.
@@ -678,16 +650,14 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return loop(0).contains(b.loop(0));
     }
 
-    // Otherwise if neither polygon has holes, we can still use the more
-    // efficient S2Loop::Contains method (rather than CompareBoundary),
-    // but it's worthwhile to do our own bounds check first.
+    // Otherwise if neither polygon has holes, we can still use the more efficient S2Loop.contains()
+    // method (rather than CompareBoundary), but it's worthwhile to do our own bounds check first.
     if (!subregionBound.contains(b.getRectBound())) {
-      // Even though bound(A) does not contain bound(B), it is still possible
-      // that A contains B.  This can only happen when the union of the two
-      // bounds spans all longitudes.  For example, suppose that B consists of
-      // two shells with a longitude gap between them, while A consists of one
-      // shell that surrounds both shells of B but goes the other way around the
-      // sphere (so that it does not intersect the longitude gap).
+      // Even though bound(A) does not contain bound(B), it is still possible that A contains B.
+      // This can only happen when the union of the two bounds spans all longitudes.  For example,
+      // suppose that B consists of two shells with a longitude gap between them, while A consists
+      // of one shell that surrounds both shells of B but goes the other way around the sphere (so
+      // that it does not intersect the longitude gap).
       if (!bound.lng().union(b.getRectBound().lng()).isFull()) {
         return false;
       }
@@ -702,13 +672,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return true;
     }
 
-    // Polygon A contains B iff B does not intersect the complement of A.  From
-    // the intersection algorithm below, this means that the complement of A
-    // must exclude the entire boundary of B, and B must exclude all shell
-    // boundaries of the complement of A.  (It can be shown that B must then
-    // exclude the entire boundary of the complement of A.)  The first call
-    // below returns false if the boundaries cross, therefore the second call
-    // does not need to check for any crossing edges (which makes it cheaper).
+    // Polygon A contains B iff B does not intersect the complement of A.  From the intersection
+    // algorithm below, this means that the complement of A must exclude the entire boundary of B,
+    // and B must exclude all shell boundaries of the complement of A.  (It can be shown that B must
+    // then exclude the entire boundary of the complement of A.)  The first call below returns false
+    // if the boundaries cross, therefore the second call does not need to check for any crossing
+    // edges (which makes it cheaper).
     return containsBoundary(b) && b.excludesNonCrossingComplementShells(this);
   }
 
@@ -727,8 +696,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns true if this polygon intersects the given other polygon, i.e., if
-   * there is a point that is contained by both polygons.
+   * Returns true if this polygon intersects the given other polygon, i.e., if there is a point that
+   * is contained by both polygons.
    */
   public boolean intersects(S2Polygon b) {
     // If both polygons have one loop, use the more efficient S2Loop method.
@@ -737,9 +706,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return loop(0).intersects(b.loop(0));
     }
 
-    // Otherwise if neither polygon has holes, we can still use the more
-    // efficient S2Loop.intersects method. The polygons intersect if and
-    // only if some pair of loop regions intersect.
+    // Otherwise if neither polygon has holes, we can still use the more efficient S2Loop.intersects
+    // method. The polygons intersect if and only if some pair of loop regions intersect.
     if (!bound.intersects(b.getRectBound())) {
       return false;
     }
@@ -752,42 +720,36 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return false;
     }
 
-    // Polygon A is disjoint from B if A excludes the entire boundary of B and B
-    // excludes all shell boundaries of A.  (It can be shown that B must then
-    // exclude the entire boundary of A.)  The first call below returns false if
-    // the boundaries cross, therefore the second call does not need to check
-    // for crossing edges.
+    // Polygon A is disjoint from B if A excludes the entire boundary of B and B excludes all shell
+    // boundaries of A.  (It can be shown that B must then exclude the entire boundary of A.)  The
+    // first call below returns false if the boundaries cross, therefore the second call does not
+    // need to check for crossing edges.
     return !excludesBoundary(b) || !b.excludesNonCrossingShells(this);
   }
 
   /**
-   * Indexing structure to efficiently {@link #clipEdge} of a polygon. This is
-   * an abstract class because we need to use if for both polygons (for
-   * {@link #initToIntersection} and friends) and for sets of lists of points
-   * (for initToSimplified() future?).
+   * Indexing structure to efficiently {@link #clipEdge} of a polygon. This is an abstract class
+   * because we need to use if for both polygons (for {@link #initToIntersection} and friends) and
+   * for sets of lists of points (for initToSimplified() future?).
    *
-   * <p>Usage: In your subclass, create an array of vertex counts for each loop
-   * in the loop sequence and pass it to this constructor. Overwrite
-   * {@link #edgeFromTo}, calling {@link #decodeIndex} and use the resulting two
-   * indices to access your vertices.
+   * <p>Usage: In your subclass, create an array of vertex counts for each loop in the loop sequence
+   * and pass it to this constructor. Overwrite {@link #edgeFromTo}, calling {@link #decodeIndex}
+   * and use the resulting two indices to access your vertices.
    */
   private abstract static class S2LoopSequenceIndex extends S2EdgeIndex {
-    /**
-     * Map from the uni-dimensional edge index to the loop this edge belongs to.
-     */
+    /** Map from the uni-dimensional edge index to the loop this edge belongs to. */
     private final int[] indexToLoop;
 
     /**
-     * Reverse of {@link #indexToLoop}: maps a loop index to the uni-dimensional
-     * index of the first edge in the loop.
+     * Reverse of {@link #indexToLoop}: maps a loop index to the uni-dimensional index of the first
+     * edge in the loop.
      */
     private final int[] loopToFirstIndex;
 
     /**
-     * Must be called by each subclass with the array of vertices per loop. The
-     * length of the array is the number of loops, and the {@code i}
-     * <sup>th</sup> loop's vertex count is in the {@code i} <sup>th</sup> index
-     * of the array.
+     * Must be called by each subclass with the array of vertices per loop. The length of the array
+     * is the number of loops, and the {@code i} <sup>th</sup> loop's vertex count is in the
+     * {@code i} <sup>th</sup> index of the array.
      */
     public S2LoopSequenceIndex(int[] numVertices) {
       int totalEdges = 0;
@@ -819,9 +781,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
 
     /**
-     * Mark the {@link #edgeFromTo} method abstract again, so children of this
-     * class <b>must</b> implement it without using {@link #edgeFrom(int)}
-     * and {@link #edgeTo(int)}.
+     * Mark the {@link #edgeFromTo} method abstract again, so children of this class <b>must</b>
+     * implement it without using {@link #edgeFrom(int)} and {@link #edgeTo(int)}.
      */
     @Override
     public abstract S2Edge edgeFromTo(int index);
@@ -837,16 +798,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
-  /**
-   * Indexing structure for an {@link S2Polygon}.
-   */
+  /** Indexing structure for an {@link S2Polygon}. */
   public static final class S2PolygonIndex extends S2LoopSequenceIndex {
     private final S2Polygon poly;
     private final boolean reverse;
 
-    /**
-     * Returns number of vertices per loop.
-     */
+    /** Returns number of vertices per loop. */
     private static int[] getVertices(S2Polygon poly) {
       int[] vertices = new int[poly.numLoops()];
       for (int i = 0; i < vertices.length; i++) {
@@ -887,12 +844,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Clips the boundary of A to the interior of B, and adds the resulting edges to "builder". Shells
-   * are directed CCW and holes are directed clockwise. If "reverseA" is true, these directions are
-   * reversed in polygon A. If "invertB" is true, the boundary of A is clipped to the exterior
-   * rather than the interior of B. If "addSharedEdges" is true, then the output will include any
-   * edges that are shared between A and B (both edges must be in the same direction after any edge
-   * reversals are taken into account).
+   * Clips the boundary of A to the interior of B, and adds the resulting edges to {@code builder}.
+   * Shells are directed CCW and holes are directed clockwise. If {@code reverseA} is true, these
+   * directions are reversed in polygon A. If {@code invertB} is true, the boundary of A is clipped
+   * to the exterior rather than the interior of B. If {@code addSharedEdges} is true, then the
+   * output will include any edges that are shared between A and B (both edges must be in the same
+   * direction after any edge reversals are taken into account).
    */
   private static void clipBoundary(
       final S2Polygon a,
@@ -936,9 +893,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
-  /**
-   * Returns the total number of vertices in all loops.
-   */
+  /** Returns the total number of vertices in all loops. */
   public int getNumVertices() {
     return this.numVertices;
   }
@@ -961,7 +916,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // Ensure that there will be no two vertices within the max leaf cell diagonal of each other,
     // therefore no two vertices in the same leaf cell, and that no vertex will cross an edge after
     // the points have been snapped to the centers of leaf cells.  Add 1e-15 to the tolerance so we
-    // don't set a tighter than leaf cell level because of numerical inaccuracy.
+    // don't set a tighter than leaf cell level because of numerical inaccuracy.n
     S2PolygonBuilder.Options options = S2PolygonBuilder.Options.builder()
         .setRobustnessRadius(
             S1Angle.radians(PROJ.maxDiag.getValue(snapLevel) / 2.0 + 1e-15))
@@ -986,11 +941,10 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
   /** Inverts this polygon (replacing it by its complement.) */
   private void invert() {
-    // Inverting any one loop will invert the polygon.  The best loop to invert
-    // is the one whose area is largest, since this yields the smallest area
-    // after inversion.  The loop with the largest area is always at depth 0.
-    // The descendents of this loop all have their depth reduced by 1, while the
-    // former siblings of this loop all have their depth increased by 1.
+    // Inverting any one loop will invert the polygon.  The best loop to invert is the one whose
+    // area is largest, since this yields the smallest area after inversion.  The loop with the
+    // largest area is always at depth 0. The descendants of this loop all have their depth reduced
+    // by 1, while the former siblings of this loop all have their depth increased by 1.
 
     // The empty and full polygons are handled specially.
     if (isEmpty()) {
@@ -998,17 +952,16 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     } else if (isFull()) {
       clearLoops();
     } else {
-      // Find the loop whose area is largest (i.e., whose turning angle is
-      // smallest), minimizing calls to getTurningAngle().  In particular, for
-      // polygons with a single shell at level 0 there is not need to call
-      // GetTurningAngle() at all.  (This method is relatively expensive.)
+      // Find the loop whose area is largest (i.e., whose turning angle is smallest), minimizing
+      // calls to getTurningAngle().  In particular, for polygons with a single shell at level 0
+      // there is not need to call GetTurningAngle() at all.  (This method is relatively expensive.)
       int best = -1;
       double bestAngle = 0;
       for (int i = 1; i < numLoops(); ++i) {
         S2Loop loop = loop(i);
         if (loop.depth() == 0) {
-          // We defer computing the turning angle of loop 0 until we discover
-          // that the polygon has another top-level shell.
+          // We defer computing the turning angle of loop 0 until we discover that the polygon has
+          // another top-level shell.
           if (best == -1) {
             best = 0;
             bestAngle = loop(best).getTurningAngle();
@@ -1057,20 +1010,17 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Initializes this polygon to the intersection, union, or difference (A - B)
-   * of the given two polygons. The {@code vertexMergeRadius} determines how
-   * close two vertices must be to be merged together and how close a vertex
-   * must be to an edge in order to be spliced into it (see
-   * {@link S2PolygonBuilder} for details). By default, the merge radius is just
-   * large enough to compensate for errors that occur when computing
-   * intersection points between edges
+   * Initializes this polygon to the intersection, union, or difference (A - B) of the given two
+   * polygons. The {@code vertexMergeRadius} determines how close two vertices must be to be merged
+   * together and how close a vertex must be to an edge in order to be spliced into it (see
+   * {@link S2PolygonBuilder} for details). By default, the merge radius is just large enough to
+   * compensate for errors that occur when computing intersection points between edges
    * ({@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}).
    *
-   * <p>If you are going to convert the resulting polygon to a lower-precision
-   * format, it is necessary to increase the merge radius in order to get a
-   * valid result after rounding (i.e., no duplicate vertices, etc). For
-   * example, if you are going to convert them to {@code geostore.PolygonProto}
-   * format, then {@code S1Angle.e7(1)} is a good value for
+   * <p>If you are going to convert the resulting polygon to a lower-precision format, it is
+   * necessary to increase the merge radius in order to get a valid result after rounding (i.e., no
+   * duplicate vertices, etc). For example, if you are going to convert them to
+   * {@code geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for
    * {@code vertexMergeRadius}.
    */
   public void initToIntersection(final S2Polygon a, final S2Polygon b) {
@@ -1091,9 +1041,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         return;
       }
 
-      // We want the boundary of A clipped to the interior of B,
-      // plus the boundary of B clipped to the interior of A,
-      // plus one copy of any directed edges that are in both boundaries.
+      // We want the boundary of A clipped to the interior of B, plus the boundary of B clipped to
+      // the interior of A, plus one copy of any directed edges that are in both boundaries.
 
       S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
           .setMergeDistance(vertexMergeRadius)
@@ -1106,41 +1055,38 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         log.severe("Bad directed edges");
       }
 
-      // If the result had a non-empty boundary then we are done.  Unfortunately,
-      // if the boundary is empty then there are two possible results: the empty
-      // polygon or the full polygon.  This choice would be trivial to resolve
-      // except for the existence of "vertex_merge_radius" and also numerical
-      // errors when computing edge intersection points.  In particular:
+      // If the result had a non-empty boundary then we are done.  Unfortunately, if the boundary is
+      // empty then there are two possible results: the empty polygon or the full polygon.  This
+      // choice would be trivial to resolve except for the existence of "vertex_merge_radius" and
+      // also numerical errors when computing edge intersection points.  In particular:
       //
-      //  - The intersection of two non-full polygons may be full.  For example,
-      //    one or both polygons may have tiny cracks that are eliminated due to
-      //    vertex merging/edge splicing.
+      //  - The intersection of two non-full polygons may be full.  For example, one or both
+      //    polygons may have tiny cracks that are eliminated due to vertex merging/edge splicing.
       //
-      //  - The intersection of two polygons that both contain S2.origin() (or
-      //    any other point) may be empty.  For example, both polygons may have
-      //    tiny shells that surround the common point but that are eliminated.
+      //  - The intersection of two polygons that both contain S2.origin() (or any other point) may
+      //    be empty.  For example, both polygons may have tiny shells that surround the common
+      //    point but that are eliminated.
       //
-      //  - Even before any vertex merging/edge splicing, the computed boundary
-      //    edges are not useful in distinguishing almost-full polygons from
-      //    almost-empty due to numerical errors in computing edge intersections.
-      //    Such errors can reverse the orientation of narrow cracks or slivers.
+      //  - Even before any vertex merging/edge splicing, the computed boundary edges are not useful
+      //    in distinguishing almost-full polygons from almost-empty due to numerical errors in
+      //    computing edge intersections. Such errors can reverse the orientation of narrow cracks
+      //    or slivers.
       //
-      // So instead we fall back to heuristics.  Essentially we compute the
-      // minimum and maximum intersection area based on the areas of the two input
-      // polygons.  If only one of {0, 4*Pi} is possible then we return that
-      // result.  If neither is possible (before vertex merging, etc) then we
-      // return the one that is closest to being possible.  (It never true that
+      // So instead we fall back to heuristics.  Essentially we compute the minimum and maximum
+      // intersection area based on the areas of the two input polygons.  If only one of {0, 4*Pi}
+      // is possible then we return that result.  If neither is possible (before vertex merging,
+      // etc) then we return the one that is closest to being possible.  (It never true that
       // both are possible.)
       if (numLoops() == 0) {
-        // We know that both polygons are non-empty due to the initial bounds
-        // check.  By far the most common case is that the intersection is empty,
-        // so we want to make that case fast.  The intersection area satisfies:
+        // We know that both polygons are non-empty due to the initial bounds check.  By far the
+        // most common case is that the intersection is empty, so we want to make that case fast.
+        // The intersection area satisfies:
         //
         //   max(0, A + B - 4*Pi) <= Intersection(A, B) <= min(A, B)
         //
-        // where A, B refer to a polygon and/or its area.  Note that if either A
-        // or B is at most 2*Pi, the result must be "empty".  We can use the
-        // bounding rectangle areas as upper bounds on the polygon areas.
+        // where A, B refer to a polygon and/or its area.  Note that if either A or B is at most
+        // 2*Pi, the result must be "empty".  We can use the bounding rectangle areas as upper
+        // bounds on the polygon areas.
         if (a.bound.area() <= 2 * S2.M_PI || b.bound.area() <= 2 * S2.M_PI) {
           return;
         }
@@ -1166,9 +1112,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     } else if (b.isEmpty() || a.isFull()) {
       copy(a);
     } else {
-      // We want the boundary of A clipped to the exterior of B,
-      // plus the boundary of B clipped to the exterior of A,
-      // plus one copy of any directed edges that are in both boundaries.
+      // We want the boundary of A clipped to the exterior of B, plus the boundary of B clipped to
+      // the exterior of A, plus one copy of any directed edges that are in both boundaries.
 
       S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
           .setMergeDistance(vertexMergeRadius)
@@ -1182,13 +1127,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
 
       if (numLoops() == 0) {
-        // See comments in InitToIntersectionSloppy().  In this case, the union
-        // area satisfies:
+        // See comments in InitToIntersectionSloppy().  In this case, the union area satisfies:
         //
         //   max(A, B) <= Union(A, B) <= min(4*Pi, A + B)
         //
-        // The most common case is that neither input polygon is empty, but the
-        // union is empty due to vertex merging/simplification.
+        // The most common case is that neither input polygon is empty, but the union is empty due
+        // to vertex merging/simplification.
         if (a.bound.area() + b.bound.area() <= 2 * S2.M_PI) {
           return;
         }
@@ -1215,12 +1159,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     } else if (a.isFull()) {
       initToComplement(b);
     } else {
-      // Note that we cannot short circuit the b.isEmpty() case because even something and
-      // nothing might have no difference if the difference falls within the merge distance.
+      // Note that we cannot short circuit the b.isEmpty() case because even something and nothing
+      // might have no difference if the difference falls within the merge distance.
 
-      // We want the boundary of A clipped to the exterior of B,
-      // plus the reversed boundary of B clipped to the interior of A,
-      // plus one copy of any edge in A that is also a reverse edge in B.
+      // We want the boundary of A clipped to the exterior of B, plus the reversed boundary of B
+      // clipped to the interior of A, plus one copy of any edge in A that is also a reverse edge in
+      // B.
 
       S2PolygonBuilder.Options options = S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
           .setMergeDistance(vertexMergeRadius)
@@ -1233,8 +1177,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
 
       if (numLoops() == 0) {
-        // See comments in InitToIntersectionSloppy().  In this case, the
-        // difference area satisfies:
+        // See comments in InitToIntersectionSloppy().  In this case, the difference area satisfies:
         //
         //   max(0, A - B) <= Difference(A, B) <= min(A, 4*Pi - B)
         //
@@ -1253,24 +1196,20 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     }
   }
 
-  /**
-   * Returns a polygon that is the union of the given polygons. Note: clears the
-   * List!
-   */
+  /** Returns a polygon that is the union of the given polygons. Note: clears the List! */
   public static S2Polygon destructiveUnion(List<S2Polygon> polygons) {
     return destructiveUnionSloppy(polygons, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
   }
 
   /**
-   * Returns a polygon that is the union of the given polygons; combines
-   * vertices that form edges that are almost identical, as defined by
-   * {@code vertexMergeRadius}. Note: clears the List!
+   * Returns a polygon that is the union of the given polygons; combines vertices that form edges
+   * that are almost identical, as defined by {@code vertexMergeRadius}. Note: clears the List!
    */
   public static S2Polygon destructiveUnionSloppy(
       List<S2Polygon> polygons, S1Angle vertexMergeRadius) {
-    // Effectively create a priority queue of polygons in order of number of
-    // vertices. Repeatedly union the two smallest polygons and add the result
-    // to the queue until we have a single polygon to return.
+    // Effectively create a priority queue of polygons in order of number of vertices. Repeatedly
+    // union the two smallest polygons and add the result to the queue until we have a single
+    // polygon to return.
 
     // map: # of vertices -> polygon
     TreeMultimap<Integer, S2Polygon> queue = TreeMultimap.create();
@@ -1301,10 +1240,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       unionPolygon.initToUnionSloppy(aPolygon, bPolygon, vertexMergeRadius);
       int unionSize = aSize + bSize;
       queue.put(unionSize, unionPolygon);
-      // We assume that the number of vertices in the union polygon is the
-      // sum of the number of vertices in the original polygons, which is not
-      // always true, but will almost always be a decent approximation, and
-      // faster than recomputing.
+      // We assume that the number of vertices in the union polygon is the sum of the number of
+      // vertices in the original polygons, which is not always true, but will almost always be a
+      // decent approximation, and faster than recomputing.
     }
 
     if (queue.isEmpty()) {
@@ -1315,43 +1253,37 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Intersects this polygon with the {@link S2Polyline} {@code in} and returns
-   * the resulting zero or more polylines. The polylines are ordered in the
-   * order they would be encountered by traversing {@code in} from beginning to
-   * end. Note that the output may include polylines with only one vertex, but
-   * there will not be any zero-vertex polylines.
+   * Intersects this polygon with the {@link S2Polyline} {@code in} and returns the resulting zero
+   * or more polylines. The polylines are ordered in the order they would be encountered by
+   * traversing {@code in} from beginning to end. Note that the output may include polylines with
+   * only one vertex, but there will not be any zero-vertex polylines.
    *
-   * <p>This is equivalent to calling {@link #intersectWithPolylineSloppy} with
-   * the {@code vertexMergeRadius} set to
-   * {@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}.
+   * <p>This is equivalent to calling {@link #intersectWithPolylineSloppy} with the {@code
+   * vertexMergeRadius} set to {@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}.
    */
   public List<S2Polyline> intersectWithPolyline(S2Polyline in) {
     return intersectWithPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
   }
 
   /**
-   * Similar to {@link #intersectWithPolyline}, except that vertices will be
-   * dropped as necessary to ensure that all adjacent vertices in the
-   * sequence obtained by concatenating the output polylines will be
-   * farther than {@code vertexMergeRadius} apart.  Note that this can change
-   * the number of output polylines and/or yield single-vertex polylines.
+   * Similar to {@link #intersectWithPolyline}, except that vertices will be dropped as necessary to
+   * ensure that all adjacent vertices in the sequence obtained by concatenating the output
+   * polylines will be farther than {@code vertexMergeRadius} apart. Note that this can change the
+   * number of output polylines and/or yield single-vertex polylines.
    */
   public List<S2Polyline> intersectWithPolylineSloppy(
       S2Polyline in, S1Angle vertexMergeRadius) {
     return internalClipPolyline(false, in, vertexMergeRadius);
   }
 
-  /**
-   * Same as {@link #intersectWithPolyline}, but subtracts this polygon from
-   * the given polyline.
-   */
+  /** Same as {@link #intersectWithPolyline}, but subtracts this polygon from the given polyline. */
   public List<S2Polyline> subtractFromPolyline(S2Polyline in) {
     return subtractFromPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
   }
 
   /**
-   * Same as {@link #intersectWithPolylineSloppy}, but subtracts this polygon
-   * from the given polyline.
+   * Same as {@link #intersectWithPolylineSloppy}, but subtracts this polygon from the given
+   * polyline.
    */
   public List<S2Polyline> subtractFromPolylineSloppy(
       S2Polyline in, S1Angle vertexMergeRadius) {
@@ -1359,19 +1291,16 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-  * Clips the {@link S2Polyline} {@code a} to the interior of this polygon.
-  * The resulting polyline(s) will be returned. If {@code invert} is
-  * {@code true}, we clip {@code a} to the exterior of this polygon instead.
-  * Vertices will be dropped such that adjacent vertices will not be closer
-  * than {@code mergeRadius}.
+  * Clips the {@link S2Polyline} {@code a} to the interior of this polygon. The resulting
+  * polyline(s) will be returned. If {@code invert} is {@code true}, we clip {@code a} to the
+  * exterior of this polygon instead. Vertices will be dropped such that adjacent vertices will not
+  * be closer than {@code mergeRadius}.
   *
-  * <p>We do the intersection/subtraction by walking the polyline edges.
-  * For each edge, we compute all intersections with the polygon boundary
-  * and sort them in increasing order of distance along that edge.
-  * We then divide the intersection points into pairs, and output a
-  * clipped polyline segment for each one. We keep track of whether we're
-  * inside or outside of the polygon at all times to decide which segments
-  * to output.
+  * <p>We do the intersection/subtraction by walking the polyline edges. For each edge, we compute
+  * all intersections with the polygon boundary and sort them in increasing order of distance along
+  * that edge. We then divide the intersection points into pairs, and output a clipped polyline
+  * segment for each one. We keep track of whether we're inside or outside of the polygon at all
+  * times to decide which segments to output.
   */
   private List<S2Polyline> internalClipPolyline(
       boolean invert, S2Polyline a, S1Angle mergeRadius) {
@@ -1396,16 +1325,15 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         intersections.add(new ParametrizedS2Point(1, a1));
       }
       Collections.sort(intersections);
-      // At this point we have a sorted array of vertex pairs representing
-      // the edge(s) obtained after clipping (a0,a1) against the polygon.
+      // At this point we have a sorted array of vertex pairs representing the edge(s) obtained
+      // after clipping (a0,a1) against the polygon.
       for (int k = 0; k < intersections.size(); k += 2) {
         if (intersections.get(k).equals(intersections.get(k + 1))) {
           continue;
         }
         S2Point v0 = intersections.get(k).getPoint();
         S2Point v1 = intersections.get(k + 1).getPoint();
-        // If the gap from the previous vertex to this one is large
-        // enough, start a new polyline.
+        // If the gap from the previous vertex to this one is large enough, start a new polyline.
         if (!vertices.isEmpty()) {
           S2Point back = vertices.get(vertices.size() - 1);
           if (back.angle(v0) > mergeRadius.radians()) {
@@ -1413,8 +1341,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
             vertices.clear();
           }
         }
-        // Append this segment to the current polyline, ignoring any
-        // vertices that are too close to the previous vertex.
+        // Append this segment to the current polyline, ignoring any vertices that are too close to
+        // the previous vertex.
         if (vertices.isEmpty()) {
           vertices.add(v0);
         }
@@ -1434,11 +1362,10 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   public boolean isNormalized() {
-    // TODO(user): The condition tested here is insufficient.  The correct
-    // condition is that each *connected component* of child loops can share at
-    // most one vertex with their parent loop.  Example: suppose loop A has
-    // children B, C, D, and the following pairs are connected: AB, BC, CD, DA.
-    // Then the polygon is not normalized.
+    // TODO(user): The condition tested here is insufficient.  The correct condition is that each
+    // *connected component* of child loops can share at most one vertex with their parent loop.
+    // Example: suppose loop A has children B, C, D, and the following pairs are connected: AB, BC,
+    // CD, DA. Then the polygon is not normalized.
     Set<S2Point> vertices = Sets.newHashSet();
     S2Loop lastParent = null;
     for (int i = 0; i < numLoops(); ++i) {
@@ -1470,11 +1397,10 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns true if two polygons have the same boundary, except for vertex
-   * perturbations. Both polygons must have loops with the same cyclic vertex
-   * order and the same nesting hierarchy, but the vertex locations are allowed
-   * to differ by up to {@code maxError}. Note: This method mostly useful only
-   * for testing purposes.
+   * Returns true if two polygons have the same boundary, except for vertex perturbations. Both
+   * polygons must have loops with the same cyclic vertex order and the same nesting hierarchy, but
+   * the vertex locations are allowed to differ by up to {@code maxError}. Note: This method mostly
+   * useful only for testing purposes.
    */
   boolean boundaryApproxEquals(S2Polygon b, double maxError) {
     if (numLoops() != b.numLoops()) {
@@ -1483,8 +1409,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return false;
     }
 
-    // For now, we assume that there is at most one candidate match for each
-    // loop. (So far this method is just used for testing.)
+    // For now, we assume that there is at most one candidate match for each loop. (So far this
+    // method is just used for testing.)
     for (int i = 0; i < numLoops(); ++i) {
       S2Loop aLoop = loop(i);
       boolean success = false;
@@ -1524,9 +1450,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * If this method returns true, the region completely contains the given cell.
-   * Otherwise, either the region does not contain the cell or the containment
-   * relationship could not be determined.
+   * If this method returns true, the region completely contains the given cell. Otherwise, either
+   * the region does not contain the cell or the containment relationship could not be determined.
    */
   @Override
   public boolean contains(S2Cell cell) {
@@ -1543,9 +1468,8 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * If this method returns false, the region does not intersect the given cell.
-   * Otherwise, either region intersects the cell, or the intersection
-   * relationship could not be determined.
+   * If this method returns false, the region does not intersect the given cell. Otherwise, either
+   * region intersects the cell, or the intersection relationship could not be determined.
    */
   @Override
   public boolean mayIntersect(S2Cell cell) {
@@ -1559,9 +1483,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     return intersects(new S2Polygon(cell));
   }
 
-  /**
-   * The point {@code p} does not need to be normalized.
-   */
+  /** The point {@code p} does not need to be normalized. */
   public boolean contains(S2Point p) {
     if (numLoops() == 1) {
       // Skip extra bounds check.
@@ -1574,15 +1496,14 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     for (int i = 0; i < numLoops(); ++i) {
       inside ^= loop(i).contains(p);
       if (inside && !hasHoles) {
-        break; // Shells are disjoint.
+        // Shells are disjoint.
+        break;
       }
     }
     return inside;
   }
 
-  /**
-   * For each map entry, sorts the value list.
-   */
+  /** For each map entry, sorts the value list. */
   private static void sortValueLoops(Map<S2Loop, List<S2Loop>> loopMap) {
     for (S2Loop key : loopMap.keySet()) {
       Collections.sort(loopMap.get(key));
@@ -1604,12 +1525,11 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
     }
 
-    // No loop may contain the complement of another loop. (Handling this case
-    // is significantly more complicated.)
+    // No loop may contain the complement of another loop. (Handling this case is significantly more
+    // complicated.)
     // assert (parent == null || !newLoop.containsNested(parent));
 
-    // Some of the children of the parent loop may now be children of
-    // the new loop.
+    // Some of the children of the parent loop may now be children of the new loop.
     List<S2Loop> newChildren = loopMap.get(newLoop);
     for (int i = 0; i < children.size();) {
       S2Loop child = children.get(i);
@@ -1719,17 +1639,16 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return true;
     }
 
-    // Otherwise the complement of B may be obtained by inverting loop(0) and
-    // then swapping the shell/hole status of all other loops.  This implies
-    // that the shells of the complement consist of loop 0 plus all the holes of
-    // the original polygon.
+    // Otherwise the complement of B may be obtained by inverting loop(0) and then swapping the
+    // shell/hole status of all other loops.  This implies that the shells of the complement consist
+    // of loop 0 plus all the holes of the original polygon.
     for (int j = 0; j < b.numLoops(); ++j) {
       if (j > 0 && !b.loop(j).isHole()) {
         continue;
       }
 
-      // The interior of the complement is to the right of loop 0, and to the
-      // left of the loops that were originally holes.
+      // The interior of the complement is to the right of loop 0, and to the left of the loops that
+      // were originally holes.
       if (containsNonCrossingBoundary(b.loop(j), j == 0)) {
         return false;
       }
@@ -1758,9 +1677,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     return false;
   }
 
-  /**
-   * Returns a human readable representation of the polygon.
-   */
+  /** Returns a human readable representation of the polygon. */
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
@@ -1771,19 +1688,19 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       for (int v = 0; v < s2Loop.numVertices(); ++v) {
         S2Point s2Point = s2Loop.vertex(v);
         sb.append(s2Point.toDegreesString());
-        sb.append("\n"); // end of vertex
+        // end of vertex
+        sb.append("\n");
       }
-      sb.append(">\n"); // end of loop
+      // end of loop
+      sb.append(">\n");
     }
     return sb.toString();
   }
 
   private static final class UndirectedEdge {
-    // Note: An UndirectedEdge and an S2Edge can never be considered equal (in
-    // terms of the equals() method) and hence they re not be related types.
-    // If you need to convert between the types then separate conversion
-    // methods should be introduced.
-
+    // Note: An UndirectedEdge and an S2Edge can never be considered equal (in terms of the equals()
+    // method) and hence they re not be related types. If you need to convert between the types then
+    // separate conversion methods should be introduced.
     private final S2Point a;
     private final S2Point b;
 
