@@ -1158,9 +1158,9 @@ public strictfp class S2EdgeUtil {
     // a corner, (2) the adjacent face along the non-exit axis is the target
     // face, and (3) AB exits *exactly* through the corner.  (The sumEquals()
     // code checks whether the dot product of (u,v,1) and "n" is exactly zero.)
-    if (Math.abs(exit.get(1 - axis)) == 1 &&
-        S2Projections.getUVWFace(face, 1 - axis, exit.get(1 - axis) > 0 ? 1 : 0) == targetFace &&
-        sumEquals(exit.x * n.x, exit.y * n.y, -n.z)) {
+    if (Math.abs(exit.get(1 - axis)) == 1
+        && S2Projections.getUVWFace(face, 1 - axis, exit.get(1 - axis) > 0 ? 1 : 0) == targetFace
+        && sumEquals(exit.x * n.x, exit.y * n.y, -n.z)) {
       return targetFace;
     }
 
@@ -1900,6 +1900,7 @@ public strictfp class S2EdgeUtil {
   /**
    * Like Interpolate(), except that the parameter "ax" represents the desired
    * distance from A to the result X rather than a fraction between 0 and 1.
+   * Requires that {@code a} and {@code b} are unit length.
    */
   public static S2Point interpolateAtDistance(S1Angle ax, S2Point a, S2Point b) {
     return interpolateAtDistance(ax, a, b, new S1Angle(a, b));
