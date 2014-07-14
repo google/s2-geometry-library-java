@@ -217,7 +217,7 @@ public strictfp class S2EdgeUtil {
     private int robustCrossingInternal2(S2Point d) {
       // RobustCCW is very expensive, so we avoid calling it if at all possible.
       // First eliminate the cases where two vertices are equal.
-      if (a.equals(c) || a.equals(d) || b.equals(c) || b.equals(d)) {
+      if (a.equalsPoint(c) || a.equalsPoint(d) || b.equalsPoint(c) || b.equalsPoint(d)) {
         return 0;
       }
 
@@ -808,7 +808,7 @@ public strictfp class S2EdgeUtil {
     // We pay extra attention when some of the edges overlap.  When edges
     // overlap, several of these orderings can be satisfied, and we take
     // the most specific.
-    if (a0.equals(b0) && a2.equals(b2)) {
+    if (a0.equalsPoint(b0) && a2.equalsPoint(b2)) {
       return WedgeRelation.WEDGE_EQUALS;
     }
 
@@ -820,7 +820,7 @@ public strictfp class S2EdgeUtil {
       }
 
       // We are in case 5 or 6, or case 2 if a2 == b2.
-      if (a2.equals(b2)) {
+      if (a2.equalsPoint(b2)) {
         return WedgeRelation.WEDGE_IS_PROPERLY_CONTAINED;
       } else {
         return WedgeRelation.WEDGE_PROPERLY_OVERLAPS;
