@@ -29,7 +29,6 @@ public class Benchmarks {
     run(S2LoopBenchmark.IntersectsContains.class);
     run(S2LoopBenchmark.IntersectsCrosses.class);
     run(S2LoopBenchmark.IntersectsDisjoint.class);
-    run(S2LoopBenchmark.ConstructAndContains.class);
     run(S2LoopBenchmark.ContainsVsRadiusMeters.class);
     run(S2LoopBenchmark.ContainsVsGapEdgeMultiple.class);
     run(S2LoopBenchmark.IntersectsCrossesVsLogRadiusRatio.class);
