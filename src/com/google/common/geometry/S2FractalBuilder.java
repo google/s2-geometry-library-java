@@ -228,7 +228,7 @@ class S2FractalBuilder {
       double z = Math.cos(radius);
       double r = Math.sin(radius);
       S2Point p = new S2Point(r * Math.cos(theta), r * Math.sin(theta), z);
-      vertices.add(S2Point.normalize(S2.rotate(p, frame)));
+      vertices.add(S2.rotate(p, frame));
     }
 
     return new S2Loop(vertices);

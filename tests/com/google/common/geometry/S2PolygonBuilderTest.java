@@ -285,7 +285,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   private static void getVertices(String str, Matrix3x3 basis, List<S2Point> vertices) {
     S2Polyline line = makePolyline(str);
     for (int i = 0; i < line.numVertices(); ++i) {
-      vertices.add(S2Point.normalize(S2.rotate(line.vertex(i), basis)));
+      vertices.add(S2.rotate(line.vertex(i), basis));
     }
   }
 

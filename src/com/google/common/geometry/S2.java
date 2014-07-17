@@ -885,13 +885,10 @@ public final strictfp class S2 {
     return ImmutableList.of(p2, p1, p0);
   }
 
-  /**
-   * Returns a copy of the given point {@code p} after rotating it by the
-   * rotation matrix {@code r}.
-   */
+  /** Returns a normalized copy {@code p} after rotating it by the rotation matrix {@code r}. */
   static S2Point rotate(S2Point p, Matrix3x3 r) {
     Matrix3x3 rotated = r.mult(new Matrix3x3(1, p.x, p.y, p.z));
-    return new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0));
+    return S2Point.normalize(new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0)));
   }
 
   /**

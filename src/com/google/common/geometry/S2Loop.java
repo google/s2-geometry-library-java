@@ -163,7 +163,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     for (int vi = 0; vi < numVertices; ++vi) {
       double angle = vi * radianStep;
       S2Point p = new S2Point(planarRadius * Math.cos(angle), planarRadius * Math.sin(angle), 1);
-      vertices.add(S2Point.normalize(S2.rotate(p, m)));
+      vertices.add(S2.rotate(p, m));
     }
     return new S2Loop(vertices);
   }
