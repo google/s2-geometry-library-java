@@ -668,7 +668,10 @@ public class S2PolygonBenchmark {
       count += polygon.contains(queries.get(i).get(r % numQuerySamples)) ? 1 : 0;
       if (r % numQuerySamples == 0) {
         i++;
-        polygon = polygons.get(i % numPolygons);
+        if (i == numPolygons) {
+          i = 0;
+        }
+        polygon = polygons.get(i);
       }
     }
 
