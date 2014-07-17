@@ -937,16 +937,16 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return new FaceIJ(face, i, j, orientation);
   }
 
-  /** Return the lowest-numbered bit that is on for cells at the given level. */
-  public long lowestOnBit() {
-    return id & -id;
-  }
-
   /**
    * Returns the lowest-numbered bit that is on for this cell id, which is equal to
    * {@code 1L << (2 * (MAX_LEVEL - level))}. So for example, a.lsb() <= b.lsb() if and only if
    * a.level() >= b.level(), but the first test is more efficient.
    */
+  public long lowestOnBit() {
+    return id & -id;
+  }
+
+  /** Return the lowest-numbered bit that is on for cells at the given level. */
   public static long lowestOnBitForLevel(int level) {
     return 1L << (2 * (MAX_LEVEL - level));
   }
