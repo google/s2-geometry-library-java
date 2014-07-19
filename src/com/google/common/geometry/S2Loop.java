@@ -866,48 +866,6 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Return +1 if A contains B (i.e. the interior of B is a subset of the
-   * interior of A), -1 if the boundaries of A and B cross, and 0 otherwise.
-   * Requires that A does not properly contain the complement of B, i.e. A and B
-   * do not contain each other's boundaries. This method is used for testing
-   * whether multi-loop polygons contain each other.
-   */
-  public int containsOrCrosses(S2Loop b) {
-    // There can be containment or crossing only if the bounds intersect.
-    if (!bound.intersects(b.getRectBound())) {
-      return 0;
-    }
-
-    // Now check whether there are any edge crossings, and also check the loop
-    // relationship at any shared vertices. Note that unlike Contains() or
-    // Intersects(), we can't do a point containment test as a shortcut because
-    // we need to detect whether there are any edge crossings.
-    int result = checkEdgeCrossings(b, new S2EdgeUtil.WedgeContainsOrCrosses());
-
-    // If there was an edge crossing or a shared vertex, we know the result
-    // already. (This is true even if the result is 1, but since we don't
-    // bother keeping track of whether a shared vertex was seen, we handle this
-    // case below.)
-    if (result <= 0) {
-      return result;
-    }
-
-    // At this point we know that the boundaries do not intersect, and we are
-    // given that (A union B) is a proper subset of the sphere. Furthermore
-    // either A contains B, or there are no shared vertices (due to the check
-    // above). So now we just need to distinguish the case where A contains B
-    // from the case where B contains A or the two loops are disjoint.
-    if (!subregionBound.contains(b.getRectBound())) {
-      return 0;
-    }
-    if (!contains(b.vertex(0)) && findVertex(b.vertex(0)) < 0) {
-      return 0;
-    }
-
-    return 1;
-  }
-
-  /**
    * Return true if two loops have the same boundary. This is true if and only if the loops have the
    * same vertices in the same cyclic order. The empty and full loops are considered to have
    * different boundaries. (For testing purposes.)
@@ -1484,10 +1442,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   /**
    * This method encapsulates the common code for loop containment and
-   * intersection tests. It is used in three slightly different variations to
-   * implement contains(), intersects(), and containsOrCrosses().
+   * intersection tests. It is used in slightly different variations to
+   * implement contains(), intersects(), etc.
    *
-   *  In a nutshell, this method checks all the edges of this loop (A) for
+   * <p>In a nutshell, this method checks all the edges of this loop (A) for
    * intersection with all the edges of B. It returns -1 immediately if any edge
    * intersections are found. Otherwise, if there are any shared vertices, it
    * returns the minimum value of the given WedgeRelation for all such vertices
