@@ -927,8 +927,8 @@ strictfp class S2ShapeIndex {
         return OneEdge.create(cellId, shapeId, containsCenter, edges.get(start));
       }
       int edge = edges.get(start).orig.edgeId;
-      for (int i = start + 1; i < numEdges; i++) {
-        if (edge + i != edges.get(i).orig.edgeId) {
+      for (int i = 1; i < numEdges; i++) {
+        if (edge + i != edges.get(start + i).orig.edgeId) {
           return ManyEdges.create(cellId, shapeId, containsCenter, edges, start, end);
         }
       }

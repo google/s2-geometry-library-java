@@ -174,6 +174,15 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     quadraticValidate(index);
   }
 
+  public void testEdgeRangeRegression() {
+    // Regression test that catches error where EdgeRange was used incorrectly, when an intermediate
+    // edge is not part of the second shape in a multi-shape cell.
+    S2ShapeIndex index = new S2ShapeIndex();
+    index.add(makeLoop("43:178, 41:162, 36:172"));
+    index.add(makeLoop("40:178, 46:-173, 45:169"));
+    quadraticValidate(index);
+  }
+
   public void testReset() {
     S2ShapeIndex index = new S2ShapeIndex();
     for (int i = 0; i < 10; i++) {
