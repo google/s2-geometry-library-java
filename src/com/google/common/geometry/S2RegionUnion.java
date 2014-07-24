@@ -22,6 +22,11 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
 
+/**
+ * An S2RegionUnion represents a union of possibly overlapping regions.
+ * It is convenient for computing a covering of a set of regions. The regions
+ * are assumed to be immutable.
+ */
 @GwtCompatible(serializable = true)
 public class S2RegionUnion implements S2Region, Serializable {
   // Regions is non-private so that it can be accessed from the custom field
