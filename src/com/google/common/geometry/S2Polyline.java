@@ -37,7 +37,7 @@ import java.util.logging.Logger;
  *
  */
 @GwtCompatible(serializable = true)
-public final strictfp class S2Polyline implements S2Region, Serializable {
+public final strictfp class S2Polyline implements S2Region, S2Shape, Serializable {
   private static final Logger log = Platform.getLoggerForClass(S2Polyline.class);
 
   private final int numVertices;
@@ -180,7 +180,7 @@ public final strictfp class S2Polyline implements S2Region, Serializable {
     return Math.min(arcLength / getArclengthAngle().radians(), 1);
   }
 
-  // S2Region interface (see {@code S2Region} for details):
+  // S2Region interface (see S2Region.java for details):
 
   /** Return a bounding spherical cap. */
   @Override
@@ -368,5 +368,28 @@ public final strictfp class S2Polyline implements S2Region, Serializable {
     builder.append("]");
 
     return builder.toString();
+  }
+
+  // S2Shape interface (see S2Shape.java for details):
+
+  @Override
+  public int numEdges() {
+    return numVertices - 1;
+  }
+
+  @Override
+  public void getEdge(int index, MutableEdge result) {
+    result.set(vertices[index], vertices[index + 1]);
+  }
+
+  @Override
+  public boolean hasInterior() {
+    return false;
+  }
+
+  @Override
+  public boolean containsOrigin() {
+    throw new IllegalStateException("An S2Polyline has no interior, so "
+        + "containsOrigin() should never be called on one.");
   }
 }

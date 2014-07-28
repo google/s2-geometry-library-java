@@ -300,6 +300,28 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertFalse(line2.isValid());
   }
 
+  public void testS2ShapeInterface() {
+    S1Angle radius = S1Angle.radians(10);
+    int numVertices = 40;
+    for (int iter = 0; iter < 50; ++iter) {
+      // Create an S2Polyline from a regular loop, and test that its vertices can be found by
+      // S2ShapeIndex.CellIterator's locate() method.
+      S2Loop loop = S2Loop.makeRegularLoop(randomPoint(), radius, numVertices);
+      List<S2Point> vertices = Lists.newArrayList();
+      for (int i = 0; i < numVertices; ++i) {
+        vertices.add(loop.vertex(i));
+      }
+      S2Polyline polyline = new S2Polyline(vertices);
+
+      S2ShapeIndex index = new S2ShapeIndex();
+      index.add(polyline);
+      S2ShapeIndex.CellIterator iterator = index.iterator();
+      for (int i = 0; i < numVertices; ++i) {
+        assertTrue(iterator.locate(vertices.get(i)));
+      }
+    }
+  }
+
   /**
    * Utility for testing equals() and hashCode() results at once.
    * Tests that lhs.equals(rhs) matches expectedResult, as well as
