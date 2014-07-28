@@ -33,7 +33,7 @@ import java.util.RandomAccess;
 import javax.annotation.Nullable;
 
 @GwtCompatible
-strictfp class S2ShapeIndex {
+public strictfp class S2ShapeIndex {
   /**
    * The amount by which cells are "padded" to compensate for numerical errors when clipping line
    * segments to cell boundaries. The total error when clipping an edge comes from two sources:
