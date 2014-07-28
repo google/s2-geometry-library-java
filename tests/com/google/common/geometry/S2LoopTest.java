@@ -30,9 +30,6 @@ import java.util.Set;
 /**
  * Tests for {@link S2Loop}.
  *
- *  Note that testLoopRelations2() is suppressed because it fails in corner
- * cases due to a problem with S2.robustCCW().
- *
  */
 @GwtCompatible
 public strictfp class S2LoopTest extends GeometryTestCase {
@@ -379,9 +376,9 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   private S2Loop makeCellLoop(S2CellId begin, S2CellId end) {
-    // Construct a CCW polygon whose boundary is the union of the cell ids
-    // in the range [begin, end). We add the edges one by one, removing
-    // any edges that are already present in the opposite direction.
+    // Construct a CCW polygon whose boundary is the union of the cell ids in the range
+    // [begin, end). We add the edges one by one, removing any edges that are already present in the
+    // opposite direction.
     Map<S2Point, Set<S2Point>> edges = Maps.newHashMap();
     for (S2CellId id = begin; !id.equals(end); id = id.next()) {
       S2Cell cell = new S2Cell(id);
@@ -709,6 +706,22 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  /**
+   * This unit test helped us find an error in {@link S2EdgeQuery#splitBound} where {@code
+   * edgeBound} was being used, instead of copies of {@code edgeBound}. This test fails at iteration
+   * 21, where {@code numVertices} = 512, if the error is reintroduced.
+   */
+  public void testCompareBoundaryCrossingLoops() {
+    for (int numVertices = 8; numVertices <= 512; numVertices *= 8) {
+      for (int i = 0; i < 100; ++i) {
+        List<S2Loop> loops = makeCrossingLoopPairDefault(numVertices, randomPoint(), randomPoint());
+        S2Loop a = loops.get(0);
+        S2Loop b = loops.get(1);
+        assertEquals(0, a.compareBoundary(b));
+      }
+    }
+  }
+
   public void testBoundsForLoopContainment() {
     // To reliably test whether one loop contains another, the bounds of the
     // outer loop are expanded slightly.  This test constructs examples where
@@ -743,36 +756,36 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
-  private static void testNear(String a_str, String b_str, double max_error, boolean expected) {
-    S2Loop a = makeLoop(a_str);
-    S2Loop b = makeLoop(b_str);
-    assertEquals(expected, a.boundaryNear(b, max_error));
-    assertEquals(expected, b.boundaryNear(a, max_error));
+  private static void checkNear(String aStr, String bStr, double maxError, boolean expected) {
+    S2Loop a = makeLoop(aStr);
+    S2Loop b = makeLoop(bStr);
+    assertEquals(expected, a.boundaryNear(b, maxError));
+    assertEquals(expected, b.boundaryNear(a, maxError));
   }
 
   public void testBoundaryNear() {
     double degree = S1Angle.degrees(1).radians();
 
-    testNear("0:0, 0:10, 5:5",
+    checkNear("0:0, 0:10, 5:5",
         "0:0.1, -0.1:9.9, 5:5.2",
         0.5 * degree, true);
-    testNear("0:0, 0:3, 0:7, 0:10, 3:7, 5:5",
+    checkNear("0:0, 0:3, 0:7, 0:10, 3:7, 5:5",
         "0:0, 0:10, 2:8, 5:5, 4:4, 3:3, 1:1",
         1e-3, true);
 
     // All vertices close to some edge, but not equivalent.
-    testNear("0:0, 0:2, 2:2, 2:0",
+    checkNear("0:0, 0:2, 2:2, 2:0",
         "0:0, 1.9999:1, 0:2, 2:2, 2:0",
         0.5 * degree, false);
 
     // Two triangles that backtrack a bit on different edges.  A simple
     // greedy matching algorithm would fail on this example.
-    String t1 = "0.1:0, 0.1:1, 0.1:2, 0.1:3, 0.1:4, 1:4, 2:4, 3:4, " +
-        "2:4.1, 1:4.1, 2:4.2, 3:4.2, 4:4.2, 5:4.2";
-    String t2 = "0:0, 0:1, 0:2, 0:3, 0.1:2, 0.1:1, 0.2:2, 0.2:3, " +
-        "0.2:4, 1:4.1, 2:4, 3:4, 4:4, 5:4";
-    testNear(t1, t2, 1.5 * degree, true);
-    testNear(t1, t2, 0.5 * degree, false);
+    String t1 = "0.1:0, 0.1:1, 0.1:2, 0.1:3, 0.1:4, 1:4, 2:4, 3:4, "
+        + "2:4.1, 1:4.1, 2:4.2, 3:4.2, 4:4.2, 5:4.2";
+    String t2 = "0:0, 0:1, 0:2, 0:3, 0.1:2, 0.1:1, 0.2:2, 0.2:3, "
+        + "0.2:4, 1:4.1, 2:4, 3:4, 4:4, 5:4";
+    checkNear(t1, t2, 1.5 * degree, true);
+    checkNear(t1, t2, 0.5 * degree, false);
   }
 
   static void checkEmptyFullSnapped(S2Loop loop, int level) {
@@ -895,13 +908,13 @@ public strictfp class S2LoopTest extends GeometryTestCase {
    */
   private static void checkTurningAngleInvariants(S2Loop loop) {
     double expected = loop.getTurningAngle();
-    S2Loop loop_copy = new S2Loop(loop);
+    S2Loop loopCopy = new S2Loop(loop);
     for (int i = 0; i < loop.numVertices(); ++i) {
-      loop_copy.invert();
-      assertEquals(-expected, loop_copy.getTurningAngle());
-      loop_copy.invert();
-      loop_copy = rotate(loop_copy);
-      assertEquals(expected, loop_copy.getTurningAngle());
+      loopCopy.invert();
+      assertEquals(-expected, loopCopy.getTurningAngle());
+      loopCopy.invert();
+      loopCopy = rotate(loopCopy);
+      assertEquals(expected, loopCopy.getTurningAngle());
     }
   }
 

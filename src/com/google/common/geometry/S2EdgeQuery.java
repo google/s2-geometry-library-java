@@ -17,15 +17,15 @@ package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.PriorityQueue;
 
 /**
  * S2EdgeQuery is used to find edges or shapes that are crossed by an edge. If you need to query
@@ -35,7 +35,7 @@ import java.util.Objects;
  * <p>This class is not thread-safe.
  */
 @GwtCompatible
-class S2EdgeQuery {
+public class S2EdgeQuery {
   // TODO(eengle): Make this class public once getCandidates has been optimized to avoid boxing edge
   // IDs.
   private final S2ShapeIndex index;
@@ -43,6 +43,18 @@ class S2EdgeQuery {
   private final List<S2ShapeIndex.Cell> cells;
   /** The following vectors are temporary storage used while processing a query. */
   private final S2ShapeIndex.CellIterator iter;
+  /** An {@code Edges} implementation that contains no edges. */
+  private static final Edges EMPTY_EDGE_LIST = new Edges() {
+    @Override
+    public int nextEdge() {
+      return -1;
+    }
+    @Override
+    public boolean isEmpty() {
+      return true;
+    }
+  };
+  
   /** Constructor from an {@link S2ShapeIndex}. */
   public S2EdgeQuery(S2ShapeIndex index) {
     this.index = index;
@@ -51,141 +63,107 @@ class S2EdgeQuery {
   }
   
   /**
-   * Given a query edge AB and a shape {@code shape}, sets {@code edges} equal to a superset of the
-   * edges of {@code shape} that intersect AB. Returns false if {@code edges} is empty.
+   * Given a query edge AB and a shape {@code shape}, returns a superset of the edges of {@code
+   * shape} that intersect AB. Consider using {@link ShapeEdges} instead, if the shape has few
+   * enough edges.
    */
-  public boolean getCandidates(S2Point a, S2Point b, S2ShapeIndex.IdShape shape,
-      ArrayList<Integer> edges) {
+  public Edges getCandidates(S2Point a, S2Point b, final S2ShapeIndex.IdShape shape) {
     // For small loops it is faster to use brute force. The threshold below was determined using the
     // benchmarks in the C++ S2Loop unit test.
     // TODO(eengle) Update this value based on benchmarking in Java.
     int maxBruteForceEdges = 27;
-    edges.clear();
     int maxEdges = shape.shape.numEdges();
     if (maxEdges <= maxBruteForceEdges) {
-      edges.ensureCapacity(maxEdges);
-      for (int i = 0; i < maxEdges; ++i) {
-        edges.add(i);
-      }
-      return true;
+      return new ShapeEdges(shape.shape.numEdges());
     }
     
-    // Compute the set of index cells intersected by the query edge.
     getCells(a, b);
-    if (cells.isEmpty()) {
-      return false;
-    }
-
-    // Gather all the edges that intersect these cells and sort them.
-    int shapeId = shape.id;
-    for (int i = 0; i < cells.size(); ++i) {
-      S2ShapeIndex.Cell cell = cells.get(i);
-      S2ClippedShape clipped = cell.findClipped(shapeId);
-      if (clipped == null) {
-        continue;
-      }
-      edges.ensureCapacity(edges.size() + clipped.numEdges());
-      for (int j = 0; j < clipped.numEdges(); ++j) {
-        edges.add(clipped.edge(j));
-      }
-    }
     
-    if (cells.size() > 1) {
-      // Sort and deduplicate the edge list.
-      Collections.sort(edges);
-      Iterator<Integer> it = edges.iterator();
-      Integer last = null;
-      while (it.hasNext()) {
-        Integer edge = it.next();
-        if (Objects.equals(edge, last)) {
-          it.remove();
-        } else {
-          last = edge;
+    // Compute and return the 'Edges', using different 'Edges' implementations based on how many
+    // cells the query edge covers.
+    if (cells.isEmpty()) {
+      return EMPTY_EDGE_LIST;
+    } else if (cells.size() == 1) {
+      S2ClippedShape clippedShape = cells.get(0).findClipped(shape.id);
+      if (clippedShape == null || clippedShape.numEdges() == 0) {
+        return EMPTY_EDGE_LIST;
+      } else {
+        return new SimpleEdges(clippedShape);
+      }
+    } else {
+      MergedEdges edges = new MergedEdges();
+      for (int i = 0; i < cells.size(); ++i) {
+        S2ClippedShape clippedShape = cells.get(i).findClipped(shape.id);
+        if (clippedShape != null && clippedShape.numEdges() != 0) {
+          edges.add(clippedShape);
         }
       }
+      return edges;
     }
-    return !edges.isEmpty();
   }
 
   /**
-   * Given a query edge AB, sets {@code edgeMap} to a map from the indexed shapes to a superset of
-   * the edges for each shape that intersect AB. Returns false if no shapes intersect AB.
+   * Given a query edge AB, returns a map from the indexed shapes to a superset of the edges for
+   * each shape that intersect AB. Consider using {@link ShapeEdges} instead, if there is just one
+   * indexed shape with few enough edges.
    */
-  public boolean getCandidates(S2Point a, S2Point b, Map<S2Shape, List<Integer>> edgeMap) {
+  public Map<S2Shape, Edges> getCandidates(S2Point a, S2Point b) {
     // If there are only a few edges then it's faster to use brute force. We only bother with this
     // optimization when there is a single shape, since then we can also use some tricks to avoid
     // reallocating the edge map.
     if (index.numShapes() == 1) {
-      // Typically this method is called many times, so it is worth checking whether the edge map is
-      // empty or already consists of a single entry for this shape, and skip clearing 'edgeMap' in
-      // that case.
       S2ShapeIndex.IdShape shape = index.shape(0);
-      ArrayList<Integer> edges;
-      if (edgeMap.size() != 1) {
-        // 'edgeMap' must have been used to query some other S2ShapeIndex, so we need to clear its
-        // current contents.
-        edgeMap.clear();
-        ArrayList<Integer> l = Lists.newArrayList();
-        edgeMap.put(shape.shape, l);
-        edges = l;
-      } else if (edgeMap.get(shape.shape) == null) {
-        ArrayList<Integer> l = Lists.newArrayList();
-        edgeMap.put(shape.shape, l);
-        edges = l;
-      } else {
-        edges = (ArrayList<Integer>) edgeMap.get(shape.shape);
-      }
-      // Note that we leave 'edgeMap' non-empty even if there are no candidates (i.e., there is a
-      // single entry with an empty set of edges). This is an advantage for efficiency since it
-      // avoids memory reallocation.
-      return getCandidates(a, b, shape, edges);
+      Edges edges = getCandidates(a, b, shape);
+      return edges.isEmpty() ? Collections.<S2Shape, Edges>emptyMap()
+          : Collections.<S2Shape, Edges>singletonMap(shape.shape, edges);
     }
     
-    // Compute the set of index cells intersected by the query edge.
     getCells(a, b);
-    edgeMap.clear();
+    
+    // Compute and return the map.  If the map is nonempty, use different 'Edges' implementations
+    // based on how many cells the query edge covers.
     if (cells.isEmpty()) {
-      return false;
-    }
-    
-    // Gather all the edges that intersect those cells.
-    for (int i = 0; i < cells.size(); ++i) {
-      S2ShapeIndex.Cell cell = cells.get(i);
-      for (int s = 0; s < cell.numShapes(); ++s) {
-        S2ClippedShape clipped = cell.clipped(s);
-        S2Shape shape = index.shape(clipped.shapeId()).shape;
-        List<Integer> edges = edgeMap.get(shape);
-        if (edges == null) {
-          List<Integer> edgeList = Lists.newArrayList();
-          edgeMap.put(shape, edgeList);
-          edges = edgeList;
-        }
-        for (int j = 0; j < clipped.numEdges(); ++j) {
-          edges.add(clipped.edge(j));
+      return Collections.emptyMap();
+    } else if (cells.size() == 1) {
+      S2ShapeIndex.Cell cell = cells.get(0);
+      if (cell.numShapes() == 1) {
+        S2ClippedShape clippedShape = cell.clipped(0);
+        if (clippedShape.numEdges() == 0) {
+          return Collections.<S2Shape, Edges>emptyMap();
+        } else {
+          S2Shape shape = index.shape(cell.clipped(0).shapeId()).shape;
+          return Collections.<S2Shape, Edges>singletonMap(shape, new SimpleEdges(clippedShape));
         }
       }
-    }
-    
-    // Sort the edges that were gathered. Note that if there is only one cell, then each clipped
-    // shape's edges are added to edgeMap in sorted order already, because the clipped shape's edges
-    // are stored in sorted order.
-    if (cells.size() > 1) {
-      for (List<Integer> edgeList : edgeMap.values()) {
-        // Sort and de-duplicate 'edgeList'.
-        Collections.sort(edgeList);
-        Iterator<Integer> it = edgeList.iterator();
-        Integer last = null;
-        while (it.hasNext()) {
-          Integer edge = it.next();
-          if (Objects.equals(edge, last)) {
-            it.remove();
-          } else {
-            last = edge;
+      Map<S2Shape, Edges> edgeMap = Maps.newIdentityHashMap();
+      for (int j = 0; j < cell.numShapes(); ++j) {
+        S2ClippedShape clippedShape = cell.clipped(j);
+        if (clippedShape.numEdges() > 0) {
+          S2Shape shape = index.shape(clippedShape.shapeId()).shape;
+          edgeMap.put(shape, new SimpleEdges(clippedShape));
+        }
+      }
+      return edgeMap;
+    } else {
+      Map<S2Shape, Edges> edgeMap = Maps.newIdentityHashMap();
+      for (int i = 0; i < cells.size(); ++i) {
+        S2ShapeIndex.Cell cell = cells.get(i);
+        for (int j = 0; j < cell.numShapes(); ++j) {
+          S2ClippedShape clippedShape = cell.clipped(j);
+          if (clippedShape.numEdges() == 0) {
+            continue;
           }
+          S2Shape shape = index.shape(clippedShape.shapeId()).shape;
+          MergedEdges edges = (MergedEdges) edgeMap.get(shape);
+          if (edges == null) {
+            edges = new MergedEdges();
+            edgeMap.put(shape, edges);
+          }
+          edges.add(clippedShape);
         }
       }
+      return edgeMap;
     }
-    return !edgeMap.isEmpty();
   }
 
   /** Sets cells to the set of index cells intersected by an edge AB. */
@@ -224,6 +202,16 @@ class S2EdgeQuery {
       }
     }
   }
+  
+  /**
+   * Convenience method for calling {@link #getCells(S2Point, R2Vector, S2Point, R2Vector,
+   * S2PaddedCell, List)}.
+   */
+  public boolean getCells(S2Point a, S2Point b, S2PaddedCell root, List<S2ShapeIndex.Cell> cells) {
+    R2Vector aVector = new R2Vector();
+    R2Vector bVector = new R2Vector();
+    return getCells(a, aVector, b, bVector, root, cells);
+  }
 
   /**
    * Adds all cells to {@code cells} that might intersect the query edge from {@code a} to {@code b}
@@ -231,10 +219,10 @@ class S2EdgeQuery {
    * versions of the [A, B] edge projected onto the same cube face as {@code root}.
    */
   @VisibleForTesting
-  boolean getCells(S2PaddedCell root, S2Point a, R2Vector aVector, S2Point b, R2Vector bVector,
+  boolean getCells(S2Point a, R2Vector aVector, S2Point b, R2Vector bVector, S2PaddedCell root, 
       List<S2ShapeIndex.Cell> cells) {
     this.cells.clear();
-    if (S2EdgeUtil.clipToFace(a,  b,  root.id().face(), aVector, bVector)) {
+    if (S2EdgeUtil.clipToFace(a, b, root.id().face(), aVector, bVector)) {
       R2Rect edgeBound = R2Rect.fromPointPair(aVector, bVector);
       if (root.bound().intersects(edgeBound)) {
         getCells(root, edgeBound, aVector, bVector);
@@ -349,8 +337,8 @@ class S2EdgeQuery {
    */
   private void splitBound(R2Rect edgeBound, int uEnd, double u, int vEnd, double v,
       R2Rect[] childBounds) {
-    childBounds[0] = edgeBound;
-    childBounds[1] = edgeBound;
+    childBounds[0] = new R2Rect(edgeBound);
+    childBounds[1] = new R2Rect(edgeBound);
     if (uEnd == 0) {
       childBounds[0].x().setHi(u);
       childBounds[1].x().setLo(u);
@@ -369,5 +357,150 @@ class S2EdgeQuery {
     // assert (edgeBound.contains(childBounds[0]));
     // assert (!childBounds[1].isEmpty());
     // assert (edgeBound.contains(childBounds[1]));
+  }
+  
+  /** An iterator over the sorted unique edge IDs of a shape that may intersect some query edge. */
+  public interface Edges {
+    /** Returns the next edge ID, or throws an exception if empty. */
+    int nextEdge();
+    
+    /** Returns true if there are no more edges. */
+    boolean isEmpty();
+  }
+  
+  /** An {@code Edges} implementation that includes all the edges of a clipped shape. */
+  private static final class SimpleEdges implements Edges {
+    int index;
+    final S2ClippedShape shape;
+    
+    SimpleEdges(S2ClippedShape shape) {
+      index = 0;
+      this.shape = shape;
+    }
+    
+    @Override
+    public int nextEdge() {
+      Preconditions.checkState(!isEmpty(), "Cannot call nextEdge() on empty Edges.");
+      if (index == shape.numEdges()) {
+        return -1;
+      } else {
+        return shape.edge(index++);
+      }
+    }
+
+    @Override
+    public boolean isEmpty() {
+      return index == shape.numEdges();
+    }
+  }
+  
+  /**
+   * An {@code Edges} implementation optimized for merging edges from multiple S2ClippedShapes
+   * already in sorted order.
+   */
+  private static final class MergedEdges implements Edges {
+    final PriorityQueue<Stepper> steppers = new PriorityQueue<Stepper>();
+    /**
+     * The top of the priority queue (the stepper which currently has the least value for {@code
+     * currentEdge}). It is stored separately as an optimization, to avoid repeatedly adding and
+     * polling it from the top of the queue.
+     */
+    Stepper top;
+    
+    /** Note: {@code shape} should have at least one edge. */
+    public void add(S2ClippedShape shape) {
+      Stepper stepper = new Stepper(shape);
+
+      if (top == null) {
+        top = stepper;
+      } else if (top.currentEdge() <= stepper.currentEdge()) {
+        steppers.add(stepper);
+      } else {
+        steppers.add(top);
+        top = stepper;
+      }
+    }
+    
+    @Override
+    public int nextEdge() {
+      Preconditions.checkState(!isEmpty(), "Cannot call nextEdge() on empty Edges.");
+
+      // Store the value to be returned.
+      int nextEdge = top.currentEdge();
+      removeFromPriorityQueue(nextEdge);
+      
+      top.index++;
+      if (top.index == top.clipped.numEdges()) {
+        // Exhausted current stepper. Get the next one.
+        top = steppers.isEmpty() ? null : steppers.poll();
+      } else if (!steppers.isEmpty() && top.currentEdge() > steppers.peek().currentEdge()) {
+        // New top.currentEdge() is no longer the next sorted edge, so swap top with the head of the
+        // queue.
+        steppers.add(top);
+        top = steppers.poll();
+      }
+      
+      return nextEdge;
+    }
+    
+    /**
+     * Updates the priority queue {@code steppers} so that no stepper in the queue will return
+     * {@code n} if {@code currentEdge()} is called on it.
+     */
+    private void removeFromPriorityQueue(int n) {
+      while (!steppers.isEmpty() && steppers.peek().currentEdge() == n) {
+        Stepper stepper = steppers.poll();
+        stepper.index++;
+        if (stepper.index != stepper.clipped.numEdges()) {
+          steppers.add(stepper);
+        }
+      }
+    }
+
+    @Override
+    public boolean isEmpty() {
+      return top == null;
+    }
+  }
+  
+  /** An {@code Edges} that contains all the edges of a shape with the given number of edges. */
+  public static final class ShapeEdges implements Edges {
+    private int edgeIndex = 0;
+    private final int numEdges;
+    
+    ShapeEdges(int numEdges) {
+      this.numEdges = numEdges;
+    }
+    
+    @Override
+    public int nextEdge() {
+      Preconditions.checkState(!isEmpty(), "Cannot call nextEdge() on empty Edges.");
+      return edgeIndex < numEdges ? edgeIndex++ : -1;
+    }
+    
+    @Override
+    public boolean isEmpty() {
+      return edgeIndex == numEdges;
+    }
+  }
+  
+  /** Tracks the current edge index within a clipped shape. */
+  private static final class Stepper implements Comparable<Stepper> {
+    int index;
+    final S2ClippedShape clipped;
+   
+    Stepper(S2ClippedShape shape) {
+      this.index = 0;
+      this.clipped = shape;
+    }
+    
+    int currentEdge() {
+      return clipped.edge(index);
+    }
+    
+    @Override
+    public int compareTo(Stepper that) {
+      return Integer.compare(this.currentEdge(), that.currentEdge());
+    }
   }
 }

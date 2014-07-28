@@ -19,11 +19,8 @@ import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -90,25 +87,26 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
     for (int i = 0; i < edges.size(); ++i) {
       S2Point a = edges.get(i).getStart();
       S2Point b = edges.get(i).getEnd();
-      ArrayList<Integer> candidates = Lists.newArrayList();
       S2EdgeQuery query = new S2EdgeQuery(index);
       // Shape id has to be 0 because only one shape was inserted.
-      query.getCandidates(a, b, index.shape(0), candidates);
+      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, index.shape(0));
       
       // Verify that the second version of getCandidates returns the same result.
-      LinkedHashMap<S2Shape, List<Integer>> edgeMap = Maps.newLinkedHashMap();
-      query.getCandidates(a, b, edgeMap);
+      Map<S2Shape, S2EdgeQuery.Edges> edgeMap = query.getCandidates(a, b);
       assertEquals(1, edgeMap.size());
       assertTrue(edgeMap.containsKey(shape));
-      assertEquals(edgeMap.get(shape), candidates);
-      assertFalse(candidates.isEmpty());
+      List<Integer> candidatesList = edgesToList(candidates);
+      List<Integer> edgeMapList = edgesToList(edgeMap.get(shape));
+      assertEquals(edgeMapList, candidatesList);
+      assertFalse(candidatesList.isEmpty());
+      
       
       // Now check the actual candidates.
       // Assert that 'candidates' is sorted.
-      assertTrue(Ordering.natural().isOrdered(candidates));
-      assertTrue(candidates.get(0) >= 0);
-      assertTrue(candidates.get(candidates.size() - 1) < shape.numEdges());
-      numCandidates += candidates.size();
+      assertTrue(Ordering.natural().isOrdered(candidatesList));
+      assertTrue(candidatesList.get(0) >= 0);
+      assertTrue(candidatesList.get(candidatesList.size() - 1) < shape.numEdges());
+      numCandidates += candidatesList.size();
       List<Integer> missingCandidates = Lists.newArrayList();
       for (int j = 0; j < shape.numEdges(); ++j) {
         S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
@@ -118,7 +116,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
         if (c.equals(a) || c.equals(b) || d.equals(a) || d.equals(b)
             || S2EdgeUtil.robustCrossing(a, b, c, d) > 0) {
           ++numNearbyPairs;
-          if (!candidates.contains(i)) {
+          if (!candidatesList.contains(i)) {
             missingCandidates.add(i);
           }
         } else {
@@ -136,6 +134,15 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
     // There is nothing magical about this particular ratio; this check exists to catch changes that
     // dramatically increase the number of candidates.
     assertTrue(numCandidates < 3 * numNearbyPairs);
+  }
+  
+  /** Returns a list of all edges in {@code candidates}. */
+  private static List<Integer> edgesToList(S2EdgeQuery.Edges candidates) {
+    List<Integer> list = Lists.newArrayList();
+    while (!candidates.isEmpty()) {
+      list.add(candidates.nextEdge());
+    }
+    return list;
   }
   
   /**
@@ -212,7 +219,6 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
   public void testGetCandidatesMultipleShapes() {
     S2Point a = randomPoint();
     S2Point b = randomPoint();
-    Map<S2Shape, List<Integer>> edgeMap = Maps.newHashMap();
     S2ShapeIndex.Options options = new S2ShapeIndex.Options();
     options.setMaxEdgesPerCell(1);
     S2ShapeIndex index = new S2ShapeIndex(options);
@@ -227,7 +233,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
     }
     
     S2EdgeQuery edgeQuery = new S2EdgeQuery(index);
-    edgeQuery.getCandidates(a, b, edgeMap);
+    Map<S2Shape, S2EdgeQuery.Edges> edgeMap = edgeQuery.getCandidates(a, b);
     assertEquals(numShapes, edgeMap.size());
     for (int i = 0; i < index.numShapes(); ++i) {
       assertTrue(edgeMap.containsKey(index.shape(i).shape));
@@ -235,7 +241,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
   }
   
   /** 
-   * Tests that {@link S2EdgeQuery#getCells(S2PaddedCell, S2Point, R2Vector, S2Point, R2Vector,
+   * Tests that {@link S2EdgeQuery#getCells(S2Point, R2Vector, S2Point, R2Vector, S2PaddedCell,
    * List)} returns the correct value.
    */
   public void testGetCellsRegression() {
@@ -256,7 +262,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       for (int i = 0; i < numSegments; ++i) {
         S2PaddedCell pCell = new S2PaddedCell(S2CellId.fromFace(segments[i].face), 0);
         List<S2ShapeIndex.Cell> cells = Lists.newArrayList();
-        edgeQuery.getCells(pCell, a, segments[i].a, b, segments[i].b, cells);
+        edgeQuery.getCells(a, segments[i].a, b, segments[i].b, pCell, cells);
         assertFalse(cells.isEmpty());
       }
     }

@@ -29,6 +29,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
@@ -37,7 +38,12 @@ import java.util.Random;
  */
 @GwtCompatible(emulated = true)
 public strictfp class GeometryTestCase extends TestCase {
+  /** Desired ratio between the radii of crossing loops. */
+  private static final double DEFAULT_CROSSING_RADIUS_RATIO = 10.0;
 
+  /** The default radius for loops. */
+  static final S1Angle DEFAULT_RADIUS = kmToAngle(10.0);
+  
   public Random rand;
 
   @Override
@@ -335,5 +341,133 @@ public strictfp class GeometryTestCase extends TestCase {
     new ObjectOutputStream(bytes).writeObject(value);
     ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()));
     return (E) in.readObject();
+  }
+  
+  /**
+   * Returns a pair of nested loops, such that the second loop in the returned list is nested within
+   * the first.  Both loops are centered at 'p', and each has 'numVertices' vertices.  The outer 
+   * loop has the given radius 'outerRadius'.  The inner loop is inset by a small distance ('gap') 
+   * from the outer loop which is approximately equal to 'gapEdgeMultiple' times the edge length of
+   * the outer loop.  (This allows better spatial indexing, which becomes less effective at pruning 
+   * intersection candidates as the loops get closer together.)
+   * 
+   * <p>Caveats: The gap is actually measured to the incircle of the outer loop, and the gap is
+   * clamped if necessary to prevent the inner loop from becoming vanishingly small.  (Rule of
+   * thumb: to obtain a 'gapEdgeMultiple' of 'm', the loops must have approximately 7 * m
+   * vertices or more.
+   */
+  static List<S2Loop> makeNestedLoopPair(S1Angle outerRadius, double gapEdgeMultiple, 
+      int numVertices, S2Point p) {
+    // The inner loop is inscribed within the incircle (maximum inscribed circle) of the outer
+    // loop.
+    S1Angle incircleRadius =
+        S1Angle.radians(outerRadius.radians() * Math.cos(Math.PI / numVertices));
+    S1Angle edgeLen = S1Angle.radians(outerRadius.radians() * (2 * Math.PI / numVertices));
+
+    // If the edge count is too small, it may not be possible to inset the inner loop by the given
+    // multiple of the edge length.  We handle this by clamping 'innerRadius' to be at least 1% of
+    // 'outerRadius'.
+    S1Angle innerRadius = 
+        S1Angle.radians(Math.max(incircleRadius.radians() - gapEdgeMultiple * edgeLen.radians(),
+            0.01 * incircleRadius.radians()));
+
+    // Generate two loops with the same center.
+    return Arrays.asList(S2Loop.makeRegularLoop(p, outerRadius, numVertices),
+        S2Loop.makeRegularLoop(p, innerRadius, numVertices));
+  }
+
+  /**
+   * Returns a pair of crossing loops. The first loop in the returned list will have center 'aPoint'
+   * and radius 'aRadius'.  The second will have its center along the arc containing aPoint and
+   * bPoint, and it will have radius 'bRadius'.  Both loops have 'numVertices' vertices.
+   */
+  List<S2Loop> makeCrossingLoopPair(S1Angle aRadius, S1Angle bRadius, int numVertices,
+      S2Point aPoint, S2Point bPoint) {
+    // The edges of each loop are bounded by two circles, one circumscribed around the loop (the
+    // circumcircle), and the other inscribed within the loop (the incircle).  Our strategy is to
+    // place the smaller loop such that its incircle crosses both circles of the larger loop.
+    double maxRadius = Math.max(aRadius.radians(), bRadius.radians());
+    double minRadius = Math.min(aRadius.radians(), bRadius.radians());
+
+    // Check that the smaller loop is big enough that its incircle can span the gap between the
+    // incircle and the circumcircle of the larger loop. The incircle factor is the loop radius
+    // divided by its incircle radius.
+    double incircleFactor = Math.cos(Math.PI / numVertices);
+    assertTrue(minRadius * incircleFactor > maxRadius * (1 - incircleFactor));
+
+    // Compute the range of distances between the two loop centers such that the incircle of the
+    // smaller loop crosses both circles of the larger loop.
+    double minDist = maxRadius - incircleFactor * minRadius;
+    double maxDist = incircleFactor * (minRadius + maxRadius);
+
+    // Now generate a pair of loops whose centers are separated by distances in the given range.
+    // Loop orientations are chosen randomly.
+    Random rand = new Random(0);
+    S1Angle angle = S1Angle.radians(minDist + rand.nextDouble() * (maxDist - minDist));
+    S2Point bCenter = S2EdgeUtil.interpolateAtDistance(angle, aPoint, bPoint);    
+    return Arrays.asList(S2Loop.makeRegularLoop(aPoint, aRadius, numVertices),
+        S2Loop.makeRegularLoop(bCenter, bRadius, numVertices));
+  }
+  
+  /**
+   * Returns the pair of crossing loops given by getCrossingLoopPair() when using default values for
+   * the radii of the two loops.  The loops will have centers 'aPoint' and 'bPoint', and
+   * will have 'numVertices' vertices each.
+   */
+  List<S2Loop> makeCrossingLoopPairDefault(int numVertices, S2Point aPoint, S2Point bPoint) {
+    S1Angle aRadius = DEFAULT_RADIUS;
+    S1Angle bRadius = S1Angle.radians(aRadius.radians() * DEFAULT_CROSSING_RADIUS_RATIO);
+    return makeCrossingLoopPair(aRadius, bRadius, numVertices, aPoint, bPoint);
+  }
+  
+  /**
+   * Returns a pair of disjoint loops . The loops are constructed so that it is impossible to
+   * determine the relationship between them based solely on their bounds (they could be nested,
+   * crossing, or disjoint).  The outer loop (1st loop in returned list) will look somewhat
+   * like the outline of the  letter "C": it consists of two nested loops (the "outside shell" and
+   * the "inside shell"), which each have a single edge removed and are then joined together to form
+   * a single loop.  The inner loop (2nd loop in returned list) is then nested within the inside 
+   * shell of the outer loop.
+   * 
+   * <p>The outer loop has 'numVertices' vertices split between its outside and inside shells.  The
+   * radius of the outside shell is 'outerRadius', while the radius of the inside shell is
+   * (0.9 * outerRadius).
+   * 
+   * <p>The inner loop has 'numVertices' vertices, and is separated from the inside shell of the
+   * outer loop by a small distance ("gap") which is approximately equal to 'gapMultipleEdges'
+   * times the edge length of the inside shell.  (See getNestedLoopPair for details.)
+   */
+  static List<S2Loop> makeDisjointLoopPair(S1Angle outerRadius, double gapEdgeMultiple, 
+      int numVertices, S2Point p) {
+    // Compute the radius of the inside shell of the outer loop, the edge length of the outer
+    // shell, and finally the incircle radius of the inside shell (this is the maximum possible
+    // radius of the inner loop).
+    S1Angle outerInsideRadius = 
+        S1Angle.radians(0.9 * outerRadius.radians() * Math.cos(2 * Math.PI / numVertices));
+    S1Angle edgeLen = S1Angle.radians(outerInsideRadius.radians() * (Math.PI / numVertices));
+    S1Angle incircleRadius =
+        S1Angle.radians(outerInsideRadius.radians() * Math.cos(2 * Math.PI / numVertices));
+
+    // See comments in getNestedLoopPair().
+    S1Angle innerRadius = 
+        S1Angle.radians(Math.max(incircleRadius.radians() - gapEdgeMultiple * edgeLen.radians(),
+            0.01 * incircleRadius.radians()));
+
+    S2Loop outerOutside = S2Loop.makeRegularLoop(p, outerRadius, Math.max(4, numVertices / 2));
+    S2Loop outerInside = 
+        S2Loop.makeRegularLoop(p, outerInsideRadius, Math.max(4, numVertices / 2));
+    List<S2Point> vertices = 
+        Lists.newArrayListWithCapacity(outerInside.numVertices() + outerOutside.numVertices());
+
+    // Join together the outside and inside shells to form the outer loop.
+    for (int j = 0; j < outerInside.numVertices(); ++j) {
+      vertices.add(outerInside.vertex(j));
+    }
+    Lists.reverse(vertices);
+    for (int j = 0; j < outerOutside.numVertices(); ++j) {
+      vertices.add(outerOutside.vertex(j));
+    }
+    
+    return Arrays.asList(new S2Loop(vertices), S2Loop.makeRegularLoop(p, innerRadius, numVertices));
   }
 }
