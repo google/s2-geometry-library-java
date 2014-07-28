@@ -167,6 +167,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * necessarily unit length).
    */
   public static S2CellId fromPoint(S2Point p) {
+    // TODO(eengle): Try to optimize this method.
     int face = S2Projections.xyzToFace(p);
     R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
     int i = S2Projections.stToIj(PROJ.uvToST(uv.x()));

@@ -112,7 +112,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private static final String OVERLAP_CENTER_HOLE = "1.2:0.8, 1.8:0.8, 1.8:0.2, 1.2:0.2;";
 
   // Two rectangles that are "adjacent", but rather than having common edges,
-  // those edges are slighly off. A third rectangle that is not adjacent to
+  // those edges are slightly off. A third rectangle that is not adjacent to
   // either of the first two.
   private static final String ADJACENT0 = "0:1, 1:1, 2:1, 2:0, 1:0, 0:0;";
   private static final String ADJACENT1 = "0:2, 1:2, 2:2, 2:1.01, 1:0.99, 0:1.01;";
@@ -810,7 +810,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     S2Polygon p2 = makePolygon(RECTANGLE2 + RECTANGLE1);
     assertEquals(0, p1.compareTo(p2));
 
-    // Polygons with same loops, but in different order and containins a
+    // Polygons with same loops, but in different order and containing a
     // different number of points.
     S2Polygon p3 = makePolygon(RECTANGLE1 + TRIANGLE);
     S2Polygon p4 = makePolygon(TRIANGLE + RECTANGLE1);
@@ -986,7 +986,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   /**
    * Verifies that clipBoundary can succeed with duplicate adjacent vertices. Although such a case
-   * means the polygon is invalid, it is common to fix invalidity issues by doign a self-
+   * means the polygon is invalid, it is common to fix invalidity issues by doing a self-
    * intersection to node crossings and drop duplicates.
    */
   public void testDuplicatePointClipping() {
