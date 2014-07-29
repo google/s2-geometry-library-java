@@ -1177,7 +1177,7 @@ public strictfp class S2ShapeIndex {
    * cursor, where accessing properties at the current position does not alter the position of the
    * cursor.
    */
-  static class CellIterator {
+  public static class CellIterator {
     private S2ShapeIndex index;
     private int pos;
 
