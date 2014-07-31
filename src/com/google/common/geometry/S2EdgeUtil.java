@@ -91,6 +91,10 @@ public strictfp class S2EdgeUtil {
    */
   public static final double EDGE_CLIP_ERROR_UV_DIST = 2.25 * S2.DBL_EPSILON;
 
+  /** Max error allowed when checking if a loop boundary approximately intersects a target cell */
+  public static final double MAX_CELL_EDGE_ERROR =
+      S2EdgeUtil.FACE_CLIP_ERROR_UV_COORD + S2EdgeUtil.INTERSECTS_RECT_ERROR_UV_DIST;
+
   /**
    * Used to efficiently test a fixed edge AB against an edge chain. To use it, initialize with the
    * edge AB, call {@link #restartAt(S2Point)} with the first vertex of the chain, followed by

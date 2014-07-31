@@ -59,10 +59,6 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   /** Max angle that intersections can be off by and yet still be considered collinear. */
   public static final double MAX_INTERSECTION_ERROR = 1e-15;
 
-  /** Max error allowed when checking if a loop boundary approximately intersects a target cell */
-  private static final double MAX_CELL_EDGE_ERROR =
-      S2EdgeUtil.FACE_CLIP_ERROR_UV_COORD + S2EdgeUtil.INTERSECTS_RECT_ERROR_UV_DIST;
-
   /** The single vertex that defines a loop that contains no area. */
   static final S2Point EMPTY_VERTEX = S2Point.Z_POS;
 
@@ -698,8 +694,9 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
       return false;
     }
 
-    // Special cases to handle either loop being empty or full.
-    if (isEmptyOrFull() || b.isEmptyOrFull()) {
+    // Special cases to handle either loop being empty or full. We check if b.numVertices() < 2
+    // in order to also handle the case where b.numVertices() == 0.
+    if (isEmptyOrFull() || b.numVertices() < 2) {
       return isFull() || b.isEmpty();
     }
 
@@ -1100,12 +1097,12 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     }
 
     // Otherwise check whether any of the edges intersect 'target'.
-    R2Rect bound = target.getBoundUV().expanded(MAX_CELL_EDGE_ERROR);
+    R2Rect bound = target.getBoundUV().expanded(S2EdgeUtil.MAX_CELL_EDGE_ERROR);
     R2Vector v0 = new R2Vector(), v1 = new R2Vector();
     for (int i = 0; i < aNumClipped; ++i) {
       int ai = aClipped.edge(i);
       if (S2EdgeUtil.clipToPaddedFace(vertex(ai),  vertex(ai + 1), target.face(),
-          MAX_CELL_EDGE_ERROR, v0, v1) && S2EdgeUtil.intersectsRect(v0, v1, bound)) {
+          S2EdgeUtil.MAX_CELL_EDGE_ERROR, v0, v1) && S2EdgeUtil.intersectsRect(v0, v1, bound)) {
         return true;
       }
     }

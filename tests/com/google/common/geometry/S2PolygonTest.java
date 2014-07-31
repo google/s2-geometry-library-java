@@ -22,6 +22,8 @@ import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -178,6 +180,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private final S2Polygon empty = new S2Polygon();
   private final S2Polygon full = new S2Polygon(S2Loop.full());
 
+  private static final int VALIDITY_ITERS = 100;
+
   private static void checkContains(String aText, String bText) {
     S2Polygon a = makeVerbatimPolygon(aText);
     S2Polygon b = makeVerbatimPolygon(bText);
@@ -298,6 +302,205 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
         "10:44, 10:46, 12:46, 12:45, 12:44;",
         "10:44, 10:46, 12:46, 12:45, 12:44;")
   };
+
+  public void testIsValidUnitLength() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(1 + random(6), 3);
+      List<S2Point> loop = loops.get(random(loops.size()));
+      int index = random(loop.size());
+      S2Point p = loop.get(index);
+      switch (random(3)) {
+        case 0:
+          p = new S2Point(0, 0, 0);
+          break;
+        case 1:
+          p = S2Point.mul(p, 1e-30 * Math.pow(1e60, rand.nextDouble()));
+          break;
+        default:
+          p = new S2Point(Double.NaN, Double.NaN, Double.NaN);
+          break;
+      }
+      loop.set(index, p);
+      checkInvalid(loops, "unit length");
+    }
+  }
+
+  public void testIsValidVertexCount() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = Lists.newArrayList();
+      List<S2Point> loopPoints = Lists.newArrayList();
+      if (oneIn(2)) {
+        loopPoints.add(randomPoint());
+        loopPoints.add(randomPoint());
+      }
+      loops.add(loopPoints);
+      checkInvalid(loops, "at least 3 vertices");
+    }
+  }
+
+  public void testIsValidDuplicateVertex() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(1, 3);
+      List<S2Point> loop = loops.get(0);
+      int n = loop.size();
+      int i = random(n);
+      int j = random(n - 1);
+      loop.set(i, loop.get(j + (j >= i ? 1 : 0)));
+      checkInvalid(loops, "duplicate vertex");
+    }
+  }
+
+  public void testIsValidSelfIntersection() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      // Use multiple loops so that we can test both holes and shells. We need at least 5 vertices
+      // so that the modified edges don't intersect any nested loops.
+      List<List<S2Point>> loops = getConcentricLoops(1 + random(6), 5);
+      List<S2Point> loop = loops.get(random(loops.size()));
+      int n = loop.size();
+      int i = random(n);
+      S2Point temp = loop.get(i);
+      loop.set(i, loop.get((i + 1) % n));
+      loop.set((i + 1) % n, temp);
+      checkInvalid(loops, "crosses edge");
+    }
+  }
+
+  public void testIsValidEmptyLoop() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(random(5), 3);
+      List<S2Point> emptyLoop = Lists.newArrayList();
+      loops.add(emptyLoop);
+      checkInvalid(loops, "Non-empty, non-full loops must have at least 3 vertices");
+    }
+  }
+
+  public void testIsValidFullLoop() {
+    S2Loop fullLoop = S2Loop.full();
+    List<S2Point> fullLoopPoints = Lists.newArrayList();
+    for (int i = 0; i < fullLoop.numVertices(); ++i) {
+      fullLoopPoints.add(fullLoop.vertex(i));
+    }
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      // This is only an error if there is at least one other loop.
+      List<List<S2Point>> loops = getConcentricLoops(1 + random(5), 3);
+      loops.add(fullLoopPoints);
+      checkInvalid(loops, "full loop appears in non-full polygon");
+    }
+  }
+
+  public void testIsValidLoopsCrossing() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(2, 4);
+      // Both loops have the same number of vertices, and vertices at the same index position are
+      // collinear with the center point, so we can create a crossing by simply exchanging two
+      // vertices at the same index position.
+      int n = loops.get(0).size();
+      int i = random(n);
+      S2Point temp = loops.get(0).get(i);
+      loops.get(0).set(i, loops.get(1).get(i));
+      loops.get(1).set(i, temp);
+      if (oneIn(2)) {
+        // By copying the two adjacent vertices from one loop to the other, we can ensure that the
+        // crossings happen at vertices rather than edges.
+        loops.get(0).set((i + 1) % n, loops.get(1).get((i + 1) % n));
+        loops.get(0).set((i + n - 1) % n, loops.get(1).get((i + n - 1) % n));
+      }
+      checkInvalid(loops, "crosses loop");
+    }
+  }
+
+  public void testIsValidDuplicateEdge() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(2, 4);
+      int n = loops.get(0).size();
+      List<S2Point> loopA = loops.get(0);
+      List<S2Point> loopB = loops.get(1);
+      if (oneIn(2)) {
+        // Create a shared edge (same direction in both loops).
+        int i = random(n);
+        loopA.set(i, loopB.get(i));
+        loopA.set((i + 1) % n, loopB.get((i + 1) % n));
+      } else {
+        // Create a reversed edge (opposite direction in either loop) by cutting loop 0 into two
+        // halves along one of its diagonals and replacing both loops with the result.
+        int split = 2 + random(n - 3);
+        loopB.clear();
+        loopB.add(loopA.get(0));
+        for (int s = split; s < n; ++s) {
+          loopB.add(loopA.get(s));
+        }
+      }
+      checkInvalid(loops, "has duplicate");
+    }
+  }
+
+  /**
+   * Checks that the S2Loop / S2Polygon constructors, and {@code isValid()} methods don't crash when
+   * they receive arbitrary invalid input.  (We don't test large inputs; it is assumed that the
+   * client enforces their own size limits before even attempting to construct geometric objects.)
+   */
+  public void testIsValidFuzz() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      int numLoops = 1 + random(10);
+      List<List<S2Point>> loops = Lists.newArrayList();
+      for (int i = 0; i < numLoops; ++i) {
+        int numVertices = random(10);
+        List<S2Point> loop = Lists.newArrayList();
+        while (loop.size() < numVertices) {
+          // Since the number of vertices is random, we automatically test empty loops, full loops,
+          // and invalid vertex counts. Also, since most vertices are random, we automatically get
+          // self-intersections and loop crossings. That leaves zero and NaN vertices, duplicate
+          // vertices, and duplicate edges to be created explicitly.
+          if (oneIn(10)) {
+            // Zero vertex.
+            loop.add(new S2Point(0, 0, 0));
+          } else if (oneIn(10)) {
+            // NaN vertex.
+            loop.add(new S2Point(Double.NaN, Double.NaN, Double.NaN));
+          } else if (oneIn(10) && !loop.isEmpty()) {
+            // Duplicate vertex.
+            loop.add(loop.get(random(loop.size())));
+          } else if (oneIn(10) && loop.size() + 2 <= numVertices && loops.size() > 0) {
+            // Try to copy an edge from a random loop.
+            List<S2Point> other = loops.get(random(loops.size()));
+            int n = other.size();
+            if (n >= 2) {
+              int k0 = random(n);
+              int k1 = (k0 + 1) % n;
+              if (oneIn(2)) {
+                // Copy the reverse of this edge.
+                int temp = k0;
+                k0 = k1;
+                k1 = temp;
+              }
+              loop.add(other.get(k0));
+              loop.add(other.get(k1));
+            }
+          } else {
+            // Add a random non-unit-length point.
+            S2Point p = randomPoint();
+            loop.add(S2Point.mul(p, 1e-30 * Math.pow(1e60, rand.nextDouble())));
+          }
+        }
+        loops.add(loop);
+      }
+      // We could get any error message.
+      checkInvalid(loops, "");
+    }
+  }
+
+  private static void checkInvalid(List<List<S2Point>> invalidLoops, String snippet) {
+    List<S2Loop> loops = Lists.newArrayList();
+    for (int i = 0; i < invalidLoops.size(); ++i) {
+      loops.add(new S2Loop(invalidLoops.get(i)));
+    }
+    Collections.shuffle(loops);
+    S2Polygon polygon = new S2Polygon(loops);
+    S2Error error = new S2Error();
+    assertTrue(polygon.findValidationError(error));
+    assertTrue("Actual Error: " + error.text() + ",\n but expected substring: " + snippet,
+        error.text().indexOf(snippet) != -1);
+  }
 
   public void testOperations() {
     S2Polygon farSouth = new S2Polygon();
@@ -994,5 +1197,142 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     S2Polygon fixed = new S2Polygon();
     fixed.initToIntersection(p, p);
     assertEquals(makePolygon("0:0, 0:4, 4:4, 4:0"), fixed);
+  }
+
+  // Create 'numLoops' nested regular loops around a common center point. All loops have the same
+  // number of vertices (at least 'minVertices'). Furthermore, the vertices at the same index
+  // position are collinear with the common center point of all the loops. The loop radii decrease
+  // exponentially in order to prevent accidental loop crossings when one of the loops is
+  // modified.
+  private List<List<S2Point>> getConcentricLoops(int numLoops, int minVertices) {
+    List<List<S2Point>> loops = Lists.newArrayList();
+    // Radii decrease exponentially.
+    assert(numLoops <= 10);
+    S2Point center = randomPoint();
+    int numVertices = minVertices + random(10);
+    for (int i = 0; i < numLoops; ++i) {
+      S1Angle radius = S1Angle.degrees(80 * Math.pow(0.1, i));
+      S2Loop loop = S2Loop.makeRegularLoop(center, radius, numVertices);
+      List<S2Point> loopPoints = Lists.newArrayList();
+      for (int j = 0; j < loop.numVertices(); ++j) {
+        loopPoints.add(loop.vertex(j));
+      }
+      loops.add(loopPoints);
+    }
+    return loops;
+  }
+
+  public void testSplitting() {
+    // It takes too long to test all the polygons in debug mode, so we just pick out some of the
+    // more interesting ones.
+    splitAndAssemble(near10);
+    splitAndAssemble(nearH3210);
+    splitAndAssemble(south0ab);
+    splitAndAssemble(south210b);
+    splitAndAssemble(nf1n10f2s10abc);
+    splitAndAssemble(nf2n2f210s210ab);
+    splitAndAssemble(farHSouthH);
+
+    // TODO(eengle): Fix the remaining tests. This was confirmed to be a problem before the
+    // S2ShapeIndex was used.
+    // splitAndAssemble(southH);
+    // splitAndAssemble(farH);
+    // splitAndAssemble(southH20abc);
+    // splitAndAssemble(farH3210);
+  }
+
+  private void splitAndAssemble(S2Polygon polygon) {
+    S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_XOR);
+    S2Polygon expected = new S2Polygon();
+    builder.addPolygon(polygon);
+    assertTrue(builder.assemblePolygon(expected, null));
+
+    for (int iter = 0; iter < 10; ++iter) {
+      S2RegionCoverer coverer = new S2RegionCoverer();
+      // Compute the minimum level such that the polygon's bounding cap is guaranteed to be cut.
+      double diameter = 2 * polygon.getCapBound().angle().radians();
+      int minLevel = PROJ.maxDiag.getMinLevel(diameter);
+
+      // TODO(user): Choose a level that will have up to 256 cells in the covering.
+      int level = minLevel + random(4);
+      coverer.setMinLevel(minLevel);
+      coverer.setMaxLevel(level);
+      coverer.setMaxCells(500);
+
+      ArrayList<S2CellId> cells = Lists.newArrayList();
+      coverer.getCovering(polygon, cells);
+      S2CellUnion covering = new S2CellUnion();
+      covering.initFromCellIds(cells);
+      checkCovering(polygon, covering, false);
+      checkCoveringIsConservative(polygon, cells);
+      logger.info(cells.size() + " cells in covering");
+      List<S2Polygon> pieces = Lists.newArrayList();
+      for (int i = 0; i < cells.size(); ++i) {
+        S2Cell cell = new S2Cell(cells.get(i));
+        S2Polygon window = new S2Polygon(cell);
+        S2Polygon piece = new S2Polygon();
+        piece.initToIntersection(polygon, window);
+        pieces.add(piece);
+        logger.info("\nPiece " + i + ":\n Window: " + window.toString() + "\n Piece: "
+            + piece.toString());
+      }
+
+      // Now we repeatedly remove two random pieces, compute their union, and insert the result as a
+      // new piece until only one piece is left.
+      //
+      // We don't use S2Polygon.destructiveUnion() because it joins the pieces in a mostly
+      // deterministic order. We don't just randomly shuffle the pieces and repeatedly join the
+      // last two pieces because this always joins a single original piece to the current union
+      // rather than doing the unions according to some random tree structure.
+      while (pieces.size() > 1) {
+        S2Polygon a = choosePiece(pieces);
+        S2Polygon b = choosePiece(pieces);
+        S2Polygon c = new S2Polygon();
+        c.initToUnion(a, b);
+        pieces.add(c);
+        logger.info("\nJoining piece a: " + a.toString()
+            + "\n With piece b: " + b.toString()
+            + "\n To get piece c: " + c.toString() + " at iteration " + iter);
+      }
+      S2Polygon result = pieces.get(0);
+
+      // The moment of truth!
+      assertTrue("\nActual:\n" + result.toString() + "\nExpected:\n" + expected.toString(),
+          expected.boundaryNear(result, 1e-15));
+    }
+  }
+
+  /** Removes a random polygon from {@code pieces} and returns it. */
+  private S2Polygon choosePiece(List<S2Polygon> pieces) {
+    int i = random(pieces.size());
+    S2Polygon result = pieces.get(i);
+    pieces.remove(i);
+    return result;
+  }
+
+  /**
+   * Check that contains(S2Cell) and mayIntersect(S2Cell) are implemented conservatively, by
+   * comparing against the contains/intersect result with the 'cell polygon' defined by the four
+   * cell vertices. Please note that the cell polygon is *not* an exact representation of the
+   * S2Cell: cell vertices are rounded from their true mathematical positions, which leads to tiny
+   * cracks and overlaps between the cell polygons at different cell levels. That is why
+   * contains(S2Cell) and mayIntersect(S2Cell) cannot be implemented by simply converting the cell
+   * to an S2Polygon. But it is still useful to do this sanity check. In particular:
+   * <ul>
+   * <li>If contains(cell) is true, the polygon must contain the cell polygon.
+   * <li>If the polygon intersects the cell polygon, then mayIntersect(cell) must return true.
+   * </ul>
+   */
+  private static void checkCoveringIsConservative(S2Polygon polygon, List<S2CellId> cells) {
+    for (int i = 0; i < cells.size(); ++i) {
+      S2Cell cell = new S2Cell(cells.get(i));
+      S2Polygon cellPoly = new S2Polygon(cell);
+      if (polygon.contains(cell)) {
+        assertTrue(polygon.contains(cellPoly));
+      }
+      if (polygon.intersects(cellPoly)) {
+        assertTrue(polygon.mayIntersect(cell));
+      }
+    }
   }
 }
