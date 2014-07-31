@@ -35,8 +35,9 @@ import javax.annotation.Nullable;
 @GwtCompatible
 public strictfp class S2ShapeIndex {
   /**
-   * The amount by which cells are "padded" to compensate for numerical errors when clipping line
-   * segments to cell boundaries. The total error when clipping an edge comes from two sources:
+   * The amount in UV coordinates by which cells are "padded" to compensate for numerical errors
+   * when clipping line segments to cell boundaries. The total error when clipping an edge comes
+   * from two sources:
    *
    * <ol>
    * <li>Clipping the original spherical edge to a cube face (the "face edge"). The maximum error in
@@ -48,8 +49,7 @@ public strictfp class S2ShapeIndex {
    * <p>Finally, since we encounter the same errors when clipping query edges, we double the total
    * error so that we only need to pad edges during indexing and not at query time.
    */
-  @VisibleForTesting
-  static final double CELL_PADDING =
+  public static final double CELL_PADDING =
       2 * (S2EdgeUtil.FACE_CLIP_ERROR_UV_COORD + S2EdgeUtil.EDGE_CLIP_ERROR_UV_COORD);
 
   /**
