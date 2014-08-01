@@ -196,6 +196,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // assert (isValid());
   }
 
+  /** Returns the same instance after initializing transient fields. */
+  private Object readResolve() {
+    initIndex();
+    return this;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (o instanceof S2Polygon) {

@@ -22,6 +22,11 @@ import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -1311,7 +1316,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   }
 
   /**
-   * Check that contains(S2Cell) and mayIntersect(S2Cell) are implemented conservatively, by
+   * Checks that contains(S2Cell) and mayIntersect(S2Cell) are implemented conservatively, by
    * comparing against the contains/intersect result with the 'cell polygon' defined by the four
    * cell vertices. Please note that the cell polygon is *not* an exact representation of the
    * S2Cell: cell vertices are rounded from their true mathematical positions, which leads to tiny
@@ -1334,5 +1339,36 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
         assertTrue(polygon.mayIntersect(cell));
       }
     }
+  }
+
+  /**
+   * Checks that the index is properly deserialized.
+   */
+  public void testIndexDeserialization() throws IOException, ClassNotFoundException {
+    S2Point center = S2Point.X_POS;
+    S1Angle angle = S1Angle.radians(10);
+    int numVertices = 10;
+    S2Polygon polygon = new S2Polygon(S2Loop.makeRegularLoop(center, angle, numVertices));
+    // Initialize the index.
+    polygon.index.iterator();
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    ObjectOutputStream out = new ObjectOutputStream(output);
+
+    // Serialize the object.
+    out.writeObject(polygon);
+    out.close();
+
+    // Deserialize the object.
+    S2Polygon copy = new S2Polygon();
+    ByteArrayInputStream input = new ByteArrayInputStream(output.toByteArray());
+    ObjectInputStream in = new ObjectInputStream(input);
+    copy = (S2Polygon) in.readObject();
+    in.close();
+
+    assertTrue(copy.index != null);
+    assertTrue(copy.index.iterator().locate(S2Point.X_POS));
+    assertTrue(copy.index.numShapes() == 1);
+    assertTrue(copy.getNumVertices() == numVertices);
+    assertTrue(copy.contains(S2Point.X_POS));
   }
 }
