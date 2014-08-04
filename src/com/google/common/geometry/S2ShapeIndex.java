@@ -790,9 +790,9 @@ public strictfp class S2ShapeIndex {
    * </ul>
    */
   @VisibleForTesting
-  abstract static class Cell {
+  public abstract static class Cell {
     /**
-     * Returns an Cell with a copy of the given shapes, specialized for the number of elements.
+     * Returns a Cell with a copy of the given shapes, specialized for the number of elements.
      */
     static Cell create(int size, S2ClippedShape[] tempClippedShapes) {
       switch (size) {
@@ -816,14 +816,16 @@ public strictfp class S2ShapeIndex {
     /**
      * Returns the number of clipped shapes in this cell.
      */
-    abstract int numShapes();
+    @VisibleForTesting
+    public abstract int numShapes();
 
     /**
      * Returns the clipped shape at the given index. Shapes are kept sorted in increasing order of
      * shape id.
      * @param i must be at least 0 and less than {@link #numShapes()}
      */
-    abstract S2ClippedShape clipped(int i);
+    @VisibleForTesting
+    public abstract S2ClippedShape clipped(int i);
 
     /**
      * Returns the clipped shape corresponding to the given shape ID, or null if the shape does not
@@ -852,11 +854,11 @@ public strictfp class S2ShapeIndex {
         this.shape2 = shape2;
       }
       @Override
-      int numShapes() {
+      public int numShapes() {
         return 2;
       }
       @Override
-      S2ClippedShape clipped(int i) {
+      public S2ClippedShape clipped(int i) {
         switch (i) {
           case 0:
             return shape1;
@@ -878,11 +880,11 @@ public strictfp class S2ShapeIndex {
         this.clippedShapes = shapes;
       }
       @Override
-      int numShapes() {
+      public int numShapes() {
         return clippedShapes.length;
       }
       @Override
-      S2ClippedShape clipped(int i) {
+      public S2ClippedShape clipped(int i) {
         return clippedShapes[i];
       }
     }
@@ -919,7 +921,7 @@ public strictfp class S2ShapeIndex {
    * </ul>
    */
   @VisibleForTesting
-  abstract static class S2ClippedShape extends Cell {
+  public abstract static class S2ClippedShape extends Cell {
     static S2ClippedShape create(S2CellId cellId, int shapeId, boolean containsCenter,
         List<ClippedEdge> edges, int start, int end) {
       int numEdges = end - start;
@@ -1001,7 +1003,7 @@ public strictfp class S2ShapeIndex {
      * For implementing the Cell interface, this class contains just 1 shape (itself.)
      */
     @Override
-    final int numShapes() {
+    public final int numShapes() {
       return 1;
     }
 
@@ -1009,7 +1011,7 @@ public strictfp class S2ShapeIndex {
      * For implementing the Cell interface, this class contains just 1 shape (itself.)
      */
     @Override
-    final S2ClippedShape clipped(int i) {
+    public final S2ClippedShape clipped(int i) {
       // assert i == 0;
       return this;
     }
