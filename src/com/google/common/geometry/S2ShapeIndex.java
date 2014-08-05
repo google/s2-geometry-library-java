@@ -1365,6 +1365,109 @@ public strictfp class S2ShapeIndex {
       pos = it.pos;
     }
   }
+  
+  /**
+   * RangeIterator is a wrapper over CellIterator that is specialized for merging shape indices.
+   * This class is is well-tested by S2Loop.
+   */
+  public static final class RangeIterator {
+    private static final S2CellId END = S2CellId.end(0);
+    
+    private S2ShapeIndex.CellIterator it;
+    private S2CellId id, rangeMin, rangeMax;
+    private S2ClippedShape clipped;
+    
+    public RangeIterator(S2ShapeIndex index) {
+      it = index.iterator();
+      refresh();
+    }
+    
+    /** Returns the current S2CellId or cell contents. */
+    public S2CellId id() {
+      return id;
+    }
+    
+    public S2ShapeIndex.Cell cell() {
+      return it.cell();
+    }
+    
+    /**
+     * Returns the min and max leaf cell ids covered by the current cell. If done() is true, these
+     * methods return a value larger than any valid cell id.
+     */
+    public S2CellId rangeMin() {
+      return rangeMin;
+    }
+    
+    public S2CellId rangeMax() {
+      return rangeMax;
+    }
+    
+    /** Various other convenience methods for the current cell. */
+    public S2ClippedShape clipped() {
+      return clipped;
+    }
+    
+    public int numEdges() {
+      return clipped().numEdges();
+    }
+    
+    public boolean containsCenter() {
+      return clipped().containsCenter();
+    }
+    
+    public void next() {
+      it.next();
+      refresh();
+    }
+    
+    public boolean done() {
+      return id().equals(END);
+    }
+    
+    /**
+     * Positions the iterator at the first cell that overlaps or follows {@code target}, i.e. such
+     * that rangeMax() >= target.rangeMin().
+     */
+    public void seekTo(RangeIterator target) {
+      it.seek(target.rangeMin());
+      // If the current cell does not overlap 'target', it is possible that the previous cell is the
+      // one we are looking for. This can only happen when the previous cell contains 'target' but
+      // has a smaller S2CellId.
+      if (it.done() || it.id().rangeMin().greaterThan(target.rangeMax())) {
+        it.prev();
+        if (it.id().rangeMax().lessThan(target.id())) {
+          it.next();
+        }
+      }
+      refresh();
+    }
+    
+    /**
+     * Positions the iterator at the first cell that follows {@code target}, i.e. the first cell
+     * such that rangeMin() > target.rangeMax().
+     */
+    public void seekBeyond(RangeIterator target) {
+      it.seek(target.rangeMax().next());
+      if (!it.done() && it.id().rangeMin().lessOrEquals(target.rangeMax())) {
+        it.next();
+      }
+      refresh();
+    }
+    
+    /** Updates internal state after the iterator has been repositioned. */
+    private void refresh() {
+      if (it.done()) {
+        id = END;
+        clipped = null;
+      } else {
+        id = it.id();
+        clipped = it.cell().clipped(0);
+      }
+      rangeMin = id.rangeMin();
+      rangeMax = id.rangeMax();
+    }
+  }
 
   /**
    * FaceEdge stores temporary edge data while the index is being updated. FaceEdge represents an

@@ -1415,8 +1415,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   private static boolean hasCrossingRelation(S2Loop a, S2Loop b, LoopRelation relation) {
     // We look for S2CellId ranges where the indexes of A and B overlap, and then test those edges
     // for crossings.
-    RangeIterator ai = new RangeIterator(a.index);
-    RangeIterator bi = new RangeIterator(b.index);
+    S2ShapeIndex.RangeIterator ai = new S2ShapeIndex.RangeIterator(a.index);
+    S2ShapeIndex.RangeIterator bi = new S2ShapeIndex.RangeIterator(b.index);
     // Tests edges of A against B.
     LoopCrosser ab = new LoopCrosser(a, b, relation, false);
     // Tests edges of B against A.
@@ -1459,109 +1459,6 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
       }
     }
     return false;
-  }
-
-  /**
-   * RangeIterator is a wrapper over S2ShapeIndex.CellIterator with extra methods that are useful
-   * for merging the contents of two or more S2ShapeIndexes.
-   */
-  private static final class RangeIterator {
-    private static final S2CellId END = S2CellId.end(0);
-
-    private S2ShapeIndex.CellIterator it;
-    private S2CellId id, rangeMin, rangeMax;
-    private S2ClippedShape clipped;
-
-    public RangeIterator(S2ShapeIndex index) {
-      it = index.iterator();
-      refresh();
-    }
-
-    /** Returns the current S2CellId or cell contents. */
-    public S2CellId id() {
-      return id;
-    }
-
-    public S2ShapeIndex.Cell cell() {
-      return it.cell();
-    }
-
-    /**
-     * Returns the min and max leaf cell ids covered by the current cell. If done() is true, these
-     * methods return a value larger than any valid cell id.
-     */
-    public S2CellId rangeMin() {
-      return rangeMin;
-    }
-
-    public S2CellId rangeMax() {
-      return rangeMax;
-    }
-
-    /** Various other convenience methods for the current cell. */
-    public S2ClippedShape clipped() {
-      return clipped;
-    }
-
-    public int numEdges() {
-      return clipped().numEdges();
-    }
-
-    public boolean containsCenter() {
-      return clipped().containsCenter();
-    }
-
-    public void next() {
-      it.next();
-      refresh();
-    }
-
-    public boolean done() {
-      return id().equals(END);
-    }
-
-    /**
-     * Positions the iterator at the first cell that overlaps or follows {@code target}, i.e. such
-     * that rangeMax() >= target.rangeMin().
-     */
-    public void seekTo(RangeIterator target) {
-      it.seek(target.rangeMin());
-      // If the current cell does not overlap 'target', it is possible that the previous cell is the
-      // one we are looking for. This can only happen when the previous cell contains 'target' but
-      // has a smaller S2CellId.
-      if (it.done() || it.id().rangeMin().greaterThan(target.rangeMax())) {
-        it.prev();
-        if (it.id().rangeMax().lessThan(target.id())) {
-          it.next();
-        }
-      }
-      refresh();
-    }
-
-    /**
-     * Positions the iterator at the first cell that follows {@code target}, i.e. the first cell
-     * such that rangeMin() > target.rangeMax().
-     */
-    public void seekBeyond(RangeIterator target) {
-      it.seek(target.rangeMax().next());
-      if (!it.done() && it.id().rangeMin().lessOrEquals(target.rangeMax())) {
-        it.next();
-      }
-      refresh();
-    }
-
-    /** Updates internal state after the iterator has been repositioned. */
-    private void refresh() {
-      if (it.done()) {
-        id = END;
-        clipped = null;
-      } else {
-        id = it.id();
-        clipped = it.cell().clipped(0);
-      }
-      rangeMin = id.rangeMin();
-      rangeMax = id.rangeMax();
-    }
   }
 
   /**
@@ -1618,7 +1515,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
      * returns true if there is an edge crossing, a wedge crossing, or a point P that matches both
      * "crossing targets". Advances both iterators past {@code ai.id()}.
      */
-    public boolean hasCrossingRelation(RangeIterator ai, RangeIterator bi) {
+    public boolean hasCrossingRelation(S2ShapeIndex.RangeIterator ai,
+        S2ShapeIndex.RangeIterator bi) {
       // assert(ai.id().contains(bi.id()));
       if (ai.numEdges() == 0) {
         if (aCrossingTarget == (ai.containsCenter() ? 1 : 0)) {
@@ -1668,7 +1566,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
      * there is an edge crossing or a wedge crossing anywhere within {@code ai.id()}. Advances
      * {@code bi} (only) past {@code ai.id()}.
      */
-    private boolean hasCrossing(RangeIterator ai, RangeIterator bi) {
+    private boolean hasCrossing(S2ShapeIndex.RangeIterator ai, S2ShapeIndex.RangeIterator bi) {
       // assert(ai.id().contains(bi.id()));
       // If ai.id() intersects many edges of B, then it is faster to use S2EdgeQuery to narrow down
       // the candidates. But if it intersects only a few edges, it is faster to check all the
