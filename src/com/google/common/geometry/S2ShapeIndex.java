@@ -199,7 +199,7 @@ public strictfp class S2ShapeIndex {
   /**
    * Ensures pending updates have been applied, returning immediately if the index is fresh as
    * reported by {@link #isFresh()}, and otherwise blocking while the index is built.
-   * 
+   *
    * <p>This operation is thread safe, guarded by 'this'.
    */
   @VisibleForTesting
@@ -389,7 +389,7 @@ public strictfp class S2ShapeIndex {
     }
   }
 
-  /** 
+  /**
    * Given a face and a list of edges that intersect that face, insert or remove all the edges from
    * the index.  (An edge is inserted if shape(id) is not null, and removed otherwise.)
    */
@@ -778,7 +778,7 @@ public strictfp class S2ShapeIndex {
 
   /**
    * This class contains the set of clipped shapes within a particular index cell.
-   * 
+   *
    * <p>To be as memory efficient as possible, we specialize two very common cases.
    * <ul>
    * <li>The Cell class is extended by S2ClippedShape, and in the *very* common case of a cell
@@ -1219,21 +1219,23 @@ public strictfp class S2ShapeIndex {
     }
 
     /**
-     * Advances the iterator to the next cell in the index. Results are undefined if {@link #done()}
-     * is true.
+     * Advances the iterator to the next cell in the index. Does not advance the iterator if
+     * {@code pos} is equal to the number of cells in the index.
      */
     public void next() {
-      // assert (!done());
-      pos++;
+      if (pos < index.cells.size()) {
+        pos++;
+      }
     }
 
     /**
-     * Positions the iterator at the previous cell in the index. Results are undefined if
-     * {@link #atBegin()} is true.
+     * Positions the iterator at the previous cell in the index. Does not move the iterator if
+     * {@code pos} is equal to 0.
      */
     public void prev() {
-      // assert (!atBegin());
-      pos--;
+      if (pos > 0) {
+        pos--;
+      }
     }
 
     /**
@@ -1269,7 +1271,7 @@ public strictfp class S2ShapeIndex {
         } else if (result < 0) {
           start = mid + 1;
         } else {
-          pos = mid; 
+          pos = mid;
           return;
         }
       }
@@ -1365,32 +1367,32 @@ public strictfp class S2ShapeIndex {
       pos = it.pos;
     }
   }
-  
+
   /**
    * RangeIterator is a wrapper over CellIterator that is specialized for merging shape indices.
    * This class is is well-tested by S2Loop.
    */
   public static final class RangeIterator {
     private static final S2CellId END = S2CellId.end(0);
-    
+
     private S2ShapeIndex.CellIterator it;
     private S2CellId id, rangeMin, rangeMax;
     private S2ClippedShape clipped;
-    
+
     public RangeIterator(S2ShapeIndex index) {
       it = index.iterator();
       refresh();
     }
-    
+
     /** Returns the current S2CellId or cell contents. */
     public S2CellId id() {
       return id;
     }
-    
+
     public S2ShapeIndex.Cell cell() {
       return it.cell();
     }
-    
+
     /**
      * Returns the min and max leaf cell ids covered by the current cell. If done() is true, these
      * methods return a value larger than any valid cell id.
@@ -1398,33 +1400,33 @@ public strictfp class S2ShapeIndex {
     public S2CellId rangeMin() {
       return rangeMin;
     }
-    
+
     public S2CellId rangeMax() {
       return rangeMax;
     }
-    
+
     /** Various other convenience methods for the current cell. */
     public S2ClippedShape clipped() {
       return clipped;
     }
-    
+
     public int numEdges() {
       return clipped().numEdges();
     }
-    
+
     public boolean containsCenter() {
       return clipped().containsCenter();
     }
-    
+
     public void next() {
       it.next();
       refresh();
     }
-    
+
     public boolean done() {
       return id().equals(END);
     }
-    
+
     /**
      * Positions the iterator at the first cell that overlaps or follows {@code target}, i.e. such
      * that rangeMax() >= target.rangeMin().
@@ -1442,7 +1444,7 @@ public strictfp class S2ShapeIndex {
       }
       refresh();
     }
-    
+
     /**
      * Positions the iterator at the first cell that follows {@code target}, i.e. the first cell
      * such that rangeMin() > target.rangeMax().
@@ -1454,7 +1456,7 @@ public strictfp class S2ShapeIndex {
       }
       refresh();
     }
-    
+
     /** Updates internal state after the iterator has been repositioned. */
     private void refresh() {
       if (it.done()) {
