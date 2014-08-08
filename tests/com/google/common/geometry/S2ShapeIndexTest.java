@@ -193,6 +193,24 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     }
   }
 
+  public void testPolylineRegression() {
+    // Regression test that catches error where a 0-edged clipped shape of a polyline was being
+    // added to the index.
+    S2ShapeIndex index = new S2ShapeIndex();
+    index.add(makePolyline("2:1, 6:1"));
+    index.add(makeLoop("0:2, 0:3, 1:3, 1:2"));
+    index.add(makeLoop("3:6, 3:7, 4:7, 4:6"));
+    index.add(makeLoop("3:6, 3:7, 4:7, 4:6"));
+
+    for (S2ShapeIndex.CellIterator it = index.iterator(); !it.done(); it.next()) {
+      S2ShapeIndex.Cell cell = it.cell();
+      for (int i = 0; i < cell.numShapes(); ++i) {
+        S2ShapeIndex.S2ClippedShape clipped = cell.clipped(i);
+        assertTrue(index.shape(clipped.shapeId()).shape.hasInterior() || clipped.numEdges() > 0);
+      }
+    }
+  }
+
   /**
    * Verifies that every cell of the index contains the correct edges, and that no cells are missing
    * from the index. The running time of this function is quadratic in the number of edges.

@@ -534,7 +534,9 @@ public strictfp class S2ShapeIndex {
       for (int i = 0; i < edges.size(); i++) {
         ClippedEdge edge = edges.get(i);
         FaceEdge orig = edge.orig;
-        tracker.testEdge(orig.shapeId, orig.va, orig.vb);
+        if (shapes.get(orig.shapeId).shape.hasInterior()) {
+          tracker.testEdge(orig.shapeId, orig.va, orig.vb);
+        }
       }
     }
 
@@ -600,7 +602,9 @@ public strictfp class S2ShapeIndex {
       for (int i = 0; i < edges.size(); i++) {
         ClippedEdge edge = edges.get(i);
         FaceEdge orig = edge.orig;
-        tracker.testEdge(orig.shapeId, orig.va, orig.vb);
+        if (shapes.get(orig.shapeId).shape.hasInterior()) {
+          tracker.testEdge(orig.shapeId, orig.va, orig.vb);
+        }
       }
       tracker.doneCellId(pcell.id());
     }
