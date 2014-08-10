@@ -17,7 +17,7 @@ package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
-import com.google.common.geometry.S2ShapeUtil.Edge;
+import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
 
 import java.util.List;
@@ -38,7 +38,7 @@ public class S2ShapeUtilTest extends GeometryTestCase {
       edges.add(new S2Edge(a, b));
     }
     assertEquals(kNumEdges, shape.numEdges());
-    Edge edge = new Edge();
+    MutableEdge edge = new MutableEdge();
     for (int i = 0; i < kNumEdges; ++i) {
       shape.getEdge(i, edge);
       assertEquals(edges.get(i), new S2Edge(edge.getStart(), edge.getEnd()));
@@ -50,7 +50,7 @@ public class S2ShapeUtilTest extends GeometryTestCase {
     S2Point b = S2Point.Y_POS;
     S2EdgeVectorShape shape = new S2EdgeVectorShape(a, b);
     assertEquals(1, shape.numEdges());
-    Edge edge = new Edge();
+    MutableEdge edge = new MutableEdge();
     shape.getEdge(0, edge);
     assertEquals(a, edge.getStart());
     assertEquals(b, edge.getEnd());

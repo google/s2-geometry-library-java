@@ -20,6 +20,7 @@ import static com.google.common.geometry.S2Projections.PROJ;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
+import com.google.common.geometry.S2Shape.MutableEdge;
 
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
   }
   
   private void checkAllCrossings(S2ShapeUtil.S2EdgeVectorShape edges) {
+    MutableEdge tempEdge = new MutableEdge();
     S2ShapeUtil.S2EdgeVectorShape shape = new S2ShapeUtil.S2EdgeVectorShape();
     for (int i = 0; i < edges.size(); ++i) {
       shape.add(edges.get(i).getStart(), edges.get(i).getEnd());
@@ -89,7 +91,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       S2Point b = edges.get(i).getEnd();
       S2EdgeQuery query = new S2EdgeQuery(index);
       // Shape id has to be 0 because only one shape was inserted.
-      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, index.shape(0));
+      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, index.shapes.get(0));
       
       // Verify that the second version of getCandidates returns the same result.
       Map<S2Shape, S2EdgeQuery.Edges> edgeMap = query.getCandidates(a, b);
@@ -109,10 +111,9 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       numCandidates += candidatesList.size();
       List<Integer> missingCandidates = Lists.newArrayList();
       for (int j = 0; j < shape.numEdges(); ++j) {
-        S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
-        shape.getEdge(j, edge);
-        S2Point c = edge.getStart();
-        S2Point d = edge.getEnd();
+        shape.getEdge(j, tempEdge);
+        S2Point c = tempEdge.getStart();
+        S2Point d = tempEdge.getEnd();
         if (c.equals(a) || c.equals(b) || d.equals(a) || d.equals(b)
             || S2EdgeUtil.robustCrossing(a, b, c, d) > 0) {
           ++numNearbyPairs;
@@ -235,8 +236,8 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
     S2EdgeQuery edgeQuery = new S2EdgeQuery(index);
     Map<S2Shape, S2EdgeQuery.Edges> edgeMap = edgeQuery.getCandidates(a, b);
     assertEquals(numShapes, edgeMap.size());
-    for (int i = 0; i < index.numShapes(); ++i) {
-      assertTrue(edgeMap.containsKey(index.shape(i).shape));
+    for (int i = 0; i < index.shapes.size(); ++i) {
+      assertTrue(edgeMap.containsKey(index.shapes.get(i)));
     }
   }
   

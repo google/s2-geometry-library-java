@@ -21,7 +21,6 @@ import com.google.common.collect.Lists;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
 import com.google.common.geometry.S2Error.Code;
-import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.common.geometry.S2ShapeIndex.CellIterator;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
@@ -59,7 +58,7 @@ strictfp class S2ShapeUtil {
       add(a, b);
     }
 
-    /** Add an edge to the vector. */
+    /** Adds an edge to the vector. */
     public void add(S2Point a, S2Point b) {
       Preconditions.checkArgument(!a.equalsPoint(b));
       edges.add(new S2Edge(a, b));
@@ -94,31 +93,6 @@ strictfp class S2ShapeUtil {
     @Override
     public int size() {
       return edges.size();
-    }
-  }
-
-  /** A simple implementation of the MutableEdge interface. */
-  static class Edge implements MutableEdge {
-    /**
-     * Endpoints of this edge last set by passing this instance to
-     * {@link S2Shape#getEdge(int, MutableEdge)}.
-     */
-    S2Point a, b;
-
-    @Override
-    public S2Point getStart() {
-      return a;
-    }
-
-    @Override
-    public S2Point getEnd() {
-      return b;
-    }
-
-    @Override
-    public void set(S2Point start, S2Point end) {
-      this.a = start;
-      this.b = end;
     }
   }
 
@@ -204,6 +178,21 @@ strictfp class S2ShapeUtil {
   }
 
   /**
+   * Returns the index of {@code shape} in {@code shapes} as {@link List#indexOf(Object)}, but using
+   * identity instead of equality to honor the semantics of S2ShapeIndex (where adding two S2Loops
+   * that are equal but not the same instance is treated as adding two separate shapes, with
+   * distinct shape IDs.)
+   */
+  static int indexOf(List<? extends S2Shape> shapes, S2Shape shape) {
+    for (int i = 0; i < shapes.size(); i++) {
+      if (shapes.get(i) == shape) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
    * Returns true if any of the given loops has a self-intersection (including a duplicate vertex),
    * and set "error" to a human-readable error message. Otherwise return false and leave "error"
    * unchanged. All tests are limited to edges that intersect the given cell.
@@ -211,8 +200,9 @@ strictfp class S2ShapeUtil {
   static boolean findSelfIntersection(List<S2Loop> loops, Cell cell, S2Error error) {
     for (int a = 0; a < cell.numShapes(); a++) {
       S2ClippedShape aClipped = cell.clipped(a);
-      if (findSelfIntersection(aClipped, loops.get(aClipped.shapeId()), error)) {
-        error.init(error.code(), "Loop %d: %s", aClipped.shapeId(), error.text());
+      S2Loop loop = (S2Loop) aClipped.shape();
+      if (findSelfIntersection(aClipped, loop, error)) {
+        error.init(error.code(), "Loop %d: %s", indexOf(loops, loop), error.text());
         return true;
       }
     }
@@ -225,12 +215,10 @@ strictfp class S2ShapeUtil {
    * otherwise returns false.
    */
   static boolean getCrossingError(
-      S2Loop aLoop, int aShapeId, int ai,
-      S2Loop bLoop, int bShapeId, int bj,
-      int crossing, S2Error error) {
+      List<S2Loop> loops, S2Loop aLoop, int ai, S2Loop bLoop, int bj, int crossing, S2Error error) {
     if (crossing > 0) {
-      error.init(Code.POLYGON_LOOPS_CROSS,
-          "Loop %d edge %d crosses loop %d edge %d", aShapeId, ai, bShapeId, bj);
+      error.init(Code.POLYGON_LOOPS_CROSS, "Loop %d edge %d crosses loop %d edge %d",
+          indexOf(loops, aLoop), ai, indexOf(loops, bLoop), bj);
       return true;
     }
 
@@ -243,7 +231,7 @@ strictfp class S2ShapeUtil {
         // The second edge index is sometimes off by one, hence "near".
         error.init(Code.POLYGON_LOOPS_SHARE_EDGE,
             "Loop %d edge %d has duplicate near loop %d edge %d",
-            aShapeId, ai, bShapeId, bj);
+            indexOf(loops, aLoop), ai, indexOf(loops, bLoop), bj);
         return true;
       }
 
@@ -252,8 +240,8 @@ strictfp class S2ShapeUtil {
       if (WedgeRelation.WEDGE_PROPERLY_OVERLAPS == S2EdgeUtil.getWedgeRelation(
           aLoop.vertex(ai), aLoop.vertex(ai + 1), aLoop.vertex(ai + 2),
           bLoop.vertex(bj), bLoop.vertex(bj + 2))) {
-        error.init(Code.POLYGON_LOOPS_CROSS,
-            "Loop %d edge %d crosses loop %d edge %d", aShapeId, ai, bShapeId, bj);
+        error.init(Code.POLYGON_LOOPS_CROSS, "Loop %d edge %d crosses loop %d edge %d",
+            indexOf(loops, aLoop), ai, indexOf(loops, bLoop), bj);
         return true;
       }
     }
@@ -280,14 +268,14 @@ strictfp class S2ShapeUtil {
     // 8*3=24 otherwise.
     for (int a = 0; a < cell.numShapes() - 1; a++) {
       S2ClippedShape aClipped = cell.clipped(a);
-      S2Loop aLoop = loops.get(aClipped.shapeId());
+      S2Loop aLoop = (S2Loop) aClipped.shape();
       int aNumClipped = aClipped.numEdges();
       for (int i = 0; i < aNumClipped; i++) {
         int ai = aClipped.edge(i);
         EdgeCrosser crosser = new EdgeCrosser(aLoop.vertex(ai), aLoop.vertex(ai + 1));
         for (int b = a + 1; b < cell.numShapes(); b++) {
           S2ClippedShape bClipped = cell.clipped(b);
-          S2Loop bLoop = loops.get(bClipped.shapeId());
+          S2Loop bLoop = (S2Loop) bClipped.shape();
           int bjPrev = -2;
           int bNumClipped = bClipped.numEdges();
           for (int j = 0; j < bNumClipped; j++) {
@@ -301,10 +289,7 @@ strictfp class S2ShapeUtil {
               // No crossing
               continue;
             }
-            if (getCrossingError(
-                aLoop, aClipped.shapeId(), ai,
-                bLoop, bClipped.shapeId(), bj,
-                crossing, error)) {
+            if (getCrossingError(loops, aLoop, ai, bLoop, bj, crossing, error)) {
               return true;
             }
           }

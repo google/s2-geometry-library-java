@@ -1367,7 +1367,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
     assertTrue(copy.index != null);
     assertTrue(copy.index.iterator().locate(S2Point.X_POS));
-    assertTrue(copy.index.numShapes() == 1);
+    assertTrue(copy.index.shapes.size() == 1);
     assertTrue(copy.getNumVertices() == numVertices);
     assertTrue(copy.contains(S2Point.X_POS));
   }

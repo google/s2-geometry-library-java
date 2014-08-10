@@ -17,16 +17,15 @@ package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.primitives.UnsignedLongs;
 
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.RandomAccess;
 
@@ -60,8 +59,7 @@ public strictfp class S2ShapeIndex {
   /**
    * Shapes currently in the index.
    */
-  @VisibleForTesting
-  final List<IdShape> shapes = Lists.newArrayList();
+  final List<S2Shape> shapes = Lists.newArrayList();
 
   /**
    * Essentially a map from each non-overlapping cell id to the shapes that intersect that cell,
@@ -71,11 +69,6 @@ public strictfp class S2ShapeIndex {
    * construct the index.
    */
   private List<Cell> cells = Collections.emptyList();
-
-  /**
-   * The id of the next shape added to the index.
-   */
-  private int nextShapeId = 0;
 
   /**
    * The index of the first shape that has been queued for insertion but not processed yet.
@@ -120,37 +113,14 @@ public strictfp class S2ShapeIndex {
    * returned view is updated as well.
    */
   public List<S2Shape> getShapes() {
-    return Lists.transform(shapes, TO_SHAPE);
-  }
-
-  /**
-   * Returns the number of shapes currently in the index.
-   */
-  int numShapes() {
-    return shapes.size();
-  }
-
-  /**
-   * Returns the IdShape for the given shape ID.
-   */
-  IdShape shape(int id) {
-    return shapes.get(id);
-    // TODO(eengle): When we implement incremental add and remove methods, we will be allowing the
-    // set of shape IDs in the index to become very sparse. The eventual lookup code we will need
-    // will be:
-    //    int index = Collections.binarySearch(shapes, new IdShape(id, null), IdShape.BY_ID);
-    //    if (index < 0) {
-    //      return null;
-    //    } else {
-    //      return shapes.get(index).shape;
-    //    }
+    return Collections.unmodifiableList(shapes);
   }
 
   /** Adds the given shape to this index. Invalidates all iterators and their associated data. */
   public void add(S2Shape shape) {
     // Insertions are processed lazily by applyUpdates(). All we do now is assign a unique id to the
     // shape, sequentially starting from 0 in the order shapes are inserted.
-    shapes.add(new IdShape(nextShapeId++, shape));
+    shapes.add(shape);
     isIndexFresh = false;
   }
 
@@ -175,7 +145,6 @@ public strictfp class S2ShapeIndex {
     shapes.clear();
     isIndexFresh = false;
     pendingInsertionsBegin = 0;
-    nextShapeId = 0;
   }
 
   /**
@@ -220,7 +189,7 @@ public strictfp class S2ShapeIndex {
 
         int numEdges = 0;
         for (int i = pendingInsertionsBegin; i < shapes.size(); i++) {
-          numEdges += shapes.get(i).shape.numEdges();
+          numEdges += shapes.get(i).numEdges();
         }
 
         // As a a pessimistic overestimate, assume we will have about 50% of the edges cross into
@@ -240,7 +209,7 @@ public strictfp class S2ShapeIndex {
 
         InteriorTracker tracker = new InteriorTracker(shapes.size() - pendingInsertionsBegin);
         for (int i = pendingInsertionsBegin; i < shapes.size(); i++) {
-          addShapeEdges(shapes.get(i), allEdges, tracker);
+          addShapeEdges(i, allEdges, tracker);
         }
         for (int face = 0; face < 6; face++) {
           updateFaceEdges(face, allEdges.get(face), tracker);
@@ -296,11 +265,11 @@ public strictfp class S2ShapeIndex {
     // Initialize "edge_id" to be midway through the first sample interval. Because samples are
     // equally spaced the actual sample size may differ slightly from the desired sample size.
     int edgeId = sampleInterval / 2;
-    S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
+    MutableEdge edge = new MutableEdge();
     final int actualSampleSize = (numEdges + edgeId) / sampleInterval;
     int[] faceCount = {0, 0, 0, 0, 0, 0};
     for (int i = pendingInsertionsBegin; i < shapes.size(); i++) {
-      S2Shape shape = shapes.get(i).shape;
+      S2Shape shape = shapes.get(i);
       edgeId += shape.numEdges();
       while (edgeId >= sampleInterval) {
         edgeId -= sampleInterval;
@@ -346,16 +315,14 @@ public strictfp class S2ShapeIndex {
    * Clips all edges of the given shape to the six cube faces, and adds the clipped edges to
    * {@code allEdges}.
    */
-  private void addShapeEdges(
-      IdShape idShape, List<List<FaceEdge>> allEdges, InteriorTracker tracker) {
-    int id = idShape.id;
-    S2Shape shape = idShape.shape;
+  private void addShapeEdges(int shapeId, List<List<FaceEdge>> allEdges, InteriorTracker tracker) {
+    S2Shape shape = shapes.get(shapeId);
     boolean hasInterior = shape.hasInterior();
     if (hasInterior) {
-      tracker.addShape(idShape);
+      tracker.addShape(shapeId, shape);
     }
     int numEdges = shape.numEdges();
-    S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
+    MutableEdge edge = new MutableEdge();
     R2Vector a = new R2Vector();
     R2Vector b = new R2Vector();
     double ratio = options.getCellSizeToLongEdgeRatio();
@@ -363,7 +330,7 @@ public strictfp class S2ShapeIndex {
     for (int e = 0; e < numEdges; e++) {
       shape.getEdge(e, edge);
       if (hasInterior) {
-        tracker.testEdge(id, edge.a, edge.b);
+        tracker.testEdge(shapeId, edge.a, edge.b);
       }
 
       // Fast path: both endpoints are on the same face, and are far enough from
@@ -375,7 +342,7 @@ public strictfp class S2ShapeIndex {
         final double kMaxUV = 1 - CELL_PADDING;
         if (Math.abs(a.x) <= kMaxUV && Math.abs(a.y) <= kMaxUV
             && Math.abs(b.x) <= kMaxUV && Math.abs(b.y) <= kMaxUV) {
-          allEdges.get(aFace).add(new FaceEdge(id, e, edge.a, edge.b, a, b, ratio));
+          allEdges.get(aFace).add(new FaceEdge(shapeId, e, edge.a, edge.b, a, b, ratio));
           continue;
         }
       }
@@ -383,7 +350,7 @@ public strictfp class S2ShapeIndex {
       // Otherwise we simply clip the edge to all six faces.
       for (int face = 0; face < 6; face++) {
         if (S2EdgeUtil.clipToPaddedFace(edge.a, edge.b, face, CELL_PADDING, a, b)) {
-          allEdges.get(face).add(new FaceEdge(idShape.id, e, edge.a, edge.b, a, b, ratio));
+          allEdges.get(face).add(new FaceEdge(shapeId, e, edge.a, edge.b, a, b, ratio));
         }
       }
     }
@@ -403,7 +370,7 @@ public strictfp class S2ShapeIndex {
     // edges are split between child cells.
     List<ClippedEdge> clippedEdges = createList(numEdges);
     R2Rect bound = R2Rect.empty();
-    for (int i = 0; i < faceEdges.size(); i++) {
+    for (int i = 0; i < numEdges; i++) {
       FaceEdge edge = faceEdges.get(i);
       ClippedEdge clipped = new ClippedEdge();
       clipped.orig = edge;
@@ -436,9 +403,10 @@ public strictfp class S2ShapeIndex {
     // This function is recursive with a maximum recursion depth of 30 (S2CellId.MAX_LEVEL).
 
     // Count the number of edges that have not reached their maximum level yet.
+    int numEdges = edges.size();
     int count = 0;
     boolean isLeaf = true;
-    for (int i = 0; i < edges.size(); i++) {
+    for (int i = 0; i < numEdges; i++) {
       ClippedEdge edge = edges.get(i);
       count += (pcell.level() < edge.orig.maxLevel ? 1 : 0);
       if (count > options.getMaxEdgesPerCell()) {
@@ -455,7 +423,6 @@ public strictfp class S2ShapeIndex {
 
     // Reserve space for the edges that will be passed to each child. We select the kind of list to
     // use based on how large the child edges lists could possibly be.
-    int numEdges = edges.size();
     List<ClippedEdge> edges00 = createList(numEdges);
     List<ClippedEdge> edges01 = createList(numEdges);
     List<ClippedEdge> edges10 = createList(numEdges);
@@ -474,7 +441,7 @@ public strictfp class S2ShapeIndex {
     // Build up a list edges to be passed to each child cell.  The (i,j) directions are left (i=0),
     // right (i=1), lower (j=0), and upper (j=1). Note that the vast majority of edges are
     // propagated to a single child.
-    for (int i = 0; i < edges.size(); i++) {
+    for (int i = 0; i < numEdges; i++) {
       ClippedEdge edge = edges.get(i);
       if (edge.bound.x().hi() <= middle.x().lo()) {
         // Edge is entirely contained in the two left children.
@@ -526,15 +493,16 @@ public strictfp class S2ShapeIndex {
     // intervening cells have no edges.
 
     // Shift the InteriorTracker focus point to the center of the current cell.
-    if (tracker.isActive() && !edges.isEmpty()) {
+    int numEdges = edges.size();
+    if (tracker.isActive() && numEdges > 0) {
       if (!tracker.atCellId(pcell.id())) {
         tracker.moveTo(pcell.getEntryVertex());
       }
       tracker.drawTo(pcell.getCenter());
-      for (int i = 0; i < edges.size(); i++) {
+      for (int i = 0; i < numEdges; i++) {
         ClippedEdge edge = edges.get(i);
         FaceEdge orig = edge.orig;
-        if (shapes.get(orig.shapeId).shape.hasInterior()) {
+        if (shapes.get(orig.shapeId).hasInterior()) {
           tracker.testEdge(orig.shapeId, orig.va, orig.vb);
         }
       }
@@ -555,9 +523,10 @@ public strictfp class S2ShapeIndex {
     int numShapes = 0;
     int edgesIndex = 0;
     int trackerIndex = 0;
-    while (edgesIndex < edges.size() || trackerIndex < tracker.focusCount) {
+    int nextShapeId = shapes.size();
+    while (edgesIndex < numEdges || trackerIndex < tracker.focusCount) {
       int edgeId;
-      if (edgesIndex < edges.size()) {
+      if (edgesIndex < numEdges) {
         edgeId = edges.get(edgesIndex).orig.shapeId;
       } else {
         edgeId = nextShapeId;
@@ -571,18 +540,18 @@ public strictfp class S2ShapeIndex {
       S2ClippedShape clipped;
       if (trackerId < edgeId) {
         // The entire cell is in the shape interior.
-        clipped = S2ClippedShape.Contained.create(cellId, trackerId);
+        clipped = S2ClippedShape.Contained.create(cellId, shapes.get(trackerId));
         cellId = null;
         trackerIndex++;
       } else {
         // Count the number of edges for this shape and allocate space for them.
         int firstEdge = edgesIndex;
-        while (edgesIndex < edges.size() && edges.get(edgesIndex).orig.shapeId == edgeId) {
+        while (edgesIndex < numEdges && edges.get(edgesIndex).orig.shapeId == edgeId) {
           edgesIndex++;
         }
         boolean containsCenter = trackerId == edgeId;
-        clipped = S2ClippedShape.create(
-            cellId, edgeId, containsCenter, edges, firstEdge, edgesIndex);
+        clipped = S2ClippedShape.create(cellId, shapes.get(edgeId),
+            containsCenter, edges, firstEdge, edgesIndex);
         cellId = null;
         if (containsCenter) {
           trackerIndex++;
@@ -599,10 +568,10 @@ public strictfp class S2ShapeIndex {
     // Shift the InteriorTracker focus point to the exit vertex of this cell.
     if (tracker.isActive() && !edges.isEmpty()) {
       tracker.drawTo(pcell.getExitVertex());
-      for (int i = 0; i < edges.size(); i++) {
+      for (int i = 0; i < numEdges; i++) {
         ClippedEdge edge = edges.get(i);
         FaceEdge orig = edge.orig;
-        if (shapes.get(orig.shapeId).shape.hasInterior()) {
+        if (shapes.get(orig.shapeId).hasInterior()) {
           tracker.testEdge(orig.shapeId, orig.va, orig.vb);
         }
       }
@@ -698,16 +667,6 @@ public strictfp class S2ShapeIndex {
   }
 
   /**
-   * Simple function to transform the internal-only IdShape to the publicly visible type S2Shape.
-   */
-  private static final Function<IdShape, S2Shape> TO_SHAPE = new Function<IdShape, S2Shape>() {
-    @Override
-    public S2Shape apply(IdShape shape) {
-      return shape.shape;
-    }
-  };
-
-  /**
    * Options that affect construction of the S2ShapeIndex.
    */
   public static class Options {
@@ -761,26 +720,6 @@ public strictfp class S2ShapeIndex {
   }
 
   /**
-   * An internal class that annotates each S2Shape with an int ID so the various data structures
-   * that refer to a shape by ID may do so more efficiently than by reference.
-   */
-  @VisibleForTesting
-  static final class IdShape {
-    static final Comparator<IdShape> BY_ID = new Comparator<IdShape>() {
-      @Override
-      public int compare(IdShape o1, IdShape o2) {
-        return Integer.compare(o1.id, o2.id);
-      }
-    };
-    final int id;
-    final S2Shape shape;
-    public IdShape(int id, S2Shape shape) {
-      this.id = id;
-      this.shape = shape;
-    }
-  }
-
-  /**
    * This class contains the set of clipped shapes within a particular index cell.
    *
    * <p>To be as memory efficient as possible, we specialize two very common cases.
@@ -810,7 +749,7 @@ public strictfp class S2ShapeIndex {
     }
 
     /**
-     * Returns the cell ID of this cell.
+     * Returns the cell ID of this cell, which may be passed to S2CellId(long).
      */
     public long id() {
       // We store the cell ID on the first clipped shape.
@@ -835,13 +774,13 @@ public strictfp class S2ShapeIndex {
      * Returns the clipped shape corresponding to the given shape ID, or null if the shape does not
      * intersect this cell.
      */
-    S2ClippedShape findClipped(int shapeId) {
+    S2ClippedShape findClipped(S2Shape shape) {
       // Linear search is fine because the number of shapes per cell is typically very small (most
       // often 1), and is large only for pathological inputs (e.g. very deeply nested loops).
       for (int i = 0; i < numShapes(); i++) {
-        S2ClippedShape shape = clipped(i);
-        if (shape.shapeId() == shapeId) {
-          return shape;
+        S2ClippedShape clipped = clipped(i);
+        if (clipped.shape == shape) {
+          return clipped;
         }
       }
       return null;
@@ -926,19 +865,19 @@ public strictfp class S2ShapeIndex {
    */
   @VisibleForTesting
   public abstract static class S2ClippedShape extends Cell {
-    static S2ClippedShape create(S2CellId cellId, int shapeId, boolean containsCenter,
+    static S2ClippedShape create(S2CellId cellId, S2Shape shape, boolean containsCenter,
         List<ClippedEdge> edges, int start, int end) {
       int numEdges = end - start;
       if (numEdges == 1) {
-        return OneEdge.create(cellId, shapeId, containsCenter, edges.get(start));
+        return OneEdge.create(cellId, shape, containsCenter, edges.get(start));
       }
       int edge = edges.get(start).orig.edgeId;
       for (int i = 1; i < numEdges; i++) {
         if (edge + i != edges.get(start + i).orig.edgeId) {
-          return ManyEdges.create(cellId, shapeId, containsCenter, edges, start, end);
+          return ManyEdges.create(cellId, shape, containsCenter, edges, start, end);
         }
       }
-      return EdgeRange.create(cellId, shapeId, containsCenter, edge, numEdges);
+      return EdgeRange.create(cellId, shape, containsCenter, edge, numEdges);
     }
 
     /**
@@ -947,33 +886,26 @@ public strictfp class S2ShapeIndex {
      * This is done to save memory, since this single bit of information can otherwise be padded out
      * up to 4 or 8 additional bytes, depending on the fields in the subclass.
      */
-    private final int shapeId;
+    private final S2Shape shape;
 
-    private S2ClippedShape(int shapeId, boolean containsCenter) {
-      this.shapeId = containsCenter ? ~shapeId : shapeId;
+    private S2ClippedShape(S2Shape shape) {
+      this.shape = shape;
     }
 
     abstract long cellId();
 
     /**
-     * Returns the shape id of the clipped shape. The shape ID may be converted to an
-     * {@link S2Shape} via {@link S2ShapeIndex#shape(int)}.
+     * Returns the original shape this clipped shape was clipped from.
      */
-    final int shapeId() {
-      if (shapeId < 0) {
-        return ~shapeId;
-      } else {
-        return shapeId;
-      }
+    public final S2Shape shape() {
+      return shape;
     }
 
     /**
      * Returns whether the center of the S2CellId is inside the shape, and always returns false for
      * shapes that do not have an interior according to {@link S2Shape#hasInterior()}.
      */
-    public final boolean containsCenter() {
-      return shapeId < 0;
-    }
+    public abstract boolean containsCenter();
 
     /**
      * Returns the number of edges that intersect the S2CellId.
@@ -1021,20 +953,21 @@ public strictfp class S2ShapeIndex {
     }
 
     /**
-     * An S2ClippedShape that completely contains the cell (no edge intersections.) Very common.
+     * An S2ClippedShape for a shape that completely contains the cell
+     * (no edge intersections and containsCenter is true.)
      */
     private abstract static class Contained extends S2ClippedShape {
-      static Contained create(@Nullable S2CellId cellId, int shapeId) {
+      static Contained create(@Nullable S2CellId cellId, S2Shape shape) {
         if (cellId != null) {
           final long id = cellId.id();
-          return new Contained(shapeId) {
+          return new Contained(shape) {
             @Override
             long cellId() {
               return id;
             }
           };
         } else {
-          return new Contained(shapeId) {
+          return new Contained(shape) {
             @Override
             long cellId() {
               throw new UnsupportedOperationException();
@@ -1042,8 +975,12 @@ public strictfp class S2ShapeIndex {
           };
         }
       }
-      private Contained(int shapeId) {
-        super(shapeId, true);
+      private Contained(S2Shape shape) {
+        super(shape);
+      }
+      @Override
+      public final boolean containsCenter() {
+        return true;
       }
       @Override
       public final int numEdges() {
@@ -1059,28 +996,38 @@ public strictfp class S2ShapeIndex {
      * An S2ClippedShape that contains a single edge from a given shape. Very common.
      */
     private abstract static class OneEdge extends S2ClippedShape {
-      static final OneEdge create(@Nullable S2CellId cellId, int shapeId, boolean containsCenter,
+      static final OneEdge create(@Nullable S2CellId cellId, S2Shape shape, boolean containsCenter,
           ClippedEdge clippedEdge) {
         if (cellId != null) {
           final long id = cellId.id();
-          return new OneEdge(shapeId, containsCenter, clippedEdge) {
-            @Override
-            long cellId() {
-              return id;
-            }
-          };
+          if (containsCenter) {
+            return new OneEdge(shape, clippedEdge) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new OneEdge(shape, clippedEdge) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         } else {
-          return new OneEdge(shapeId, containsCenter, clippedEdge) {
-            @Override
-            long cellId() {
-              throw new UnsupportedOperationException();
-            }
-          };
+          if (containsCenter) {
+            return new OneEdge(shape, clippedEdge) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new OneEdge(shape, clippedEdge) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         }
       }
       private final int edge;
-      private OneEdge(int shapeId, boolean containsCenter, ClippedEdge clippedEdge) {
-        super(shapeId, containsCenter);
+      private OneEdge(S2Shape shape, ClippedEdge clippedEdge) {
+        super(shape);
         this.edge = clippedEdge.orig.edgeId;
       }
       @Override
@@ -1099,29 +1046,38 @@ public strictfp class S2ShapeIndex {
      * rarest.
      */
     private abstract static class ManyEdges extends S2ClippedShape {
-      static ManyEdges create(@Nullable S2CellId cellId, int shapeId, boolean containsCenter,
+      static ManyEdges create(@Nullable S2CellId cellId, S2Shape shape, boolean containsCenter,
           List<ClippedEdge> edges, int start, int end) {
         if (cellId != null) {
           final long id = cellId.id();
-          return new ManyEdges(shapeId, containsCenter, edges, start, end) {
-            @Override
-            long cellId() {
-              return id;
-            }
-          };
+          if (containsCenter) {
+            return new ManyEdges(shape, edges, start, end) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new ManyEdges(shape, edges, start, end) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         } else {
-          return new ManyEdges(shapeId, containsCenter, edges, start, end) {
-            @Override
-            long cellId() {
-              throw new UnsupportedOperationException();
-            }
-          };
+          if (containsCenter) {
+            return new ManyEdges(shape, edges, start, end) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new ManyEdges(shape, edges, start, end) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         }
       }
       private final int[] edges;
-      private ManyEdges(
-          int shapeId, boolean containsCenter, List<ClippedEdge> edges, int start, int end) {
-        super(shapeId, containsCenter);
+      private ManyEdges(S2Shape shape, List<ClippedEdge> edges, int start, int end) {
+        super(shape);
         this.edges = new int[end - start];
         for (int i = 0; i < this.edges.length; i++) {
           this.edges[i] = edges.get(i + start).orig.edgeId;
@@ -1141,28 +1097,38 @@ public strictfp class S2ShapeIndex {
      * An S2ClippedShape containing a single range of contiguous edge IDs. Very common.
      */
     private abstract static class EdgeRange extends S2ClippedShape {
-      static EdgeRange create(@Nullable S2CellId cellId, int shapeId, boolean containsCenter,
+      static EdgeRange create(@Nullable S2CellId cellId, S2Shape shape, boolean containsCenter,
           int offset, int count) {
         if (cellId != null) {
           final long id = cellId.id();
-          return new EdgeRange(shapeId, containsCenter, offset, count) {
-            @Override
-            long cellId() {
-              return id;
-            }
-          };
+          if (containsCenter) {
+            return new EdgeRange(shape, offset, count) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new EdgeRange(shape, offset, count) {
+              @Override long cellId() { return id; }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         } else {
-          return new EdgeRange(shapeId, containsCenter, offset, count) {
-            @Override
-            long cellId() {
-              throw new UnsupportedOperationException();
-            }
-          };
+          if (containsCenter) {
+            return new EdgeRange(shape, offset, count) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return true; }
+            };
+          } else {
+            return new EdgeRange(shape, offset, count) {
+              @Override long cellId() { throw new UnsupportedOperationException(); }
+              @Override public boolean containsCenter() { return false; }
+            };
+          }
         }
       }
       private final int offset, count;
-      private EdgeRange(int shapeId, boolean containsCenter, int offset, int count) {
-        super(shapeId, containsCenter);
+      private EdgeRange(S2Shape shape, int offset, int count) {
+        super(shape);
         this.offset = offset;
         this.count = count;
       }
@@ -1634,7 +1600,7 @@ public strictfp class S2ShapeIndex {
    * same, or (b) the intervening cells in S2CellId order are all empty, and therefore there are no
    * edge crossings if we follow this path from one cell to the other.
    */
-  static class InteriorTracker {
+  final class InteriorTracker {
     /**
      * Whether any shapes have an interior.
      */
@@ -1667,7 +1633,8 @@ public strictfp class S2ShapeIndex {
     private S2EdgeUtil.EdgeCrosser crosser;
 
     /**
-     * The set of shape ids that contain the current focus. Sorted by ID in ascending order.
+     * The set of shape ids (the indices of each shape in the S2ShapeIndex.shapes field) that
+     * contain the current focus. Sorted by ID in ascending order.
      */
     private final int[] focusedShapes;
 
@@ -1682,7 +1649,7 @@ public strictfp class S2ShapeIndex {
     private final S2ClippedShape[] tempClippedShapes;
 
     /**
-     * Initializes the InteriorTracker. You must call {@link #addShape(IdShape)} for each shape
+     * Initializes the InteriorTracker. You must call {@link #addShape(int, S2Shape)} for each shape
      * that will be tracked before calling {@link #moveTo(S2Point)} or {@link #drawTo(S2Point)}.
      */
     public InteriorTracker(int numShapes) {
@@ -1698,7 +1665,7 @@ public strictfp class S2ShapeIndex {
     }
 
     /**
-     * Returns true if {@link #addShape(IdShape)} has been called at least once.
+     * Returns true if {@link #addShape(int, S2Shape)} has been called at least once.
      */
     public boolean isActive() {
       return isActive;
@@ -1708,10 +1675,11 @@ public strictfp class S2ShapeIndex {
      * Adds a shape whose interior should be tracked. This should be followed by calling
      * {@link #testEdge(int, S2Point, S2Point)} with every edge of the given shape.
      */
-    public void addShape(IdShape idShape) {
+    public void addShape(int shapeId, S2Shape shape) {
+      // assert shapeId == shapes.indexOf(shape);
       isActive = true;
-      if (idShape.shape.containsOrigin()) {
-        toggleShape(idShape.id);
+      if (shape.containsOrigin()) {
+        toggleShape(shapeId);
       }
     }
 

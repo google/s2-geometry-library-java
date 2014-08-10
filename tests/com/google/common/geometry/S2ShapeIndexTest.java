@@ -18,9 +18,9 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Lists;
+import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.CellIterator;
 import com.google.common.geometry.S2ShapeIndex.CellRelation;
-import com.google.common.geometry.S2ShapeIndex.IdShape;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
 
@@ -206,7 +206,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       S2ShapeIndex.Cell cell = it.cell();
       for (int i = 0; i < cell.numShapes(); ++i) {
         S2ShapeIndex.S2ClippedShape clipped = cell.clipped(i);
-        assertTrue(index.shape(clipped.shapeId()).shape.hasInterior() || clipped.numEdges() > 0);
+        assertTrue(clipped.shape().hasInterior() || clipped.numEdges() > 0);
       }
     }
   }
@@ -240,25 +240,25 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       // Iterate through all the shapes, simultaneously validating the current index cell and all
       // the skipped cells.
       int numCountedTowardSubdivision = 0;
-      S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
-      for (IdShape idShape : index.shapes) {
+      MutableEdge edge = new MutableEdge();
+      for (S2Shape shape : index.shapes) {
         S2ClippedShape clipped = null;
         if (!it.done()) {
-          clipped = it.cell().findClipped(idShape.id);
+          clipped = it.cell().findClipped(shape);
         }
 
         // First check that containsCenter() is set correctly.
         for (int j = 0; j < skipped.size(); j++) {
-          checkInterior(idShape.shape, skipped.cellId(j), false);
+          checkInterior(shape, skipped.cellId(j), false);
         }
         if (!it.done()) {
           boolean containsCenter = clipped != null && clipped.containsCenter();
-          checkInterior(idShape.shape, it.id(), containsCenter);
+          checkInterior(shape, it.id(), containsCenter);
         }
 
         // Then check that the appropriate edges are present.
-        for (int e = 0; e < idShape.shape.numEdges(); e++) {
-          idShape.shape.getEdge(e, edge);
+        for (int e = 0; e < shape.numEdges(); e++) {
+          shape.getEdge(e, edge);
           for (int j = 0; j < skipped.size(); j++) {
             checkEdge(edge.a, edge.b, skipped.cellId(j), false);
           }
@@ -311,7 +311,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     }
     S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(S2.origin(), id.toPoint());
     boolean containsCenter = shape.containsOrigin();
-    S2ShapeUtil.Edge edge = new S2ShapeUtil.Edge();
+    MutableEdge edge = new MutableEdge();
     for (int e = 0; e < shape.numEdges(); e++) {
       shape.getEdge(e, edge);
       crosser.restartAt(edge.a);

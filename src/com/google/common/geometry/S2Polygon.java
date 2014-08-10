@@ -25,6 +25,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
+import com.google.common.geometry.S2Shape.MutableEdge;
 
 import java.io.Serializable;
 import java.util.Collections;
@@ -1579,7 +1580,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       }
 
       // Otherwise, check whether any of the edges intersect 'target'.
-      S2Loop aLoop = loop(aClipped.shapeId());
+      S2Loop aLoop = (S2Loop) aClipped.shape();
       for (int i = 0; i < aNumClipped; ++i) {
         int ai = aClipped.edge(i);
         if (S2EdgeUtil.clipToPaddedFace(aLoop.vertex(ai), aLoop.vertex(ai + 1), target.face(),
@@ -1639,7 +1640,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       int aNumClipped = aClipped.numEdges();
       if (aNumClipped > 0) {
         int aiPrev = -2;
-        S2Loop aLoop = loop(aClipped.shapeId());
+        S2Loop aLoop = (S2Loop) aClipped.shape();
         for (int i = 0; i < aNumClipped; ++i) {
           int ai = aClipped.edge(i);
           if (ai != aiPrev + 1) {
@@ -1893,7 +1894,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
 
       // Iterate through the candidate loops, and then the candidate edges within each loop.
       S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(a0, a1);
-      S2ShapeUtil.Edge result = new S2ShapeUtil.Edge();
+      MutableEdge result = new MutableEdge();
       for (Entry<S2Shape, S2EdgeQuery.Edges> entry : edgeMap.entrySet()) {
         final S2Loop bLoop = (S2Loop) entry.getKey();
         S2EdgeQuery.Edges edges = entry.getValue();

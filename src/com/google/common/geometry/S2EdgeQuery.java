@@ -67,24 +67,24 @@ public class S2EdgeQuery {
    * shape} that intersect AB. Consider using {@link ShapeEdges} instead, if the shape has few
    * enough edges.
    */
-  public Edges getCandidates(S2Point a, S2Point b, final S2ShapeIndex.IdShape shape) {
+  public Edges getCandidates(S2Point a, S2Point b, S2Shape shape) {
     // For small loops it is faster to use brute force. The threshold below was determined using the
     // benchmarks in the C++ S2Loop unit test.
     // TODO(eengle) Update this value based on benchmarking in Java.
     int maxBruteForceEdges = 27;
-    int maxEdges = shape.shape.numEdges();
+    int maxEdges = shape.numEdges();
     if (maxEdges <= maxBruteForceEdges) {
-      return new ShapeEdges(shape.shape.numEdges());
+      return new ShapeEdges(shape.numEdges());
     }
-    
+
     getCells(a, b);
-    
+
     // Compute and return the 'Edges', using different 'Edges' implementations based on how many
     // cells the query edge covers.
     if (cells.isEmpty()) {
       return EMPTY_EDGE_LIST;
     } else if (cells.size() == 1) {
-      S2ClippedShape clippedShape = cells.get(0).findClipped(shape.id);
+      S2ClippedShape clippedShape = cells.get(0).findClipped(shape);
       if (clippedShape == null || clippedShape.numEdges() == 0) {
         return EMPTY_EDGE_LIST;
       } else {
@@ -93,7 +93,7 @@ public class S2EdgeQuery {
     } else {
       MergedEdges edges = new MergedEdges();
       for (int i = 0; i < cells.size(); ++i) {
-        S2ClippedShape clippedShape = cells.get(i).findClipped(shape.id);
+        S2ClippedShape clippedShape = cells.get(i).findClipped(shape);
         if (clippedShape != null && clippedShape.numEdges() != 0) {
           edges.add(clippedShape);
         }
@@ -111,15 +111,18 @@ public class S2EdgeQuery {
     // If there are only a few edges then it's faster to use brute force. We only bother with this
     // optimization when there is a single shape, since then we can also use some tricks to avoid
     // reallocating the edge map.
-    if (index.numShapes() == 1) {
-      S2ShapeIndex.IdShape shape = index.shape(0);
+    if (index.shapes.size() == 1) {
+      S2Shape shape = index.shapes.get(0);
       Edges edges = getCandidates(a, b, shape);
-      return edges.isEmpty() ? Collections.<S2Shape, Edges>emptyMap()
-          : Collections.<S2Shape, Edges>singletonMap(shape.shape, edges);
+      if (edges.isEmpty()) {
+        return Collections.<S2Shape, Edges>emptyMap();
+      } else {
+        return Collections.<S2Shape, Edges>singletonMap(shape, edges);
+      }
     }
-    
+
     getCells(a, b);
-    
+
     // Compute and return the map.  If the map is nonempty, use different 'Edges' implementations
     // based on how many cells the query edge covers.
     if (cells.isEmpty()) {
@@ -131,7 +134,7 @@ public class S2EdgeQuery {
         if (clippedShape.numEdges() == 0) {
           return Collections.<S2Shape, Edges>emptyMap();
         } else {
-          S2Shape shape = index.shape(cell.clipped(0).shapeId()).shape;
+          S2Shape shape = cell.clipped(0).shape();
           return Collections.<S2Shape, Edges>singletonMap(shape, new SimpleEdges(clippedShape));
         }
       }
@@ -139,7 +142,7 @@ public class S2EdgeQuery {
       for (int j = 0; j < cell.numShapes(); ++j) {
         S2ClippedShape clippedShape = cell.clipped(j);
         if (clippedShape.numEdges() > 0) {
-          S2Shape shape = index.shape(clippedShape.shapeId()).shape;
+          S2Shape shape = clippedShape.shape();
           edgeMap.put(shape, new SimpleEdges(clippedShape));
         }
       }
@@ -153,7 +156,7 @@ public class S2EdgeQuery {
           if (clippedShape.numEdges() == 0) {
             continue;
           }
-          S2Shape shape = index.shape(clippedShape.shapeId()).shape;
+          S2Shape shape = clippedShape.shape();
           MergedEdges edges = (MergedEdges) edgeMap.get(shape);
           if (edges == null) {
             edges = new MergedEdges();
