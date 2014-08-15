@@ -42,20 +42,23 @@ import java.util.NoSuchElementException;
  *
  * <p>face: a 3-bit number (range 0..5) encoding the cube face.
  *
- * face_pos: a 61-bit number encoding the position of the center of this cell
+ * <p>face_pos: a 61-bit number encoding the position of the center of this cell
  * along the Hilbert curve over this face (see the Wiki pages for details).
  *
- * Sequentially increasing cell ids follow a continuous space-filling curve over
+ * <p>Sequentially increasing cell ids follow a continuous space-filling curve over
  * the entire sphere. They have the following properties:
- *  - The id of a cell at level k consists of a 3-bit face number followed by k
+ *
+ * <ul>
+ * <li>The id of a cell at level k consists of a 3-bit face number followed by k
  * bit pairs that recursively select one of the four children of each cell. The
  * next bit is always 1, and all other bits are 0. Therefore, the level of a
  * cell is determined by the position of its lowest-numbered bit that is turned
  * on (for a cell at level k, this position is 2 * (MAX_LEVEL - k).)
- *  - The id of a parent cell is at the midpoint of the range of ids spanned by
+ * <li>The id of a parent cell is at the midpoint of the range of ids spanned by
  * its children (or by its descendants at any level).
+ * </ul>
  *
- * Leaf cells are often used to represent points on the unit sphere, and this
+ * <p>Leaf cells are often used to represent points on the unit sphere, and this
  * class provides methods for converting directly between these two
  * representations. For cells that represent 2D regions rather than discrete
  * point, it is better to use the S2Cell class.
@@ -669,7 +672,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * Cells at lower levels (i.e. larger cells) are encoded into fewer characters.
    * The maximum token length is 16.
    *
-   * Simple implementation: convert the id to hex and strip trailing zeros. We
+   * <p>Simple implementation: convert the id to hex and strip trailing zeros. We
    * could use base-32 or base-64, but assuming the cells used for indexing
    * regions are at least 100 meters across (level 16 or less), the savings
    * would be at most 3 bytes (9 bytes hex vs. 6 bytes base-64).
@@ -735,7 +738,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * closest vertex may only have three neighbors if it is one of the 8 cube
    * vertices.
    *
-   * Requires: level < this.evel(), so that we can determine which vertex is
+   * <p>Requires: level < this.evel(), so that we can determine which vertex is
    * closest (in particular, level == MAX_LEVEL is not allowed).
    */
   public void getVertexNeighbors(int level, Collection<S2CellId> output) {
@@ -783,7 +786,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * not. In particular, two cells that intersect at a single point are
    * neighbors.
    *
-   * Requires: nbrLevel >= this->level(). Note that for cells adjacent to a
+   * <p>Requires: nbrLevel >= this->level(). Note that for cells adjacent to a
    * face vertex, the same neighbor may be appended more than once.
    */
   public void getAllNeighbors(int nbrLevel, List<S2CellId> output) {

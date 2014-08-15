@@ -173,30 +173,32 @@ public abstract strictfp class S2EdgeIndex {
    * exactly how many edges we would have wanted to test. It is the theoretical
    * best.
    *
-   *  The value 'n' is the number of iterators we expect to request from this
+   * <p>The value 'n' is the number of iterators we expect to request from this
    * edge index.
    *
-   *  If we have m data edges and n query edges, then the brute force cost is m
+   * <p>If we have m data edges and n query edges, then the brute force cost is m
    * * n * testCost where testCost is taken to be the cost of
    * EdgeCrosser.robustCrossing, measured to be about 30ns at the time of this
    * writing.
    *
-   *  If we compute the index, the cost becomes: m * costInsert + n *
+   * <p>If we compute the index, the cost becomes: m * costInsert + n *
    * costFind(m)
    *
-   *  - costInsert can be expected to be reasonably stable, and was measured at
+   * <ul>
+   * <li>costInsert can be expected to be reasonably stable, and was measured at
    * 1200ns with the BM_QuadEdgeInsertionCost benchmark.
    *
-   *  - costFind depends on the length of the edge . For m=1000 edges, we got
+   * <li>costFind depends on the length of the edge . For m=1000 edges, we got
    * timings ranging from 1ms (edge the length of the polygon) to 40ms. The
    * latter is for very long query edges, and needs to be optimized. We will
    * assume for the rest of the discussion that costFind is roughly 3ms.
+   * </ul>
    *
-   *  When doing one additional query, the differential cost is m * testCost -
+   * <p>When doing one additional query, the differential cost is m * testCost -
    * costFind(m) With the numbers above, it is better to use the quad tree (if
    * we have it) if m >= 100.
    *
-   *  If m = 100, 30 queries will give m*n*testCost = m * costInsert = 100ms,
+   * <p>If m = 100, 30 queries will give m*n*testCost = m * costInsert = 100ms,
    * while the marginal cost to find is 3ms. Thus, this is a reasonable thing to
    * do.
    */
@@ -307,10 +309,10 @@ public abstract strictfp class S2EdgeIndex {
    * level of the s2 cells used in the covering (only one level is ever used for
    * each call).
    *
-   *  If thickenEdge is true, the edge is thickened and extended by 1% of its
+   * <p>If thickenEdge is true, the edge is thickened and extended by 1% of its
    * length.
    *
-   *  It is guaranteed that no child of a covering cell will fully contain the
+   * <p>It is guaranteed that no child of a covering cell will fully contain the
    * covered edge.
    */
   private int getCovering(
@@ -576,7 +578,7 @@ public abstract strictfp class S2EdgeIndex {
    * An iterator on data edges that may cross a query edge (a,b). Create the
    * iterator, call getCandidates(), then hasNext()/next() repeatedly.
    *
-   * The current edge in the iteration has index index(), goes between from()
+   * <p>The current edge in the iteration has index index(), goes between from()
    * and to().
    */
   public static class DataEdgeIterator {
@@ -623,6 +625,8 @@ public abstract strictfp class S2EdgeIndex {
      * Initializes the iterator to iterate over a set of candidates that may
      * cross the edge (a,b).
      */
+    // TODO(user): Get a better API without the clumsy getCandidates().
+    // Maybe edgeIndex.GetIterator()?
     public void getCandidates(S2Point a, S2Point b) {
       edgeIndex.predictAdditionalCalls(1);
       isBruteForce = !edgeIndex.isIndexComputed();

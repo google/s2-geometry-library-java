@@ -500,13 +500,13 @@ public final strictfp class S2 {
    * false if the points are clockwise or colinear (i.e. if they are all
    * contained on some great circle).
    *
-   *  Due to numerical errors, situations may arise that are mathematically
+   * <p>Due to numerical errors, situations may arise that are mathematically
    * impossible, e.g. ABC may be considered strictly CCW while BCA is not.
    * However, the implementation guarantees the following:
    *
-   *  If SimpleCCW(a,b,c), then !SimpleCCW(c,b,a) for all a,b,c.
+   * <p>If SimpleCCW(a,b,c), then !SimpleCCW(c,b,a) for all a,b,c.
    *
-   * In other words, ABC and CBA are guaranteed not to be both CCW
+   * <p>In other words, ABC and CBA are guaranteed not to be both CCW
    */
   public static boolean simpleCCW(S2Point a, S2Point b, S2Point c) {
     // We compute the signed volume of the parallelepiped ABC. The usual
@@ -555,26 +555,29 @@ public final strictfp class S2 {
   }
 
   /**
-   * <p>
-   * Like SimpleCCW(), but returns +1 if the points are counterclockwise and -1
+   * <p>Like SimpleCCW(), but returns +1 if the points are counterclockwise and -1
    * if the points are clockwise. It satisfies the following conditions:
    *
-   *  (1) RobustCCW(a,b,c) == 0 if and only if a == b, b == c, or c == a (2)
-   * RobustCCW(b,c,a) == RobustCCW(a,b,c) for all a,b,c (3) RobustCCW(c,b,a)
-   * ==-RobustCCW(a,b,c) for all a,b,c
+   * <ul>
+   * <li>RobustCCW(a,b,c) == 0 if and only if a == b, b == c, or c == a
+   * <li>RobustCCW(b,c,a) == RobustCCW(a,b,c) for all a,b,c
+   * <li>RobustCCW(c,b,a) ==-RobustCCW(a,b,c) for all a,b,c
+   * </ul>
    *
-   *  In other words:
+   * <p>In other words:
    *
-   *  (1) The result is zero if and only if two points are the same. (2)
-   * Rotating the order of the arguments does not affect the result. (3)
-   * Exchanging any two arguments inverts the result.
+   * <ul>
+   * <li>The result is zero if and only if two points are the same.
+   * <li>Rotating the order of the arguments does not affect the result.
+   * <li>Exchanging any two arguments inverts the result.
+   * </ul>
    *
-   *  This function is essentially like taking the sign of the determinant of
+   * <p>This function is essentially like taking the sign of the determinant of
    * a,b,c, except that it has additional logic to make sure that the above
    * properties hold even when the three points are coplanar, and to deal with
    * the limitations of floating-point arithmetic.
    *
-   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * <p>Note: a, b and c are expected to be of unit length. Otherwise, the results
    * are undefined.
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c) {
@@ -590,7 +593,7 @@ public final strictfp class S2 {
    * A more efficient version of RobustCCW that allows the precomputed
    * cross-product of A and B to be specified.
    *
-   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * <p>Note: a, b and c are expected to be of unit length. Otherwise, the results
    * are undefined
    */
   public static int robustCCW(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
@@ -848,7 +851,7 @@ public final strictfp class S2 {
    * always in the range [0, Pi]. The points do not need to be normalized.
    * Ensures that Angle(a,b,c) == Angle(c,b,a) for all a,b,c.
    *
-   *  The angle is undefined if A or C is diametrically opposite from B, and
+   * <p>The angle is undefined if A or C is diametrically opposite from B, and
    * becomes numerically unstable as the length of edge AB or BC approaches 180
    * degrees.
    */

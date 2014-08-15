@@ -651,7 +651,7 @@ public strictfp class S2EdgeUtil {
    * v2, ... and returns a boolean value indicating whether each edge intersects
    * the specified bounding box.
    *
-   * We use XYZ intervals instead of something like longitude intervals because
+   * <p>We use XYZ intervals instead of something like longitude intervals because
    * it is cheap to collect from S2Point lists and any slicing strategy should
    * give essentially equivalent results.  See S2Loop for an example of use.
    */
@@ -749,7 +749,7 @@ public strictfp class S2EdgeUtil {
    * v2, ... and returns a boolean value indicating whether each edge intersects
    * the specified longitude interval.
    *
-   * This class is not currently used as the XYZPruner is preferred for
+   * <p>This class is not currently used as the XYZPruner is preferred for
    * S2Loop, but this should be usable in similar circumstances.  Be wary
    * of the cost of atan2() in conversions from S2Point to longitude!
    */
@@ -1523,8 +1523,10 @@ public strictfp class S2EdgeUtil {
    * Return true if edge AB crosses CD at a point that is interior to both
    * edges. Properties:
    *
-   *  (1) simpleCrossing(b,a,c,d) == simpleCrossing(a,b,c,d) (2)
-   * simpleCrossing(c,d,a,b) == simpleCrossing(a,b,c,d)
+   * <ul>
+   * <li>simpleCrossing(b,a,c,d) == simpleCrossing(a,b,c,d)
+   * <li>simpleCrossing(c,d,a,b) == simpleCrossing(a,b,c,d)
+   * </ul>
    */
   public static boolean simpleCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
     // We compute simpleCCW() for triangles ACB, CBD, BDA, and DAC. All
@@ -1555,12 +1557,14 @@ public strictfp class S2EdgeUtil {
    * same. Returns 0 or -1 if either edge is degenerate. Properties of
    * robustCrossing:
    *
-   *  (1) robustCrossing(b,a,c,d) == robustCrossing(a,b,c,d) (2)
-   * robustCrossing(c,d,a,b) == robustCrossing(a,b,c,d) (3)
-   * robustCrossing(a,b,c,d) == 0 if a==c, a==d, b==c, b==d (3)
-   * robustCrossing(a,b,c,d) <= 0 if a==b or c==d
+   * <ul>
+   * <li>robustCrossing(b,a,c,d) == robustCrossing(a,b,c,d)
+   * <li>robustCrossing(c,d,a,b) == robustCrossing(a,b,c,d)
+   * <li>robustCrossing(a,b,c,d) == 0 if a==c, a==d, b==c, b==d
+   * <li>robustCrossing(a,b,c,d) <= 0 if a==b or c==d
+   * </ul>
    *
-   *  Note that if you want to check an edge against a *chain* of other edges,
+   * <p>Note that if you want to check an edge against a *chain* of other edges,
    * it is much more efficient to use an EdgeCrosser (above).
    */
   public static int robustCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
@@ -1576,21 +1580,24 @@ public strictfp class S2EdgeUtil {
    * that a "crossing" occurs if AB is encountered after CD during a CCW sweep
    * around the shared vertex starting from a fixed reference point.
    *
-   *  Note that according to this rule, if AB crosses CD then in general CD does
+   * <p>Note that according to this rule, if AB crosses CD then in general CD does
    * not cross AB. However, this leads to the correct result when counting
    * polygon edge crossings. For example, suppose that A,B,C are three
    * consecutive vertices of a CCW polygon. If we now consider the edge
    * crossings of a segment BP as P sweeps around B, the crossing number changes
    * parity exactly when BP crosses BA or BC.
    *
-   *  Useful properties of VertexCrossing (VC):
+   * <p>Useful properties of VertexCrossing (VC):
    *
-   *  (1) VC(a,a,c,d) == VC(a,b,c,c) == false (2) VC(a,b,a,b) == VC(a,b,b,a) ==
-   * true (3) VC(a,b,c,d) == VC(a,b,d,c) == VC(b,a,c,d) == VC(b,a,d,c) (3) If
-   * exactly one of a,b equals one of c,d, then exactly one of VC(a,b,c,d) and
+   * <ul>
+   * <li>VC(a,a,c,d) == VC(a,b,c,c) == false
+   * <li> VC(a,b,a,b) == VC(a,b,b,a) == true
+   * <li>VC(a,b,c,d) == VC(a,b,d,c) == VC(b,a,c,d) == VC(b,a,d,c)
+   * <li>If exactly one of a,b equals one of c,d, then exactly one of VC(a,b,c,d) and
    * VC(c,d,a,b) is true
+   * </ul>
    *
-   * It is an error to call this method with 4 distinct vertices.
+   * <p>It is an error to call this method with 4 distinct vertices.
    */
   public static boolean vertexCrossing(S2Point a, S2Point b, S2Point c, S2Point d) {
     // If A == B or C == D there is no intersection. We need to check this
@@ -1695,14 +1702,16 @@ public strictfp class S2EdgeUtil {
     return (acb * cbd >= 0) && (acb * dac >= 0);
   }
 
-  /*
+  /**
    * Given two edges AB and CD such that robustCrossing() is true, return their
    * intersection point. Useful properties of getIntersection (GI):
    *
-   * (1) GI(b,a,c,d) == GI(a,b,d,c) == GI(a,b,c,d) (2) GI(c,d,a,b) ==
-   * GI(a,b,c,d)
+   * <ul>
+   * <li>GI(b,a,c,d) == GI(a,b,d,c) == GI(a,b,c,d)
+   * <li>GI(c,d,a,b) == GI(a,b,c,d)
+   * </ul>
    *
-   * The returned intersection point X is guaranteed to be close to the edges AB
+   * <p>The returned intersection point X is guaranteed to be close to the edges AB
    * and CD, but if the edges intersect at a very small angle then X may not be
    * close to the true mathematical intersection point P. See the description of
    * "DEFAULT_INTERSECTION_TOLERANCE" below for details.
