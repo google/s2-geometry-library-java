@@ -110,6 +110,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   private static final int[] LOOKUP_POS = new int[1 << (2 * LOOKUP_BITS + 2)];
   private static final int[] LOOKUP_IJ = new int[1 << (2 * LOOKUP_BITS + 2)];
 
+  private static final S2CellId NONE = new S2CellId();
+  private static final S2CellId SENTINEL = new S2CellId(MAX_UNSIGNED);
+
   /**
    * This is the offset required to wrap around from the beginning of the
    * Hilbert curve to the end or vice versa; see nextWrap() and prevWrap().
@@ -138,7 +141,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /** The default constructor returns an invalid cell id. */
   public static S2CellId none() {
-    return new S2CellId();
+    return NONE;
   }
 
   /**
@@ -146,12 +149,12 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * Useful for creating indexes.
    */
   public static S2CellId sentinel() {
-    return new S2CellId(MAX_UNSIGNED); // -1
+    return SENTINEL; // -1
   }
 
   /** Returns the cell corresponding to a given S2 cube face. */
   public static S2CellId fromFace(int face) {
-    return new S2CellId((((long) face) << POS_BITS) + lowestOnBitForLevel(0));
+    return new S2CellId(fromFaceAsLong(face));
   }
 
   /**
@@ -162,7 +165,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * the arguments represent.
    */
   public static S2CellId fromFacePosLevel(int face, long pos, int level) {
-    return new S2CellId((((long) face) << POS_BITS) + (pos | 1)).parent(level);
+    return new S2CellId(fromFacePosLevelAsLong(face, pos, level));
   }
 
   /**
@@ -353,7 +356,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * that termination would need to be tested using "<" rather that the usual "!=".
    */
   public S2CellId rangeMin() {
-    return new S2CellId(id - (lowestOnBit() - 1));
+    return new S2CellId(rangeMinAsLong(id));
   }
 
   /**
@@ -364,26 +367,26 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * @see S2CellId#rangeMin
    */
   public S2CellId rangeMax() {
-    return new S2CellId(id + (lowestOnBit() - 1));
+    return new S2CellId(rangeMaxAsLong(id));
   }
 
   /** Return true if the given cell is contained within this one. */
   public boolean contains(S2CellId other) {
     // assert (isValid() && other.isValid());
-    return other.greaterOrEquals(rangeMin()) && other.lessOrEquals(rangeMax());
+    return unsignedLongGreaterOrEquals(other.id, rangeMinAsLong(id))
+        && unsignedLongLessOrEquals(other.id, rangeMaxAsLong(id));
   }
 
   /** Return true if the given cell intersects this one. */
   public boolean intersects(S2CellId other) {
     // assert (isValid() && other.isValid());
-    return other.rangeMin().lessOrEquals(rangeMax())
-      && other.rangeMax().greaterOrEquals(rangeMin());
+    return unsignedLongLessOrEquals(rangeMinAsLong(other.id), rangeMaxAsLong(id))
+        && unsignedLongGreaterOrEquals(rangeMaxAsLong(other.id), rangeMinAsLong(id));
   }
 
   public S2CellId parent() {
     // assert (isValid() && level() > 0);
-    long newLsb = lowestOnBit() << 2;
-    return new S2CellId((id & -newLsb) | newLsb);
+    return new S2CellId(parentAsLong(id));
   }
 
   /**
@@ -392,8 +395,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2CellId parent(int level) {
     // assert (isValid() && level >= 0 && level <= this.level());
-    long newLsb = lowestOnBitForLevel(level);
-    return new S2CellId((id & -newLsb) | newLsb);
+    return new S2CellId(parentAsLong(id, level));
   }
 
   /**
@@ -465,8 +467,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2CellId childBegin() {
     // assert (isValid() && level() < MAX_LEVEL);
-    long oldLsb = lowestOnBit();
-    return new S2CellId(id - oldLsb + (oldLsb >>> 2));
+    return new S2CellId(childBeginAsLong(id));
   }
 
   /**
@@ -475,7 +476,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2CellId childBegin(int level) {
     // assert (isValid() && level >= this.level() && level <= MAX_LEVEL);
-    return new S2CellId(id - lowestOnBit() + lowestOnBitForLevel(level));
+    return new S2CellId(childBeginAsLong(id, level));
   }
 
   /**
@@ -484,8 +485,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2CellId childEnd() {
     // assert (isValid() && level() < MAX_LEVEL);
-    long oldLsb = lowestOnBit();
-    return new S2CellId(id + oldLsb + (oldLsb >>> 2));
+    return new S2CellId(childEndAsLong(id));
   }
 
   /**
@@ -494,7 +494,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2CellId childEnd(int level) {
     // assert (isValid() && level >= this.level() && level <= MAX_LEVEL);
-    return new S2CellId(id + lowestOnBit() + lowestOnBitForLevel(level));
+    return new S2CellId(childEndAsLong(id, level));
   }
 
   /**
@@ -547,7 +547,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * all 6 faces of the cube).
    */
   public static S2CellId begin(int level) {
-    return fromFace(0).childBegin(level);
+    return new S2CellId(childBeginAsLong(fromFaceAsLong(0), level));
   }
 
   /**
@@ -555,7 +555,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * (across all 6 faces of the cube). The end value is exclusive, and is not a valid cell id.
    */
   public static S2CellId end(int level) {
-    return fromFace(5).childEnd(level);
+    return new S2CellId(childEndAsLong(fromFaceAsLong(5), level));
   }
 
   /**
@@ -947,7 +947,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * a.level() >= b.level(), but the first test is more efficient.
    */
   public long lowestOnBit() {
-    return id & -id;
+    return lowestOnBit(id);
   }
 
   /** Return the lowest-numbered bit that is on for cells at the given level. */
@@ -967,7 +967,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return bound;
   }
 
-  private static final void setAxisRange(int ij, int cellSize, R1Interval interval) {
+  private static void setAxisRange(int ij, int cellSize, R1Interval interval) {
     int lo = ij & -cellSize;
     int hi = lo + cellSize;
     interval.set(
@@ -1045,10 +1045,24 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   /**
+   * Returns true if x1 <= x2, when both values are treated as unsigned.
+   */
+  public static boolean unsignedLongLessOrEquals(long x1, long x2) {
+    return (x1 + Long.MIN_VALUE) <= (x2 + Long.MIN_VALUE);
+  }
+
+  /**
    * Returns true if x1 > x2, when both values are treated as unsigned.
    */
   public static boolean unsignedLongGreaterThan(long x1, long x2) {
     return (x1 + Long.MIN_VALUE) > (x2 + Long.MIN_VALUE);
+  }
+
+  /**
+   * Returns true if x1 >= x2, when both values are treated as unsigned.
+   */
+  public static boolean unsignedLongGreaterOrEquals(long x1, long x2) {
+    return (x1 + Long.MIN_VALUE) >= (x2 + Long.MIN_VALUE);
   }
 
   public boolean lessThan(S2CellId x) {
@@ -1060,11 +1074,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   public boolean lessOrEquals(S2CellId x) {
-    return unsignedLongLessThan(id, x.id) || id == x.id;
+    return unsignedLongLessOrEquals(id, x.id);
   }
 
   public boolean greaterOrEquals(S2CellId x) {
-    return unsignedLongGreaterThan(id, x.id) || id == x.id;
+    return unsignedLongGreaterOrEquals(id, x.id);
   }
 
   @Override
@@ -1103,5 +1117,53 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   public int compareTo(S2CellId that) {
     return unsignedLongLessThan(this.id, that.id) ? -1 :
         unsignedLongGreaterThan(this.id, that.id) ? 1 : 0;
+  }
+
+  private static long fromFaceAsLong(int face) {
+    return (((long) face) << POS_BITS) + lowestOnBitForLevel(0);
+  }
+
+  private static long childBeginAsLong(long id) {
+    long oldLsb = lowestOnBit(id);
+    return id - oldLsb + (oldLsb >>> 2);
+  }
+
+  private static long childBeginAsLong(long id, int level) {
+    return id - lowestOnBit(id) + lowestOnBitForLevel(level);
+  }
+
+  private static long childEndAsLong(long id) {
+    long oldLsb = lowestOnBit(id);
+    return id + oldLsb + (oldLsb >>> 2);
+  }
+
+  private static long childEndAsLong(long id, int level) {
+    return id + lowestOnBit(id) + lowestOnBitForLevel(level);
+  }
+
+  private static long rangeMinAsLong(long id) {
+    return id - (lowestOnBit(id) - 1);
+  }
+
+  private static long rangeMaxAsLong(long id) {
+    return id + (lowestOnBit(id) - 1);
+  }
+
+  private static long lowestOnBit(long id) {
+    return Long.lowestOneBit(id);
+  }
+
+  private static long parentAsLong(long id) {
+    long newLsb = lowestOnBit(id) << 2;
+    return (id & -newLsb) | newLsb;
+  }
+
+  private static long parentAsLong(long id, int level) {
+    long newLsb = lowestOnBitForLevel(level);
+    return (id & -newLsb) | newLsb;
+  }
+
+  private static long fromFacePosLevelAsLong(int face, long pos, int level) {
+    return parentAsLong((((long) face) << POS_BITS) + (pos | 1), level);
   }
 }
