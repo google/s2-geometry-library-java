@@ -463,7 +463,6 @@ public strictfp class GeometryTestCase extends TestCase {
     for (int j = 0; j < outerInside.numVertices(); ++j) {
       vertices.add(outerInside.vertex(j));
     }
-    Lists.reverse(vertices);
     for (int j = 0; j < outerOutside.numVertices(); ++j) {
       vertices.add(outerOutside.vertex(j));
     }
