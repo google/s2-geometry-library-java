@@ -255,7 +255,7 @@ public class S2LoopBenchmark {
           GeometryTestCase.DEFAULT_RADIUS, DEFAULT_NESTED_GAP_MULTIPLE, numVertices,
           testUtils.randomPoint()));
       for (int r = reps; r > 0; --r) {
-        assertEquals(1, loops.get(0).compareBoundary(loops.get(1)));
+        assertEquals(-1, loops.get(0).compareBoundary(loops.get(1)));
       }
     }
   }
@@ -296,7 +296,7 @@ public class S2LoopBenchmark {
           GeometryTestCase.DEFAULT_RADIUS, DEFAULT_NESTED_GAP_MULTIPLE, DEFAULT_NUM_VERTICES,
           testUtils.randomPoint()));
       for (int r = reps; r > 0; --r) {
-        assertTrue(loops.get(0).contains(loops.get(1)));
+        assertFalse(loops.get(0).contains(loops.get(1)));
       }
     }
   }
@@ -338,7 +338,7 @@ public class S2LoopBenchmark {
           GeometryTestCase.DEFAULT_RADIUS, DEFAULT_NESTED_GAP_MULTIPLE, DEFAULT_NUM_VERTICES,
           testUtils.randomPoint()));
       for (int r = reps; r > 0; --r) {
-        assertTrue(loops.get(0).intersects(loops.get(1)));
+        assertFalse(loops.get(0).intersects(loops.get(1)));
       }
     }
   }

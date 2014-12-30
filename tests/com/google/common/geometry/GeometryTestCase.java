@@ -460,7 +460,7 @@ public strictfp class GeometryTestCase extends TestCase {
         Lists.newArrayListWithCapacity(outerInside.numVertices() + outerOutside.numVertices());
 
     // Join together the outside and inside shells to form the outer loop.
-    for (int j = 0; j < outerInside.numVertices(); ++j) {
+    for (int j = outerInside.numVertices() - 1; j >= 0; j--) {
       vertices.add(outerInside.vertex(j));
     }
     for (int j = 0; j < outerOutside.numVertices(); ++j) {
