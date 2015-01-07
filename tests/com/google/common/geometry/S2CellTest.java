@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2Projections.PROJ;
+import static java.lang.Math.PI;
 
 import com.google.common.annotations.GwtCompatible;
 
@@ -471,5 +472,32 @@ public strictfp class S2CellTest extends GeometryTestCase {
         ++iter;
       }
     }
+  }
+
+  public void testGetDistance() {
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      S2Point target = randomPoint();
+      S1Angle expected = getDistanceBruteForce(cell, target).toAngle();
+      S1Angle actual = cell.getDistance(target).toAngle();
+      // The error has a peak near Pi/2 for edge distance, and another peak near
+      // Pi for vertex distance.
+      assertEquals(expected.radians(), actual.radians(), 1e-12);
+      if (expected.radians() <= PI / 3) {
+        assertEquals(expected.radians(), actual.radians(), 1e-15);
+      }
+    }
+  }
+
+  private static S1ChordAngle getDistanceBruteForce(S2Cell cell, S2Point target) {
+    if (cell.contains(target)) {
+      return S1ChordAngle.ZERO;
+    }
+    S1ChordAngle minDistance = S1ChordAngle.INFINITY;
+    for (int i = 0; i < 4; ++i) {
+      minDistance = S2EdgeUtil.updateMinDistance(target, cell.getVertex(i),
+          cell.getVertex((i + 1) % 4), minDistance);
+    }
+    return minDistance;
   }
 }

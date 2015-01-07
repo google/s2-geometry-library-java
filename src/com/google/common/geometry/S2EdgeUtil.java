@@ -16,6 +16,9 @@
 
 package com.google.common.geometry;
 
+import static java.lang.Math.min;
+import static java.lang.Math.sqrt;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 
@@ -1792,6 +1795,80 @@ public strictfp class S2EdgeUtil {
     Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: %s", a);
     Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: %s", b);
     return S1Angle.radians(getDistanceRadians(x, a, b, S2.robustCrossProd(a, b)));
+  }
+
+  /**
+   * Return the minimum of the distance from X to any point on edge AB and the given
+   * {@code minDistance}.
+   *
+   * @throws IllegalArgumentException Thrown if the parameters are not all unit
+   * length.
+   */
+  public static S1ChordAngle updateMinDistance(S2Point x, S2Point a, S2Point b,
+      S1ChordAngle minDistance) {
+    Preconditions.checkArgument(S2.isUnitLength(x), "S2Point not normalized: %s", x);
+    Preconditions.checkArgument(S2.isUnitLength(a), "S2Point not normalized: %s", a);
+    Preconditions.checkArgument(S2.isUnitLength(b), "S2Point not normalized: %s", b);
+
+    // We divide the problem into two cases, based on whether the closest point
+    // on AB is one of the two vertices (the "vertex case") or in the interior
+    // (the "interior case").  Let C = A x B.  If X is in the spherical wedge
+    // extending from A to B around the axis through C, then we are in the
+    // interior case.  Otherwise we are in the vertex case.
+
+    // Check whether we might be in the interior case. For this to be true, XAB and XBA must both be
+    // acute angles. Checking this condition exactly is expensive, so instead we consider the 3D
+    // Euclidian triangle ABX (which passes through the sphere's interior). As can be observed from
+    // the law of spherical excess, the planar angles XAB and XBA are always less than the
+    // corresponding spherical angles, so if we are in the interior case then both of these angles
+    // must be acute.
+    //
+    // We check this by computing the squared edge lengths of the 3D Euclidean triangle ABX, and
+    // testing acuteness using the law of cosines:
+    //
+    //                      max(XA^2, XB^2) < AB^2 + min(XA^2, XB^2)
+    // or equivalently:     XA^2 + XB^2 < AB^2 + 2 * min(XA^2, XB^2)
+    //
+    double xa2 = x.getDistance2(a), xb2 = x.getDistance2(b), ab2 = a.getDistance2(b);
+    double dist2 = min(xa2, xb2);
+    if (xa2 + xb2 < ab2 + 2 * dist2) {
+      // The minimum distance might be to a point on the edge interior. Let R be the closest point
+      // to X that lies on the great circle through AB. Rather than computing the geodesic distance
+      // along the surface of the sphere, instead we compute the "chord length", the 3D Euclidian
+      // length of the line passing through the sphere's interior. If the squared chord length
+      // exceeds minDistance.getLength2() then we can return "false" immediately.
+      //
+      // The squared chord length XR^2 can be expressed as XQ^2 + QR^2, where Q is the point X
+      // projected onto the plane through the great circle AB.
+      // The distance XQ^2 can be written as (X.C)^2 / |C|^2 where C = A x B.
+      // We ignore the QR^2 term and instead use XQ^2 as a lower bound, since it is faster and the
+      // corresponding distance on the Earth's surface is accurate to within 1% for distances up to
+      // about 1800km.
+      S2Point c = S2.robustCrossProd(a, b);
+      double c2 = c.norm2();
+      double xDotC = x.dotProd(c);
+      double xDotC2 = xDotC * xDotC;
+      if (xDotC2 >= c2 * minDistance.getLength2()) {
+        // The closest point on the great circle AB is too far away.
+        return minDistance;
+      }
+      // Otherwise we do the exact, more expensive test for the interior case.
+      // This test is very likely to succeed because of the conservative planar test we did
+      // initially.
+      S2Point cx = S2Point.crossProd(c, x);
+      if (a.dotProd(cx) < 0 && b.dotProd(cx) > 0) {
+        // Compute the squared chord length XR^2 = XQ^2 + QR^2 (see above).
+        // This calculation has good accuracy for all chord lengths since it is based on both the
+        // dot product and cross product (rather than deriving one from the other). However, note
+        // that the chord length representation itself loses accuracy as the angle approaches Pi.
+        double qr = 1 - sqrt(cx.norm2() / c2);
+        dist2 = (xDotC2 / c2) + (qr * qr);
+      }
+    }
+    if (dist2 >= minDistance.getLength2()) {
+      return minDistance;
+    }
+    return S1ChordAngle.fromLength2(dist2);
   }
 
   /**

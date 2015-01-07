@@ -59,4 +59,10 @@ public strictfp class S1AngleTest extends TestCase {
     assertEquals(er * Math.PI / 2, S1Angle.radians(Math.PI / 2).earthDistance(), 1e-8);
     assertEquals(er * Math.PI / 4, S1Angle.radians(Math.PI / 4).earthDistance(), 1e-8);
   }
+
+  public void testInfinity() {
+    assertTrue(S1Angle.radians(1e30).compareTo(S1Angle.INFINITY) < 0);
+    assertTrue(S1Angle.INFINITY.neg().compareTo(S1Angle.ZERO) < 0);
+    assertTrue(S1Angle.INFINITY.equals(S1Angle.INFINITY));
+  }
 }

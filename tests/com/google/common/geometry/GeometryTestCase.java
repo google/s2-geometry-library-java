@@ -103,6 +103,23 @@ public strictfp class GeometryTestCase extends TestCase {
     return rand.nextInt(n) == 0;
   }
 
+  /**
+   * Return a right-handed coordinate frame (three orthonormal vectors).
+   */
+  public Matrix3x3 getRandomFrame() {
+    return getRandomFrameAt(randomPoint());
+  }
+
+  /**
+   * Given a unit-length z-axis, compute x- and y-axes such that (x,y,z) is a right-handed
+   * coordinate frame (three orthonormal vectors).
+   */
+  public Matrix3x3 getRandomFrameAt(S2Point z) {
+    S2Point x = S2Point.normalize(S2Point.crossProd(z, randomPoint()));
+    S2Point y = S2Point.normalize(S2Point.crossProd(z, x));
+    return Matrix3x3.fromCols(x, y, z);
+  }
+
   int random(int n) {
     if (n == 0) {
       return 0;

@@ -23,6 +23,7 @@ import java.util.List;
 import javax.annotation.CheckReturnValue;
 
 /** A simple 3x3 matrix. */
+// TODO(eengle): Rename this to Matrix as it is not necessarily 3x3, and make Matrix3x3 a subclass.
 @GwtCompatible
 public final class Matrix3x3 {
   private final double[] values;
@@ -110,6 +111,15 @@ public final class Matrix3x3 {
       }
     }
     return result;
+  }
+
+  /**
+   * Return the vector of the given column.
+   */
+  public S2Point getCol(int col) {
+    Preconditions.checkState(rows == 3);
+    Preconditions.checkArgument(0 <= col && col < cols);
+    return new S2Point(values[col], values[cols + col], values[2 * cols + col]);
   }
 
   @Override

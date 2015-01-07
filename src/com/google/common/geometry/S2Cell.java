@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
@@ -105,7 +106,7 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   }
 
   /**
-   * Returns the k<super>th</super> vertex of the cell (k = 0,1,2,3).  Vertices are returned in CCW
+   * Returns the k<sup>th</sup> vertex of the cell (k = 0,1,2,3).  Vertices are returned in CCW
    * order (lower left, lower right, upper right, upper left in the UV plane). The points are not
    * necessarily unit length.
    */
@@ -437,6 +438,118 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   @Override
   public boolean contains(S2Cell cell) {
     return cellId.contains(cell.cellId);
+  }
+
+  /**
+   * Returns the squared chord distance from UVW position {@code p} to corner vertex
+   * ({@code i}, {@code j}).
+   */
+  private double vertexChordDist2(S2Point p, boolean i, boolean j) {
+    S2Point vertex = S2Point.normalize(new S2Point(i ? uMax : uMin, j ? vMax : vMin, 1));
+    return p.getDistance2(vertex);
+  }
+
+  /**
+   * Given a point {@code p} and either the lower or upper edge of the {@link S2Cell} (specified by
+   * setting {@code vEnd} to false or true respectively), returns true if {@code p} is closer to the
+   * interior of that edge than it is to either endpoint.
+   */
+  private boolean uEdgeIsClosest(S2Point p, boolean vEnd) {
+    double v = vEnd ? vMax : vMin;
+    // These are the normals to the planes that are perpendicular to the edge and pass through one
+    // of its two endpoints.
+    S2Point dir0 =  new S2Point(v * v + 1, -uMin * v, -uMin);
+    S2Point dir1 = new S2Point(v * v + 1, -uMax * v, -uMax);
+    return p.dotProd(dir0) > 0 && p.dotProd(dir1) < 0;
+  }
+
+  /**
+   * Given a point {@code p} and either the left or right edge of the {@link S2Cell} (specified by
+   * setting {@code uEnd} to false or true respectively), returns true if {@code p} is closer to the
+   * interior of that edge than it is to either endpoint.
+   */
+  private boolean vEdgeIsClosest(S2Point p, boolean uEnd) {
+    double u = uEnd ? uMax : uMin;
+    // See comments above.
+    S2Point dir0 = new S2Point(-u * vMin, u * u + 1, -vMin);
+    S2Point dir1 = new S2Point(-u * vMax, u * u + 1, -vMax);
+    return p.dotProd(dir0) > 0 && p.dotProd(dir1) < 0;
+  }
+
+  /**
+   * Given the dot product of a point P with the normal of a u- or v-edge at the given coordinate
+   * value, returns the distance from P to that edge.
+   */
+  private static S1ChordAngle edgeDistance(double dirIJ, double uv) {
+    checkArgument(dirIJ >= 0);
+
+    // Let P be the target point and let R be the closest point on the given edge AB. The desired
+    // distance XR can be expressed as PR^2 = PQ^2 + QR^2 where Q is the point P projected onto the
+    // plane through the great circle through AB. We can compute the distance PQ^2 perpendicular to
+    // the plane from "dirIJ" (the dot product of the target point P with the edge normal) and the
+    // squared length of the edge normal (1 + uv**2).
+    double pq2 = (dirIJ * dirIJ) / (1 + uv * uv);
+
+    // We can compute the distance QR as (1 - OQ) where O is the sphere origin,
+    // and we can compute OQ^2 = 1 - PQ^2 using the Pythagorean theorem.
+    // (This calculation loses accuracy as the angle approaches Pi/2.)
+    double qr = 1 - Math.sqrt(1 - pq2);
+    return S1ChordAngle.fromLength2(pq2 + qr * qr);
+  }
+
+  /**
+   * Returns the distance from the given point to the cell. Returns zero if the point is inside the
+   * cell.
+   */
+  public S1ChordAngle getDistance(S2Point targetXyz) {
+    // All calculations are done in the (u,v,w) coordinates of this cell's face.
+    S2Point targetUvw = S2Projections.faceXyzToUvw(face, targetXyz);
+    // Compute dot products with all four upward or rightward-facing edge normals. "dirIJ" is the
+    // dot product for the edge corresponding to axis I, endpoint J.  For example, dir01 is the
+    // right edge of the S2Cell (corresponding to the upper endpoint of the u-axis).
+    double dir00 = targetUvw.x - targetUvw.z * uMin;
+    double dir01 = targetUvw.x - targetUvw.z * uMax;
+    double dir10 = targetUvw.y - targetUvw.z * vMin;
+    double dir11 = targetUvw.y - targetUvw.z * vMax;
+    boolean inside = true;
+    if (dir00 < 0) {
+      inside = false;  // Target is to the left of the cell.
+      if (vEdgeIsClosest(targetUvw, false)) {
+        return edgeDistance(-dir00, uMin);
+      }
+    }
+    if (dir01 > 0) {
+      inside = false;  // Target is to the right of the cell.
+      if (vEdgeIsClosest(targetUvw, true)) {
+        return edgeDistance(dir01, uMax);
+      }
+    }
+    if (dir10 < 0) {
+      inside = false;  // Target is below the cell.
+      if (uEdgeIsClosest(targetUvw, false)) {
+        return edgeDistance(-dir10, vMin);
+      }
+    }
+    if (dir11 > 0) {
+      inside = false;  // Target is above the cell.
+      if (uEdgeIsClosest(targetUvw, true)) {
+        return edgeDistance(dir11, vMax);
+      }
+    }
+    if (inside) {
+      return S1ChordAngle.ZERO;
+    }
+
+    // Otherwise, the closest point is one of the four cell vertices.  Note that
+    // it is *not* trivial to narrow down the candidates based on the edge sign
+    // tests above, because (1) the edges don't meet at right angles and (2)
+    // there are points on the far side of the sphere that are both above *and*
+    // below the cell, etc.
+    double chordDist2 =  Math.min(Math.min(vertexChordDist2(targetUvw, false, false),
+                                           vertexChordDist2(targetUvw, true, false)),
+                                  Math.min(vertexChordDist2(targetUvw, false, true),
+                                           vertexChordDist2(targetUvw, true, true)));
+    return S1ChordAngle.fromLength2(chordDist2);
   }
 
   private void init(S2CellId id) {

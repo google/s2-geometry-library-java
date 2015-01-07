@@ -529,6 +529,9 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     } else {
       assertTrue(S2.approxEquals(closest, expectedClosest));
     }
+    assertEquals(S1ChordAngle.ZERO, S2EdgeUtil.updateMinDistance(x, a, b, S1ChordAngle.ZERO));
+    S1ChordAngle minDistance = S2EdgeUtil.updateMinDistance(x, a, b, S1ChordAngle.INFINITY);
+    assertEquals(distanceRadians, minDistance.toAngle().radians(), 1e-15);
   }
 
   public void testDistance () {

@@ -26,6 +26,16 @@ public final strictfp class S1Angle implements Comparable<S1Angle>, Serializable
    */
   public static final double EARTH_RADIUS_METERS = 6367000.0;
 
+  /**
+   * An angle larger than any finite angle.
+   */
+  public static final S1Angle INFINITY = new S1Angle(Double.POSITIVE_INFINITY);
+
+  /**
+   * An explicit shorthand for the default constructor.
+   */
+  public static final S1Angle ZERO = new S1Angle();
+
   private final double radians;
 
   public double radians() {
@@ -141,6 +151,10 @@ public final strictfp class S1Angle implements Comparable<S1Angle>, Serializable
    */
   public double earthDistance() {
     return radians * EARTH_RADIUS_METERS;
+  }
+
+  public S1Angle neg() {
+    return new S1Angle(-radians);
   }
 
   /**
