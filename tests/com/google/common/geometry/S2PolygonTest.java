@@ -1371,4 +1371,9 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(copy.getNumVertices() == numVertices);
     assertTrue(copy.contains(S2Point.X_POS));
   }
+
+  public void testInitRecursion() {
+    String loop = "-18.84:-40.96, -18.93:-40.96, -18.93:-40.86, -18.84:-40.86";
+    assertFalse(makePolygon(loop + "; " + loop).isValid());
+  }
 }

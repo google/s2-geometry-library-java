@@ -276,7 +276,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       return;
     }
 
-    Map<S2Loop, List<S2Loop>> loopMap = Maps.newHashMap();
+    Map<S2Loop, List<S2Loop>> loopMap = Maps.newIdentityHashMap();
     // Yes, a null key is valid. It is used here to refer to the root of the loopMap.
     loopMap.put(null, Lists.<S2Loop>newArrayList());
 
