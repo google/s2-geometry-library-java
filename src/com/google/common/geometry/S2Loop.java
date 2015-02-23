@@ -262,7 +262,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(this.vertices, this.originInside, this.bound);
+    return bound.hashCode();
   }
 
   public int depth() {
