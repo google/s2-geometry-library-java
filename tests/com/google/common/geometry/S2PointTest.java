@@ -18,7 +18,6 @@ package com.google.common.geometry;
 
 import com.google.common.annotations.GwtCompatible;
 
-
 /**
  * Verifies S2Point.
  */

@@ -26,8 +26,6 @@ import java.util.Comparator;
 
 import javax.annotation.Nullable;
 
-
-
 /**
  * Contains test constants for the geometry package that require different values for the GWT client
  * and non-GWT-client versions.
