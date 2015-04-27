@@ -143,7 +143,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   /** Create a circle of points with a given center, radius, and number of vertices. */
   public static S2Loop makeRegularLoop(S2Point center, S1Angle radius, int numVertices) {
-    Matrix3x3 m = Matrix3x3.fromCols(S2.getFrame(center));
+    Matrix3x3 m = S2.getFrame(center);
     List<S2Point> vertices = Lists.newArrayList();
     double radianStep = 2 * Math.PI / numVertices;
     // We create the vertices on the plane tangent to 'center', so the radius on that plane is
@@ -1108,6 +1108,45 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     }
 
     return false;
+  }
+
+  /**
+   * Returns a simplified loop, which may be self-intersecting, or null if the entire loop was
+   * within the tolerance. Always keeps the first vertex from the loop, and if
+   * {@code vertexFilter} is not null, also keeps vertices for which
+   * {@code vertexFilter.shouldKeepVertex()} is true.
+   */
+  // Covered by tests of S2Polygon.initToSimplified.
+  public S2Loop simplify(S1Angle tolerance, S2VertexFilter vertexFilter) {
+    if (vertices.length < 2) {
+      // Unable to simplify further, just return whatever this loop is.
+      return this;
+    }
+    List<S2Point> points = Lists.newArrayListWithCapacity(vertices.length + 1);
+    Collections.addAll(points, vertices);
+    points.add(vertices[0]);
+    S2Polyline line = new S2Polyline(points);
+    S2Polyline simplified = line.subsampleVertices(tolerance);
+    if (simplified.numVertices() <= 2) {
+      return null;
+    }
+    if (vertexFilter == null) {
+      // Simply convert back to a loop.
+      return new S2Loop(simplified.vertices());
+    } else {
+      // Merge in vertices that we should keep.
+      List<S2Point> toKeep = Lists.newArrayList();
+      for (int i = 0, j = 0; i < numVertices(); i++) {
+        S2Point p = vertex(i);
+        if (simplified.vertex(j).equalsPoint(p)) {
+          j++;
+          toKeep.add(p);
+        } else if (vertexFilter.shouldKeepVertex(p)) {
+          toKeep.add(p);
+        }
+      }
+      return new S2Loop(toKeep);
+    }
   }
 
   /**

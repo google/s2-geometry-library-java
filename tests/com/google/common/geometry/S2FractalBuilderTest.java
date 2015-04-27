@@ -41,8 +41,7 @@ public class S2FractalBuilderTest extends GeometryTestCase {
     fractal.setMaxLevel(maxLevel);
     fractal.setFractalDimension(dimension);
     S2Point p = randomPoint();
-    S2Loop loop = fractal.makeLoop(Matrix3x3.fromCols(S2.getFrame(p)),
-        S1Angle.radians(nominalRadius));
+    S2Loop loop = fractal.makeLoop(S2.getFrame(p), S1Angle.radians(nominalRadius));
     assertTrue(loop.isValid());
 
     // If minLevel and maxLevel are not equal, then the number of vertices and the total length of

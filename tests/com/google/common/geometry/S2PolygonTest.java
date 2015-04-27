@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2Projections.PROJ;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
@@ -29,6 +30,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -1190,6 +1192,60 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
           + "\nsnapped polygon: " + snappedPolygon,
           snappedPolygon.approxContains(polygon, mergeRadius));
     }
+  }
+
+  public void testInitToSimplifiedInCellPointsOnCellBoundaryKept() {
+    S2CellId cellId = S2CellId.fromToken("89c25c");
+    S2Cell cell = new S2Cell(cellId);
+    S2Polygon loop = new S2Polygon(makeCellLoop(cell, "0.1:0, 0.2:0, 0.2:0.5"));
+    S1Angle tolerance = S1Angle.radians(loop.loop(0).vertex(0).angle(loop.loop(0).vertex(1)) * 1.1);
+    S2Polygon simplifiedLoop = new S2Polygon();
+    simplifiedLoop.initToSimplified(loop, tolerance, false);
+    assertTrue(simplifiedLoop.isEmpty());
+    S2Polygon simplifiedLoopInCell = new S2Polygon();
+    simplifiedLoopInCell.initToSimplifiedInCell(loop, cell, tolerance);
+    assertTrue(loop.boundaryApproxEquals(simplifiedLoopInCell, tolerance.radians()));
+    assertEquals(3, simplifiedLoopInCell.getNumVertices());
+    assertEquals(-1, simplifiedLoop.getSnapLevel());
+  }
+
+  public void testInitToSimplifiedInCellPointsInsideCellSimplified() {
+    S2CellId cellId = S2CellId.fromToken("89c25c");
+    S2Cell cell = new S2Cell(cellId);
+    S2Polygon loop = new S2Polygon(makeCellLoop(cell, "0.1:0, 0.2:0, 0.2:0.5, 0.2:0.8"));
+    S1Angle tolerance = S1Angle.radians(loop.loop(0).vertex(0).angle(loop.loop(0).vertex(1)) * 1.1);
+    S2Polygon simplifiedLoop = new S2Polygon();
+    simplifiedLoop.initToSimplifiedInCell(loop, cell, tolerance);
+    assertTrue(loop.boundaryNear(simplifiedLoop, 1e-15));
+    assertEquals(3, simplifiedLoop.getNumVertices());
+    assertEquals(-1, simplifiedLoop.getSnapLevel());
+  }
+
+  /**
+   * Creates a loop from a comma separated list of u:v coordinates relative to a cell. The loop
+   * "0:0, 1:0, 1:1, 0:1" is counter-clockwise.
+   */
+  private static S2Polygon makeCellLoop(S2Cell cell, String str) {
+    S2Point[] vertices = {
+      cell.getVertex(0),
+      cell.getVertex(1),
+      cell.getVertex(2),
+      cell.getVertex(3)};
+    List<S2Point> loopVertices = Lists.newArrayList();
+    for (String p : Splitter.on(",").split(str)) {
+      Iterator<String> coords = Splitter.on(":").trimResults().split(p).iterator();
+      double u = Double.parseDouble(coords.next());
+      double v = Double.parseDouble(coords.next());
+      assertFalse(coords.hasNext());
+      loopVertices.add(S2Point.normalize(interp(v,
+          interp(u, vertices[0], vertices[1]),
+          interp(u, vertices[2], vertices[3]))));
+    }
+    return new S2Polygon(new S2Loop(loopVertices));
+  }
+
+  private static S2Point interp(double t, S2Point a, S2Point b) {
+    return S2Point.add(S2Point.mul(a, 1 - t), S2Point.mul(b, t));
   }
 
   /**

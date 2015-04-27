@@ -308,7 +308,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
 
   /** Returns a random rotation matrix. */
   private Matrix3x3 getRotationMatrix() {
-    return Matrix3x3.fromCols(S2.getFrame(randomPoint()));
+    return S2.getFrame(randomPoint());
   }
 
   /** Returns the point "x" randomly perturbed within a radius of maxPerturb. */

@@ -25,6 +25,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
+import com.google.common.geometry.S2Projections.FaceSiTi;
 import com.google.common.geometry.S2Shape.MutableEdge;
 
 import java.io.Serializable;
@@ -606,6 +607,37 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
    */
   public S2Point getCentroid() {
     return getAreaCentroid(true).getCentroid();
+  }
+
+  /**
+   * If all of the polygon's vertices happen to be the centers of S2Cells at some level, then
+   * returns that level, otherwise returns -1. See also {@link #initToSnapped(S2Polygon, int)} and
+   * {@link S2PolygonBuilder.Options.Builder#setSnapToCellCenters(boolean)}. Returns -1 if the
+   * polygon has no vertices.
+   */
+  public int getSnapLevel() {
+    int snapLevel = -1;
+    for (S2Loop loop : loops) {
+      for (int j = 0; j < loop.numVertices(); j++) {
+        S2Point p = loop.vertex(j);
+        FaceSiTi faceSiTi = S2Projections.PROJ.xyzToFaceSiTi(p);
+        int level = S2Projections.PROJ.levelIfCenter(faceSiTi, p);
+        if (level < 0) {
+          // Vertex is not a cell center.
+          return level;
+        }
+        if (level != snapLevel) {
+          if (snapLevel < 0) {
+            // First vertex.
+            snapLevel = level;
+          } else {
+            // Vertices at more than one cell level.
+            return -1;
+          }
+        }
+      }
+    }
+    return snapLevel;
   }
 
   /**
@@ -1214,6 +1246,145 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         if (minArea > 4 * S2.M_PI - maxArea) {
           invert();
         }
+      }
+    }
+  }
+
+  /**
+   * Initializes this polygon to a polygon that contains fewer vertices and is within tolerance of
+   * the polygon a, with some caveats.
+   * <p>If {@code snapToCellCenters} is true, the vertices of this polygon will be snapped to the
+   * centers of cells at the smallest level that is guaranteed to result in a valid polygon given
+   * the specified tolerance.
+   * <ul>
+   * <li>If there is a very small island in the original polygon, it may disappear completely. Thus
+   * some parts of the original polygon may not be close to the simplified polygon. Those parts are
+   * small, though, and arguably don't need to be kept.
+   * <li>However, if there are dense islands, they may all disappear, instead of replacing them by a
+   * big simplified island.
+   * <li>For small tolerances (compared to the polygon size), it may happen that the simplified
+   * polygon has more vertices than the original, if the first step of the simplification creates
+   * too many self-intersections. One can construct unrealistic cases where that happens to an
+   * extreme degree.
+   * </ul>
+   */
+  public void initToSimplified(S2Polygon a, S1Angle tolerance, boolean snapToCellCenters) {
+    initToSimplifiedInternal(a, tolerance, snapToCellCenters, null);
+  }
+
+  /**
+   * Initializes this polygon to a polygon that contains fewer vertices and is within tolerance of
+   * the polygon a, while ensuring that the vertices on the cell boundary are preserved.
+   *
+   * <p>Precondition: Polygon a is contained in the cell.
+   */
+  public void initToSimplifiedInCell(S2Polygon a, final S2Cell cell, S1Angle tolerance) {
+    initToSimplifiedInternal(a, tolerance, false, new S2VertexFilter() {
+      /** Edges of the cell to test against. */
+      private final S2Point[] corners = {
+          cell.getVertex(0),
+          cell.getVertex(1),
+          cell.getVertex(2),
+          cell.getVertex(3)};
+      /** Max distance to test against. */
+      private final S1Angle d = S1Angle.radians(1e-15);
+      /** Returns true if the vertex is close to any edge of 'cell'. */
+      @Override public boolean shouldKeepVertex(S2Point vertex) {
+        for (int i = 0; i < 4; i++) {
+          if (S2EdgeUtil.getDistance(vertex, corners[i], corners[(i + 1) % 4]).lessThan(d)) {
+            return true;
+          }
+        }
+        return false;
+      }
+    });
+  }
+
+  /**
+   * Simplifies the polygon. The algorithm is straightforward and naive:
+   * <ol>
+   * <li>Simplify each loop by removing points while staying in the tolerance zone. This uses
+   * {@link S2Polyline#subsampleVertices(S1Angle)}, which is not guaranteed to be optimal in terms
+   * of number of points.
+   * <li>Break any edge in pieces such that no piece intersects any other.
+   * <li>Use the polygon builder to regenerate the full polygon.
+   * <li>If {@code vertexFilter} is not null, the vertices for which it returns true are kept in the
+   * simplified polygon.
+   * </ol>
+   */
+  private void initToSimplifiedInternal(S2Polygon a, S1Angle tolerance, boolean snapToCellCenters,
+      S2VertexFilter vertexFilter) {
+    S2PolygonBuilder.Options.Builder options = S2PolygonBuilder.Options.UNDIRECTED_XOR.toBuilder();
+    options.setValidate(false);
+    if (vertexFilter != null) {
+      // If there is a vertex filter, then we want to do as little vertex merging as possible so
+      // that the vertices we want to keep don't move. But on the other hand, when we break
+      // intersecting edges into pieces there is some error in the intersection point.
+      // S2PolygonBuilder needs to be able to move vertices by up to this amount in order to produce
+      // valid output.
+      options.setMergeDistance(S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+    } else {
+      // Ideally, we would want to set the vertex merge radius of the builder roughly to tolerance
+      // (and in fact forego the edge splitting step).  Alas, if we do that, we are liable to the
+      // 'chain effect', where vertices are merged with close by vertices and so on, so that a
+      // vertex can move by an arbitrary distance. So we remain conservative:
+      options.setMergeDistance(S1Angle.radians(tolerance.radians() * 0.10));
+      options.setSnapToCellCenters(snapToCellCenters);
+    }
+
+    // Simplify each loop separately and add to the edge index.
+    S2PolygonBuilder builder = new S2PolygonBuilder(options.build());
+    S2ShapeIndex index = new S2ShapeIndex();
+    for (int i = 0; i < a.numLoops(); i++) {
+      S2Loop simpler = a.loop(i).simplify(tolerance, vertexFilter);
+      if (simpler != null) {
+        index.add(simpler);
+      }
+    }
+
+    if (!index.shapes.isEmpty()) {
+      breakEdgesAndAddToBuilder(index, builder);
+      if (!builder.assemblePolygon(this, null)) {
+        log.warning("Bad edges in InitToSimplified.");
+      }
+      // If there are no loops, check whether the result should be the full
+      // polygon rather than the empty one.  (See InitToIntersectionSloppy.)
+      if (numLoops() == 0) {
+        if (a.bound.area() > 2 * S2.M_PI && a.getArea() > 2 * S2.M_PI) {
+          invert();
+        }
+      }
+    }
+  }
+
+  /**
+   * Takes a set of possibly intersecting edges, stored in the S2ShapeIndex, and breaks the edges
+   * into small pieces so that there is no intersection anymore, and adds all these edges to the
+   * builder.
+   */
+  public static void breakEdgesAndAddToBuilder(S2ShapeIndex index, S2PolygonBuilder builder) {
+    // If there are self intersections, we add the pieces separately.
+    // add_shared_edges ("true" below) can be false or true: it makes no
+    // difference due to the way we call ClipEdge.
+    EdgeClipper clipper = new EdgeClipper(index, true, false);
+    List<ParametrizedS2Point> intersections = Lists.newArrayList();
+    MutableEdge edge = new MutableEdge();
+    for (S2Shape shape : index.getShapes()) {
+      int numEdges = shape.numEdges();
+      for (int e = 0; e < numEdges; e++) {
+        shape.getEdge(e, edge);
+        intersections.add(new ParametrizedS2Point(0, edge.a));
+        clipper.clipEdge(edge.a, edge.b, intersections);
+        intersections.add(new ParametrizedS2Point(1, edge.b));
+        Collections.sort(intersections);
+        for (int k = 0; k + 1 < intersections.size(); ++k) {
+          S2Point p1 = intersections.get(k).getPoint();
+          S2Point p2 = intersections.get(k + 1).getPoint();
+          if (!p1.equalsPoint(p2)) {
+            builder.addEdge(p1, p2);
+          }
+        }
+        intersections.clear();
       }
     }
   }

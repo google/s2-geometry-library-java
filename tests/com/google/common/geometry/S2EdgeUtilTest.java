@@ -23,8 +23,6 @@ import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2EdgeUtil.LongitudePruner;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
 
-import java.util.List;
-
 /**
  * Tests for {@link S2EdgeUtil}.
  *
@@ -686,10 +684,10 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       // This ensures that we test both long and very short segments that
       // intersect at both large and very small angles.
 
-      List<S2Point> points = S2.getFrame(randomPoint());
-      S2Point p = points.get(0);
-      S2Point d1 = points.get(1);
-      S2Point d2 = points.get(2);
+      Matrix3x3 frame = S2.getFrame(randomPoint());
+      S2Point p = frame.getCol(0);
+      S2Point d1 = frame.getCol(1);
+      S2Point d2 = frame.getCol(2);
 
       double slope = Math.pow(1e-15, rand.nextDouble());
       d2 = S2Point.add(d1, S2Point.mul(d2, slope));

@@ -523,7 +523,7 @@ public class S2PolygonBenchmark {
       S2Point center = testUtils.randomPoint();
       S1Angle radius = GeometryTestCase.kmToAngle(DEFAULT_RADIUS_KM);
       for (int i = 0; i < numLoops; ++i) {
-        S2Loop loop = fractal.makeLoop(Matrix3x3.fromCols(S2.getFrame(center)), radius);
+        S2Loop loop = fractal.makeLoop(S2.getFrame(center), radius);
         checkEdgeLength(loop);
         loops.add(loop);
         radius = S1Angle.radians(radius.radians() * scale);

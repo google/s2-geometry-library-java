@@ -307,6 +307,34 @@ public strictfp class S2Test extends GeometryTestCase {
     assertTrue(S2.robustCCW(a, b, c) != 0);
   }
 
+  public void testFrames() {
+    S2Point z = S2Point.normalize(new S2Point(0.2, 0.5, -3.3));
+    Matrix3x3 m = S2.getFrame(z);
+    assertTrue(S2.approxEquals(m.getCol(2), z));
+    assertTrue(S2.isUnitLength(m.getCol(0)));
+    assertTrue(S2.isUnitLength(m.getCol(1)));
+    assertEquals(det(m), 1, 1e-15);
+
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(0)), S2Point.X_POS));
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(1)), S2Point.Y_POS));
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(2)), S2Point.Z_POS));
+
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.X_POS), m.getCol(0)));
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.Y_POS), m.getCol(1)));
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.Z_POS), m.getCol(2)));
+  }
+
+  /**
+   * Returns the determinant of a 3x3 matrix. This is not located on Matrix3x3 since, despite the
+   * name, that class is more general than 3x3 matrices.
+   */
+  private static double det(Matrix3x3 m) {
+    assert m.cols() == 3 && m.rows() == 3;
+    return m.get(0, 0) * (m.get(1, 1) * m.get(2, 2) - m.get(1, 2) * m.get(2, 1))
+         - m.get(0, 1) * (m.get(1, 0) * m.get(2, 2) - m.get(1, 2) * m.get(2, 0))
+         + m.get(0, 2) * (m.get(1, 0) * m.get(2, 1) - m.get(1, 1) * m.get(2, 0));
+  }
+
   // Note: obviously, I could have defined a bundle of metrics like this in the
   // S2 class itself rather than just for testing. However, it's not clear that
   // this is useful other than for testing purposes, and I find

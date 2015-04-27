@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
 import java.io.Serializable;
@@ -67,12 +68,17 @@ public final strictfp class S2Polyline implements S2Region, S2Shape, Serializabl
     }
   }
 
+  /** Returns an unmodifiable view of the vertices of this polyline. */
+  public List<S2Point> vertices() {
+    return Arrays.asList(vertices);
+  }
+
   /**
    * Return true if the polyline is valid having all vertices be in unit length
    * and having no identical or antipodal adjacent vertices.
    */
   public boolean isValid() {
-    return isValid(Arrays.asList(vertices));
+    return isValid(vertices());
   }
 
   /**
@@ -244,6 +250,125 @@ public final strictfp class S2Polyline implements S2Region, S2Shape, Serializabl
       }
     }
     return false;
+  }
+
+  /**
+   * Return a subsequence of vertex indices such that the polyline connecting these vertices is
+   * never further than "tolerance" from the original polyline. Provided the first and last vertices
+   * are distinct, they are always preserved; if they are not, the subsequence may contain only a
+   * single index.
+   *
+   * <p>Some useful properties of the algorithm:
+   *
+   * <ul>
+   * <li>It runs in linear time.
+   * <li>The output is always a valid polyline. In particular, adjacent output vertices are never
+   * identical or antipodal.
+   * <li>The method is not optimal, but it tends to produce 2-3% fewer vertices than the
+   * Douglas-Peucker algorithm with the same tolerance.
+   * <li>The output is *parametrically* equivalent to the original polyline to within the given
+   * tolerance. For example, if a polyline backtracks on itself and then proceeds onwards, the
+   * backtracking will be preserved (to within the given tolerance). This is different than the
+   * Douglas-Peucker algorithm, which only guarantees geometric equivalence.
+   * </ul>
+   */
+  public S2Polyline subsampleVertices(S1Angle tolerance) {
+    if (vertices.length == 0) {
+      return this;
+    }
+    List<S2Point> results = Lists.newArrayList();
+    results.add(vertex(0));
+    S1Angle clampedTolerance = S1Angle.max(tolerance, S1Angle.ZERO);
+    for (int i = 0; i < vertices.length - 1; ) {
+      int nextIndex = findEndVertex(clampedTolerance, i);
+      // Don't create duplicate adjacent vertices.
+      if (!vertex(nextIndex).equalsPoint(vertex(i))) {
+        results.add(vertex(nextIndex));
+      }
+      i = nextIndex;
+    }
+    return new S2Polyline(results);
+  }
+
+  /**
+   * Given a polyline, a tolerance distance, and a start index, this function returns the maximal
+   * end index such that the line segment between these two vertices passes within "tolerance" of
+   * all interior vertices, in order.
+   */
+  private int findEndVertex(S1Angle tolerance, int index) {
+    // assert tolerance.radians() >= 0;
+    // assert index + 1 < polyline.num_vertices();
+
+    // The basic idea is to keep track of the "pie wedge" of angles from the starting vertex such
+    // that a ray from the starting vertex at that angle will pass through the discs of radius
+    // "tolerance" centered around all vertices processed so far.
+
+    // First we define a "coordinate frame" for the tangent and normal spaces at the starting
+    // vertex.  Essentially this means picking three orthonormal vectors X,Y,Z such that X and Y
+    // span the tangent plane at the starting vertex, and Z is "up".  We use the coordinate frame to
+    // define a mapping from 3D direction vectors to a one-dimensional "ray angle" in the range
+    // (-Pi, Pi].  The angle of a direction vector is computed by transforming it into the X,Y,Z
+    // basis, and then calculating atan2(y,x).  This mapping allows us to represent a wedge of
+    // angles as a 1D interval.  Since the interval wraps around, we represent it as an S1Interval,
+    // i.e. an interval on the unit circle.
+    S2Point origin = vertex(index);
+    Matrix3x3 frame = S2.getFrame(origin);
+
+    // As we go along, we keep track of the current wedge of angles and the distance to the last
+    // vertex (which must be non-decreasing).
+    S1Interval currentWedge = S1Interval.full();
+    double lastDistance = 0;
+
+    for (++index; index < vertices.length; ++index) {
+      S2Point candidate = vertex(index);
+      double distance = origin.angle(candidate);
+
+      // We don't allow simplification to create edges longer than 90 degrees, to avoid numeric
+      // instability as lengths approach 180 degrees.  (We do need to allow for original edges
+      // longer than 90 degrees, though.)
+      if (distance > S2.M_PI / 2 && lastDistance > 0) {
+        break;
+      }
+
+      // Vertices must be in increasing order along the ray, except for the initial disc around the
+      // origin.
+      if (distance < lastDistance && lastDistance > tolerance.radians()) {
+        break;
+      }
+      lastDistance = distance;
+
+      // Points that are within the tolerance distance of the origin do not constrain the ray
+      // direction, so we can ignore them.
+      if (distance <= tolerance.radians()) {
+        continue;
+      }
+
+      // If the current wedge of angles does not contain the angle to this vertex, then stop right
+      // now.  Note that the wedge of possible ray angles is not necessarily empty yet, but we can't
+      // continue unless we are willing to backtrack to the last vertex that was contained within
+      // the wedge (since we don't create new vertices).  This would be more complicated and also
+      // make the worst-case running time more than linear.
+      S2Point direction = S2.toFrame(frame, candidate);
+      double center = Math.atan2(direction.y, direction.x);
+      if (!currentWedge.contains(center)) {
+        break;
+      }
+
+      // To determine how this vertex constrains the possible ray angles, consider the triangle ABC
+      // where A is the origin, B is the candidate vertex, and C is one of the two tangent points
+      // between A and the spherical cap of radius "tolerance" centered at B.  Then from the
+      // spherical law of sines, sin(a)/sin(A) = sin(c)/sin(C), where "a" and "c" are the lengths of
+      // the edges opposite A and C.  In our case C is a 90 degree angle, therefore
+      // A = asin(sin(a) / sin(c)).  Angle A is the half-angle of the allowable wedge.
+      double halfAngle = Math.asin(Math.sin(tolerance.radians()) / Math.sin(distance));
+      S1Interval target = S1Interval.fromPoint(center).expanded(halfAngle);
+      currentWedge = currentWedge.intersection(target);
+      // assert !currentWedge.isEmpty();
+    }
+
+    // We break out of the loop when we reach a vertex index that can't be
+    // included in the line segment, so back up by one vertex.
+    return index - 1;
   }
 
   /**

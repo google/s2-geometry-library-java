@@ -20,8 +20,6 @@ import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
-import junit.framework.Assert;
-
 import java.util.List;
 
 /**
@@ -274,6 +272,65 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(horizontalRightToLeft.intersects(verticalTopToBottom));
   }
 
+  public void testSubsampleVerticesTrivialInputs() {
+    // No vertices.
+    checkSubsample("", 1.0);
+    // One vertex.
+    checkSubsample("0:1", 1.0, 0);
+    // Two vertices.
+    checkSubsample("10:10, 11:11", 5.0, 0, 1);
+    // Three points on a straight line. In theory, zero tolerance should work, but in practice there
+    // are floating point errors.
+    checkSubsample("-1:0, 0:0, 1:0", 1e-15, 0, 2);
+    // Zero tolerance on a non-straight line.
+    checkSubsample("-1:0, 0:0, 1:1", 0.0, 0, 1, 2);
+    // Negative tolerance should return all vertices.
+    checkSubsample("-1:0, 0:0, 1:1", -1.0, 0, 1, 2);
+    // Non-zero tolerance with a straight line.
+    checkSubsample("0:1, 0:2, 0:3, 0:4, 0:5", 1.0, 0, 4);
+
+    // And finally, verify that we still do something reasonable if the client passes in an invalid
+    // polyline with two or more adjacent vertices.
+    checkSubsample("0:1, 0:1, 0:1, 0:2", 0.0, 0, 3);
+  }
+
+  public void testSubsampleVerticesSimpleExample() {
+    String coords = "0:0, 0:1, -1:2, 0:3, 0:4, 1:4, 2:4.5, 3:4, 3.5:4, 4:4";
+    checkSubsample(coords, 3.0, 0, 9);
+    checkSubsample(coords, 2.0, 0, 6, 9);
+    checkSubsample(coords, 0.9, 0, 2, 6, 9);
+    checkSubsample(coords, 0.4, 0, 1, 2, 3, 4, 6, 9);
+    checkSubsample(coords, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+  }
+
+  public void testSubsampleVerticesGuarantees() {
+    // Check that duplicate vertices are never generated.
+    checkSubsample("10:10, 12:12, 10:10", 5.0, 0);
+    checkSubsample("0:0, 1:1, 0:0, 0:120, 0:130", 5.0, 0, 3, 4);
+
+    // Check that points are not collapsed if they would create a line segment longer than 90
+    // degrees, and also that the code handles original polyline segments longer than 90 degrees.
+    checkSubsample("90:0, 50:180, 20:180, -20:180, -50:180, -90:0, 30:0, 90:0",
+        5.0, 0, 2, 4, 5, 6, 7);
+
+    // Check that the output polyline is parametrically equivalent and not just geometrically
+    // equivalent, i.e. that backtracking is preserved.  The algorithm achieves this by requiring
+    // that the points must be encountered in increasing order of distance along each output segment
+    // except for points that are within "tolerance" of the first vertex of each segment.
+    checkSubsample("10:10, 10:20, 10:30, 10:15, 10:40", 5.0, 0, 2, 3, 4);
+    checkSubsample("10:10, 10:20, 10:30, 10:10, 10:30, 10:40", 5.0, 0, 2, 3, 5);
+    checkSubsample("10:10, 12:12, 9:9, 10:20, 10:30", 5.0, 0, 4);
+  }
+
+  private static void checkSubsample(String coords, double toleranceDegrees, int... expected) {
+    S2Polyline polyline = makePolyline(coords);
+    S2Polyline simplified = polyline.subsampleVertices(S1Angle.degrees(toleranceDegrees));
+    assertEquals(expected.length, simplified.numVertices());
+    for (int i = 0; i  < expected.length; i++) {
+      assertEquals(polyline.vertex(expected[i]), simplified.vertex(i));
+    }
+  }
+
   public void testValid() {
     // A simple normalized line must be valid.
     List<S2Point> vertices = Lists.newArrayList();
@@ -337,15 +394,12 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
   private static void checkEqualsAndHashCodeMethods(Object lhs, Object rhs,
                                              boolean expectedResult) {
     if ((lhs == null) && (rhs == null)) {
-      Assert.assertTrue(
-          "Your check is dubious...why would you expect null != null?",
-          expectedResult);
+      assertTrue("Your check is dubious...why would you expect null != null?", expectedResult);
       return;
     }
 
     if ((lhs == null) || (rhs == null)) {
-      Assert.assertFalse(
-          "Your check is dubious...why would you expect an object "
+      assertFalse("Your check is dubious...why would you expect an object "
           + "to be equal to null?", expectedResult);
     }
 
@@ -359,7 +413,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     if (expectedResult) {
       String hashMessage =
           "hashCode() values for equal objects should be the same";
-      Assert.assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
+      assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
     }
   }
 }
