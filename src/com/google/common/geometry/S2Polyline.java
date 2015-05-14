@@ -24,6 +24,7 @@ import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 
 import java.io.Serializable;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -70,7 +71,7 @@ public final strictfp class S2Polyline implements S2Region, S2Shape, Serializabl
 
   /** Returns an unmodifiable view of the vertices of this polyline. */
   public List<S2Point> vertices() {
-    return Arrays.asList(vertices);
+    return Collections.unmodifiableList(Arrays.asList(vertices));
   }
 
   /**
