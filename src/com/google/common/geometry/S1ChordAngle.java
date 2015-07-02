@@ -22,6 +22,7 @@ import static java.lang.Math.min;
 import static java.lang.Math.sqrt;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.primitives.Doubles;
 
 import java.io.Serializable;
 
@@ -266,5 +267,10 @@ public final strictfp class S1ChordAngle implements Comparable<S1ChordAngle>, Se
   @Override
   public boolean equals(Object other) {
     return (other instanceof S1ChordAngle) && length2 == ((S1ChordAngle) other).length2;
+  }
+
+  @Override
+  public int hashCode() {
+    return length2 == 0.0 ? 0 : Doubles.hashCode(length2);
   }
 }

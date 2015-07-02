@@ -163,6 +163,24 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertEquals(-0.0, tan(angle180));
   }
 
+  public void testHashCodeZero() {
+    // Check that hashCode() and equals(...) work consistently for the ±0 edge case.
+    S1ChordAngle positive0 = S1ChordAngle.fromLength2(0);
+    S1ChordAngle negative0 = S1ChordAngle.fromLength2(-0.0);
+
+    assertTrue(positive0.equals(negative0));
+    assertEquals(positive0.hashCode(), negative0.hashCode());
+  }
+
+  public void testHashCodeDifferent() {
+    S1ChordAngle zero = S1ChordAngle.fromLength2(0);
+    S1ChordAngle nonZero = S1ChordAngle.fromLength2(1);
+
+    assertFalse(zero.equals(nonZero));
+    // ant_test uses a different (old) version of JUnit without assertNotEquals.
+    assertTrue(zero.hashCode() != nonZero.hashCode());
+  }
+
   /**
    * Assert that {@code actual} is almost equal to {@code expected}, within floating point error.
    */
