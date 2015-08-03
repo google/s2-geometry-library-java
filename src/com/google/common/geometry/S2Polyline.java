@@ -213,8 +213,7 @@ public final strictfp class S2Polyline implements S2Region, S2Shape, Serializabl
    */
   @Override
   public boolean contains(S2Cell cell) {
-    throw new UnsupportedOperationException(
-        "'containment' is not numerically well-defined " + "except at the polyline vertices");
+    return false;
   }
 
   /**

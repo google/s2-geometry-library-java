@@ -379,6 +379,19 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  /** Verifies that contains() returns false for all cells. */
+  public void testContains() {
+    S2Polyline line = makePolyline("0:0, 5:5, 10:5");
+    // Check a point nowhere near the line.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(-10, -10).toPoint())));
+    // Check each vertex.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(0, 0).toPoint())));
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(5, 5).toPoint())));
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(10, 5).toPoint())));
+    // And check a point exactly on the center of the last edge.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(7.5, 5).toPoint())));
+  }
+
   /**
    * Utility for testing equals() and hashCode() results at once.
    * Tests that lhs.equals(rhs) matches expectedResult, as well as
