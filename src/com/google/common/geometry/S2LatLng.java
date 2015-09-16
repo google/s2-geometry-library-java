@@ -32,7 +32,7 @@ import javax.annotation.CheckReturnValue;
  *
  */
 @GwtCompatible(serializable = true, emulated = true)
-public strictfp class S2LatLng implements Serializable {
+public final strictfp class S2LatLng implements Serializable {
 
   /** Approximate "effective" radius of the Earth in meters. */
   public static final double EARTH_RADIUS_METERS = S1Angle.EARTH_RADIUS_METERS;
