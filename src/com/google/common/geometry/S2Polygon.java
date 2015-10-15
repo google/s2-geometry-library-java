@@ -21,6 +21,8 @@ import static com.google.common.geometry.S2Projections.PROJ;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -90,6 +92,21 @@ import java.util.logging.Logger;
 @GwtCompatible(serializable = true)
 public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>, Serializable {
   private static final Logger log = Platform.getLoggerForClass(S2Polygon.class);
+
+  /** Returns false for all shapes. */
+  private static final Predicate<S2Shape> REVERSE_NONE = Predicates.alwaysFalse();
+
+  /** Returns true for S2Loops for which {@link S2Loop#isHole()} is true. */
+  private static final Predicate<S2Shape> REVERSE_HOLES = new Predicate<S2Shape>() {
+    @Override public boolean apply(S2Shape input) {
+      if (input instanceof S2Loop) {
+        S2Loop loop = (S2Loop) input;
+        return loop.isHole();
+      } else {
+        return false;
+      }
+    }
+  };
 
   /**
    * The loops of this polygon. There is no total ordering of the loops, but a nested loop always
@@ -915,7 +932,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
    */
   private static void clipBoundary(final S2Polygon a, boolean reverseA, final S2Polygon b,
       boolean invertB, boolean addSharedEdges, S2PolygonBuilder builder) {
-    EdgeClipper clipper = new EdgeClipper(b.index, addSharedEdges, true);
+    EdgeClipper clipper = new EdgeClipper(b.index, addSharedEdges, REVERSE_HOLES);
     List<ParametrizedS2Point> intersections = Lists.newArrayList();
     for (S2Loop aLoop : a.loops) {
       int n = aLoop.numVertices();
@@ -1366,7 +1383,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // If there are self intersections, we add the pieces separately.
     // add_shared_edges ("true" below) can be false or true: it makes no
     // difference due to the way we call ClipEdge.
-    EdgeClipper clipper = new EdgeClipper(index, true, false);
+    EdgeClipper clipper = new EdgeClipper(index, true, REVERSE_NONE);
     List<ParametrizedS2Point> intersections = Lists.newArrayList();
     MutableEdge edge = new MutableEdge();
     for (S2Shape shape : index.getShapes()) {
@@ -1499,7 +1516,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       boolean invert, S2Polyline a, S1Angle mergeRadius) {
 
     List<S2Polyline> out = Lists.newArrayList();
-    EdgeClipper clipper = new EdgeClipper(index, true, false);
+    EdgeClipper clipper = new EdgeClipper(index, true, REVERSE_NONE);
     List<ParametrizedS2Point> intersections = Lists.newArrayList();
     List<S2Point> vertices = Lists.newArrayList();
     int n = a.numVertices();
@@ -2045,9 +2062,17 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   private static class EdgeClipper {
     private final S2EdgeQuery query;
     private final boolean addSharedEdges;
-    private final boolean reverseEdges;
+    private final Predicate<S2Shape> reverseEdges;
 
-    public EdgeClipper(S2ShapeIndex index, boolean addSharedEdges, boolean reverseEdges) {
+    /**
+     * Initialize an EdgeClipper for the given S2ShapeIndex.  If the query edge is the same as an
+     * index edge (a "shared edge"), then the edge will be included in the output if and only if
+     * {@code addSharedEdges} is true.  The {@code reverseEdges} function allows the edges of any
+     * index shape to be reversed before this test is performed (this is used to reverse the loop
+     * orientation of "holes" in certain algorithms).
+     */
+    public EdgeClipper(
+        S2ShapeIndex index, boolean addSharedEdges, Predicate<S2Shape> reverseEdges) {
       query = new S2EdgeQuery(index);
       this.addSharedEdges = addSharedEdges;
       this.reverseEdges = reverseEdges;
@@ -2067,18 +2092,18 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(a0, a1);
       MutableEdge result = new MutableEdge();
       for (Entry<S2Shape, S2EdgeQuery.Edges> entry : edgeMap.entrySet()) {
-        final S2Loop bLoop = (S2Loop) entry.getKey();
+        final S2Shape bShape = entry.getKey();
         S2EdgeQuery.Edges edges = entry.getValue();
         int b1Prev = -2;
         while (!edges.isEmpty()) {
           int edge = edges.nextEdge();
-          bLoop.getEdge(edge, result);
+          bShape.getEdge(edge, result);
           if (edge != b1Prev + 1) {
             crosser.restartAt(result.getStart());
           }
           int crossing = crosser.robustCrossing(result.getEnd());
           if (crossing >= 0) {
-            addIntersection(a0, a1, result.getStart(), result.getEnd(), bLoop, crossing,
+            addIntersection(a0, a1, result.getStart(), result.getEnd(), bShape, crossing,
                 intersections);
             b1Prev = edge;
           }
@@ -2092,7 +2117,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
      * containing edge B, and {@code crossing} is the result of {@code robustCrossing(A, B)}.
      */
     private void addIntersection(S2Point a0, S2Point a1, S2Point b0, S2Point b1,
-        S2Loop bLoop, int crossing, List<ParametrizedS2Point> intersections) {
+        S2Shape bShape, int crossing, List<ParametrizedS2Point> intersections) {
       // assert (crossing >= 0);
       if (crossing > 0) {
         // There is a proper edge crossing.
@@ -2112,8 +2137,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
         // one copy of shared edges to be preserved, by calling ClipBoundary() twice with opposite
         // values of the 'addSharedEdges' flag.
         double t = (a0.equalsPoint(b0) || a0.equalsPoint(b1)) ? 0 : 1;
-        S2Point p = (reverseEdges && bLoop.isHole()) ? b0 : b1;
-        if (!addSharedEdges && a1.equalsPoint(p)) {
+        if (!addSharedEdges && a1.equalsPoint(reverseEdges.apply(bShape) ? b0 : b1)) {
           // Excludes (a0, a1) from the output.
           t = 1;
         }
