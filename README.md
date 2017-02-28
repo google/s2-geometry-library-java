@@ -6,8 +6,16 @@ This codebase is forked from https://github.com/google/s2-geometry-library-java
 
 ## Usage
 
+Via RubyGems
+
 ```
 $ gem install s2geometry-jar
+```
+
+Via Bundler
+
+```
+gem 's2geometry-jar', require: 'S2Geometry'
 ```
 
 #### Convert Lat/Long to S2Id
