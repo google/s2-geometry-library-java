@@ -24,6 +24,20 @@ module Demo
 
   puts s2_id_level_30_1_cm, s2_id_level_21_4_m
 end
+```
+
+#### Print Areas of Blocks of all S2 Levels in metres
+
+```
+require "S2Geometry"
+
+module Demo
+  import 'com.google.common.geometry'
+
+  for i in 1..30
+    puts "#{i}, #{Math.sqrt(S2Cell.from_face_pos_level(1, 1, i).average_area() * 6371000 ** 2)}"
+  end
+end
 
 # Output
 
@@ -57,20 +71,6 @@ end
 28, 0.03434765035503151
 29, 0.017173825177515756
 30, 0.008586912588757878
-```
-
-#### Print Areas of Blocks of all S2 Levels in metres
-
-```
-require "S2Geometry"
-
-module Demo
-  import 'com.google.common.geometry'
-
-  for i in 1..30
-    puts "#{i}, #{Math.sqrt(S2Cell.from_face_pos_level(1, 1, i).average_area() * 6371000 ** 2)}"
-  end
-end
 ```
 
 ## Notes
