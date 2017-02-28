@@ -1,0 +1,55 @@
+require 'bundler/gem_tasks'
+
+module S2GeometryHelper
+  def self.rb_vendor
+    File.join(rb_root, 'lib', 's2geometry', 'vendor')
+  end
+    
+  def self.rb_root
+    File.expand_path(File.join('..'), __FILE__)
+  end
+  
+  def self.java_root
+    File.expand_path(File.join('..', '..'), __FILE__)
+  end
+  
+  def self.run_in_java_root(command)
+    Dir.chdir(java_root){ system(command) }
+  end
+end
+
+namespace :jar do
+  desc "Build Java source and package as jar"
+  task :build do
+    S2GeometryHelper.run_in_java_root 'ant jar'
+  end
+  
+  desc "Copy jars to gem vendor directory"
+  task copy: ['build'] do
+    path_to_s2_jar = File.join(S2GeometryHelper.java_root, 'build', 's2-geometry-java.jar')
+    path_to_jsr_jar = File.join(S2GeometryHelper.java_root, 'lib', 'jsr305.jar')
+    path_to_guava_jar = File.join(S2GeometryHelper.java_root, 'lib', 'guava-r09.jar')
+  
+    [path_to_s2_jar, path_to_jsr_jar, path_to_guava_jar].each do |jar|
+      FileUtils.cp jar, S2GeometryHelper.rb_vendor, verbose: true
+    end
+  end
+
+  desc "Clean jars from gem vendor directory"
+  task :clean do
+    FileUtils.rm Dir.glob(File.join(S2GeometryHelper.rb_vendor, '*.jar')), verbose: true
+  end
+end
+
+desc "Build dependencies for the gem, then the gem itself"
+task gem: ['clean', 'jar:clean', 'jar:build', 'jar:copy', 'build']
+
+desc "Build the gem, install it and run some code against it"
+task test: ['gem', 'install'] do
+  require 'S2Geometry'  
+  puts "Converting -6.2, 106.816667 to S2Id"
+  puts com.google.common.geometry.S2CellId.from_lat_lng(
+    com.google.common.geometry.S2LatLng.from_degrees(-6.2, 106.816667)
+  )
+  
+end
