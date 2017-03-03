@@ -1,4 +1,4 @@
-# coding: utf-8
+#encoding: utf-8
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 's2geometry/version'
@@ -22,5 +22,6 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec", "~> 3"
   spec.add_development_dependency 'ruby-maven', '~> 3.3'
 
-  spec.add_dependency 'sentry-raven', '~> 1.2.3' 
+  spec.add_dependency 'sentry-raven', '~> 1.2.3'
 end
+
