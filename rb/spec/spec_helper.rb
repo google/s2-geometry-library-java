@@ -1,0 +1,1 @@
+require_relative '../lib/s2geometry/s2_cell'
