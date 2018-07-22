@@ -15,11 +15,18 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+import static java.lang.Math.PI;
+
+import com.google.common.annotations.GwtCompatible;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/** Tests for S2Cell. */
+@GwtCompatible
 public strictfp class S2CellTest extends GeometryTestCase {
 
   public static final boolean DEBUG_MODE = true;
@@ -268,18 +275,24 @@ public strictfp class S2CellTest extends GeometryTestCase {
       // Check all children for the first few levels, and then sample randomly.
       // Also subdivide one corner cell, one edge cell, and one center cell
       // so that we have a better chance of sample the minimum metric values.
+      // We also always subdivide the cells containing a few chosen points so
+      // that we have a better chance of sampling the minimum and maximum metric
+      // values.  kMaxSizeUV is the absolute value of the u- and v-coordinate
+      // where the cell size at a given level is maximal.
+      double kMaxSizeUV = 0.3964182625366691;
+      R2Vector specialUv[] = {
+          new R2Vector(S2.DBL_EPSILON, S2.DBL_EPSILON), // Face center
+          new R2Vector(S2.DBL_EPSILON, 1), // Edge midpoint
+          new R2Vector(1, 1), // Face corner
+          new R2Vector(kMaxSizeUV, kMaxSizeUV), // Largest cell area
+          new R2Vector(S2.DBL_EPSILON, kMaxSizeUV)}; // Longest edge/diagonal
       boolean forceSubdivide = false;
-      S2Point center = S2Projections.getNorm(children[i].face());
-      S2Point edge = S2Point.add(center, S2Projections.getUAxis(children[i].face()));
-      S2Point corner = S2Point.add(edge, S2Projections.getVAxis(children[i].face()));
-      for (int j = 0; j < 4; ++j) {
-        S2Point p = children[i].getVertexRaw(j);
-        if (p.equals(center) || p.equals(edge) || p.equals(corner)) {
+      for (int k = 0; k < specialUv.length; k++) {
+        if (children[i].getBoundUV().contains(specialUv[k])) {
           forceSubdivide = true;
         }
       }
-      if (forceSubdivide || cell.level() < (DEBUG_MODE ? 5 : 6)
-        || random(DEBUG_MODE ? 10 : 4) == 0) {
+      if (forceSubdivide || cell.level() < (DEBUG_MODE ? 5 : 6) || oneIn(DEBUG_MODE ? 5 : 4)) {
         testSubdivide(children[i]);
       }
     }
@@ -296,11 +309,11 @@ public strictfp class S2CellTest extends GeometryTestCase {
     // the average area of a parent is exactly 4 times the area of a child.
 
     assertTrue(Math.abs(Math.log(exactArea / cell.exactArea())) <= Math
-      .abs(Math.log(1 + 1e-6)));
+        .abs(Math.log1p(1e-6)));
     assertTrue(Math.abs(Math.log(approxArea / cell.approxArea())) <= Math
       .abs(Math.log(1.03)));
     assertTrue(Math.abs(Math.log(averageArea / cell.averageArea())) <= Math
-      .abs(Math.log(1 + 1e-15)));
+        .abs(Math.log1p(1e-15)));
   }
 
   public void testMinMaxAvg(String label, int level, double count,
@@ -330,7 +343,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     double minError = minValue - minMetric.getValue(level);
     double maxError = maxMetric.getValue(level) - maxValue;
     double avgError = Math.abs(avgMetric.getValue(level) - avgValue);
-    System.out.printf(
+    Platform.printf(System.out,
       "%-10s (%6.0f samples, tolerance %8.3g) - min (%9.3g : %9.3g) "
         + "max (%9.3g : %9.3g), avg (%9.3g : %9.3g)\n", label, count,
       tolerance, minError / minValue, minError / tolerance, maxError
@@ -347,7 +360,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
 
   public void testSubdivide() {
     for (int face = 0; face < 6; ++face) {
-      testSubdivide(S2Cell.fromFacePosLevel(face, (byte) 0, 0));
+      testSubdivide(S2Cell.fromFace(face));
     }
 
     // The maximum edge *ratio* is the ratio of the longest edge of any cell to
@@ -358,10 +371,10 @@ public strictfp class S2CellTest extends GeometryTestCase {
     // cell to the shortest edge of that same cell (and similarly for the
     // maximum diagonal aspect).
 
-    System.out
-      .printf("Level    Area      Edge          Diag          Approx       Average\n");
-    System.out
-      .printf("        Ratio  Ratio Aspect  Ratio Aspect    Min    Max    Min    Max\n");
+    Platform.printf(System.out,
+        "Level    Area      Edge          Diag          Approx       Average\n");
+    Platform.printf(System.out,
+        "        Ratio  Ratio Aspect  Ratio Aspect    Min    Max    Min    Max\n");
     for (int i = 0; i <= S2CellId.MAX_LEVEL; ++i) {
       LevelStats s = levelStats.get(i);
       if (s.count > 0) {
@@ -371,7 +384,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
         s.avgDiag /= s.count;
         s.avgAngleSpan /= s.count;
       }
-      System.out.printf(
+      Platform.printf(System.out,
         "%5d  %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f\n", i,
         s.maxArea / s.minArea, s.maxEdge / s.minEdge, s.maxEdgeAspect,
         s.maxDiag / s.minDiag, s.maxDiagAspect, s.minApproxRatio,
@@ -387,57 +400,104 @@ public strictfp class S2CellTest extends GeometryTestCase {
         continue;
       }
 
-      System.out.printf(
-        "Level %2d - metric (error/actual : error/tolerance)\n", i);
+      Platform.printf(System.out,
+          "Level %2d - metric (error/actual : error/tolerance)\n", i);
 
       // The various length calculations are only accurate to 1e-15 or so,
       // so we need to allow for this amount of discrepancy with the theoretical
       // minimums and maximums. The area calculation is accurate to about 1e-15
       // times the cell width.
-      testMinMaxAvg("area", i, s.count, 1e-15 * s.minWidth, s.minArea,
-        s.maxArea, s.avgArea, S2Projections.MIN_AREA, S2Projections.MAX_AREA,
-        S2Projections.AVG_AREA);
-      testMinMaxAvg("width", i, s.count, 1e-15, s.minWidth, s.maxWidth,
-        s.avgWidth, S2Projections.MIN_WIDTH, S2Projections.MAX_WIDTH,
-        S2Projections.AVG_WIDTH);
-      testMinMaxAvg("edge", i, s.count, 1e-15, s.minEdge, s.maxEdge,
-        s.avgEdge, S2Projections.MIN_EDGE, S2Projections.MAX_EDGE,
-        S2Projections.AVG_EDGE);
-      testMinMaxAvg("diagonal", i, s.count, 1e-15, s.minDiag, s.maxDiag,
-        s.avgDiag, S2Projections.MIN_DIAG, S2Projections.MAX_DIAG,
-        S2Projections.AVG_DIAG);
-      testMinMaxAvg("angle span", i, s.count, 1e-15, s.minAngleSpan,
-        s.maxAngleSpan, s.avgAngleSpan, S2Projections.MIN_ANGLE_SPAN,
-        S2Projections.MAX_ANGLE_SPAN, S2Projections.AVG_ANGLE_SPAN);
+      testMinMaxAvg("area", i, s.count, 1e-15 * s.minWidth,
+          s.minArea, s.maxArea, s.avgArea,
+          PROJ.minArea, PROJ.maxArea, PROJ.avgArea);
+      testMinMaxAvg("width", i, s.count, 1e-15,
+          s.minWidth, s.maxWidth, s.avgWidth,
+          PROJ.minWidth, PROJ.maxWidth, PROJ.avgWidth);
+      testMinMaxAvg("edge", i, s.count, 1e-15,
+          s.minEdge, s.maxEdge, s.avgEdge,
+          PROJ.minEdge, PROJ.maxEdge, PROJ.avgEdge);
+      testMinMaxAvg("diagonal", i, s.count, 1e-15,
+          s.minDiag, s.maxDiag, s.avgDiag,
+          PROJ.minDiag, PROJ.maxDiag, PROJ.avgDiag);
+      testMinMaxAvg("angle span", i, s.count, 1e-15,
+          s.minAngleSpan, s.maxAngleSpan, s.avgAngleSpan,
+          PROJ.minAngleSpan, PROJ.maxAngleSpan, PROJ.avgAngleSpan);
 
       // The aspect ratio calculations are ratios of lengths and are therefore
       // less accurate at higher subdivision levels.
-      assertTrue(s.maxEdgeAspect <= S2Projections.MAX_EDGE_ASPECT + 1e-15
-        * (1 << i));
-      assertTrue(s.maxDiagAspect <= S2Projections.MAX_DIAG_ASPECT + 1e-15
-        * (1 << i));
+      assertTrue(s.maxEdgeAspect <= PROJ.maxEdgeAspect + 1e-15 * (1 << i));
+      assertTrue(s.maxDiagAspect <= PROJ.maxDiagAspect + 1e-15 * (1 << i));
     }
   }
 
-  static final int MAX_LEVEL = DEBUG_MODE ? 6 : 10;
+  public void testCellVsLoopRectBound() {
+    // This test verifies that the S2Cell and S2Loop bounds contain each other
+    // to within their maximum errors.
+    //
+    // The S2Cell and S2Loop calculations for the latitude of a vertex can differ
+    // by up to 2 * DBL_EPSILON, therefore the S2Cell bound should never exceed
+    // the S2Loop bound by more than this (the reverse is not true, because the
+    // S2Loop code sometimes thinks that the maximum occurs along an edge).
+    // Similarly, the longitude bounds can differ by up to 4 * DBL_EPSILON since
+    // the S2Cell bound has an error of 2 * DBL_EPSILON and then expands by this
+    // amount, while the S2Loop bound does no expansion at all.
 
-  public void expandChildren1(S2Cell cell) {
-    S2Cell[] children = new S2Cell[4];
-    assertTrue(cell.subdivide(children));
-    if (children[0].level() < MAX_LEVEL) {
-      for (int pos = 0; pos < 4; ++pos) {
-        expandChildren1(children[pos]);
+    // Possible additional S2Cell error compared to S2Loop error:
+    final S2LatLng kCellError = S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 4 * S2.DBL_EPSILON);
+    // Possible additional S2Loop error compared to S2Cell error:
+    final S2LatLng kLoopError = S2EdgeUtil.RectBounder.maxErrorForTests();
+
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      S2Loop loop = new S2Loop(cell);
+      S2LatLngRect cellBound = cell.getRectBound();
+      S2LatLngRect loopBound = loop.getRectBound();
+      assertTrue(loopBound.expanded(kCellError).contains(cellBound));
+      assertTrue(cellBound.expanded(kLoopError).contains(loopBound));
+    }
+  }
+
+  public void testRectBoundIsLargeEnough() {
+    // Construct many points that are nearly on an S2Cell edge, and verify that
+    // whenever the cell contains a point P then its bound contains S2LatLng(P).
+    for (int iter = 0; iter < 1000; /* advanced in loop below */) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      int i1 = rand.nextInt(4);
+      int i2 = (i1 + 1) & 3;
+      S2Point v1 = cell.getVertex(i1);
+      S2Point v2 = samplePoint(S2Cap.fromAxisAngle(cell.getVertex(i2), S1Angle.radians(1e-15)));
+      S2Point p = S2EdgeUtil.interpolate(rand.nextDouble(), v1, v2);
+      if (new S2Loop(cell).contains(p)) {
+        assertTrue(cell.getRectBound().contains(new S2LatLng(p)));
+        ++iter;
       }
     }
   }
 
-  public void expandChildren2(S2Cell cell) {
-    S2CellId id = cell.id().childBegin();
-    for (int pos = 0; pos < 4; ++pos, id = id.next()) {
-      S2Cell child = new S2Cell(id);
-      if (child.level() < MAX_LEVEL) {
-        expandChildren2(child);
+  public void testGetDistance() {
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2Cell cell = new S2Cell(getRandomCellId());
+      S2Point target = randomPoint();
+      S1Angle expected = getDistanceBruteForce(cell, target).toAngle();
+      S1Angle actual = cell.getDistance(target).toAngle();
+      // The error has a peak near Pi/2 for edge distance, and another peak near
+      // Pi for vertex distance.
+      assertEquals(expected.radians(), actual.radians(), 1e-12);
+      if (expected.radians() <= PI / 3) {
+        assertEquals(expected.radians(), actual.radians(), 1e-15);
       }
     }
+  }
+
+  private static S1ChordAngle getDistanceBruteForce(S2Cell cell, S2Point target) {
+    if (cell.contains(target)) {
+      return S1ChordAngle.ZERO;
+    }
+    S1ChordAngle minDistance = S1ChordAngle.INFINITY;
+    for (int i = 0; i < 4; ++i) {
+      minDistance = S2EdgeUtil.updateMinDistance(target, cell.getVertex(i),
+          cell.getVertex((i + 1) % 4), minDistance);
+    }
+    return minDistance;
   }
 }

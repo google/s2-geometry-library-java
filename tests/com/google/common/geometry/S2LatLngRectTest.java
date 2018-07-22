@@ -15,6 +15,10 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+/** Tests for {@link S2LatLngRect}. */
+@GwtCompatible
 public strictfp class S2LatLngRectTest extends GeometryTestCase {
 
   public void testIntervalOps(S2LatLngRect x, S2LatLngRect y, String expectedRelation,
@@ -121,7 +125,8 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
       double lat = S2.M_PI_4 * (i - 2);
       double lng = S2.M_PI_2 * (i - 2) + 0.2;
       S2LatLngRect r = new S2LatLngRect(new R1Interval(lat, lat + S2.M_PI_4), new S1Interval(
-          Math.IEEEremainder(lng, 2 * S2.M_PI), Math.IEEEremainder(lng + S2.M_PI_2, 2 * S2.M_PI)));
+          Platform.IEEEremainder(lng, 2 * S2.M_PI),
+          Platform.IEEEremainder(lng + S2.M_PI_2, 2 * S2.M_PI)));
       for (int k = 0; k < 4; ++k) {
         assertTrue(
             S2.simpleCCW(r.getVertex((k - 1) & 3).toPoint(), r.getVertex(k).toPoint(),
@@ -165,12 +170,12 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         rectFromDegrees(0, 0, 42, 60), empty);
 
     // AddPoint()
-    S2LatLngRect p = S2LatLngRect.empty();
-    p = p.addPoint(S2LatLng.fromDegrees(0, 0));
-    p = p.addPoint(S2LatLng.fromRadians(0, -S2.M_PI_2));
-    p = p.addPoint(S2LatLng.fromRadians(S2.M_PI_4, -S2.M_PI));
-    p = p.addPoint(new S2Point(0, 0, 1));
-    assertTrue(p.equals(r1));
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
+    builder.addPoint(S2LatLng.fromDegrees(0, 0));
+    builder.addPoint(S2LatLng.fromRadians(0, -S2.M_PI_2));
+    builder.addPoint(S2LatLng.fromRadians(S2.M_PI_4, -S2.M_PI));
+    builder.addPoint(new S2Point(0, 0, 1));
+    assertTrue(builder.build().equals(r1));
 
     // Expanded()
     assertTrue(
@@ -183,15 +188,15 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             rectFromDegrees(-90, -180, 40, 180)));
 
     // ConvolveWithCap()
-    S2LatLngRect llr1 =
-        new S2LatLngRect(S2LatLng.fromDegrees(0, 170), S2LatLng.fromDegrees(0, -170))
-            .convolveWithCap(S1Angle.degrees(15));
+    S2LatLngRect.Builder llr1 =
+        new S2LatLngRect.Builder(S2LatLng.fromDegrees(0, 170), S2LatLng.fromDegrees(0, -170));
+    llr1.convolveWithCap(S1Angle.degrees(15));
     S2LatLngRect llr2 =
         new S2LatLngRect(S2LatLng.fromDegrees(-15, 155), S2LatLng.fromDegrees(15, -155));
     assertTrue(llr1.approxEquals(llr2));
 
-    llr1 = new S2LatLngRect(S2LatLng.fromDegrees(60, 150), S2LatLng.fromDegrees(80, 10))
-        .convolveWithCap(S1Angle.degrees(15));
+    llr1 = new S2LatLngRect.Builder(S2LatLng.fromDegrees(60, 150), S2LatLng.fromDegrees(80, 10));
+    llr1.convolveWithCap(S1Angle.degrees(15));
     llr2 = new S2LatLngRect(S2LatLng.fromDegrees(45, -180), S2LatLng.fromDegrees(90, 180));
     assertTrue(llr1.approxEquals(llr2));
 
@@ -210,35 +215,34 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     // Contains(S2Cell), MayIntersect(S2Cell), Intersects(S2Cell)
 
     // Special cases.
-    testCellOps(empty, S2Cell.fromFacePosLevel(3, (byte) 0, 0), 0);
-    testCellOps(full, S2Cell.fromFacePosLevel(2, (byte) 0, 0), 4);
-    testCellOps(full, S2Cell.fromFacePosLevel(5, (byte) 0, 25), 4);
+    testCellOps(empty, S2Cell.fromFace(3), 0);
+    testCellOps(full, S2Cell.fromFacePosLevel(2, 0, 0), 4);
+    testCellOps(full, S2Cell.fromFacePosLevel(5, 0, 25), 4);
 
     // This rectangle includes the first quadrant of face 0. It's expanded
     // slightly because cell bounding rectangles are slightly conservative.
     S2LatLngRect r4 = rectFromDegrees(-45.1, -45.1, 0.1, 0.1);
-    testCellOps(r4, S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
-    testCellOps(r4, S2Cell.fromFacePosLevel(0, (byte) 0, 1), 4);
-    testCellOps(r4, S2Cell.fromFacePosLevel(1, (byte) 0, 1), 0);
+    testCellOps(r4, S2Cell.fromFace(0), 3);
+    testCellOps(r4, S2Cell.fromFacePosLevel(0, 0, 1), 4);
+    testCellOps(r4, S2Cell.fromFacePosLevel(1, 0, 1), 0);
 
     // This rectangle intersects the first quadrant of face 0.
     S2LatLngRect r5 = rectFromDegrees(-10, -45, 10, 0);
-    testCellOps(r5, S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
-    testCellOps(r5, S2Cell.fromFacePosLevel(0, (byte) 0, 1), 3);
-    testCellOps(r5, S2Cell.fromFacePosLevel(1, (byte) 0, 1), 0);
+    testCellOps(r5, S2Cell.fromFace(0), 3);
+    testCellOps(r5, S2Cell.fromFacePosLevel(0, 0, 1), 3);
+    testCellOps(r5, S2Cell.fromFacePosLevel(1, 0, 1), 0);
 
     // Rectangle consisting of a single point.
-    testCellOps(rectFromDegrees(4, 4, 4, 4), S2Cell.fromFacePosLevel(0, (byte) 0, 0), 3);
+    testCellOps(rectFromDegrees(4, 4, 4, 4), S2Cell.fromFace(0), 3);
 
     // Rectangles that intersect the bounding rectangle of a face
     // but not the face itself.
-    testCellOps(rectFromDegrees(41, -87, 42, -79), S2Cell.fromFacePosLevel(2, (byte) 0, 0), 1);
-    testCellOps(rectFromDegrees(-41, 160, -40, -160), S2Cell.fromFacePosLevel(5, (byte) 0, 0), 1);
+    testCellOps(rectFromDegrees(41, -87, 42, -79), S2Cell.fromFace(2), 1);
+    testCellOps(rectFromDegrees(-41, 160, -40, -160), S2Cell.fromFace(5), 1);
     {
       // This is the leaf cell at the top right hand corner of face 0.
       // It has two angles of 60 degrees and two of 120 degrees.
       S2Cell cell0tr = new S2Cell(new S2Point(1 + 1e-12, 1, 1));
-      S2LatLngRect bound0tr = cell0tr.getRectBound();
       S2LatLng v0 = new S2LatLng(cell0tr.getVertexRaw(0));
       testCellOps(
           rectFromDegrees(v0.lat().degrees() - 1e-8, v0.lng().degrees() - 1e-8,
@@ -248,15 +252,46 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     // Rectangles that intersect a face but where no vertex of one region
     // is contained by the other region. The first one passes through
     // a corner of one of the face cells.
-    testCellOps(rectFromDegrees(-37, -70, -36, -20), S2Cell.fromFacePosLevel(5, (byte) 0, 0), 2);
+    testCellOps(rectFromDegrees(-37, -70, -36, -20), S2Cell.fromFace(5), 2);
     {
       // These two intersect like a diamond and a square.
-      S2Cell cell202 = S2Cell.fromFacePosLevel(2, (byte) 0, 2);
+      S2Cell cell202 = S2Cell.fromFacePosLevel(2, 0, 2);
       S2LatLngRect bound202 = cell202.getRectBound();
       testCellOps(
           rectFromDegrees(bound202.lo().lat().degrees() + 3, bound202.lo().lng().degrees() + 3,
               bound202.hi().lat().degrees() - 3, bound202.hi().lng().degrees() - 3), cell202, 2);
     }
+  }
+
+  public void testPolarClosure() {
+    assertEquals(rectFromDegrees(-89, 0, 89, 1),
+        rectFromDegrees(-89, 0, 89, 1).polarClosure());
+    assertEquals(rectFromDegrees(-90, -180, -45, 180),
+        rectFromDegrees(-90, -30, -45, 100).polarClosure());
+    assertEquals(rectFromDegrees(89, -180, 90, 180),
+        rectFromDegrees(89, 145, 90, 146).polarClosure());
+    assertEquals(S2LatLngRect.full(),
+        rectFromDegrees(-90, -145, 90, -144).polarClosure());
+  }
+
+  public void testApproxEquals() {
+    // S1Interval and R1Interval have additional testing.
+
+    assertTrue(S2LatLngRect.empty().approxEquals(rectFromDegrees(1, 5, 1, 5)));
+    assertTrue(rectFromDegrees(1, 5, 1, 5).approxEquals(S2LatLngRect.empty()));
+    assertFalse(rectFromDegrees(1, 5, 1, 5).approxEquals(rectFromDegrees(2, 7, 2, 7)));
+
+    // Test the maxError (double) parameter.
+    assertTrue(rectFromDegrees(10, 10, 20, 20).approxEquals(
+        rectFromDegrees(11, 11, 19, 19), S1Angle.degrees(1.001).radians()));
+    assertFalse(rectFromDegrees(10, 10, 20, 20).approxEquals(
+        rectFromDegrees(11, 11, 19, 19), S1Angle.degrees(0.999).radians()));
+
+    // Test the maxError (S2LatLng) parameter.
+    assertTrue(rectFromDegrees(0, 10, 20, 30).approxEquals(
+        rectFromDegrees(-1, 8, 21, 32), S2LatLng.fromDegrees(1.001, 2.001)));
+    assertFalse(rectFromDegrees(0, 10, 20, 30).approxEquals(
+        rectFromDegrees(-1, 8, 21, 32), S2LatLng.fromDegrees(0.999, 1.999)));
   }
 
   public void testArea() {

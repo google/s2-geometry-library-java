@@ -15,8 +15,26 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
 
-public final strictfp class S1Angle implements Comparable<S1Angle> {
+import java.io.Serializable;
+
+@GwtCompatible(serializable = true)
+public final strictfp class S1Angle implements Comparable<S1Angle>, Serializable {
+  /**
+   * Approximate "effective" radius of the Earth in meters.
+   */
+  public static final double EARTH_RADIUS_METERS = 6367000.0;
+
+  /**
+   * An angle larger than any finite angle.
+   */
+  public static final S1Angle INFINITY = new S1Angle(Double.POSITIVE_INFINITY);
+
+  /**
+   * An explicit shorthand for the default constructor.
+   */
+  public static final S1Angle ZERO = new S1Angle();
 
   private final double radians;
 
@@ -63,7 +81,7 @@ public final strictfp class S1Angle implements Comparable<S1Angle> {
   @Override
   public boolean equals(Object that) {
     if (that instanceof S1Angle) {
-      return this.radians() == ((S1Angle) that).radians();
+      return this.radians == ((S1Angle) that).radians;
     }
     return false;
   }
@@ -75,19 +93,19 @@ public final strictfp class S1Angle implements Comparable<S1Angle> {
   }
 
   public boolean lessThan(S1Angle that) {
-    return this.radians() < that.radians();
+    return this.radians < that.radians;
   }
 
   public boolean greaterThan(S1Angle that) {
-    return this.radians() > that.radians();
+    return this.radians > that.radians;
   }
 
   public boolean lessOrEquals(S1Angle that) {
-    return this.radians() <= that.radians();
+    return this.radians <= that.radians;
   }
 
   public boolean greaterOrEquals(S1Angle that) {
-    return this.radians() >= that.radians();
+    return this.radians >= that.radians;
   }
 
   public static S1Angle max(S1Angle left, S1Angle right) {
@@ -118,6 +136,25 @@ public final strictfp class S1Angle implements Comparable<S1Angle> {
 
   public static S1Angle e7(long e7) {
     return degrees(e7 * 1e-7);
+  }
+
+  /**
+   * Returns the distance along the surface of a sphere of the given radius.
+   */
+  public double distance(double radius) {
+    return radians * radius;
+  }
+
+  /**
+   * Returns the distance in meters along the surface of the Earth, assumed to
+   * have radius {@link #EARTH_RADIUS_METERS}.
+   */
+  public double earthDistance() {
+    return radians * EARTH_RADIUS_METERS;
+  }
+
+  public S1Angle neg() {
+    return new S1Angle(-radians);
   }
 
   /**

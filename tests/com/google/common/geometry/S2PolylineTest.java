@@ -16,9 +16,9 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-
-import junit.framework.Assert;
 
 import java.util.List;
 
@@ -26,7 +26,10 @@ import java.util.List;
  * Tests for {@link S2Polyline}.
  *
  */
+@GwtCompatible
 public strictfp class S2PolylineTest extends GeometryTestCase {
+
+  private static final double EPSILON = 2e-14d;
 
   @Override
   public void setUp() {
@@ -49,7 +52,6 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
       // Choose a coordinate frame for the great circle.
       S2Point x = randomPoint();
       S2Point y = S2Point.normalize(S2Point.crossProd(x, randomPoint()));
-      S2Point z = S2Point.normalize(S2Point.crossProd(x, y));
 
       List<S2Point> vertices = Lists.newArrayList();
       for (double theta = 0; theta < 2 * S2.M_PI; theta += Math.pow(rand.nextDouble(), 10)) {
@@ -62,7 +64,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
       vertices.add(vertices.get(0));
       S2Polyline line = new S2Polyline(vertices);
       S1Angle length = line.getArclengthAngle();
-      assertTrue(Math.abs(length.radians() - 2 * S2.M_PI) < 2e-14);
+      assertTrue(Math.abs(length.radians() - 2 * S2.M_PI) < EPSILON);
     }
   }
 
@@ -72,7 +74,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     vertices.add(S2Point.normalize(new S2Point(1, -0.8, 1.1)));
     S2Polyline line = new S2Polyline(vertices);
     for (int face = 0; face < 6; ++face) {
-      S2Cell cell = S2Cell.fromFacePosLevel(face, (byte) 0, 0);
+      S2Cell cell = S2Cell.fromFace(face);
       assertEquals(line.mayIntersect(cell), (face & 1) == 0);
     }
   }
@@ -93,6 +95,40 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(line.interpolate(0.5), vertices.get(1));
     assertEquals(line.interpolate(0.75), vertices.get(2));
     assertEquals(line.interpolate(1.1), vertices.get(3));
+  }
+
+  public void testUninterpolate() {
+    S2Point pointA = new S2Point(1, 0, 0);
+    S2Point pointB = new S2Point(0, 1, 0);
+    S2Point pointC = new S2Point(0, 0, 1);
+    S2Polyline line = new S2Polyline(ImmutableList.of(pointA, pointB, pointC));
+
+    // Test at vertices
+    assertEquals(line.uninterpolate(pointA), 0d, EPSILON);
+    assertEquals(line.uninterpolate(pointB), 0.5d, EPSILON);
+    assertEquals(line.uninterpolate(pointC), 1d, EPSILON);
+
+    // Test at non-vertex points on the line
+    final int steps = 7; // Not a power of two, to test at fractions w/o exact value in double
+    for (int i = 1; i < steps; i++) {
+      double fraction = i / (double) steps;
+      S2Point interpolatedPoint = line.interpolate(fraction);
+      assertEquals(line.uninterpolate(interpolatedPoint), fraction, EPSILON);
+    }
+
+    // Test at a point off the line such that the unique nearest point is a vertex
+    S2Point pointOffFromB = S2Point.normalize(new S2Point(-0.001, 1, -0.001));
+    assertEquals(line.uninterpolate(pointOffFromB), 0.5d, EPSILON);
+
+    // Test at a point off the line such that the unique nearest point is a not vertex
+    S2Point pointOffFromMidAB = S2Point.normalize(new S2Point(1, 1, -0.001));
+    assertEquals(line.uninterpolate(pointOffFromMidAB), 0.25d, EPSILON);
+
+    // Test at a point off the line such that there are two nearest points
+    S2Point pointEquidistantFromABAndBC = S2Point.normalize(new S2Point(1, 1, 1));
+    double fraction = line.uninterpolate(pointEquidistantFromABAndBC);
+    assertTrue((0.25 - EPSILON < fraction && fraction < 0.25 + EPSILON)
+        || (0.75 - EPSILON < fraction && fraction < 0.75 + EPSILON));
   }
 
   public void testEqualsAndHashCode() {
@@ -118,7 +154,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkEqualsAndHashCodeMethods(line1, "", false);
   }
 
-  public void testProject() {
+  public void testGetNearestEdgeIndexAndProjectToEdge() {
     List<S2Point> latLngs = Lists.newArrayList();
     latLngs.add(S2LatLng.fromDegrees(0, 0).toPoint());
     latLngs.add(S2LatLng.fromDegrees(0, 1).toPoint());
@@ -160,6 +196,202 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(2, edgeIndex);
   }
 
+  public void testProject() {
+    S2Point pointA = new S2Point(1, 0, 0);
+    S2Point pointB = new S2Point(0, 1, 0);
+    S2Point pointC = new S2Point(0, 0, 1);
+    S2Polyline line = new S2Polyline(ImmutableList.of(pointA, pointB, pointC));
+
+    S2Point pointMidAB = S2Point.normalize(new S2Point(1, 1, 0));
+    S2Point pointMidBC = S2Point.normalize(new S2Point(0, 1, 1));
+
+    // Test at query points on the line
+    final int steps = 6;
+    for (int i = 0; i <= steps; i++) {
+      S2Point queryPoint = line.interpolate(i / (double) steps);
+      assertTrue(S2.approxEquals(line.project(queryPoint), queryPoint));
+    }
+
+    // Test at a point off the line such that the unique nearest point is a vertex
+    S2Point pointOffFromB = S2Point.normalize(new S2Point(-0.1, 1, -0.1));
+    assertTrue(S2.approxEquals(line.project(pointOffFromB), pointB));
+
+    // Test at a point off the line such that the unique nearest point is a not vertex
+    S2Point pointOffFromMidAB = S2Point.normalize(new S2Point(1, 1, -0.1));
+    assertTrue(S2.approxEquals(line.project(pointOffFromMidAB), pointMidAB));
+
+    // Test at a point off the line such that there are two nearest points
+    S2Point pointEquidistantFromABAndBC = S2Point.normalize(new S2Point(1, 1, 1));
+    S2Point projectedPoint = line.project(pointEquidistantFromABAndBC);
+    assertTrue(
+        S2.approxEquals(projectedPoint, pointMidAB) || S2.approxEquals(projectedPoint, pointMidBC));
+
+    // Test projecting on a degenerate polyline
+    S2Polyline degenerateLine = new S2Polyline(ImmutableList.of(pointA));
+    assertTrue(degenerateLine.project(pointB).equals(pointA));
+  }
+
+  public void testIntersectsEmptyPolyline() {
+    S2Polyline line1 = new S2Polyline(makePolyline("1:1, 4:4"));
+    S2Polyline emptyPolyline = new S2Polyline(Lists.<S2Point>newArrayList());
+    assertFalse(emptyPolyline.intersects(line1));
+  }
+
+  public void testIntersectsOnePointPolyline() {
+    S2Polyline line1 = new S2Polyline(makePolyline("1:1, 4:4"));
+    S2Polyline line2 = new S2Polyline(makePolyline("1:1"));
+    assertFalse(line1.intersects(line2));
+  }
+
+  public void testIntersects() {
+    S2Polyline line1 = makePolyline("1:1, 4:4");
+    S2Polyline smallCrossing = makePolyline("1:2, 2:1");
+    S2Polyline smallNonCrossing = makePolyline("1:2, 2:3");
+    S2Polyline bigCrossing = makePolyline("1:2, 2:3, 4:3");
+    assertTrue(line1.intersects(smallCrossing));
+    assertFalse(line1.intersects(smallNonCrossing));
+    assertTrue(line1.intersects(bigCrossing));
+  }
+
+  public void testIntersectsAtVertex() {
+    S2Polyline line1 = makePolyline("1:1, 4:4, 4:6");
+    S2Polyline line2 = makePolyline("1:1, 1:2");
+    S2Polyline line3 = makePolyline("5:1, 4:4, 2:2");
+    assertTrue(line1.intersects(line2));
+    assertTrue(line1.intersects(line3));
+  }
+
+  public void testIntersectsVertexOnEdge()  {
+    S2Polyline horizontalLeftToRight = makePolyline("0:1, 0:3");
+    S2Polyline verticalBottomToTop = makePolyline("-1:2, 0:2, 1:2");
+    S2Polyline horizontalRightToLeft = makePolyline("0:3, 0:1");
+    S2Polyline verticalTopToBottom = makePolyline("1:2, 0:2, -1:2");
+    assertTrue(horizontalLeftToRight.intersects(verticalBottomToTop));
+    assertTrue(horizontalLeftToRight.intersects(verticalTopToBottom));
+    assertTrue(horizontalRightToLeft.intersects(verticalBottomToTop));
+    assertTrue(horizontalRightToLeft.intersects(verticalTopToBottom));
+  }
+
+  public void testSubsampleVerticesTrivialInputs() {
+    // No vertices.
+    checkSubsample("", 1.0);
+    // One vertex.
+    checkSubsample("0:1", 1.0, 0);
+    // Two vertices.
+    checkSubsample("10:10, 11:11", 5.0, 0, 1);
+    // Three points on a straight line. In theory, zero tolerance should work, but in practice there
+    // are floating point errors.
+    checkSubsample("-1:0, 0:0, 1:0", 1e-15, 0, 2);
+    // Zero tolerance on a non-straight line.
+    checkSubsample("-1:0, 0:0, 1:1", 0.0, 0, 1, 2);
+    // Negative tolerance should return all vertices.
+    checkSubsample("-1:0, 0:0, 1:1", -1.0, 0, 1, 2);
+    // Non-zero tolerance with a straight line.
+    checkSubsample("0:1, 0:2, 0:3, 0:4, 0:5", 1.0, 0, 4);
+
+    // And finally, verify that we still do something reasonable if the client passes in an invalid
+    // polyline with two or more adjacent vertices.
+    checkSubsample("0:1, 0:1, 0:1, 0:2", 0.0, 0, 3);
+  }
+
+  public void testSubsampleVerticesSimpleExample() {
+    String coords = "0:0, 0:1, -1:2, 0:3, 0:4, 1:4, 2:4.5, 3:4, 3.5:4, 4:4";
+    checkSubsample(coords, 3.0, 0, 9);
+    checkSubsample(coords, 2.0, 0, 6, 9);
+    checkSubsample(coords, 0.9, 0, 2, 6, 9);
+    checkSubsample(coords, 0.4, 0, 1, 2, 3, 4, 6, 9);
+    checkSubsample(coords, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+  }
+
+  public void testSubsampleVerticesGuarantees() {
+    // Check that duplicate vertices are never generated.
+    checkSubsample("10:10, 12:12, 10:10", 5.0, 0);
+    checkSubsample("0:0, 1:1, 0:0, 0:120, 0:130", 5.0, 0, 3, 4);
+
+    // Check that points are not collapsed if they would create a line segment longer than 90
+    // degrees, and also that the code handles original polyline segments longer than 90 degrees.
+    checkSubsample("90:0, 50:180, 20:180, -20:180, -50:180, -90:0, 30:0, 90:0",
+        5.0, 0, 2, 4, 5, 6, 7);
+
+    // Check that the output polyline is parametrically equivalent and not just geometrically
+    // equivalent, i.e. that backtracking is preserved.  The algorithm achieves this by requiring
+    // that the points must be encountered in increasing order of distance along each output segment
+    // except for points that are within "tolerance" of the first vertex of each segment.
+    checkSubsample("10:10, 10:20, 10:30, 10:15, 10:40", 5.0, 0, 2, 3, 4);
+    checkSubsample("10:10, 10:20, 10:30, 10:10, 10:30, 10:40", 5.0, 0, 2, 3, 5);
+    checkSubsample("10:10, 12:12, 9:9, 10:20, 10:30", 5.0, 0, 4);
+  }
+
+  private static void checkSubsample(String coords, double toleranceDegrees, int... expected) {
+    S2Polyline polyline = makePolyline(coords);
+    S2Polyline simplified = polyline.subsampleVertices(S1Angle.degrees(toleranceDegrees));
+    assertEquals(expected.length, simplified.numVertices());
+    for (int i = 0; i  < expected.length; i++) {
+      assertEquals(polyline.vertex(expected[i]), simplified.vertex(i));
+    }
+  }
+
+  public void testValid() {
+    // A simple normalized line must be valid.
+    List<S2Point> vertices = Lists.newArrayList();
+    vertices.add(new S2Point(1,0,0));
+    vertices.add(new S2Point(0,1,0));
+    S2Polyline line = new S2Polyline(vertices);
+    assertTrue(line.isValid());
+  }
+
+  public void testInvalid() {
+    // A non-normalized line must be invalid.
+    List<S2Point> vertices = Lists.newArrayList();
+    vertices.add(new S2Point(1,0,0));
+    vertices.add(new S2Point(0,2,0));
+    S2Polyline line = new S2Polyline(vertices);
+    assertFalse(line.isValid());
+
+    // Lines with duplicate points must be invalid.
+    List<S2Point> vertices2 = Lists.newArrayList();
+    vertices2.add(new S2Point(1,0,0));
+    vertices2.add(new S2Point(0,1,0));
+    vertices2.add(new S2Point(0,1,0));
+    S2Polyline line2 = new S2Polyline(vertices2);
+    assertFalse(line2.isValid());
+  }
+
+  public void testS2ShapeInterface() {
+    S1Angle radius = S1Angle.radians(10);
+    int numVertices = 40;
+    for (int iter = 0; iter < 50; ++iter) {
+      // Create an S2Polyline from a regular loop, and test that its vertices can be found by
+      // S2ShapeIndex.CellIterator's locate() method.
+      S2Loop loop = S2Loop.makeRegularLoop(randomPoint(), radius, numVertices);
+      List<S2Point> vertices = Lists.newArrayList();
+      for (int i = 0; i < numVertices; ++i) {
+        vertices.add(loop.vertex(i));
+      }
+      S2Polyline polyline = new S2Polyline(vertices);
+
+      S2ShapeIndex index = new S2ShapeIndex();
+      index.add(polyline);
+      S2ShapeIndex.CellIterator iterator = index.iterator();
+      for (int i = 0; i < numVertices; ++i) {
+        assertTrue(iterator.locate(vertices.get(i)));
+      }
+    }
+  }
+
+  /** Verifies that contains() returns false for all cells. */
+  public void testContains() {
+    S2Polyline line = makePolyline("0:0, 5:5, 10:5");
+    // Check a point nowhere near the line.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(-10, -10).toPoint())));
+    // Check each vertex.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(0, 0).toPoint())));
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(5, 5).toPoint())));
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(10, 5).toPoint())));
+    // And check a point exactly on the center of the last edge.
+    assertFalse(line.contains(new S2Cell(S2LatLng.fromDegrees(7.5, 5).toPoint())));
+  }
+
   /**
    * Utility for testing equals() and hashCode() results at once.
    * Tests that lhs.equals(rhs) matches expectedResult, as well as
@@ -175,15 +407,12 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
   private static void checkEqualsAndHashCodeMethods(Object lhs, Object rhs,
                                              boolean expectedResult) {
     if ((lhs == null) && (rhs == null)) {
-      Assert.assertTrue(
-          "Your check is dubious...why would you expect null != null?",
-          expectedResult);
+      assertTrue("Your check is dubious...why would you expect null != null?", expectedResult);
       return;
     }
 
     if ((lhs == null) || (rhs == null)) {
-      Assert.assertFalse(
-          "Your check is dubious...why would you expect an object "
+      assertFalse("Your check is dubious...why would you expect an object "
           + "to be equal to null?", expectedResult);
     }
 
@@ -197,7 +426,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     if (expectedResult) {
       String hashMessage =
           "hashCode() values for equal objects should be the same";
-      Assert.assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
+      assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
     }
   }
 }

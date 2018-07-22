@@ -15,6 +15,11 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
+import java.io.Serializable;
+
+import javax.annotation.CheckReturnValue;
 
 /**
  * This class represents a spherical cap, i.e. a portion of a sphere cut off by
@@ -23,14 +28,15 @@ package com.google.common.geometry;
  * min-distance-from-origin) representation), and is also efficient for
  * containment tests (unlike the (axis, angle) representation).
  *
- * Here are some useful relationships between the cap height (h), the cap
+ * <p>Here are some useful relationships between the cap height (h), the cap
  * opening angle (theta), the maximum chord length from the cap's center (d),
  * and the radius of cap's base (a). All formulas assume a unit radius.
  *
- * h = 1 - cos(theta) = 2 sin^2(theta/2) d^2 = 2 h = a^2 + h^2
+ * <p>{@code h = 1 - cos(theta) = 2 sin^2(theta/2) d^2 = 2 h = a^2 + h^2}
  *
  */
-public final strictfp class S2Cap implements S2Region {
+@GwtCompatible(serializable = true)
+public final strictfp class S2Cap implements S2Region, Serializable {
 
   /**
    * Multiply a positive number by this constant to ensure that the result of a
@@ -92,12 +98,12 @@ public final strictfp class S2Cap implements S2Region {
 
   /** Return an empty cap, i.e. a cap that contains no points. */
   public static S2Cap empty() {
-    return new S2Cap(new S2Point(1, 0, 0), -1);
+    return new S2Cap(S2Point.X_POS, -1);
   }
 
   /** Return a full cap, i.e. a cap that contains all points. */
   public static S2Cap full() {
-    return new S2Cap(new S2Point(1, 0, 0), 2);
+    return new S2Cap(S2Point.X_POS, 2);
   }
 
 
@@ -152,6 +158,7 @@ public final strictfp class S2Cap implements S2Region {
    * operator is not a bijection, since the complement of a singleton cap
    * (containing a single point) is the same as the complement of an empty cap.
    */
+  @CheckReturnValue
   public S2Cap complement() {
     // The complement of a full cap is an empty cap, not a singleton.
     // Also make sure that the complement of an empty cap has height 2.
@@ -197,6 +204,7 @@ public final strictfp class S2Cap implements S2Region {
    * is empty the axis is set to the given point, but otherwise it is left
    * unchanged. 'p' should be a unit-length vector.
    */
+  @CheckReturnValue
   public S2Cap addPoint(S2Point p) {
     // Compute the squared chord length, then convert it into a height.
     // assert (S2.isUnitLength(p));
@@ -214,6 +222,7 @@ public final strictfp class S2Cap implements S2Region {
 
   // Increase the cap height if necessary to include "other". If the current
   // cap is empty it is set to the given other cap.
+  @CheckReturnValue
   public S2Cap addCap(S2Cap other) {
     if (isEmpty()) {
       return new S2Cap(other.axis, other.height);
@@ -282,9 +291,9 @@ public final strictfp class S2Cap implements S2Region {
       double sinC = Math.cos(axisLatLng.lat().radians());
       if (sinA <= sinC) {
         double angleA = Math.asin(sinA / sinC);
-        lng[0] = Math.IEEEremainder(axisLatLng.lng().radians() - angleA,
+        lng[0] = Platform.IEEEremainder(axisLatLng.lng().radians() - angleA,
           2 * S2.M_PI);
-        lng[1] = Math.IEEEremainder(axisLatLng.lng().radians() + angleA,
+        lng[1] = Platform.IEEEremainder(axisLatLng.lng().radians() + angleA,
           2 * S2.M_PI);
       }
     }
@@ -398,7 +407,7 @@ public final strictfp class S2Cap implements S2Region {
     }
 
     S2Cap other = (S2Cap) that;
-    return (axis.equals(other.axis) && height == other.height)
+    return (axis.equalsPoint(other.axis) && height == other.height)
         || (isEmpty() && other.isEmpty()) || (isFull() && other.isFull());
 
   }

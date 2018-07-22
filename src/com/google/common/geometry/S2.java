@@ -15,18 +15,38 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.annotations.VisibleForTesting;
+import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Preconditions;
 
+@GwtCompatible
 public final strictfp class S2 {
-
   // Declare some frequently used constants
   public static final double M_PI = Math.PI;
   public static final double M_1_PI = 1.0 / Math.PI;
   public static final double M_PI_2 = Math.PI / 2.0;
   public static final double M_PI_4 = Math.PI / 4.0;
+  /** Inverse of the root of 2. */
+  public static final double M_SQRT1_2 = 1 / Math.sqrt(2);
   public static final double M_SQRT2 = Math.sqrt(2);
   public static final double M_E = Math.E;
+
+  /** The smallest floating-point value {@code x} such that {@code (1 + x != 1)}. */
+  public static final double DBL_EPSILON;
+  static {
+    double machEps = 1.0d;
+    do {
+       machEps /= 2.0f;
+    } while ((1.0 + (machEps / 2.0)) != 1.0);
+    DBL_EPSILON = machEps;
+  }
+
+  // This point is about 66km from the north pole towards the East Siberian Sea.  See the unit test
+  // for more details. It is written here using constant components to avoid computational errors
+  // from producting a different value than other implementations of S2.
+  private static final S2Point ORIGIN = new S2Point(
+      -0.0099994664350250197,
+      0.0025924542609324121,
+      0.99994664350250195);
 
   // Together these flags define a cell orientation. If SWAP_MASK
   // is true, then canonical traversal order is flipped around the
@@ -37,33 +57,8 @@ public final strictfp class S2 {
   public static final int SWAP_MASK = 0x01;
   public static final int INVERT_MASK = 0x02;
 
-  // Number of bits in the mantissa of a double.
-  private static final int EXPONENT_SHIFT = 52;
-  // Mask to extract the exponent from a double.
-  private static final long EXPONENT_MASK = 0x7ff0000000000000L;
-
-  /**
-   * If v is non-zero, return an integer {@code exp} such that
-   * {@code (0.5 <= |v|*2^(-exp) < 1)}. If v is zero, return 0.
-   *
-   * <p>Note that this arguably a bad definition of exponent because it makes
-   * {@code exp(9) == 4}. In decimal this would be like saying that the
-   * exponent of 1234 is 4, when in scientific 'exponent' notation 1234 is
-   * {@code 1.234 x 10^3}.
-   *
-   * TODO(dbeaumont): Replace this with "DoubleUtils.getExponent(v) - 1" ?
-   */
-  @VisibleForTesting
-  static int exp(double v) {
-    if (v == 0) {
-      return 0;
-    }
-    long bits = Double.doubleToLongBits(v);
-    return (int) ((EXPONENT_MASK & bits) >> EXPONENT_SHIFT) - 1022;
-  }
-
   /** Mapping Hilbert traversal order to orientation adjustment mask. */
-  private static final int[] POS_TO_ORIENTATION =
+  private static final int[] posToOrientation =
       {SWAP_MASK, 0, 0, INVERT_MASK + SWAP_MASK};
 
   /**
@@ -80,11 +75,11 @@ public final strictfp class S2 {
    */
   public static int posToOrientation(int position) {
     Preconditions.checkArgument(0 <= position && position < 4);
-    return POS_TO_ORIENTATION[position];
+    return posToOrientation[position];
   }
 
   /** Mapping from cell orientation + Hilbert traversal to IJ-index. */
-  private static final int[][] POS_TO_IJ = {
+  private static final int[][] posToIj = {
       // 0 1 2 3
       {0, 1, 3, 2}, // canonical order: (0,0), (0,1), (1,1), (1,0)
       {0, 2, 3, 1}, // axes swapped: (0,0), (1,0), (1,1), (0,1)
@@ -104,9 +99,7 @@ public final strictfp class S2 {
    * @throws IllegalArgumentException if either parameter is out of bounds.
    */
   public static int posToIJ(int orientation, int position) {
-    Preconditions.checkArgument(0 <= orientation && orientation < 4);
-    Preconditions.checkArgument(0 <= position && position < 4);
-    return POS_TO_IJ[orientation][position];
+    return posToIj[orientation][position];
   }
 
   /** Mapping from Hilbert traversal order + cell orientation to IJ-index. */
@@ -130,15 +123,16 @@ public final strictfp class S2 {
    * @throws IllegalArgumentException if either parameter is out of bounds.
    */
   public static final int ijToPos(int orientation, int ijIndex) {
-    Preconditions.checkArgument(0 <= orientation && orientation < 4);
-    Preconditions.checkArgument(0 <= ijIndex && ijIndex < 4);
     return IJ_TO_POS[orientation][ijIndex];
   }
 
   /**
    * Defines an area or a length cell metric.
    */
-  public static class Metric {
+  @GwtCompatible(emulated = true, serializable = false)
+  public static final class Metric {
+    // NOTE: This isn't GWT serializable because writing custom field serializers for inner classes
+    // is hard.
 
     private final double deriv;
     private final int dim;
@@ -161,7 +155,7 @@ public final strictfp class S2 {
 
     /** Return the value of a metric for cells at the given level. */
     public double getValue(int level) {
-      return StrictMath.scalb(deriv, dim * (1 - level));
+      return Math.scalb(deriv, -dim * level);
     }
 
     /**
@@ -171,7 +165,7 @@ public final strictfp class S2 {
      * always a valid level.
      */
     public int getClosestLevel(double value) {
-      return getMinLevel(M_SQRT2 * value);
+      return getMinLevel((dim == 1 ? S2.M_SQRT2 : 2) * value);
     }
 
     /**
@@ -187,10 +181,10 @@ public final strictfp class S2 {
       }
 
       // This code is equivalent to computing a floating-point "level"
-      // value and rounding up.
-      int exponent = exp(value / ((1 << dim) * deriv));
-      int level = Math.max(0,
-          Math.min(S2CellId.MAX_LEVEL, -((exponent - 1) >> (dim - 1))));
+      // value and rounding up.  The getExponent() method returns the
+      // exponent corresponding to a fraction in the range [1,2).
+      int exponent = Platform.getExponent(value / deriv);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, -(exponent >> (dim - 1))));
       // assert (level == S2CellId.MAX_LEVEL || getValue(level) <= value);
       // assert (level == 0 || getValue(level - 1) > value);
       return level;
@@ -210,14 +204,12 @@ public final strictfp class S2 {
 
       // This code is equivalent to computing a floating-point "level"
       // value and rounding down.
-      int exponent = exp((1 << dim) * deriv / value);
-      int level = Math.max(0,
-          Math.min(S2CellId.MAX_LEVEL, ((exponent - 1) >> (dim - 1))));
+      int exponent = Platform.getExponent(deriv / value);
+      int level = Math.max(0, Math.min(S2CellId.MAX_LEVEL, exponent >> (dim - 1)));
       // assert (level == 0 || getValue(level) >= value);
       // assert (level == S2CellId.MAX_LEVEL || getValue(level + 1) < value);
       return level;
     }
-
   }
 
   /**
@@ -227,7 +219,7 @@ public final strictfp class S2 {
    * rules out the north and south poles.)
    */
   public static S2Point origin() {
-    return new S2Point(0, 1, 0);
+    return ORIGIN;
   }
 
   /**
@@ -235,7 +227,13 @@ public final strictfp class S2 {
    * useful for assertions).
    */
   public static boolean isUnitLength(S2Point p) {
-    return Math.abs(p.norm2() - 1) <= 1e-15;
+    // Normalize() is guaranteed to return a vector whose L2-norm differs from 1
+    // by less than 2 * DBL_EPSILON.  Thus the squared L2-norm differs by less
+    // than 4 * DBL_EPSILON.  The actual calculated Norm2() can have up to 1.5 *
+    // DBL_EPSILON of additional error.  The total error of 5.5 * DBL_EPSILON
+    // can then be rounded down since the result must be a representable
+    // double-precision value.
+    return Math.abs(p.norm2() - 1) <= 5 * DBL_EPSILON;  // About 1.11e-15
   }
 
   /**
@@ -287,7 +285,7 @@ public final strictfp class S2 {
 
     // assert (isUnitLength(a) && isUnitLength(b));
     S2Point x = S2Point.crossProd(S2Point.add(b, a), S2Point.sub(b, a));
-    if (!x.equals(new S2Point(0, 0, 0))) {
+    if (!x.equalsPoint(S2Point.ORIGIN)) {
       return x;
     }
 
@@ -296,14 +294,22 @@ public final strictfp class S2 {
     return ortho(a);
   }
 
+  private static final S2Point[] ORTHO_BASES = {
+    new S2Point(1, 0.0053, 0.00457),
+    new S2Point(0.012, 1, 0.00457),
+    new S2Point(0.012, 0.0053, 1)
+  };
+
   /**
-   * Return a unit-length vector that is orthogonal to "a". Satisfies Ortho(-a)
-   * = -Ortho(a) for all a.
+   * Returns a unit-length vector that is orthogonal to {@code a}. Satisfies
+   * {@code ortho(-a) = -ortho(a)} for all {@code a}.
    */
   public static S2Point ortho(S2Point a) {
-    // The current implementation in S2Point has the property we need,
-    // i.e. Ortho(-a) = -Ortho(a) for all a.
-    return a.ortho();
+    int k = a.largestAbsComponent() - 1;
+    if (k < 0) {
+      k = 2;
+    }
+    return S2Point.normalize(S2Point.crossProd(a, ORTHO_BASES[k]));
   }
 
   /**
@@ -456,20 +462,36 @@ public final strictfp class S2 {
     // formula which this margin is too narrow to contain :)
 
     // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-    double sina = S2Point.crossProd(b, c).norm();
-    double sinb = S2Point.crossProd(c, a).norm();
-    double sinc = S2Point.crossProd(a, b).norm();
-    double ra = (sina == 0) ? 1 : (Math.asin(sina) / sina);
-    double rb = (sinb == 0) ? 1 : (Math.asin(sinb) / sinb);
-    double rc = (sinc == 0) ? 1 : (Math.asin(sinc) / sinc);
 
-    // Now compute a point M such that M.X = rX * det(ABC) / 2 for X in A,B,C.
-    S2Point x = new S2Point(a.x, b.x, c.x);
-    S2Point y = new S2Point(a.y, b.y, c.y);
-    S2Point z = new S2Point(a.z, b.z, c.z);
-    S2Point r = new S2Point(ra, rb, rc);
-    return new S2Point(0.5 * S2Point.crossProd(y, z).dotProd(r),
-        0.5 * S2Point.crossProd(z, x).dotProd(r), 0.5 * S2Point.crossProd(x, y).dotProd(r));
+    // Use angle() in order to get accurate results for small triangles.
+    double aAngle = b.angle(c);
+    double bAngle = c.angle(a);
+    double cAngle = a.angle(b);
+    double ra = (aAngle == 0) ? 1 : (aAngle / Math.sin(aAngle));
+    double rb = (bAngle == 0) ? 1 : (bAngle / Math.sin(bAngle));
+    double rc = (cAngle == 0) ? 1 : (cAngle / Math.sin(cAngle));
+
+    // Now compute a point M such that:
+    //
+    //  [Ax Ay Az] [Mx]                       [ra]
+    //  [Bx By Bz] [My]  = 0.5 * det(A,B,C) * [rb]
+    //  [Cx Cy Cz] [Mz]                       [rc]
+    //
+    // To improve the numerical stability we subtract the first row (A) from the
+    // other two rows; this reduces the cancellation error when A, B, and C are
+    // very close together.  Then we solve it using Cramer's rule.
+    //
+    // TODO(user): This code still isn't as numerically stable as it could be.
+    // The biggest potential improvement is to compute B-A and C-A more
+    // accurately so that (B-A)x(C-A) is always inside triangle ABC.
+    S2Point x = new S2Point(a.x, b.x - a.x, c.x - a.x);
+    S2Point y = new S2Point(a.y, b.y - a.y, c.y - a.y);
+    S2Point z = new S2Point(a.z, b.z - a.z, c.z - a.z);
+    S2Point r = new S2Point(ra, rb - ra, rc - ra);
+    return new S2Point(
+        0.5 * S2Point.scalarTripleProduct(r, y, z),
+        0.5 * S2Point.scalarTripleProduct(r, z, x),
+        0.5 * S2Point.scalarTripleProduct(r, x, y));
   }
 
   /**
@@ -477,13 +499,13 @@ public final strictfp class S2 {
    * false if the points are clockwise or colinear (i.e. if they are all
    * contained on some great circle).
    *
-   *  Due to numerical errors, situations may arise that are mathematically
+   * <p>Due to numerical errors, situations may arise that are mathematically
    * impossible, e.g. ABC may be considered strictly CCW while BCA is not.
    * However, the implementation guarantees the following:
    *
-   *  If SimpleCCW(a,b,c), then !SimpleCCW(c,b,a) for all a,b,c.
+   * <p>If SimpleCCW(a,b,c), then !SimpleCCW(c,b,a) for all a,b,c.
    *
-   * In other words, ABC and CBA are guaranteed not to be both CCW
+   * <p>In other words, ABC and CBA are guaranteed not to be both CCW
    */
   public static boolean simpleCCW(S2Point a, S2Point b, S2Point c) {
     // We compute the signed volume of the parallelepiped ABC. The usual
@@ -495,50 +517,17 @@ public final strictfp class S2 {
     // (1) x.CrossProd(y) == -(y.CrossProd(x))
     // (2) (-x).DotProd(y) == -(x.DotProd(y))
 
-    return S2Point.crossProd(c, a).dotProd(b) > 0;
+    return S2Point.scalarTripleProduct(b, c, a) > 0;
   }
 
   /**
-   * WARNING! This requires arbitrary precision arithmetic to be truly robust.
-   * This means that for nearly colinear AB and AC, this function may return the
-   * wrong answer.
-   *
-   * <p>
-   * Like SimpleCCW(), but returns +1 if the points are counterclockwise and -1
-   * if the points are clockwise. It satisfies the following conditions:
-   *
-   *  (1) RobustCCW(a,b,c) == 0 if and only if a == b, b == c, or c == a (2)
-   * RobustCCW(b,c,a) == RobustCCW(a,b,c) for all a,b,c (3) RobustCCW(c,b,a)
-   * ==-RobustCCW(a,b,c) for all a,b,c
-   *
-   *  In other words:
-   *
-   *  (1) The result is zero if and only if two points are the same. (2)
-   * Rotating the order of the arguments does not affect the result. (3)
-   * Exchanging any two arguments inverts the result.
-   *
-   *  This function is essentially like taking the sign of the determinant of
-   * a,b,c, except that it has additional logic to make sure that the above
-   * properties hold even when the three points are coplanar, and to deal with
-   * the limitations of floating-point arithmetic.
-   *
-   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
-   * are undefined.
+   * Given the normal of an edge pointing to the left, this method converts the determinant of the
+   * dot product between the edge normal and a following vertex to determine if the vertex is to the
+   * left, a counterclockwise turn, to the right, a clockwise turn, or straight within the precision
+   * limits of the scalar triple product.
+   * @return -1 for clockwise, 0 for straight, 1 for counterclockwise.
    */
-  public static int robustCCW(S2Point a, S2Point b, S2Point c) {
-    return robustCCW(a, b, c, S2Point.crossProd(a, b));
-  }
-
-  /**
-   * A more efficient version of RobustCCW that allows the precomputed
-   * cross-product of A and B to be specified.
-   *
-   *  Note: a, b and c are expected to be of unit length. Otherwise, the results
-   * are undefined
-   */
-  public static int robustCCW(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
-    // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-
+  public static int triageCCW(double det) {
     // There are 14 multiplications and additions to compute the determinant
     // below. Since all three points are normalized, it is possible to show
     // that the average rounding error per operation does not exceed 2**-54,
@@ -547,63 +536,183 @@ public final strictfp class S2 {
     // is greater than 2*14*(2**-54), the determinant will have the same sign
     // even if the arguments are rotated (which produces a mathematically
     // equivalent result but with potentially different rounding errors).
-    final double kMinAbsValue = 1.6e-15; // 2 * 14 * 2**-54
-
-    double det = aCrossB.dotProd(c);
+    final double kMaxDetError = 1.6e-15; // 2 * 14 * 2**-54
 
     // Double-check borderline cases in debug mode.
-    // assert ((Math.abs(det) < kMinAbsValue) || (Math.abs(det) > 1000 * kMinAbsValue)
+    // assert ((Math.abs(det) <= kMinAbsValue) || (Math.abs(det) >= 100 * kMinAbsValue)
     //    || (det * expensiveCCW(a, b, c) > 0));
 
-    if (det > kMinAbsValue) {
+    if (det >= kMaxDetError) {
       return 1;
     }
 
-    if (det < -kMinAbsValue) {
+    if (det <= -kMaxDetError) {
       return -1;
     }
 
-    return expensiveCCW(a, b, c);
+    return 0;
   }
 
   /**
-   * A relatively expensive calculation invoked by RobustCCW() if the sign of
-   * the determinant is uncertain.
+   * <p>Like SimpleCCW(), but returns +1 if the points are counterclockwise and -1
+   * if the points are clockwise. It satisfies the following conditions:
+   *
+   * <ul>
+   * <li>RobustCCW(a,b,c) == 0 if and only if a == b, b == c, or c == a
+   * <li>RobustCCW(b,c,a) == RobustCCW(a,b,c) for all a,b,c
+   * <li>RobustCCW(c,b,a) ==-RobustCCW(a,b,c) for all a,b,c
+   * </ul>
+   *
+   * <p>In other words:
+   *
+   * <ul>
+   * <li>The result is zero if and only if two points are the same.
+   * <li>Rotating the order of the arguments does not affect the result.
+   * <li>Exchanging any two arguments inverts the result.
+   * </ul>
+   *
+   * <p>This function is essentially like taking the sign of the determinant of
+   * a,b,c, except that it has additional logic to make sure that the above
+   * properties hold even when the three points are coplanar, and to deal with
+   * the limitations of floating-point arithmetic.
+   *
+   * <p>Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * are undefined.
    */
-  private static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
+  public static int robustCCW(S2Point a, S2Point b, S2Point c) {
+    // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
+    int ccw = triageCCW(S2Point.scalarTripleProduct(c, a, b));
+    if (ccw == 0) {
+       ccw = expensiveCCW(a, b, c);
+    }
+    return ccw;
+  }
+
+  /**
+   * A more efficient version of RobustCCW that allows the precomputed
+   * cross-product of A and B to be specified.
+   *
+   * <p>Note: a, b and c are expected to be of unit length. Otherwise, the results
+   * are undefined
+   */
+  public static int robustCCW(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
+    // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
+    int ccw = triageCCW(aCrossB.dotProd(c));
+    if (ccw == 0) {
+      ccw = expensiveCCW(a, b, c);
+    }
+    return ccw;
+  }
+
+  /**
+   * Returns the sign of the determinant using more expensive techniques. To be used when the
+   * magnitude of the determinant is close enough to zero that its value is uncertain using faster
+   * but less robust techniques.
+   */
+  static int expensiveCCW(S2Point a, S2Point b, S2Point c) {
     // Return zero if and only if two points are the same. This ensures (1).
-    if (a.equals(b) || b.equals(c) || c.equals(a)) {
+    if (a.equalsPoint(b) || b.equalsPoint(c) || c.equalsPoint(a)) {
       return 0;
     }
 
-    // Now compute the determinant in a stable way. Since all three points are
-    // unit length and we know that the determinant is very close to zero, this
-    // means that points are very nearly colinear. Furthermore, the most common
-    // situation is where two points are nearly identical or nearly antipodal.
-    // To get the best accuracy in this situation, it is important to
-    // immediately reduce the magnitude of the arguments by computing either
-    // A+B or A-B for each pair of points. Note that even if A and B differ
-    // only in their low bits, A-B can be computed very accurately. On the
-    // other hand we can't accurately represent an arbitrary linear combination
-    // of two vectors as would be required for Gaussian elimination. The code
-    // below chooses the vertex opposite the longest edge as the "origin" for
-    // the calculation, and computes the different vectors to the other two
-    // vertices. This minimizes the sum of the lengths of these vectors.
-    //
-    // This implementation is very stable numerically, but it still does not
-    // return consistent results in all cases. For example, if three points are
-    // spaced far apart from each other along a great circle, the sign of the
-    // result will basically be random (although it will still satisfy the
-    // conditions documented in the header file). The only way to return
-    // consistent results in all cases is to compute the result using
-    // arbitrary-precision arithmetic. I considered using the Gnu MP library,
-    // but this would be very expensive (up to 2000 bits of precision may be
-    // needed to store the intermediate results) and seems like overkill for
-    // this problem. The MP library is apparently also quite particular about
-    // compilers and compilation options and would be a pain to maintain.
+    int sign = stableCCW(a, b, c);
+    if (sign != 0) {
+      return sign;
+    }
 
-    // We want to handle the case of nearby points and nearly antipodal points
-    // accurately, so determine whether A+B or A-B is smaller in each case.
+    // Otherwise fall back to exact arithmetic and symbolic permutations.
+    return exactCCW(a, b, c);
+  }
+
+  /**
+   * Compute the determinant in a numerically stable way. Unlike triageCCW(), this method can
+   * usually compute the correct determinant sign even when all three points are as collinear as
+   * possible. For example if three points are spaced 1km apart along a random line on the Earth's
+   * surface using the nearest representable points, there is only a 0.4% chance that this method
+   * will not be able to find the determinant sign. The probability of failure decreases as the
+   * points get closer together; if the collinear points are 1 meter apart, the failure rate drops
+   * to 0.0004%.
+   *
+   * <p>This method could be extended to also handle nearly-antipodal points (and in fact an earlier
+   * version of this code did exactly that), but antipodal points are rare in practice so it seems
+   * better to simply fall back to exact arithmetic in that case.
+   */
+  private static final int stableCCW(S2Point a, S2Point b, S2Point c) {
+    S2Point ab = S2Point.sub(b, a);
+    S2Point bc = S2Point.sub(c, b);
+    S2Point ca = S2Point.sub(a, c);
+    double ab2 = ab.norm2();
+    double bc2 = bc.norm2();
+    double ca2 = ca.norm2();
+
+    // Now compute the determinant ((A-C)x(B-C)).C, where the vertices have been cyclically permuted
+    // if necessary so that AB is the longest edge.  (This minimizes the magnitude of cross
+    // product.)  At the same time we also compute the maximum error in the determinant.  Using a
+    // similar technique to the one used for kMaxDetError, the error is at most
+    //
+    //   |d| <= (3 + 6/sqrt(3)) * |A-C| * |B-C| * e
+    //
+    // where e = 0.5 * DBL_EPSILON.  If the determinant magnitude is larger than this value then we
+    // know its sign with certainty.
+    final double detErrorMultiplier = 3.2321 * DBL_EPSILON;  // see above
+    double det, maxError;
+    if (ab2 >= bc2 && ab2 >= ca2) {
+      // AB is the longest edge, so compute (A-C)x(B-C).C.
+      det = -S2Point.scalarTripleProduct(c, ca, bc);
+      maxError = detErrorMultiplier * Math.sqrt(ca2 * bc2);
+    } else if (bc2 >= ca2) {
+      // BC is the longest edge, so compute (B-A)x(C-A).A.
+      det = -S2Point.scalarTripleProduct(a, ab, ca);
+      maxError = detErrorMultiplier * Math.sqrt(ab2 * ca2);
+    } else {
+      // CA is the longest edge, so compute (C-B)x(A-B).B.
+      det = -S2Point.scalarTripleProduct(b, bc, ab);
+      maxError = detErrorMultiplier * Math.sqrt(bc2 * ab2);
+    }
+    return (Math.abs(det) <= maxError) ? 0 : (det > 0) ? 1 : -1;
+  }
+
+  /**
+   * Computes the determinant using exact arithmetic and/or symbolic permutations. Requires that the
+   * three points are distinct.
+   */
+  private static final int exactCCW(S2Point a, S2Point b, S2Point c) {
+    // assert !a.equalsPoint(b) && !b.equalsPoint(c) && !c.equalsPoint(a);
+    int sign = Platform.sign(a, b, c);
+    if (sign != 0) {
+      return sign;
+    } else {
+      // Else fall back to symbolic perturbation.
+      return symbolicCCW(a, b, c);
+    }
+  }
+
+  /**
+   * Computes the sign of the determinant in a stable way. All three points must be unit length, and
+   * this method should only be invoked when the determinant is very close to zero, so the points
+   * are very nearly collinear. Furthermore, the most common situation is where two points are
+   * nearly identical or nearly antipodal.
+   *
+   * <p>To get the best accuracy in this situation, it is important to immediately reduce the
+   * magnitude of the arguments by computing either A+B or A-B for each pair of points. Note that
+   * even if A and B differ only in their low bits, A-B can be computed very accurately. On the
+   * other hand we can't accurately represent an arbitrary linear combination of two vectors as
+   * would be required for Gaussian elimination. The code below chooses the vertex opposite the
+   * longest edge as the "origin" for the calculation, and computes the different vectors to the
+   * other two vertices. This minimizes the sum of the lengths of these vectors.
+   *
+   * <p>This implementation is very stable numerically, but it still does not return consistent
+   * results in all cases. For example, if three points are spaced far apart from each other along a
+   * great circle, the sign of the result will basically be random. The only way to return
+   * consistent results in all cases is to compute the result using arbitrary-precision arithmetic.
+   *
+   * <p>In particular, this method is now used after arbitrary-precision arithmetic has been tried,
+   * so the usual case coming through here is to essentially "break a tie" in the event of truly
+   * coplanar points, with the requirement that the result of S2.robustCCW() be nonzero.
+   */
+  private static final int symbolicCCW(S2Point a, S2Point b, S2Point c) {
+    // We want to handle the case of nearby points and nearly antipodal points accurately, so
+    // determine whether A+B or A-B is smaller in each case.
     double sab = (a.dotProd(b) > 0) ? -1 : 1;
     double sbc = (b.dotProd(c) > 0) ? -1 : 1;
     double sca = (c.dotProd(a) > 0) ? -1 : 1;
@@ -614,27 +723,26 @@ public final strictfp class S2 {
     double dbc = vbc.norm2();
     double dca = vca.norm2();
 
-    // Sort the difference vectors to find the longest edge, and use the
-    // opposite vertex as the origin. If two difference vectors are the same
-    // length, we break ties deterministically to ensure that the symmetry
-    // properties guaranteed in the header file will be true.
+    // Sort the difference vectors to find the longest edge, and use the opposite vertex as the
+    // origin. If two difference vectors are the same length, we break ties deterministically to
+    // ensure that the symmetry properties guaranteed in the header file will be true.
     double sign;
     if (dca < dbc || (dca == dbc && a.lessThan(b))) {
       if (dab < dbc || (dab == dbc && a.lessThan(c))) {
         // The "sab" factor converts A +/- B into B +/- A.
-        sign = S2Point.crossProd(vab, vca).dotProd(a) * sab; // BC is longest
-                                                             // edge
+        // BC is longest edge.
+        sign = S2Point.scalarTripleProduct(a, vab, vca) * sab;
       } else {
-        sign = S2Point.crossProd(vca, vbc).dotProd(c) * sca; // AB is longest
-                                                             // edge
+        // AB is longest edge.
+        sign = S2Point.scalarTripleProduct(c, vca, vbc) * sca;
       }
     } else {
       if (dab < dca || (dab == dca && b.lessThan(c))) {
-        sign = S2Point.crossProd(vbc, vab).dotProd(b) * sbc; // CA is longest
-                                                             // edge
+        // CA is longest edge.
+        sign = S2Point.scalarTripleProduct(b, vbc, vab) * sbc;
       } else {
-        sign = S2Point.crossProd(vca, vbc).dotProd(c) * sca; // AB is longest
-                                                             // edge
+        // AB is longest edge.
+        sign = S2Point.scalarTripleProduct(c, vca, vbc) * sca;
       }
     }
     if (sign > 0) {
@@ -653,7 +761,6 @@ public final strictfp class S2 {
     // perturbed by this amount. It turns out that this is equivalent to
     // checking whether the points are ordered CCW around the origin first in
     // the Y-Z plane, then in the Z-X plane, and then in the X-Y plane.
-
     int ccw =
         planarOrderedCCW(new R2Vector(a.y, a.z), new R2Vector(b.y, b.z), new R2Vector(c.y, c.z));
     if (ccw == 0) {
@@ -668,9 +775,11 @@ public final strictfp class S2 {
     return ccw;
   }
 
-
+  /**
+   * Returns +1 if the edge AB is CCW around the origin, -1 if its clockwise, and 0 if the result is
+   * indeterminate.
+   */
   public static int planarCCW(R2Vector a, R2Vector b) {
-    // Return +1 if the edge AB is CCW around the origin, etc.
     double sab = (a.dotProd(b) > 0) ? -1 : 1;
     R2Vector vab = R2Vector.add(a, R2Vector.mul(b, sab));
     double da = a.norm2();
@@ -741,7 +850,7 @@ public final strictfp class S2 {
    * always in the range [0, Pi]. The points do not need to be normalized.
    * Ensures that Angle(a,b,c) == Angle(c,b,a) for all a,b,c.
    *
-   *  The angle is undefined if A or C is diametrically opposite from B, and
+   * <p>The angle is undefined if A or C is diametrically opposite from B, and
    * becomes numerically unstable as the length of edge AB or BC approaches 180
    * degrees.
    */
@@ -766,6 +875,33 @@ public final strictfp class S2 {
     // it ensures that turnAngle(a,b,c) == -turnAngle(c,b,a) for all a,b,c.
     double outAngle = S2Point.crossProd(b, a).angle(S2Point.crossProd(c, b));
     return (robustCCW(a, b, c) > 0) ? outAngle : -outAngle;
+  }
+
+  /**
+   * Returns a right-handed coordinate frame (three orthonormal vectors) based on a single point,
+   * which will become the third axis.
+   */
+  public static Matrix3x3 getFrame(S2Point p0) {
+    S2Point p1 = ortho(p0);
+    S2Point p2 = S2Point.normalize(S2Point.crossProd(p1, p0));
+    return Matrix3x3.fromCols(p2, p1, p0);
+  }
+
+  /** Returns a normalized copy {@code p} after rotating it by the rotation matrix {@code r}. */
+  static S2Point rotate(S2Point p, Matrix3x3 r) {
+    Matrix3x3 rotated = r.mult(new Matrix3x3(1, p.x, p.y, p.z));
+    return S2Point.normalize(new S2Point(rotated.get(0, 0), rotated.get(1, 0), rotated.get(2, 0)));
+  }
+
+  /** Converts 'p' to the basis given in 'frame'. */
+  static S2Point toFrame(Matrix3x3 frame, S2Point p) {
+    // The inverse of an orthonormal matrix is its transpose.
+    return frame.transpose().mult(Matrix3x3.fromCols(p)).getCol(0);
+  }
+
+  /** Converts 'p' from the basis given in 'frame'. */
+  static S2Point fromFrame(Matrix3x3 frame, S2Point q) {
+    return frame.mult(Matrix3x3.fromCols(q)).getCol(0);
   }
 
   /**

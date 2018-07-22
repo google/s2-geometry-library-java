@@ -15,10 +15,15 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+
 import junit.framework.TestCase;
 
+/**
+ * Tests for {@link S1Angle}.
+ */
+@GwtCompatible
 public strictfp class S1AngleTest extends TestCase {
-
 
   public void testBasic() {
     // Check that the conversion between Pi radians and 180 degrees is exact.
@@ -40,5 +45,24 @@ public strictfp class S1AngleTest extends TestCase {
     assertEquals(S1Angle.degrees(12.34567).e5(), 1234567);
     assertEquals(S1Angle.degrees(12.345678).e6(), 12345678);
     assertEquals(S1Angle.degrees(-12.3456789).e7(), -123456789);
+  }
+
+  public void testDistance() {
+    // Check distance accessor for arbitrary sphere
+    assertEquals(100.0 * Math.PI, S1Angle.radians(Math.PI).distance(100.0), 1e-12);
+    assertEquals(50.0 * Math.PI, S1Angle.radians(Math.PI / 2).distance(100.0), 1e-12);
+    assertEquals(25.0 * Math.PI, S1Angle.radians(Math.PI / 4).distance(100.0), 1e-12);
+
+    // Check distance accessor for Earth
+    final double er = S1Angle.EARTH_RADIUS_METERS;
+    assertEquals(er * Math.PI, S1Angle.radians(Math.PI).earthDistance(), 1e-8);
+    assertEquals(er * Math.PI / 2, S1Angle.radians(Math.PI / 2).earthDistance(), 1e-8);
+    assertEquals(er * Math.PI / 4, S1Angle.radians(Math.PI / 4).earthDistance(), 1e-8);
+  }
+
+  public void testInfinity() {
+    assertTrue(S1Angle.radians(1e30).compareTo(S1Angle.INFINITY) < 0);
+    assertTrue(S1Angle.INFINITY.neg().compareTo(S1Angle.ZERO) < 0);
+    assertTrue(S1Angle.INFINITY.equals(S1Angle.INFINITY));
   }
 }

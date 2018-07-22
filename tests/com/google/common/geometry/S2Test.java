@@ -15,8 +15,16 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.PROJ;
+
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.collect.Lists;
+import com.google.common.geometry.S2Projections.FaceSiTi;
+
 import java.util.logging.Logger;
 
+/** Verifies S2 static methods. */
+@GwtCompatible
 public strictfp class S2Test extends GeometryTestCase {
 
   private static Logger logger = Logger.getLogger(S2Test.class.getName());
@@ -54,14 +62,14 @@ public strictfp class S2Test extends GeometryTestCase {
 
   public void testSTUV() {
     // Check boundary conditions.
-    for (double x = -1; x <= 1; ++x) {
-      assertEquals(S2Projections.stToUV(x), x);
-      assertEquals(S2Projections.uvToST(x), x);
+    for (double x = 0; x <= 1; x++) {
+      assertDoubleNear(PROJ.stToUV(x), 2 * x - 1);
+      assertDoubleNear(PROJ.uvToST(2 * x - 1), x);
     }
     // Check that UVtoST and STtoUV are inverses.
-    for (double x = -1; x <= 1; x += 0.0001) {
-      assertDoubleNear(S2Projections.uvToST(S2Projections.stToUV(x)), x);
-      assertDoubleNear(S2Projections.stToUV(S2Projections.uvToST(x)), x);
+    for (double x = 0; x <= 1; x += 0.0001) {
+      assertDoubleNear(PROJ.uvToST(PROJ.stToUV(x)), x);
+      assertDoubleNear(PROJ.stToUV(PROJ.uvToST(2 * x - 1)), 2 * x - 1);
     }
   }
 
@@ -94,6 +102,76 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  public void testFaceXyzToUvw() {
+    for (int face = 0; face < 6; ++face) {
+      assertEquals(new S2Point(0,  0,  0),
+          S2Projections.faceXyzToUvw(face, new S2Point(0, 0, 0)));
+      assertEquals(new S2Point(1,  0,  0),
+          S2Projections.faceXyzToUvw(face, S2Projections.getUAxis(face)));
+      assertEquals(new S2Point(-1,  0,  0),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getUAxis(face))));
+      assertEquals(new S2Point(0,  1,  0),
+          S2Projections.faceXyzToUvw(face, S2Projections.getVAxis(face)));
+      assertEquals(new S2Point(0, -1,  0),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getVAxis(face))));
+      assertEquals(new S2Point(0,  0,  1),
+          S2Projections.faceXyzToUvw(face, S2Projections.getNorm(face)));
+      assertEquals(new S2Point(0,  0, -1),
+          S2Projections.faceXyzToUvw(face, S2Point.neg(S2Projections.getNorm(face))));
+    }
+  }
+
+  public void testXYZToFaceSiTi() {
+    // Check the conversion of random cells to center points and back.
+    for (int level = 0; level <= S2CellId.MAX_LEVEL; level++) {
+      for (int i = 0; i < 1000; ++i) {
+        S2CellId id = getRandomCellId(level);
+        S2Point p = id.toPoint();
+        FaceSiTi result = PROJ.xyzToFaceSiTi(p);
+        int resultLevel = PROJ.levelIfCenter(result, p);
+        assertEquals(level, resultLevel);
+        S2CellId actualId = S2CellId.fromFaceIJ(result.face,
+            (int) (result.si / 2), (int) (result.ti / 2)).parent(level);
+        assertEquals(id, actualId);
+
+        // Now test a point near the cell center but not equal to it.
+        S2Point pMoved = S2Point.add(id.toPoint(), new S2Point(1e-13, 1e-13, 1e-13));
+        FaceSiTi moved = PROJ.xyzToFaceSiTi(pMoved);
+        assertEquals(-1, PROJ.levelIfCenter(moved, pMoved));
+        assertEquals(result.face, moved.face);
+        assertEquals(result.si, moved.si);
+        assertEquals(result.ti, moved.ti);
+
+        // Finally, test some random (si,ti) values that may be at different
+        // levels, or not at a valid level at all (for example, si == 0).
+        int faceRandom = random(S2CellId.NUM_FACES);
+        long siRandom, tiRandom;
+        long mask = 0xFFFFFFFFL << (S2CellId.MAX_LEVEL - level);
+        do {
+          siRandom = rand.nextInt() & mask;
+          tiRandom = rand.nextInt() & mask;
+        } while (siRandom > S2Projections.MAX_SITI || tiRandom > S2Projections.MAX_SITI);
+        S2Point pRandom = PROJ.faceSiTiToXyz(faceRandom, siRandom, tiRandom);
+        FaceSiTi actual = PROJ.xyzToFaceSiTi(pRandom);
+        int actualLevel = PROJ.levelIfCenter(actual, pRandom);
+        if (actual.face != faceRandom) {
+          // The chosen point is on the edge of a top-level face cell.
+          assertEquals(-1, actualLevel);
+          assertTrue(actual.si == 0 || actual.si == S2Projections.MAX_SITI
+              || actual.ti == 0 || actual.ti == S2Projections.MAX_SITI);
+        } else {
+          assertEquals(siRandom, actual.si);
+          assertEquals(tiRandom, actual.ti);
+          if (actualLevel >= 0) {
+            assertEquals(pRandom,
+                S2CellId.fromFaceIJ(actual.face, (int) (actual.si / 2), (int) (actual.ti / 2))
+                .parent(actualLevel).toPoint());
+          }
+        }
+      }
+    }
+  }
+
   public void testUVNorms() {
     // Check that GetUNorm and GetVNorm compute right-handed normals for
     // an edge in the increasing U or V direction.
@@ -118,6 +196,40 @@ public strictfp class S2Test extends GeometryTestCase {
           S2Projections.faceUvToXyz(face, 1, 0), S2Projections.faceUvToXyz(face, 0, 0)));
       assertEquals(S2Projections.getVAxis(face), S2Point.sub(
           S2Projections.faceUvToXyz(face, 0, 1), S2Projections.faceUvToXyz(face, 0, 0)));
+    }
+  }
+
+  public void testUVWAxis() {
+    for (int face = 0; face < 6; ++face) {
+      // Check that axes are consistent with faceUvToXyz.
+      assertEquals(S2Projections.getUAxis(face), S2Point.sub(
+          S2Projections.faceUvToXyz(face, 1, 0), S2Projections.faceUvToXyz(face, 0, 0)));
+      assertEquals(S2Projections.getVAxis(face), S2Point.sub(
+          S2Projections.faceUvToXyz(face, 0, 1), S2Projections.faceUvToXyz(face, 0, 0)));
+      assertEquals(S2Projections.getNorm(face), S2Projections.faceUvToXyz(face, 0, 0));
+
+      // Check that every face coordinate frame is right-handed.
+      assertEquals(1D, S2Point.scalarTripleProduct(
+          S2Projections.getUAxis(face),
+          S2Projections.getVAxis(face),
+          S2Projections.getNorm(face)));
+
+      // Check that GetUVWAxis is consistent with getUAxis, getVAxis, getNorm.
+      assertEquals(S2Projections.getUAxis(face), S2Projections.getUVWAxis(face, 0));
+      assertEquals(S2Projections.getVAxis(face), S2Projections.getUVWAxis(face, 1));
+      assertEquals(S2Projections.getNorm(face), S2Projections.getUVWAxis(face, 2));
+    }
+  }
+
+  public void testUVWFace() {
+    // Check that GetUVWFace is consistent with GetUVWAxis.
+    for (int face = 0; face < 6; ++face) {
+      for (int axis = 0; axis < 3; ++axis) {
+        assertEquals(S2Projections.getUVWFace(face, axis, 0),
+            S2Projections.xyzToFace(S2Point.neg(S2Projections.getUVWAxis(face, axis))));
+        assertEquals(S2Projections.getUVWFace(face, axis, 1),
+            S2Projections.xyzToFace(S2Projections.getUVWAxis(face, axis)));
+      }
     }
   }
 
@@ -195,6 +307,34 @@ public strictfp class S2Test extends GeometryTestCase {
     assertTrue(S2.robustCCW(a, b, c) != 0);
   }
 
+  public void testFrames() {
+    S2Point z = S2Point.normalize(new S2Point(0.2, 0.5, -3.3));
+    Matrix3x3 m = S2.getFrame(z);
+    assertTrue(S2.approxEquals(m.getCol(2), z));
+    assertTrue(S2.isUnitLength(m.getCol(0)));
+    assertTrue(S2.isUnitLength(m.getCol(1)));
+    assertEquals(det(m), 1, 1e-15);
+
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(0)), S2Point.X_POS));
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(1)), S2Point.Y_POS));
+    assertTrue(S2.approxEquals(S2.toFrame(m, m.getCol(2)), S2Point.Z_POS));
+
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.X_POS), m.getCol(0)));
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.Y_POS), m.getCol(1)));
+    assertTrue(S2.approxEquals(S2.fromFrame(m, S2Point.Z_POS), m.getCol(2)));
+  }
+
+  /**
+   * Returns the determinant of a 3x3 matrix. This is not located on Matrix3x3 since, despite the
+   * name, that class is more general than 3x3 matrices.
+   */
+  private static double det(Matrix3x3 m) {
+    assert m.cols() == 3 && m.rows() == 3;
+    return m.get(0, 0) * (m.get(1, 1) * m.get(2, 2) - m.get(1, 2) * m.get(2, 1))
+         - m.get(0, 1) * (m.get(1, 0) * m.get(2, 2) - m.get(1, 2) * m.get(2, 0))
+         + m.get(0, 2) * (m.get(1, 0) * m.get(2, 1) - m.get(1, 1) * m.get(2, 0));
+  }
+
   // Note: obviously, I could have defined a bundle of metrics like this in the
   // S2 class itself rather than just for testing. However, it's not clear that
   // this is useful other than for testing purposes, and I find
@@ -227,17 +367,16 @@ public strictfp class S2Test extends GeometryTestCase {
   }
 
   public void testMetrics() {
-
     MetricBundle angleSpan = new MetricBundle(
-        S2Projections.MIN_ANGLE_SPAN, S2Projections.MAX_ANGLE_SPAN, S2Projections.AVG_ANGLE_SPAN);
+        PROJ.minAngleSpan, PROJ.maxAngleSpan, PROJ.avgAngleSpan);
     MetricBundle width =
-        new MetricBundle(S2Projections.MIN_WIDTH, S2Projections.MAX_WIDTH, S2Projections.AVG_WIDTH);
+        new MetricBundle(PROJ.minWidth, PROJ.maxWidth, PROJ.avgWidth);
     MetricBundle edge =
-        new MetricBundle(S2Projections.MIN_EDGE, S2Projections.MAX_EDGE, S2Projections.AVG_EDGE);
+        new MetricBundle(PROJ.minEdge, PROJ.maxEdge, PROJ.avgEdge);
     MetricBundle diag =
-        new MetricBundle(S2Projections.MIN_DIAG, S2Projections.MAX_DIAG, S2Projections.AVG_DIAG);
+        new MetricBundle(PROJ.minDiag, PROJ.maxDiag, PROJ.avgDiag);
     MetricBundle area =
-        new MetricBundle(S2Projections.MIN_AREA, S2Projections.MAX_AREA, S2Projections.AVG_AREA);
+        new MetricBundle(PROJ.minArea, PROJ.maxArea, PROJ.avgArea);
 
     // First, check that min <= avg <= max for each metric.
     testMinMaxAvg(angleSpan);
@@ -248,75 +387,130 @@ public strictfp class S2Test extends GeometryTestCase {
 
     // Check that the maximum aspect ratio of an individual cell is consistent
     // with the global minimums and maximums.
-    assertTrue(S2Projections.MAX_EDGE_ASPECT >= 1.0);
-    assertTrue(S2Projections.MAX_EDGE_ASPECT
-        < S2Projections.MAX_EDGE.deriv() / S2Projections.MIN_EDGE.deriv());
-    assertTrue(S2Projections.MAX_DIAG_ASPECT >= 1);
-    assertTrue(S2Projections.MAX_DIAG_ASPECT
-        < S2Projections.MAX_DIAG.deriv() / S2Projections.MIN_DIAG.deriv());
+    assertTrue(PROJ.maxEdgeAspect >= 1.0);
+    assertTrue(PROJ.maxEdgeAspect
+        <= PROJ.maxEdge.deriv() / PROJ.minEdge.deriv());
+    assertTrue(PROJ.maxDiagAspect >= 1);
+    assertTrue(PROJ.maxDiagAspect
+        <= PROJ.maxDiag.deriv() / PROJ.minDiag.deriv());
 
     // Check various conditions that are provable mathematically.
     testLessOrEqual(width, angleSpan);
     testLessOrEqual(width, edge);
     testLessOrEqual(edge, diag);
 
-    assertTrue(S2Projections.MIN_AREA.deriv()
-        >= S2Projections.MIN_WIDTH.deriv() * S2Projections.MIN_EDGE.deriv() - 1e-15);
-    assertTrue(S2Projections.MAX_AREA.deriv()
-        < S2Projections.MAX_WIDTH.deriv() * S2Projections.MAX_EDGE.deriv() + 1e-15);
+    assertTrue(PROJ.minArea.deriv()
+        >= PROJ.minWidth.deriv() * PROJ.minEdge.deriv() - 1e-15);
+    assertTrue(PROJ.maxArea.deriv()
+        <= PROJ.maxWidth.deriv() * PROJ.maxEdge.deriv() + 1e-15);
 
-    // GetMinLevelForLength() and friends have built-in assertions, we just need
-    // to call these functions to test them.
+    // GetMinLevelForLength() and friends have built-in assertions, we just need to call these
+    // functions to test them.
     //
-    // We don't actually check that the metrics are correct here, e.g. that
-    // GetMinWidth(10) is a lower bound on the width of cells at level 10.
-    // It is easier to check these properties in s2cell_unittest, since
-    // S2Cell has methods to compute the cell vertices, etc.
+    // We don't actually check that the metrics are correct here, e.g. that getMinWidth(10) is a
+    // lower bound on the width of cells at level 10. It is easier to check these properties in
+    // S2CellTest, since S2Cell has methods to compute the cell vertices, etc.
 
     for (int level = -2; level <= S2CellId.MAX_LEVEL + 3; ++level) {
-      double dWidth = (2 * S2Projections.MIN_WIDTH.deriv()) * Math.pow(2, -level);
+      double dWidth = Math.scalb(PROJ.minWidth.deriv(), -level);
+      // Check lengths.
       if (level >= S2CellId.MAX_LEVEL + 3) {
         dWidth = 0;
       }
 
       // Check boundary cases (exactly equal to a threshold value).
       int expectedLevel = Math.max(0, Math.min(S2CellId.MAX_LEVEL, level));
-      assertEquals(S2Projections.MIN_WIDTH.getMinLevel(dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getMaxLevel(dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMinLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMaxLevel(dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(dWidth), expectedLevel);
 
       // Also check non-boundary cases.
-      assertEquals(S2Projections.MIN_WIDTH.getMinLevel(1.2 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getMaxLevel(0.8 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(1.2 * dWidth), expectedLevel);
-      assertEquals(S2Projections.MIN_WIDTH.getClosestLevel(0.8 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMinLevel(1.2 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getMaxLevel(0.8 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(1.2 * dWidth), expectedLevel);
+      assertEquals(PROJ.minWidth.getClosestLevel(0.8 * dWidth), expectedLevel);
 
-      // Same thing for area1.
-      double area1 = (4 * S2Projections.MIN_AREA.deriv()) * Math.pow(4, -level);
+      // Check areas.
+      double dArea = PROJ.minArea.deriv() * Math.pow(4, -level);
       if (level <= -3) {
-        area1 = 0;
+        dArea = 0;
       }
-      assertEquals(S2Projections.MIN_AREA.getMinLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMaxLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMinLevel(1.2 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getMaxLevel(0.8 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(1.2 * area1), expectedLevel);
-      assertEquals(S2Projections.MIN_AREA.getClosestLevel(0.8 * area1), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMinLevel(1.2 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getMaxLevel(0.8 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(1.2 * dArea), expectedLevel);
+      assertEquals(PROJ.minArea.getClosestLevel(0.8 * dArea), expectedLevel);
     }
   }
 
+  public void testTrueCentroidForSmallTriangle() {
+    S2Polygon smallPoly = new S2Polygon(Lists.newArrayList(new S2Loop(Lists.newArrayList(
+        S2LatLng.fromE7(0x2094588f, 0xfc9edbe6).toPoint(),
+        S2LatLng.fromE7(0x209456c4, 0xfc9ee491).toPoint(),
+        S2LatLng.fromE7(0x20945e7f, 0xfc9ee954).toPoint()))));
+    // We shouldn't have to normalize, but the centroid is scaled by the area, and this triangle is
+    // SO small that the magnitude is insufficient to get good precision in the contains() test, so
+    // we actually should normalize in this case.
+    assertTrue(smallPoly.contains(S2Point.normalize(smallPoly.getCentroid())));
+  }
+
+  // TODO(eengle): Move this to a new test file PlatformTest.java.
   public void testExp() {
-    for (int i = 0; i < 10; ++i) {
-      assertEquals(i + 1, S2.exp(Math.pow(2, i)));
-    }
+    assertEquals(-1023, Platform.getExponent(-0.000000));
+    assertEquals(1, Platform.getExponent(-3.141593));
+    assertEquals(3, Platform.getExponent(-12.566371));
+    assertEquals(4, Platform.getExponent(-28.274334));
+    assertEquals(5, Platform.getExponent(-50.265482));
+    assertEquals(6, Platform.getExponent(-78.539816));
+    assertEquals(6, Platform.getExponent(-113.097336));
+    assertEquals(7, Platform.getExponent(-153.938040));
+    assertEquals(7, Platform.getExponent(-201.061930));
+    assertEquals(7, Platform.getExponent(-254.469005));
+    assertEquals(1024, Platform.getExponent(Double.POSITIVE_INFINITY));
+    assertEquals(-1023, Platform.getExponent(0.000000));
+    assertEquals(1, Platform.getExponent(3.141593));
+    assertEquals(3, Platform.getExponent(12.566371));
+    assertEquals(4, Platform.getExponent(28.274334));
+    assertEquals(5, Platform.getExponent(50.265482));
+    assertEquals(6, Platform.getExponent(78.539816));
+    assertEquals(6, Platform.getExponent(113.097336));
+    assertEquals(7, Platform.getExponent(153.938040));
+    assertEquals(7, Platform.getExponent(201.061930));
+    assertEquals(7, Platform.getExponent(254.469005));
+    assertEquals(1024, Platform.getExponent(Double.NEGATIVE_INFINITY));
+    assertEquals(1024, Platform.getExponent(Double.NaN));
+  }
 
-    for (int i = 0; i < 10; ++i) {
-      assertEquals(i + 1, S2.exp(-Math.pow(2, i)));
+  // TODO(eengle): Move this to a new test file PlatformTest.java.
+  public void testRemainder() {
+    double[] numerators = {0, 1, -2, 7, Math.E, Double.NaN, Double.NEGATIVE_INFINITY};
+    double[] denominators = {0, -3, 4, Math.PI, Double.NaN, Double.POSITIVE_INFINITY};
+    // Expected results from the cross product of each [numerator, denominator] pair defined above.
+    double[] results = {Double.NaN, 0.0, 0.0, 0.0, Double.NaN, 0.0, Double.NaN, 1.0, 1.0, 1.0,
+        Double.NaN, 1.0, Double.NaN, 1.0, -2.0, 1.1415926535897931, Double.NaN, -2.0, Double.NaN,
+        1.0, -1.0, 0.7168146928204138, Double.NaN, 7.0, Double.NaN, -0.2817181715409549,
+        -1.281718171540955, -0.423310825130748, Double.NaN, 2.718281828459045, Double.NaN,
+        Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+        Double.NaN, Double.NaN, Double.NaN, Double.NaN};
+    int resultIndex = 0;
+    for (double f1 : numerators) {
+      for (double f2 : denominators) {
+        double expected = results[resultIndex++];
+        double actual = Platform.IEEEremainder(f1, f2);
+        // Note that we can't just use assertEquals, since the GWT JUnit version returns false
+        // for assertTrue(Double.NaN, Double.NaN).
+        assertTrue(Double.isNaN(expected) ? Double.isNaN(actual) : expected == actual);
+      }
     }
-
-    assertEquals(0, S2.exp(0));
-    assertEquals(2, S2.exp(3));
-    assertEquals(3, S2.exp(5));
+  }
+  
+  public void testUlp() {
+    assertEquals(1.2689709186578246e-116, Platform.ulp(1e-100));
+    assertEquals(1.2924697071141057E-26, Platform.ulp(1e-10));
+    assertEquals(4.440892098500626e-16, Platform.ulp(Math.PI));
+    assertEquals(1.9073486328125e-6, Platform.ulp(1e10));
+    assertEquals(1.942668892225729e84, Platform.ulp(1e100));
   }
 }

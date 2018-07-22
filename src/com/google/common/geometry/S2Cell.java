@@ -15,6 +15,13 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.geometry.S2Projections.PROJ;
+
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.geometry.S2CellId.FaceIJ;
+
+import java.io.Serializable;
 
 /**
  * An S2Cell is an S2Region object that represents a cell. Unlike S2CellIds, it
@@ -22,16 +29,16 @@ package com.google.common.geometry;
  * more expensive representation.
  *
  */
-
-public final strictfp class S2Cell implements S2Region {
-
-  private static final int MAX_CELL_SIZE = 1 << S2CellId.MAX_LEVEL;
-
+@GwtCompatible(serializable = true)
+public final strictfp class S2Cell implements S2Region, Serializable {
   byte face;
   byte level;
   byte orientation;
   S2CellId cellId;
-  double[][] uv = new double[2][2];
+  double uMin;
+  double uMax;
+  double vMin;
+  double vMax;
 
   /**
    * Default constructor used only internally.
@@ -47,8 +54,19 @@ public final strictfp class S2Cell implements S2Region {
     init(id);
   }
 
-  // This is a static method in order to provide named parameters.
-  public static S2Cell fromFacePosLevel(int face, byte pos, int level) {
+  /** Returns the cell corresponding to the given S2 cube face. */
+  public static S2Cell fromFace(int face) {
+    return new S2Cell(S2CellId.fromFace(face));
+  }
+
+  /**
+   * Returns a cell given its face (range 0..5), Hilbert curve position within that face (an
+   * unsigned integer with {@link S2CellId#POS_BITS} bits), and level (range 0..kMaxLevel).  The
+   * given position will be modified to correspond to the Hilbert curve position at the center of
+   * the returned cell.  This is a static function rather than a constructor in order to indicate
+   * what the arguments represent.
+   */
+  public static S2Cell fromFacePosLevel(int face, long pos, int level) {
     return new S2Cell(S2CellId.fromFacePosLevel(face, pos, level));
   }
 
@@ -60,7 +78,6 @@ public final strictfp class S2Cell implements S2Region {
   public S2Cell(S2LatLng ll) {
     init(S2CellId.fromLatLng(ll));
   }
-
 
   public S2CellId id() {
     return cellId;
@@ -78,54 +95,69 @@ public final strictfp class S2Cell implements S2Region {
     return orientation;
   }
 
+  /** Returns true if this cell is a leaf-cell, i.e. it has no children. */
   public boolean isLeaf() {
     return level == S2CellId.MAX_LEVEL;
   }
 
+  /** As {@link #getVertexRaw(int)}, except the point is normalized to unit length. */
   public S2Point getVertex(int k) {
     return S2Point.normalize(getVertexRaw(k));
   }
 
   /**
-   * Return the k-th vertex of the cell (k = 0,1,2,3). Vertices are returned in
-   * CCW order. The points returned by GetVertexRaw are not necessarily unit
-   * length.
+   * Returns the k<sup>th</sup> vertex of the cell (k = 0,1,2,3).  Vertices are returned in CCW
+   * order (lower left, lower right, upper right, upper left in the UV plane). The points are not
+   * necessarily unit length.
    */
   public S2Point getVertexRaw(int k) {
     // Vertices are returned in the order SW, SE, NE, NW.
-    return S2Projections.faceUvToXyz(face, uv[0][(k >> 1) ^ (k & 1)], uv[1][k >> 1]);
+    return S2Projections.faceUvToXyz(face,
+        ((k >> 1) ^ (k & 1)) == 0 ? uMin : uMax,
+        (k >> 1) == 0 ? vMin : vMax);
   }
 
+  /** As {@link #getEdgeRaw(int)}, except the point is normalized to unit length. */
   public S2Point getEdge(int k) {
     return S2Point.normalize(getEdgeRaw(k));
   }
 
+  /**
+   * Returns the inward-facing normal of the great circle passing through the edge from vertex k to
+   * vertex k+1 (mod 4).  The normals returned by getEdgeRaw are not necessarily unit length.
+   */
   public S2Point getEdgeRaw(int k) {
     switch (k) {
       case 0:
-        return S2Projections.getVNorm(face, uv[1][0]); // South
+        return S2Projections.getVNorm(face, vMin); // Bottom
       case 1:
-        return S2Projections.getUNorm(face, uv[0][1]); // East
+        return S2Projections.getUNorm(face, uMax); // Right
       case 2:
-        return S2Point.neg(S2Projections.getVNorm(face, uv[1][1])); // North
+        return S2Point.neg(S2Projections.getVNorm(face, vMax)); // Top
       default:
-        return S2Point.neg(S2Projections.getUNorm(face, uv[0][0])); // West
+        return S2Point.neg(S2Projections.getUNorm(face, uMin)); // Left
     }
   }
 
+  /** As {@link S2CellId#getSizeIJ(int)}, using the level of this cell. */
+  public int getSizeIJ() {
+    return S2CellId.getSizeIJ(level());
+  }
+
   /**
-   * Return the inward-facing normal of the great circle passing through the
-   * edge from vertex k to vertex k+1 (mod 4). The normals returned by
-   * GetEdgeRaw are not necessarily unit length.
+   * Returns true if this is not a leaf cell, in which case the array, which must contain at least
+   * four non-null cells in indices 0..3, will be set to the four children of this cell in traversal
+   * order. Otherwise, if this is a leaf cell, false is returned without touching the array.
    *
-   *  If this is not a leaf cell, set children[0..3] to the four children of
-   * this cell (in traversal order) and return true. Otherwise returns false.
-   * This method is equivalent to the following:
+   * <p>This method is equivalent to the following:
    *
-   *  for (pos=0, id=child_begin(); id != child_end(); id = id.next(), ++pos)
-   * children[i] = S2Cell(id);
+   * <pre>
+   * for (pos=0, id=childBegin(); !id.equals(childEnd()); id = id.next(), ++pos) {
+   *   children[i].init(id);
+   * }
+   * </pre>
    *
-   * except that it is more than two times faster.
+   * <p>except that it is more than two times faster.
    */
   public boolean subdivide(S2Cell children[]) {
     // This function is equivalent to just iterating over the child cell ids
@@ -135,23 +167,36 @@ public final strictfp class S2Cell implements S2Region {
       return false;
     }
 
-    // Compute the cell midpoint in uv-space.
-    R2Vector uvMid = getCenterUV();
-
     // Create four children with the appropriate bounds.
     S2CellId id = cellId.childBegin();
+    R2Vector mid = getCenterUV();
+    double uMid = mid.x();
+    double vMid = mid.y();
     for (int pos = 0; pos < 4; ++pos, id = id.next()) {
       S2Cell child = children[pos];
       child.face = face;
       child.level = (byte) (level + 1);
       child.orientation = (byte) (orientation ^ S2.posToOrientation(pos));
       child.cellId = id;
+      // We want to split the cell in half in "u" and "v".  To decide which
+      // side to set equal to the midpoint value, we look at cell's (i,j)
+      // position within its parent.  The index for "i" is in bit 1 of ij.
       int ij = S2.posToIJ(orientation, pos);
-      for (int d = 0; d < 2; ++d) {
-        // The dimension 0 index (i/u) is in bit 1 of ij.
-        int m = 1 - ((ij >> (1 - d)) & 1);
-        child.uv[d][m] = uvMid.get(d);
-        child.uv[d][1 - m] = uv[d][1 - m];
+      // The dimension 0 index (i/u) is in bit 1 of ij.
+      if ((ij & 0x2) != 0) {
+        child.uMin = uMid;
+        child.uMax = uMax;
+      } else {
+        child.uMin = uMin;
+        child.uMax = uMid;
+      }
+      // The dimension 1 index (j/v) is in bit 0 of ij.
+      if ((ij & 0x1) != 0) {
+        child.vMin = vMid;
+        child.vMax = vMax;
+      } else {
+        child.vMin = vMin;
+        child.vMax = vMid;
       }
     }
     return true;
@@ -172,6 +217,11 @@ public final strictfp class S2Cell implements S2Region {
     return cellId.toPointRaw();
   }
 
+  /** Returns the bounds of this cell in (u,v)-space. */
+  public R2Rect getBoundUV() {
+    return new R2Rect(new R1Interval(uMin, uMax), new R1Interval(vMin, vMax));
+  }
+
   /**
    * Return the center of the cell in (u,v) coordinates (see {@code
    * S2Projections}). Note that the center of the cell is defined as the point
@@ -179,26 +229,14 @@ public final strictfp class S2Cell implements S2Region {
    * not at the midpoint of the (u,v) rectangle covered by the cell
    */
   public R2Vector getCenterUV() {
-    MutableInteger i = new MutableInteger(0);
-    MutableInteger j = new MutableInteger(0);
-    cellId.toFaceIJOrientation(i, j, null);
-    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
-
-    // TODO(dbeaumont): Figure out a better naming of the variables here (and elsewhere).
-    int si = (i.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    double x = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * si);
-
-    int sj = (j.intValue() & -cellSize) * 2 + cellSize - MAX_CELL_SIZE;
-    double y = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sj);
-
-    return new R2Vector(x, y);
+    return cellId.getCenterUV();
   }
 
   /**
    * Return the average area for cells at the given level.
    */
   public static double averageArea(int level) {
-    return S2Projections.AVG_AREA.getValue(level);
+    return PROJ.avgArea.getValue(level);
   }
 
   /**
@@ -254,14 +292,17 @@ public final strictfp class S2Cell implements S2Region {
   // //////////////////////////////////////////////////////////////////////
   // S2Region interface (see {@code S2Region} for details):
 
-  @Override
+  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
+  // Object, so we can't mark it as such.
   public S2Region clone() {
     S2Cell clone = new S2Cell();
     clone.face = this.face;
     clone.level = this.level;
     clone.orientation = this.orientation;
-    clone.uv = this.uv.clone();
-
+    clone.uMin = this.uMin;
+    clone.uMax = this.uMax;
+    clone.vMin = this.vMin;
+    clone.vMax = this.vMax;
     return clone;
   }
 
@@ -276,83 +317,104 @@ public final strictfp class S2Cell implements S2Region {
     // the (u,v)-origin never determine the maximum cap size (this is a
     // possible future optimization).
 
-    double u = 0.5 * (uv[0][0] + uv[0][1]);
-    double v = 0.5 * (uv[1][0] + uv[1][1]);
-    S2Cap cap = S2Cap.fromAxisHeight(S2Point.normalize(S2Projections.faceUvToXyz(face, u, v)), 0);
+    S2Point center = S2Point.normalize(S2Projections.faceUvToXyz(face, getCenterUV()));
+    S2Cap cap = S2Cap.fromAxisHeight(center, 0);
     for (int k = 0; k < 4; ++k) {
       cap = cap.addPoint(getVertex(k));
     }
     return cap;
   }
 
-  // We grow the bounds slightly to make sure that the bounding rectangle
-  // also contains the normalized versions of the vertices. Note that the
-  // maximum result magnitude is Pi, with a floating-point exponent of 1.
-  // Therefore adding or subtracting 2**-51 will always change the result.
-  private static final double MAX_ERROR = 1.0 / (1L << 51);
-
-  // The 4 cells around the equator extend to +/-45 degrees latitude at the
-  // midpoints of their top and bottom edges. The two cells covering the
-  // poles extend down to +/-35.26 degrees at their vertices.
-  // adding kMaxError (as opposed to the C version) because of asin and atan2
-  // roundoff errors
-  private static final double POLE_MIN_LAT = Math.asin(Math.sqrt(1.0 / 3.0)) - MAX_ERROR;
-  // 35.26 degrees
-
+  /**
+   * The 4 cells around the equator extend to +/-45 degrees latitude at the midpoints of their top
+   * and bottom edges. The two cells covering the poles extend down to +/-35.26 degrees at their
+   * vertices. The maximum error in this calculation is 0.5 * DBL_EPSILON.
+   */
+  private static final double POLE_MIN_LAT = Math.asin(Math.sqrt(1. / 3)) - 0.5 * S2.DBL_EPSILON;
 
   @Override
   public S2LatLngRect getRectBound() {
     if (level > 0) {
       // Except for cells at level 0, the latitude and longitude extremes are
-      // attained at the vertices. Furthermore, the latitude range is
+      // attained at the vertices.  Furthermore, the latitude range is
       // determined by one pair of diagonally opposite vertices and the
       // longitude range is determined by the other pair.
       //
       // We first determine which corner (i,j) of the cell has the largest
-      // absolute latitude. To maximize latitude, we want to find the point in
+      // absolute latitude.  To maximize latitude, we want to find the point in
       // the cell that has the largest absolute z-coordinate and the smallest
-      // absolute x- and y-coordinates. To do this we look at each coordinate
+      // absolute x- and y-coordinates.  To do this we look at each coordinate
       // (u and v), and determine whether we want to minimize or maximize that
       // coordinate based on the axis direction and the cell's (u,v) quadrant.
-      double u = uv[0][0] + uv[0][1];
-      double v = uv[1][0] + uv[1][1];
-      int i = S2Projections.getUAxis(face).z == 0 ? (u < 0 ? 1 : 0) : (u > 0 ? 1 : 0);
-      int j = S2Projections.getVAxis(face).z == 0 ? (v < 0 ? 1 : 0) : (v > 0 ? 1 : 0);
+      double u = uMin + uMax;
+      double v = vMin + vMax;
+      int i = (S2Projections.getUAxis(face).z == 0 ? (u < 0) : (u > 0)) ? 1 : 0;
+      int j = (S2Projections.getVAxis(face).z == 0 ? (v < 0) : (v > 0)) ? 1 : 0;
+      R1Interval lat = R1Interval.fromPointPair(
+          S2LatLng.latitude(getPoint(i, j)).radians(),
+          S2LatLng.latitude(getPoint(1 - i, 1 - j)).radians());
+      S1Interval lng = S1Interval.fromPointPair(
+          S2LatLng.longitude(getPoint(i, 1 - j)).radians(),
+          S2LatLng.longitude(getPoint(1 - i, j)).radians());
 
-
-      R1Interval lat = R1Interval.fromPointPair(getLatitude(i, j), getLatitude(1 - i, 1 - j));
-      lat = lat.expanded(MAX_ERROR).intersection(S2LatLngRect.fullLat());
-      if (lat.lo() == -S2.M_PI_2 || lat.hi() == S2.M_PI_2) {
-        return new S2LatLngRect(lat, S1Interval.full());
-      }
-      S1Interval lng = S1Interval.fromPointPair(getLongitude(i, 1 - j), getLongitude(1 - i, j));
-      return new S2LatLngRect(lat, lng.expanded(MAX_ERROR));
+      // We grow the bounds slightly to make sure that the bounding rectangle
+      // contains S2LatLng(P) for any point P inside the loop L defined by the
+      // four *normalized* vertices.  Note that normalization of a vector can
+      // change its direction by up to 0.5 * DBL_EPSILON radians, and it is not
+      // enough just to add Normalize() calls to the code above because the
+      // latitude/longitude ranges are not necessarily determined by diagonally
+      // opposite vertex pairs after normalization.
+      //
+      // We would like to bound the amount by which the latitude/longitude of a
+      // contained point P can exceed the bounds computed above.  In the case of
+      // longitude, the normalization error can change the direction of rounding
+      // leading to a maximum difference in longitude of 2 * DBL_EPSILON.  In
+      // the case of latitude, the normalization error can shift the latitude by
+      // up to 0.5 * DBL_EPSILON and the other sources of error can cause the
+      // two latitudes to differ by up to another 1.5 * DBL_EPSILON, which also
+      // leads to a maximum difference of 2 * DBL_EPSILON.
+      return new S2LatLngRect(lat, lng)
+          .expanded(S2LatLng.fromRadians(2 * S2.DBL_EPSILON, 2 * S2.DBL_EPSILON))
+          .polarClosure();
     }
-
 
     // The face centers are the +X, +Y, +Z, -X, -Y, -Z axes in that order.
-    // assert (S2Projections.getNorm(face).get(face % 3) == ((face < 3) ? 1 : -1));
+    // assert (((face < 3) ? 1 : -1) == S2Projections.getNorm(face).get(face % 3));
+
+    S2LatLngRect bound;
     switch (face) {
       case 0:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(-S2.M_PI_4, S2.M_PI_4));
+        break;
       case 1:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(S2.M_PI_4, 3 * S2.M_PI_4));
+        break;
       case 2:
-        return new S2LatLngRect(
-            new R1Interval(POLE_MIN_LAT, S2.M_PI_2), new S1Interval(-S2.M_PI, S2.M_PI));
+        bound = new S2LatLngRect(new R1Interval(POLE_MIN_LAT, S2.M_PI_2), S1Interval.full());
+        break;
       case 3:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(3 * S2.M_PI_4, -3 * S2.M_PI_4));
+        break;
       case 4:
-        return new S2LatLngRect(
+        bound = new S2LatLngRect(
             new R1Interval(-S2.M_PI_4, S2.M_PI_4), new S1Interval(-3 * S2.M_PI_4, -S2.M_PI_4));
+        break;
       default:
-        return new S2LatLngRect(
-            new R1Interval(-S2.M_PI_2, -POLE_MIN_LAT), new S1Interval(-S2.M_PI, S2.M_PI));
+        bound = new S2LatLngRect(new R1Interval(-S2.M_PI_2, -POLE_MIN_LAT), S1Interval.full());
+        break;
     }
 
+    // Finally, we expand the bound to account for the error when a point P is
+    // converted to an S2LatLng to test for containment.  (The bound should be
+    // large enough so that it contains the computed S2LatLng of any contained
+    // point, not just the infinite-precision version.)  We don't need to expand
+    // longitude because longitude is calculated via a single call to atan2(),
+    // which is guaranteed to be semi-monotonic.  (In fact the Gnu implementation
+    // is also correctly rounded, but we don't even need that here.)
+    return bound.expanded(S2LatLng.fromRadians(S2.DBL_EPSILON, 0));
   }
 
   @Override
@@ -368,8 +430,8 @@ public final strictfp class S2Cell implements S2Region {
     if (uvPoint == null) {
       return false;
     }
-    return (uvPoint.x() >= uv[0][0] && uvPoint.x() <= uv[0][1]
-        && uvPoint.y() >= uv[1][0] && uvPoint.y() <= uv[1][1]);
+    return (uvPoint.x() >= uMin && uvPoint.x() <= uMax
+        && uvPoint.y() >= vMin && uvPoint.y() <= vMax);
   }
 
   // The point 'p' does not need to be normalized.
@@ -378,43 +440,139 @@ public final strictfp class S2Cell implements S2Region {
     return cellId.contains(cell.cellId);
   }
 
+  /**
+   * Returns the squared chord distance from UVW position {@code p} to corner vertex
+   * ({@code i}, {@code j}).
+   */
+  private double vertexChordDist2(S2Point p, boolean i, boolean j) {
+    S2Point vertex = S2Point.normalize(new S2Point(i ? uMax : uMin, j ? vMax : vMin, 1));
+    return p.getDistance2(vertex);
+  }
+
+  /**
+   * Given a point {@code p} and either the lower or upper edge of the {@link S2Cell} (specified by
+   * setting {@code vEnd} to false or true respectively), returns true if {@code p} is closer to the
+   * interior of that edge than it is to either endpoint.
+   */
+  private boolean uEdgeIsClosest(S2Point p, boolean vEnd) {
+    double v = vEnd ? vMax : vMin;
+    // These are the normals to the planes that are perpendicular to the edge and pass through one
+    // of its two endpoints.
+    S2Point dir0 =  new S2Point(v * v + 1, -uMin * v, -uMin);
+    S2Point dir1 = new S2Point(v * v + 1, -uMax * v, -uMax);
+    return p.dotProd(dir0) > 0 && p.dotProd(dir1) < 0;
+  }
+
+  /**
+   * Given a point {@code p} and either the left or right edge of the {@link S2Cell} (specified by
+   * setting {@code uEnd} to false or true respectively), returns true if {@code p} is closer to the
+   * interior of that edge than it is to either endpoint.
+   */
+  private boolean vEdgeIsClosest(S2Point p, boolean uEnd) {
+    double u = uEnd ? uMax : uMin;
+    // See comments above.
+    S2Point dir0 = new S2Point(-u * vMin, u * u + 1, -vMin);
+    S2Point dir1 = new S2Point(-u * vMax, u * u + 1, -vMax);
+    return p.dotProd(dir0) > 0 && p.dotProd(dir1) < 0;
+  }
+
+  /**
+   * Given the dot product of a point P with the normal of a u- or v-edge at the given coordinate
+   * value, returns the distance from P to that edge.
+   */
+  private static S1ChordAngle edgeDistance(double dirIJ, double uv) {
+    checkArgument(dirIJ >= 0);
+
+    // Let P be the target point and let R be the closest point on the given edge AB. The desired
+    // distance XR can be expressed as PR^2 = PQ^2 + QR^2 where Q is the point P projected onto the
+    // plane through the great circle through AB. We can compute the distance PQ^2 perpendicular to
+    // the plane from "dirIJ" (the dot product of the target point P with the edge normal) and the
+    // squared length of the edge normal (1 + uv**2).
+    double pq2 = (dirIJ * dirIJ) / (1 + uv * uv);
+
+    // We can compute the distance QR as (1 - OQ) where O is the sphere origin,
+    // and we can compute OQ^2 = 1 - PQ^2 using the Pythagorean theorem.
+    // (This calculation loses accuracy as the angle approaches Pi/2.)
+    double qr = 1 - Math.sqrt(1 - pq2);
+    return S1ChordAngle.fromLength2(pq2 + qr * qr);
+  }
+
+  /**
+   * Returns the distance from the given point to the cell. Returns zero if the point is inside the
+   * cell.
+   */
+  public S1ChordAngle getDistance(S2Point targetXyz) {
+    // All calculations are done in the (u,v,w) coordinates of this cell's face.
+    S2Point targetUvw = S2Projections.faceXyzToUvw(face, targetXyz);
+    // Compute dot products with all four upward or rightward-facing edge normals. "dirIJ" is the
+    // dot product for the edge corresponding to axis I, endpoint J.  For example, dir01 is the
+    // right edge of the S2Cell (corresponding to the upper endpoint of the u-axis).
+    double dir00 = targetUvw.x - targetUvw.z * uMin;
+    double dir01 = targetUvw.x - targetUvw.z * uMax;
+    double dir10 = targetUvw.y - targetUvw.z * vMin;
+    double dir11 = targetUvw.y - targetUvw.z * vMax;
+    boolean inside = true;
+    if (dir00 < 0) {
+      inside = false;  // Target is to the left of the cell.
+      if (vEdgeIsClosest(targetUvw, false)) {
+        return edgeDistance(-dir00, uMin);
+      }
+    }
+    if (dir01 > 0) {
+      inside = false;  // Target is to the right of the cell.
+      if (vEdgeIsClosest(targetUvw, true)) {
+        return edgeDistance(dir01, uMax);
+      }
+    }
+    if (dir10 < 0) {
+      inside = false;  // Target is below the cell.
+      if (uEdgeIsClosest(targetUvw, false)) {
+        return edgeDistance(-dir10, vMin);
+      }
+    }
+    if (dir11 > 0) {
+      inside = false;  // Target is above the cell.
+      if (uEdgeIsClosest(targetUvw, true)) {
+        return edgeDistance(dir11, vMax);
+      }
+    }
+    if (inside) {
+      return S1ChordAngle.ZERO;
+    }
+
+    // Otherwise, the closest point is one of the four cell vertices.  Note that
+    // it is *not* trivial to narrow down the candidates based on the edge sign
+    // tests above, because (1) the edges don't meet at right angles and (2)
+    // there are points on the far side of the sphere that are both above *and*
+    // below the cell, etc.
+    double chordDist2 =  Math.min(Math.min(vertexChordDist2(targetUvw, false, false),
+                                           vertexChordDist2(targetUvw, true, false)),
+                                  Math.min(vertexChordDist2(targetUvw, false, true),
+                                           vertexChordDist2(targetUvw, true, true)));
+    return S1ChordAngle.fromLength2(chordDist2);
+  }
+
   private void init(S2CellId id) {
+    // Set cell properties from the ID and the FaceIJ of the ID.
     cellId = id;
-    MutableInteger ij[] = new MutableInteger[2];
-    MutableInteger mOrientation = new MutableInteger(0);
-
-    for (int d = 0; d < 2; ++d) {
-      ij[d] = new MutableInteger(0);
-    }
-
-    face = (byte) id.toFaceIJOrientation(ij[0], ij[1], mOrientation);
-    orientation = (byte) mOrientation.intValue(); // Compress int to a byte.
+    FaceIJ fij = id.toFaceIJOrientation();
+    face = (byte) fij.face;
+    orientation = (byte) fij.orientation;
     level = (byte) id.level();
-    int cellSize = 1 << (S2CellId.MAX_LEVEL - level);
-    for (int d = 0; d < 2; ++d) {
-      // Compute the cell bounds in scaled (i,j) coordinates.
-      int sijLo = (ij[d].intValue() & -cellSize) * 2 - MAX_CELL_SIZE;
-      int sijHi = sijLo + cellSize * 2;
-      uv[d][0] = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijLo);
-      uv[d][1] = S2Projections.stToUV((1.0 / MAX_CELL_SIZE) * sijHi);
-    }
+    R2Rect uv = S2CellId.ijLevelToBoundUv(fij.i, fij.j, level);
+    R1Interval u = uv.x();
+    this.uMin = u.lo();
+    this.uMax = u.hi();
+    R1Interval v = uv.y();
+    this.vMin = v.lo();
+    this.vMax = v.hi();
   }
 
-
-  // Internal method that does the actual work in the constructors.
-
-  private double getLatitude(int i, int j) {
-    S2Point p = S2Projections.faceUvToXyz(face, uv[0][i], uv[1][j]);
-    return Math.atan2(p.z, Math.sqrt(p.x * p.x + p.y * p.y));
+  private S2Point getPoint(int i, int j) {
+    return S2Projections.faceUvToXyz(face,
+        i == 0 ? uMin : uMax,
+        j == 0 ? vMin : vMax);
   }
-
-  private double getLongitude(int i, int j) {
-    S2Point p = S2Projections.faceUvToXyz(face, uv[0][i], uv[1][j]);
-    return Math.atan2(p.y, p.x);
-  }
-
-  // Return the latitude or longitude of the cell vertex given by (i,j),
-  // where "i" and "j" are either 0 or 1.
 
   @Override
   public String toString() {
@@ -437,5 +595,4 @@ public final strictfp class S2Cell implements S2Region {
     }
     return false;
   }
-
 }
