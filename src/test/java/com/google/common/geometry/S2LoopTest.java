@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.junit.Test;
 
 import java.util.List;
 import java.util.Map;
@@ -98,6 +99,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     farHemi.invert();
   }
 
+  @Test
   public void testBounds() {
     assertTrue(candyCane.getRectBound().lng().isFull());
     assertTrue(candyCane.getRectBound().latLo().degrees() < -20);
@@ -118,6 +120,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(southHemi.getRectBound().lat(), new R1Interval(-S2.M_PI_2, 0));
   }
 
+  @Test
   public void testAreaCentroid() {
     assertDoubleNear(northHemi.getArea(), 2 * S2.M_PI);
     assertDoubleNear(eastHemi.getArea(), 2 * S2.M_PI);
@@ -186,6 +189,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     return new S2Loop(vertices);
   }
 
+  @Test
   public void testContains() {
     assertTrue(candyCane.contains(S2LatLng.fromDegrees(5, 71).toPoint()));
     for (int i = 0; i < 4; ++i) {
@@ -292,6 +296,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLoopRelations() {
     assertRelation(northHemi, northHemi, 1, true, false);
     assertRelation(northHemi, southHemi, 0, false, false);
@@ -423,6 +428,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   /**
    * Tests that nearly colinear points pass S2Loop.isValid()
    */
+  @Test
   public void testRoundingError() {
     S2Point a = new S2Point(-0.9190364081111774, 0.17231932652084575, 0.35451111445694833);
     S2Point b = new S2Point(-0.92130667053206, 0.17274500072476123, 0.3483578383756171);
@@ -435,6 +441,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   /**
    * Tests {@link S2Loop#isValid()}.
    */
+  @Test
   public void testIsValid() {
     assertTrue(loopA.isValid());
     assertTrue(loopB.isValid());
@@ -444,6 +451,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   /**
    * Tests {@link S2Loop#compareTo(S2Loop)}.
    */
+  @Test
   public void testComparisons() {
     S2Loop abc = makeLoop("0:1, 0:2, 1:2");
     S2Loop abcd = makeLoop("0:1, 0:2, 1:2, 1:1");
@@ -464,6 +472,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(wxyz.compareTo(abcd) < 0);
   }
 
+  @Test
   public void testGetDistance() {
     // Error margin since we're doing numerical computations
     double epsilon = 1e-15;

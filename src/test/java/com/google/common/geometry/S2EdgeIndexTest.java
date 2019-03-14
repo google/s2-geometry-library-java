@@ -18,6 +18,7 @@ package com.google.common.geometry;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import org.junit.Test;
 
 import java.util.HashSet;
 import java.util.List;
@@ -149,6 +150,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     checkAllCrossings(allEdges, minCrossings, maxChecksCrossingsRatio);
   }
 
+  @Test
   public void testSpecificEdges() {
     List<S2Point> ps = Lists.newArrayList();
     ps.add(new S2Point(0.8088625416501157, -0.40633615485481134, 0.4250086092929434));
@@ -161,6 +163,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     checkAllCrossings(allEdges, 0, 16);
   }
 
+  @Test
   public void testLoopCandidateOfItself() {
     List<S2Point> ps = Lists.newArrayList(); // A diamond loop around 0,180.
     ps.add(makePoint("0:178"));
@@ -174,6 +177,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     checkAllCrossings(allEdges, 0, 16);
   }
 
+  @Test
   public void testRandomEdgeCrossings() {
     tryCrossingsRandomInCap(2000, 30, 5000, 500, 2);
     tryCrossingsRandomInCap(1000, 100, 5000, 500, 3);
@@ -181,6 +185,7 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     tryCrossingsRandomInCap(500, 5000, 5000, 5000, 20);
   }
 
+  @Test
   public void testRandomEdgeCrossingsSparse() {
     for (int i = 0; i < 5; ++i) {
       tryCrossingsRandomInCap(2000, 100, 5000, 500, 8);

@@ -1,0 +1,41 @@
+ext {
+  junitVersion = "5.4.0"
+
+  dep = [
+    junitApi: "org.junit.jupiter:junit-jupiter-api:${junitVersion}",
+    junitEngine: "org.junit.jupiter:junit-jupiter-engine:${junitVersion}"
+  ]
+}
+
+group = "com.google.common"
+version = "1.0-SNAPSHOT"
+
+apply plugin: 'java'
+
+buildscript {
+  repositories {
+    maven { url "https://jitpack.io" }
+    maven { url "https://plugins.gradle.org/m2/" }
+  }
+}
+
+repositories {
+  mavenCentral()
+  maven { url "https://jitpack.io" }
+  jcenter()
+}
+
+apply plugin: 'java'
+
+sourceSets {
+  main {
+    runtimeClasspath += configurations.compileOnly
+  }
+}
+
+dependencies {
+  implementation "com.google.code.findbugs:jsr305:3.0.2"
+  implementation "com.google.guava:guava:r09"
+
+  testImplementation "junit:junit:4.12"
+}

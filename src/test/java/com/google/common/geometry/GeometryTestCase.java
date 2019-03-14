@@ -25,7 +25,7 @@ import junit.framework.TestCase;
 import java.util.List;
 import java.util.Random;
 
-public strictfp class GeometryTestCase extends TestCase {
+public abstract strictfp class GeometryTestCase extends TestCase {
 
   public Random rand;
 

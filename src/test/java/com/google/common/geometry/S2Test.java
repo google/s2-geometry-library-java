@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 import java.util.logging.Logger;
 
 public strictfp class S2Test extends GeometryTestCase {
@@ -30,6 +32,7 @@ public strictfp class S2Test extends GeometryTestCase {
     return ij ^ 3;
   }
 
+  @Test
   public void testTraversalOrder() {
     for (int r = 0; r < 4; ++r) {
       for (int i = 0; i < 4; ++i) {
@@ -52,6 +55,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testSTUV() {
     // Check boundary conditions.
     for (double x = -1; x <= 1; ++x) {
@@ -65,6 +69,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testFaceUVtoXYZ() {
     // Check that each face appears exactly once.
     S2Point sum = new S2Point();
@@ -94,6 +99,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testUVNorms() {
     // Check that GetUNorm and GetVNorm compute right-handed normals for
     // an edge in the increasing U or V direction.
@@ -111,6 +117,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testUVAxes() {
     // Check that axes are consistent with FaceUVtoXYZ.
     for (int face = 0; face < 6; ++face) {
@@ -121,6 +128,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testAngleArea() {
     S2Point pz = new S2Point(0, 0, 1);
     S2Point p000 = new S2Point(1, 0, 0);
@@ -188,6 +196,7 @@ public strictfp class S2Test extends GeometryTestCase {
     assertDoubleNear(quarterArea2, S2.M_PI);
   }
 
+  @Test
   public void testCCW() {
     S2Point a = new S2Point(0.72571927877036835, 0.46058825605889098, 0.51106749730504852);
     S2Point b = new S2Point(0.7257192746638208, 0.46058826573818168, 0.51106749441312738);
@@ -226,6 +235,7 @@ public strictfp class S2Test extends GeometryTestCase {
     assertTrue(a.avg_.deriv() <= b.avg_.deriv());
   }
 
+  @Test
   public void testMetrics() {
 
     MetricBundle angleSpan = new MetricBundle(
@@ -306,6 +316,7 @@ public strictfp class S2Test extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testExp() {
     for (int i = 0; i < 10; ++i) {
       assertEquals(i + 1, S2.exp(Math.pow(2, i)));

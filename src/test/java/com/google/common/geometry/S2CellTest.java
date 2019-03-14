@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +26,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
 
   public static final boolean DEBUG_MODE = true;
 
+  @Test
   public void testFaces() {
     Map<S2Point, Integer> edgeCounts = new HashMap<S2Point, Integer>();
     Map<S2Point, Integer> vertexCounts = new HashMap<S2Point, Integer>();
@@ -160,6 +163,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     s.maxApproxRatio = Math.max(approxRatio, s.maxApproxRatio);
   }
 
+  @Test
   public void testSubdivide(S2Cell cell) {
     gatherStats(cell);
     if (cell.isLeaf()) {
@@ -303,6 +307,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
       .abs(Math.log(1 + 1e-15)));
   }
 
+  @Test
   public void testMinMaxAvg(String label, int level, double count,
       double absError, double minValue, double maxValue, double avgValue,
       S2.Metric minMetric, S2.Metric maxMetric, S2.Metric avgMetric) {
@@ -345,6 +350,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     assertDoubleNear(avgMetric.getValue(level), avgValue, 10 * tolerance);
   }
 
+  @Test
   public void testSubdivide() {
     for (int face = 0; face < 6; ++face) {
       testSubdivide(S2Cell.fromFacePosLevel(face, (byte) 0, 0));

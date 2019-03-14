@@ -17,6 +17,7 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.ImmutableList;
+import org.junit.Test;
 
 /**
  * Tests for {@link S2EdgeUtil}.
@@ -78,6 +79,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertCrossing(c, d, a, b, robust, (edgeOrVertex ^ (robust == 0)), simple);
   }
 
+  @Test
   public void testCrossings() {
     // The real tests of edge crossings are in s2{loop,polygon}_unittest,
     // but we do a few simple tests here.
@@ -161,6 +163,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return bounder.getBound();
   }
 
+  @Test
   public void testRectBounder() {
     // Check cases where min/max latitude is not at a vertex.
     // Max, CW
@@ -189,6 +192,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return S2Point.normalize(new S2Point(x, y, z));
   }
 
+  @Test
   public void testXYZPruner() {
     S2EdgeUtil.XYZPruner pruner = new S2EdgeUtil.XYZPruner();
 
@@ -236,6 +240,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertTrue(spruner.intersects(S2NP(0.0005, 1.0, -0.0000001)));
   }
 
+  @Test
   public void testLongitudePruner() {
     S2EdgeUtil.LongitudePruner pruner1 = new S2EdgeUtil.LongitudePruner(
         new S1Interval(0.75 * S2.M_PI, -0.75 * S2.M_PI), new S2Point(0, 1, 2));
@@ -279,6 +284,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         contains ? 1 : crosses ? -1 : 0);
   }
 
+  @Test
   public void testWedges() {
     // For simplicity, all of these tests use an origin of (0, 0, 1).
     // This shouldn't matter as long as the lower-level primitives are
@@ -388,6 +394,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         false);
   }
 
+  @Test
   public void testGetClosestPoint() {
     final double kMargin = 1e-6;
 
@@ -434,6 +441,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetDistance() {
     checkDistance(
         new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(0, 1, 0), 0, new S2Point(1, 0, 0));
@@ -467,6 +475,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         new S2Point(1, 0, 0));
   }
 
+  @Test
   public void testIntersectionTolerance() {
     // We repeatedly construct two edges that cross near a random point "p",
     // and measure the distance from the actual intersection point "x" to the

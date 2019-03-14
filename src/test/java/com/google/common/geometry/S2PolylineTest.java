@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import com.google.common.collect.Lists;
 
 import junit.framework.Assert;
+import org.junit.Test;
 
 import java.util.List;
 
@@ -33,12 +34,14 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     super.setUp();
   }
 
+  @Test
   public void testBasic() {
     List<S2Point> vertices = Lists.newArrayList();
     S2Polyline empty = new S2Polyline(vertices);
     assertEquals(empty.getRectBound(), S2LatLngRect.empty());
   }
 
+  @Test
   public void testGetLengthCentroid() {
     // Construct random great circles and divide them randomly into segments.
     // Then make sure that the length and centroid are correct. Note that
@@ -66,6 +69,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testMayIntersect() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(S2Point.normalize(new S2Point(1, -1.1, 0.8)));
@@ -77,6 +81,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInterpolate() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, 0, 0));
@@ -95,6 +100,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(line.interpolate(1.1), vertices.get(3));
   }
 
+  @Test
   public void testEqualsAndHashCode() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, 0, 0));
@@ -118,6 +124,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkEqualsAndHashCodeMethods(line1, "", false);
   }
 
+  @Test
   public void testProject() {
     List<S2Point> latLngs = Lists.newArrayList();
     latLngs.add(S2LatLng.fromDegrees(0, 0).toPoint());

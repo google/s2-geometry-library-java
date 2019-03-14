@@ -15,8 +15,11 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 public strictfp class S2LatLngRectTest extends GeometryTestCase {
 
+  @Test
   public void testIntervalOps(S2LatLngRect x, S2LatLngRect y, String expectedRelation,
       S2LatLngRect expectedUnion, S2LatLngRect expectedIntersection) {
     // Test all of the interval operations on the given pair of intervals.
@@ -41,6 +44,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCellOps(S2LatLngRect r, S2Cell cell, int level) {
     // Test the relationship between the given rectangle and cell:
     // 0 == no intersection, 1 == MayIntersect, 2 == Intersects,
@@ -59,6 +63,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(r.contains(cell), level >= 4);
   }
 
+  @Test
   public void testBasic() {
     // Most of the S2LatLngRect methods have trivial implementations that
     // use the R1Interval and S1Interval classes, so most of the testing
@@ -259,12 +264,14 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testArea() {
     assertEquals(0.0, S2LatLngRect.empty().area());
     assertDoubleNear(4 * Math.PI, S2LatLngRect.full().area());
     assertDoubleNear(Math.PI / 2, rectFromDegrees(0, 0, 90, 90).area());
   }
 
+  @Test
   public void testEdgeBound() {
     // assertTrue cases where min/max latitude is not at a vertex.
     assertDoubleNear(getEdgeBound(1, 1, 1, 1, -1, 1).lat().hi(), S2.M_PI_4); // Max,
@@ -288,6 +295,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         getEdgeBound(1, -1, 1, 1, 1, -1).lat().approxEquals(new R1Interval(-kCubeLat, kCubeLat)));
   }
 
+  @Test
   public void testGetDistanceOverlapping() {
     // Check pairs of rectangles that overlap: (should all return 0):
     S2LatLngRect a = rectFromDegrees(0, 0, 2, 2);
@@ -305,6 +313,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(zero, a.getDistance(rectFromDegrees(2, 2, 4, 4)));
   }
 
+  @Test
   public void testGetDistanceRectVsPoint() {
     // Rect that spans 180.
     S2LatLngRect a = rectFromDegrees(-1, -1, 2, 1);
@@ -353,6 +362,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDistance(pointRectFromDegrees(89, 181), c);
   }
 
+  @Test
   public void testGetDistanceRectVsRect() {
     // Rect that spans 180.
     S2LatLngRect a = rectFromDegrees(-1, -1, 2, 1);
@@ -369,6 +379,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDistance(b, rectFromDegrees(-84, 181, -83, 182));
   }
 
+  @Test
   public void testGetDistanceRandomPairs() {
     // Test random pairs.
     for (int i = 0; i < 10000; ++i) {

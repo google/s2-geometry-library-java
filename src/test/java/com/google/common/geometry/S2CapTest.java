@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 public strictfp class S2CapTest extends GeometryTestCase {
 
   public S2Point getLatLngPoint(double latDegrees, double lngDegrees) {
@@ -24,6 +26,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
   // About 9 times the double-precision roundoff relative error.
   public static final double EPS = 1e-15;
 
+  @Test
   public void testBasic() {
     // Test basic properties of empty and full caps.
     S2Cap empty = S2Cap.empty();
@@ -114,6 +117,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(!concave.contains(S2Cap.fromAxisHeight(S2Point.neg(concave.axis()), 0.1)));
   }
 
+  @Test
   public void testRectBound() {
     // Empty and full caps.
     assertTrue(S2Cap.empty().getRectBound().isEmpty());
@@ -164,6 +168,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(rect.lng().isFull());
   }
 
+  @Test
   public void testCells() {
     // For each cube face, we construct some cells on
     // that face and some caps whose positions are relative to that face,

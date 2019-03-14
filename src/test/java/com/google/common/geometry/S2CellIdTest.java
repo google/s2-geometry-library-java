@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,6 +37,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     return id;
   }
 
+  @Test
   public void testBasic() {
     logger.info("TestBasic");
     // Check default constructor.
@@ -86,6 +89,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(id.rangeMin().id() + id.rangeMax().id(), 2 * id.id());
   }
 
+  @Test
   public void testInverses() {
     logger.info("TestInverses");
     // Check the conversion of random leaf cells to S2LatLngs and back.
@@ -97,12 +101,13 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
-
+  @Test
   public void testToToken() {
     assertEquals("000000000000010a", new S2CellId(266).toToken());
     assertEquals("80855c", new S2CellId(-9185834709882503168L).toToken());
   }
 
+  @Test
   public void testTokens() {
     logger.info("TestTokens");
 
@@ -152,6 +157,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testContainment() {
     logger.info("TestContainment");
     Map<S2CellId, S2CellId> parentMap = new HashMap<S2CellId, S2CellId>();
@@ -179,6 +185,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
 
   private static final int MAX_WALK_LEVEL = 8;
 
+  @Test
   public void testContinuity() {
     logger.info("TestContinuity");
     // Make sure that sequentially increasing cell ids form a continuous
@@ -203,6 +210,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCoverage() {
     logger.info("TestCoverage");
     // Make sure that random points on the sphere can be represented to the
@@ -222,6 +230,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testAllNeighbors(S2CellId id, int level) {
     assertTrue(level >= id.level() && level < S2CellId.MAX_LEVEL);
 
@@ -245,6 +254,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertTrue(allSet.equals(expectedSet));
   }
 
+  @Test
   public void testNeighbors() {
     logger.info("TestNeighbors");
 

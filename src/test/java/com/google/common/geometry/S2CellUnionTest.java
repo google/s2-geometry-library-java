@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.Lists;
+import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -26,6 +27,7 @@ import java.util.logging.Logger;
 public strictfp class S2CellUnionTest extends GeometryTestCase {
   public static Logger logger = Logger.getLogger(S2CellUnionTest.class.getName());
 
+  @Test
   public void testBasic() {
     logger.info("TestBasic");
 
@@ -55,6 +57,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertTrue(!face1Union.contains(face2Cell));
   }
 
+  @Test
   public void testContainsCellUnion() {
     logger.info("TestContainsCellUnion");
 
@@ -159,6 +162,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testNormalize() {
     logger.info("TestNormalize");
 
@@ -305,6 +309,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     return maxAngle;
   }
 
+  @Test
   public void testExpand() {
     logger.info("TestExpand");
 
@@ -352,6 +357,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLeafCellsCovered() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -392,7 +398,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.leafCellsCovered());
   }
 
-
+  @Test
   public void testAverageBasedArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -408,6 +414,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.averageBasedArea());
   }
 
+  @Test
   public void testApproxArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -423,6 +430,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.approxArea());
   }
 
+  @Test
   public void testExactArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 

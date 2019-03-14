@@ -16,8 +16,11 @@
 package com.google.common.geometry;
 
 
+import org.junit.Test;
+
 public strictfp class S1IntervalTest extends GeometryTestCase {
 
+  @Test
   private void testIntervalOps(S1Interval x, S1Interval y, String expectedRelation,
       S1Interval expectedUnion, S1Interval expectedIntersection) {
     // Test all of the interval operations on the given pair of intervals.
@@ -44,6 +47,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testBasic() {
     // "Quadrants" are numbered as follows:
     // quad1 == [0, Pi/2]

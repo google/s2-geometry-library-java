@@ -17,6 +17,7 @@
 package com.google.common.geometry;
 
 import com.google.common.collect.Lists;
+import org.junit.Test;
 
 import java.util.List;
 
@@ -80,6 +81,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   }
 
   // Make sure we've set things up correctly.
+  @Test
   public void testInit() {
     assertContains(NEAR1, NEAR0);
     assertContains(NEAR2, NEAR1);
@@ -136,6 +138,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(a.intersects(b), intersects);
   }
 
+  @Test
   public void testRelations() {
     assertRelation(near10, near30, -1, true);
     assertRelation(near10, near32, 0, false);
@@ -220,6 +223,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     checkEqual(union, destructiveUnion);
   }
 
+  @Test
   public void testDisjoint() {
     S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.UNDIRECTED_XOR);
     builder.addPolygon(adj0);
@@ -235,6 +239,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     tryUnion(adj0, unAdj);
   }
 
+  @Test
   public void testUnionSloppySuccess() {
     List<S2Polygon> polygons = Lists.newArrayList();
     polygons.add(adj0);
@@ -260,6 +265,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertPointApproximatelyEquals(s2Loop, 7, 2.0, 1.0, 0.01);
   }
 
+  @Test
   public void testUnionSloppyFailure() {
     List<S2Polygon> polygons = Lists.newArrayList();
     polygons.add(adj0);
@@ -271,6 +277,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, union.numLoops());
   }
 
+  @Test
   public void testCompareTo() {
     // Polygons with same loops, but in different order:
     S2Polygon p1 = makePolygon(RECTANGLE1 + RECTANGLE2);
@@ -301,6 +308,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(0 > p10.compareTo(p9));
   }
 
+  @Test
   public void testGetDistance() {
     // Error margin since we're doing numerical computations
     double epsilon = 1e-15;

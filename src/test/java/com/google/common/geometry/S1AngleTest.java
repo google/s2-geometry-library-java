@@ -16,10 +16,11 @@
 package com.google.common.geometry;
 
 import junit.framework.TestCase;
+import org.junit.Test;
 
 public strictfp class S1AngleTest extends TestCase {
 
-
+  @Test
   public void testBasic() {
     // Check that the conversion between Pi radians and 180 degrees is exact.
     assertEquals(S1Angle.radians(Math.PI).radians(), Math.PI);

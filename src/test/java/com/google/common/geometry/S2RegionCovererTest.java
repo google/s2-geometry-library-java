@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.logging.Logger;
@@ -22,6 +24,7 @@ import java.util.logging.Logger;
 public strictfp class S2RegionCovererTest extends GeometryTestCase {
   private static Logger logger = Logger.getLogger(S2RegionCovererTest.class.getName());
 
+  @Test
   public void testRandomCells() {
     logger.info("TestRandomCells");
 
@@ -74,6 +77,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testRandomCaps() {
     logger.info("TestRandomCaps");
 
@@ -116,6 +120,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testSimpleCoverings() {
     logger.info("TestSimpleCoverings");
 

@@ -15,8 +15,11 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 public strictfp class S2LatLngTest extends GeometryTestCase {
 
+  @Test
   public void testBasic() {
     S2LatLng llRad = S2LatLng.fromRadians(S2.M_PI_4, S2.M_PI_2);
     assertTrue(llRad.lat().radians() == S2.M_PI_4);
@@ -49,6 +52,7 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertTrue((S2LatLng.fromDegrees(10, 20).mul(0.5)).approxEquals(S2LatLng.fromDegrees(5, 10)));
   }
 
+  @Test
   public void testConversion() {
     // Test special cases: poles, "date line"
     assertDoubleNear(
@@ -73,6 +77,7 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertDoubleNear(test.lng().degrees(), 0.98765);
   }
 
+  @Test
   public void testDistance() {
     assertEquals(
         S2LatLng.fromDegrees(90, 0).getDistance(S2LatLng.fromDegrees(90, 0)).radians(), 0.0);

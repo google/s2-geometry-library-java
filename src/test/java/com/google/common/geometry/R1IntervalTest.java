@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import org.junit.Test;
+
 public strictfp class R1IntervalTest extends GeometryTestCase {
 
 
@@ -24,6 +26,7 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
    * to the expected results of contains(), interiorContains(), Intersects(),
    * and InteriorIntersects() respectively.
    */
+  @Test
   public void testIntervalOps(R1Interval x, R1Interval y, String expectedRelation) {
     assertEquals(x.contains(y), expectedRelation.charAt(0) == 'T');
     assertEquals(x.interiorContains(y), expectedRelation.charAt(1) == 'T');
@@ -34,6 +37,7 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
     assertEquals(x.intersects(y), !x.intersection(y).isEmpty());
   }
 
+  @Test
   public void testBasic() {
     // Constructors and accessors.
     R1Interval unit = new R1Interval(0, 1);
