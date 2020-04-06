@@ -15,33 +15,36 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.collect.Lists;
+import static com.google.common.geometry.S2Projections.PROJ;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.collect.Lists;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Logger;
 
+/** Tests for S2CellUnion. */
+@GwtCompatible
 public strictfp class S2CellUnionTest extends GeometryTestCase {
-  public static Logger logger = Logger.getLogger(S2CellUnionTest.class.getName());
-
   public void testBasic() {
-    logger.info("TestBasic");
-
     S2CellUnion empty = new S2CellUnion();
     ArrayList<S2CellId> ids = Lists.newArrayList();
     empty.initFromCellIds(ids);
     assertEquals(0, empty.size());
 
-    S2CellId face1Id = S2CellId.fromFacePosLevel(1, 0, 0);
+    S2CellId face1Id = S2CellId.fromFace(1);
     S2CellUnion face1Union = new S2CellUnion();
     ids.add(face1Id);
     face1Union.initFromCellIds(ids);
     assertEquals(1, face1Union.size());
     assertEquals(face1Id, face1Union.cellId(0));
 
-    S2CellId face2Id = S2CellId.fromFacePosLevel(2, 0, 0);
+    S2CellId face2Id = S2CellId.fromFace(2);
     S2CellUnion face2Union = new S2CellUnion();
     ArrayList<Long> cellids = Lists.newArrayList();
     cellids.add(face2Id.id());
@@ -55,9 +58,20 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertTrue(!face1Union.contains(face2Cell));
   }
 
-  public void testContainsCellUnion() {
-    logger.info("TestContainsCellUnion");
+  public void testValid() {
+    S2CellUnion cells = new S2CellUnion();
+    cells.initRawCellIds(
+        new ArrayList<>(
+            Arrays.asList(S2CellId.fromPoint(S2Point.X_POS), S2CellId.fromPoint(S2Point.X_POS))));
+    assertFalse(cells.isValid());
+    cells.initRawCellIds(
+        new ArrayList<>(
+            Arrays.asList(
+                S2CellId.fromPoint(S2Point.X_POS), S2CellId.fromPoint(S2Point.X_POS).advance(1))));
+    assertTrue(cells.isValid());
+  }
 
+  public void testContainsCellUnion() {
     Set<S2CellId> randomCells = new HashSet<S2CellId>();
     for (int i = 0; i < 100; i++) {
       randomCells.add(getRandomCellId(S2CellId.MAX_LEVEL));
@@ -67,8 +81,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     union.initFromCellIds(Lists.newArrayList(randomCells));
 
     // Add one more
-    while (!randomCells.add(getRandomCellId(S2CellId.MAX_LEVEL))) {      
-    }
+    while (!randomCells.add(getRandomCellId(S2CellId.MAX_LEVEL))) {}
 
     S2CellUnion unionPlusOne = new S2CellUnion();
     unionPlusOne.initFromCellIds(Lists.newArrayList(randomCells));
@@ -89,8 +102,8 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertFalse(union.contains(parentUnion));
   }
 
-  private void addCells(S2CellId id, boolean selected, List<S2CellId> input,
-      ArrayList<S2CellId> expected) {
+  private void addCells(
+      S2CellId id, boolean selected, List<S2CellId> input, ArrayList<S2CellId> expected) {
     // Decides whether to add "id" and/or some of its descendants to the
     // test case. If "selected" is true, then the region covered by "id"
     // *must* be added to the test case (either by adding "id" itself, or
@@ -101,7 +114,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     if (id.equals(S2CellId.none())) {
       // Initial call: decide whether to add cell(s) from each face.
       for (int face = 0; face < 6; ++face) {
-        addCells(S2CellId.fromFacePosLevel(face, 0, 0), false, input, expected);
+        addCells(S2CellId.fromFace(face), false, input, expected);
       }
       return;
     }
@@ -124,7 +137,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
 
     // With the rnd.OneIn() constants below, this function adds an average
-    // of 5/6 * (kMaxLevel - level) cells to "input" where "level" is the
+    // of 5/6 * (MAX_LEVEL - level) cells to "input" where "level" is the
     // level at which the cell was first selected (level 15 on average).
     // Therefore the average number of input cells in a test case is about
     // (5/6 * 15 * 6) = 75. The average number of output cells is about 6.
@@ -160,20 +173,15 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
   }
 
   public void testNormalize() {
-    logger.info("TestNormalize");
-
     // Try a bunch of random test cases, and keep track of average
     // statistics for normalization (to see if they agree with the
     // analysis above).
     S2CellUnion cellunion = new S2CellUnion();
-    double inSum = 0, outSum = 0;
     final int kIters = 2000;
     for (int i = 0; i < kIters; ++i) {
       ArrayList<S2CellId> input = Lists.newArrayList();
       ArrayList<S2CellId> expected = Lists.newArrayList();
       addCells(S2CellId.none(), false, input, expected);
-      inSum += input.size();
-      outSum += expected.size();
       cellunion.initFromCellIds(input);
       assertEquals(cellunion.size(), expected.size());
 
@@ -181,7 +189,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
 
       // Test GetCapBound().
       S2Cap cap = cellunion.getCapBound();
-      for (int  k = 0; k < cellunion.size(); ++k) {
+      for (int k = 0; k < cellunion.size(); ++k) {
         assertTrue(cap.contains(new S2Cell(cellunion.cellId(k))));
       }
 
@@ -278,7 +286,8 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
 
       addCells(S2CellId.none(), false, test, dummy);
       for (int j = 0; j < test.size(); ++j) {
-        boolean contains = false, intersects = false;
+        boolean contains = false;
+        boolean intersects = false;
         for (int k = 0; k < expected.size(); ++k) {
           if (expected.get(k).contains(test.get(j))) {
             contains = true;
@@ -290,84 +299,182 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
         assertEquals(cellunion.contains(test.get(j)), contains);
         assertEquals(cellunion.intersects(test.get(j)), intersects);
       }
-
     }
   }
 
-  double getMaxAngle(S2CellUnion covering, S2Point axis) {
-    double maxAngle = 0;
+  /** Returns the maximum geodesic distance from "axis" to any point of "covering". */
+  private static double getRadius(S2CellUnion covering, S2Point axis) {
+    double maxDist = 0;
     for (int i = 0; i < covering.size(); ++i) {
       S2Cell cell = new S2Cell(covering.cellId(i));
-      S2Cap cellCap = cell.getCapBound();
-      double angle = axis.angle(cellCap.axis()) + cellCap.angle().radians();
-      maxAngle = Math.max(maxAngle, angle);
+      for (int j = 0; j < 4; ++j) {
+        S2Point a = cell.getVertex(j);
+        S2Point b = cell.getVertex((j + 1) & 3);
+        // The maximum distance is not always attained at a cell vertex: if at
+        // least one vertex is in the opposite hemisphere from "axis" then the
+        // maximum may be attained along an edge.  We solve this by computing
+        // the minimum distance from the edge to (-axis) instead.  We can't
+        // simply do this all the time because S2EdgeUtil.getDistance() has
+        // poor accuracy when the result is close to Pi.
+        //
+        // TODO(user): Improve S2EdgeUtil.getDistance() accuracy near Pi.
+        double dist;
+        if (a.angle(axis) > S2.M_PI_2 || b.angle(axis) > S2.M_PI_2) {
+          dist = S2.M_PI - S2EdgeUtil.getDistance(S2Point.neg(axis), a, b).radians();
+        } else {
+          dist = a.angle(axis);
+        }
+        maxDist = Math.max(maxDist, dist);
+      }
     }
-    return maxAngle;
+    return maxDist;
   }
 
   public void testExpand() {
-    logger.info("TestExpand");
-
-    // This test generates coverings for caps of random sizes, and expands
+    // This test generates coverings for caps of random sizes, expands
     // the coverings by a random radius, and then make sure that the new
-    // covering covers the expanded cap. It also makes sure that the
+    // covering covers the expanded cap.  It also makes sure that the
     // new covering is not too much larger than expected.
-
-    S2RegionCoverer coverer = new S2RegionCoverer();
-    for (int i = 0; i < 1000; ++i) {
+    S2RegionCoverer.Builder covererBuilder = S2RegionCoverer.builder();
+    for (int i = 0; i < 1000; i++) {
       S2Cap cap = getRandomCap(S2Cell.averageArea(S2CellId.MAX_LEVEL), 4 * S2.M_PI);
 
-      // Expand the cap by a random factor whose log is uniformly distributed
-      // between 0 and log(1e2).
+      // Expand the cap area by a random factor whose log is uniformly
+      // distributed between 0 and log(1e2).
       S2Cap expandedCap =
-          S2Cap.fromAxisHeight(cap.axis(), Math.min(2.0, Math.pow(1e2, rand.nextDouble())
-              * cap.height()));
+          S2Cap.fromAxisHeight(
+              cap.axis(), Math.min(2.0, Math.pow(1e2, rand.nextDouble()) * cap.height()));
 
       double radius = expandedCap.angle().radians() - cap.angle().radians();
-      int maxLevelDiff = random(8);
+      int maxLevelDiff = rand.nextInt(8);
 
-      S2CellUnion covering = new S2CellUnion();
-      coverer.setMaxCells(1 + skewed(10));
-      coverer.getCovering(cap, covering);
-      checkCovering(cap, covering, true, new S2CellId());
+      // Generate a covering for the original cap, and measure the maximum
+      // distance from the cap center to any point in the covering.
+      S2RegionCoverer coverer = covererBuilder.setMaxCells(1 + skewed(10)).build();
+      S2CellUnion covering = coverer.getCovering(cap);
+      checkCovering(cap, covering, true);
+      double coveringRadius = getRadius(covering, cap.axis());
 
-      double maxAngle = getMaxAngle(covering, cap.axis());
+      // This code duplicates the logic in Expand(minRadius, maxLevelDiff)
+      // that figures out an appropriate cell level to use for the expansion.
       int minLevel = S2CellId.MAX_LEVEL;
       for (int j = 0; j < covering.size(); ++j) {
         minLevel = Math.min(minLevel, covering.cellId(j).level());
       }
-      covering.expand(S1Angle.radians(radius), maxLevelDiff);
-      checkCovering(expandedCap, covering, false, new S2CellId());
+      int expandLevel = Math.min(minLevel + maxLevelDiff, PROJ.minWidth.getMaxLevel(radius));
 
-      int expandLevel =
-          Math.min(minLevel + maxLevelDiff, S2Projections.MIN_WIDTH.getMaxLevel(radius));
-      double expandedMaxAngle = getMaxAngle(covering, cap.axis());
+      // Generate a covering for the expanded cap, and measure the new maximum
+      // distance from the cap center to any point in the covering.
+      covering.expand(S1Angle.radians(radius), maxLevelDiff);
+      checkCovering(expandedCap, covering, false);
+      double expandedCoveringRadius = getRadius(covering, cap.axis());
 
       // If the covering includes a tiny cell along the boundary, in theory the
       // maximum angle of the covering from the cap axis can increase by up to
-      // twice the maximum length of a cell diagonal. We allow for an increase
-      // of slightly more than this because cell bounding caps are not exact.
-      assertTrue(expandedMaxAngle - maxAngle <= 2.01 * S2Projections.MAX_DIAG
-          .getValue(expandLevel));
+      // twice the maximum length of a cell diagonal.
+      assertTrue(expandedCoveringRadius - coveringRadius <= 2 * PROJ.maxDiag.getValue(expandLevel));
+    }
+  }
+
+  public void testEncodeDecode() throws IOException {
+    ArrayList<S2CellId> cellIds =
+        new ArrayList<>(
+            Arrays.asList(
+                new S2CellId(0x33L),
+                new S2CellId(0x0),
+                new S2CellId(0x8e3748fabL),
+                new S2CellId(0x91230abcdef83427L)));
+    S2CellUnion cellUnion = new S2CellUnion();
+    cellUnion.initRawCellIds(cellIds);
+    checkEncodeDecode(cellUnion);
+  }
+
+  public void testEncodeDecodeEmpty() throws IOException {
+    checkEncodeDecode(new S2CellUnion());
+  }
+
+  private static void checkEncodeDecode(S2CellUnion cells) throws IOException {
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    cells.encode(output);
+    ByteArrayInputStream input = new ByteArrayInputStream(output.toByteArray());
+    assertEquals(cells, S2CellUnion.decode(input));
+  }
+
+  private static void checkInitFromMinMax(S2CellId minId, S2CellId maxId) {
+    S2CellUnion cellUnion = new S2CellUnion();
+    cellUnion.initFromMinMax(minId, maxId);
+    List<S2CellId> cellIds = cellUnion.cellIds();
+    assertTrue(cellIds.size() > 0);
+    assertEquals(minId, cellIds.get(0).rangeMin());
+    assertEquals(maxId, cellIds.get(cellIds.size() - 1).rangeMax());
+    for (int i = 1; i < cellIds.size(); i++) {
+      assertEquals(cellIds.get(i).rangeMin(), cellIds.get(i - 1).rangeMax().next());
+    }
+    assertFalse(cellUnion.normalize());
+  }
+
+  public void testInitFromRange() {
+    // Check the very first leaf cell and face cell.
+    S2CellId face1Id = S2CellId.fromFace(0);
+    checkInitFromMinMax(face1Id.rangeMin(), face1Id.rangeMin());
+    checkInitFromMinMax(face1Id.rangeMin(), face1Id.rangeMax());
+
+    // Check the very last leaf cell and face cell.
+    S2CellId idFace5 = S2CellId.fromFace(5);
+    checkInitFromMinMax(idFace5.rangeMin(), idFace5.rangeMax());
+    checkInitFromMinMax(idFace5.rangeMax(), idFace5.rangeMax());
+
+    // Check random ranges of leaf cells.
+    for (int i = 0; i < 100; ++i) {
+      S2CellId x = getRandomCellId(S2CellId.MAX_LEVEL);
+      S2CellId y = getRandomCellId(S2CellId.MAX_LEVEL);
+      if (x.compareTo(y) > 0) {
+        S2CellId temp = x;
+        x = y;
+        y = temp;
+      }
+      checkInitFromMinMax(x, y);
+    }
+  }
+
+  public void testInitFromBeginEnd() {
+    // Since InitFromRange() is implemented in terms of InitFromBeginEnd(), we
+    // focus on test cases that generate an empty range.
+    ArrayList<S2CellId> initialIds = Lists.newArrayList(S2CellId.fromFace(3));
+    S2CellUnion cellUnion = new S2CellUnion();
+
+    // Test an empty range before the minimum S2CellId.
+    S2CellId idBegin = S2CellId.begin(S2CellId.MAX_LEVEL);
+    cellUnion.initFromCellIds(initialIds);
+    cellUnion.initFromBeginEnd(idBegin, idBegin);
+    assertEquals(0, cellUnion.size());
+
+    // Test an empty range after the maximum S2CellId.
+    S2CellId idEnd = S2CellId.end(S2CellId.MAX_LEVEL);
+    cellUnion.initFromCellIds(initialIds);
+    cellUnion.initFromBeginEnd(idEnd, idEnd);
+    assertEquals(0, cellUnion.size());
+
+    // Test the full sphere.
+    cellUnion.initFromBeginEnd(idBegin, idEnd);
+    assertEquals(6, cellUnion.size());
+    for (int i = 0; i < cellUnion.size(); ++i) {
+      assertTrue(cellUnion.cellId(i).isFace());
     }
   }
 
   public void testLeafCellsCovered() {
     S2CellUnion cellUnion = new S2CellUnion();
-
-    // empty union
     assertEquals(0, cellUnion.leafCellsCovered());
 
     ArrayList<S2CellId> ids = Lists.newArrayList();
-    ids.add(S2CellId.fromFacePosLevel(
-        0, (1L << ((S2CellId.MAX_LEVEL << 1) - 1)), S2CellId.MAX_LEVEL));
-
-    // One leaf on face 0.
+    // One leaf cell on face 0.
+    ids.add(S2CellId.fromFace(0).childBegin(S2CellId.MAX_LEVEL));
     cellUnion.initFromCellIds(ids);
     assertEquals(1L, cellUnion.leafCellsCovered());
 
-    // Face 0.
-    ids.add(S2CellId.fromFacePosLevel(0, 0, 0));
+    // Face 0 itself (which includes the previous leaf cell).
+    ids.add(S2CellId.fromFace(0));
     cellUnion.initFromCellIds(ids);
     assertEquals(1L << 60, cellUnion.leafCellsCovered());
 
@@ -380,24 +487,71 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(6L << 60, cellUnion.leafCellsCovered());
 
     // Add some disjoint cells.
-    ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
-    ids.add(S2CellId.fromFacePosLevel(2, 0, 2));
-    ids.add(S2CellId.fromFacePosLevel(2, (1L << 60), 2));
-    ids.add(S2CellId.fromFacePosLevel(3, 0, 14));
-    ids.add(S2CellId.fromFacePosLevel(4, (1L << 60), 15));
-    ids.add(S2CellId.fromFacePosLevel(4, 0, 27));
-    ids.add(S2CellId.fromFacePosLevel(5, 0, 30));
+    ids.add(S2CellId.fromFace(1).childBegin(1));
+    ids.add(S2CellId.fromFace(2).childBegin(2));
+    ids.add(S2CellId.fromFace(2).childEnd(2).prev());
+    ids.add(S2CellId.fromFace(3).childBegin(14));
+    ids.add(S2CellId.fromFace(4).childBegin(27));
+    ids.add(S2CellId.fromFace(4).childEnd(15).prev());
+    ids.add(S2CellId.fromFace(5).childBegin(30));
     cellUnion.initFromCellIds(ids);
     long expected = 1L + (1L << 6) + (1L << 30) + (1L << 32) + (2L << 56) + (1L << 58) + (1L << 60);
     assertEquals(expected, cellUnion.leafCellsCovered());
   }
 
+  public void testEmpty() {
+    S2CellUnion empty = new S2CellUnion();
+    S2CellId face1 = S2CellId.fromFace(1);
+
+    // Normalize()
+    empty.normalize();
+    assertEquals(0, empty.size());
+
+    // Denormalize(...)
+    ArrayList<S2CellId> output = new ArrayList<>();
+    empty.denormalize(0, 2, output);
+    assertEquals(0, empty.size());
+
+    // Pack(...)
+    empty.pack();
+
+    // Contains(...)
+    assertFalse(empty.contains(face1));
+    assertTrue(empty.contains(empty));
+
+    // Intersects(...)
+    assertFalse(empty.intersects(face1));
+    assertFalse(empty.intersects(empty));
+
+    // GetUnion(...)
+    S2CellUnion union = new S2CellUnion();
+    union.getUnion(empty, empty);
+    assertEquals(0, union.size());
+
+    // GetIntersection(...)
+    S2CellUnion intersection = new S2CellUnion();
+    intersection.getIntersection(empty, face1);
+    assertEquals(0, intersection.size());
+    intersection.getIntersection(empty, empty);
+    assertEquals(0, intersection.size());
+
+    // GetDifference(...)
+    S2CellUnion difference = new S2CellUnion();
+    difference.getDifference(empty, empty);
+    assertEquals(0, difference.size());
+
+    // Expand(...)
+    empty.expand(S1Angle.radians(1), 20);
+    assertEquals(0, empty.size());
+    empty.expand(10);
+    assertEquals(0, empty.size());
+  }
 
   public void testAverageBasedArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
     // empty union
-    assertEquals(0.0, cellUnion.averageBasedArea());
+    assertEquals(0.0, cellUnion.averageBasedArea(), 0.0);
 
     ArrayList<S2CellId> ids = Lists.newArrayList();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
@@ -405,14 +559,14 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     cellUnion.initFromCellIds(ids);
 
     double expected = S2Cell.averageArea(S2CellId.MAX_LEVEL) * (1L + (1L << 58));
-    assertEquals(expected, cellUnion.averageBasedArea());
+    assertEquals(expected, cellUnion.averageBasedArea(), 0.0);
   }
 
   public void testApproxArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
     // empty union
-    assertEquals(0.0, cellUnion.approxArea());
+    assertEquals(0.0, cellUnion.approxArea(), 0.0);
 
     ArrayList<S2CellId> ids = Lists.newArrayList();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
@@ -420,14 +574,14 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     cellUnion.initFromCellIds(ids);
 
     double expected = new S2Cell(ids.get(0)).approxArea() + new S2Cell(ids.get(1)).approxArea();
-    assertEquals(expected, cellUnion.approxArea());
+    assertEquals(expected, cellUnion.approxArea(), 0.0);
   }
 
   public void testExactArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
     // empty union
-    assertEquals(0.0, cellUnion.exactArea());
+    assertEquals(0.0, cellUnion.exactArea(), 0.0);
 
     ArrayList<S2CellId> ids = Lists.newArrayList();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
@@ -435,6 +589,6 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     cellUnion.initFromCellIds(ids);
 
     double expected = new S2Cell(ids.get(0)).exactArea() + new S2Cell(ids.get(1)).exactArea();
-    assertEquals(expected, cellUnion.averageBasedArea());
+    assertEquals(expected, cellUnion.averageBasedArea(), 0.0);
   }
 }

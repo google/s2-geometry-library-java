@@ -16,12 +16,17 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.base.Preconditions;
+import java.io.Serializable;
+
 /**
  * An abstract directed edge from one S2Point to another S2Point.
  *
  * @author kirilll@google.com (Kirill Levin)
  */
-public final class S2Edge {
+@GwtCompatible(serializable = true)
+public final class S2Edge implements Serializable, S2Shape {
 
   private final S2Point start;
   private final S2Point end;
@@ -41,8 +46,7 @@ public final class S2Edge {
 
   @Override
   public String toString() {
-    return String.format("Edge: (%s -> %s)\n   or [%s -> %s]",
-        start.toDegreesString(), end.toDegreesString(), start, end);
+    return "Edge: (" + start.toDegreesString() + " -> " + end.toDegreesString() + ")";
   }
 
   @Override
@@ -56,6 +60,60 @@ public final class S2Edge {
       return false;
     }
     S2Edge other = (S2Edge) o;
-    return getStart().equals(other.getStart()) && getEnd().equals(other.getEnd());
+    return getStart().equalsPoint(other.getStart()) && getEnd().equalsPoint(other.getEnd());
+  }
+
+  @Override
+  public int numEdges() {
+    return 1;
+  }
+
+  @Override
+  public void getEdge(int index, MutableEdge result) {
+    result.set(start, end);
+  }
+
+  @Override
+  public boolean hasInterior() {
+    return false;
+  }
+
+  @Override
+  public boolean containsOrigin() {
+    return false;
+  }
+
+  @Override
+  public int numChains() {
+    return 1;
+  }
+
+  @Override
+  public int getChainStart(int chainId) {
+    Preconditions.checkElementIndex(chainId, numChains());
+    return 0;
+  }
+
+  @Override
+  public int getChainLength(int chainId) {
+    Preconditions.checkElementIndex(chainId, numChains());
+    return 1;
+  }
+
+  @Override
+  public void getChainEdge(int chainId, int offset, MutableEdge result) {
+    Preconditions.checkElementIndex(offset, getChainLength(chainId));
+    result.set(start, end);
+  }
+
+  @Override
+  public S2Point getChainVertex(int chainId, int edgeOffset) {
+    Preconditions.checkElementIndex(edgeOffset, getChainLength(chainId));
+    return edgeOffset == 0 ? start : end;
+  }
+
+  @Override
+  public int dimension() {
+    return 1;
   }
 }

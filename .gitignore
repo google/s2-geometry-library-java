@@ -1,2 +1,5 @@
-
+# .gitignore file for the open-source s2-geometry-java repo.
 build/
+target/
+.project
+.classpath
