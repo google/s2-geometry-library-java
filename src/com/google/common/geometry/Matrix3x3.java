@@ -23,7 +23,7 @@ import javax.annotation.CheckReturnValue;
 /** A simple 3x3 matrix. */
 // TODO(eengle): Rename this to Matrix as it is not necessarily 3x3, and make Matrix3x3 a subclass.
 @GwtCompatible
-public final class Matrix3x3 {
+final class Matrix3x3 {
   private final double[] values;
   private final int rows;
   private final int cols;
