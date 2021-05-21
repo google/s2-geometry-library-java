@@ -55,7 +55,6 @@ public final class ParametrizedS2Point implements Comparable<ParametrizedS2Point
     return point.compareTo(o.point);
   }
 
-  @SuppressWarnings("EqualsHashCode")
   @Override
   public boolean equals(Object other) {
     if (other instanceof ParametrizedS2Point) {
@@ -64,5 +63,12 @@ public final class ParametrizedS2Point implements Comparable<ParametrizedS2Point
     } else {
       return false;
     }
+  }
+
+  @Override
+  public int hashCode() {
+    // TODO(jrosenstock): Use Objects.hash when API 19 (2014-06) is allowed.  Current min is 14
+    // (2011-10).  Double.hashCode requires an even higher API level, so just hash the point.
+    return point.hashCode();
   }
 }

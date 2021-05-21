@@ -104,12 +104,16 @@ public class S2RegionUnion implements S2Region, Serializable {
    * should be rewritten to disregard order if such functionality is ever required.
    */
   @Override
-  @SuppressWarnings("EqualsHashCode")
   public boolean equals(Object thatObject) {
     if (!(thatObject instanceof S2RegionUnion)) {
       return false;
     }
     S2RegionUnion that = (S2RegionUnion) thatObject;
     return Arrays.deepEquals(regions, that.regions);
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(regions);
   }
 }

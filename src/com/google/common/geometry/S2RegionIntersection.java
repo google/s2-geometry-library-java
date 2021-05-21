@@ -99,12 +99,16 @@ public class S2RegionIntersection implements S2Region, Serializable {
    * NOTE: This should be rewritten to disregard order if such functionality is ever required.
    */
   @Override
-  @SuppressWarnings("EqualsHashCode")
   public boolean equals(Object thatObject) {
     if (!(thatObject instanceof S2RegionIntersection)) {
       return false;
     }
     S2RegionIntersection that = (S2RegionIntersection) thatObject;
     return Arrays.deepEquals(regions, that.regions);
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(regions);
   }
 }
