@@ -35,7 +35,7 @@
   <properties>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <guava.version>25.1-jre</guava.version>
+    <guava.version>29.0-jre</guava.version>
     <jsr305.version>3.0.1</jsr305.version>
     <junit.version>4.13-SNAPSHOT</junit.version>
   </properties>
