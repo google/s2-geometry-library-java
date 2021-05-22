@@ -15,6 +15,14 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.io.BaseEncoding;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
+/** Tests for S2Cap. */
+@GwtCompatible
 public strictfp class S2CapTest extends GeometryTestCase {
 
   public S2Point getLatLngPoint(double latDegrees, double lngDegrees) {
@@ -34,8 +42,13 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(full.isValid());
     assertTrue(full.isFull());
     assertTrue(full.complement().isEmpty());
-    assertEquals(full.height(), 2.0);
+    assertEquals(2.0, full.height());
     assertDoubleNear(full.angle().degrees(), 180);
+
+    // Test the S1Angle constructor using out-of-range arguments.
+    assertTrue(S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.radians(-20)).isEmpty());
+    assertTrue(S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.radians(5)).isFull());
+    assertTrue(S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.INFINITY).isFull());
 
     // Containment and intersection of empty and full caps.
     assertTrue(empty.contains(empty));
@@ -49,12 +62,12 @@ public strictfp class S2CapTest extends GeometryTestCase {
     S2Cap xaxis = S2Cap.fromAxisHeight(new S2Point(1, 0, 0), 0);
     assertTrue(xaxis.contains(new S2Point(1, 0, 0)));
     assertTrue(!xaxis.contains(new S2Point(1, 1e-20, 0)));
-    assertEquals(xaxis.angle().radians(), 0.0);
+    assertEquals(0.0, xaxis.angle().radians());
 
     // Singleton cap containing the y-axis.
     S2Cap yaxis = S2Cap.fromAxisAngle(new S2Point(0, 1, 0), S1Angle.radians(0));
     assertTrue(!yaxis.contains(xaxis.axis()));
-    assertEquals(xaxis.height(), 0.0);
+    assertEquals(0.0, xaxis.height());
 
     // Check that the complement of a singleton cap is the full cap.
     S2Cap xcomp = xaxis.complement();
@@ -80,7 +93,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     // Basic tests on a hemispherical cap.
     S2Cap hemi = S2Cap.fromAxisHeight(S2Point.normalize(new S2Point(1, 0, 1)), 1);
     assertEquals(hemi.complement().axis(), S2Point.neg(hemi.axis()));
-    assertEquals(hemi.complement().height(), 1.0);
+    assertEquals(1.0, hemi.complement().height());
     assertTrue(hemi.contains(new S2Point(1, 0, 0)));
     assertTrue(!hemi.complement().contains(new S2Point(1, 0, 0)));
     assertTrue(hemi.contains(S2Point.normalize(new S2Point(1, 0, -(1 - EPS)))));
@@ -105,13 +118,31 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(xaxis.contains(empty));
     assertTrue(!xaxis.interiorIntersects(empty));
     assertTrue(hemi.contains(tiny));
-    assertTrue(hemi.contains(
-        S2Cap.fromAxisAngle(new S2Point(1, 0, 0), S1Angle.radians(S2.M_PI_4 - EPS))));
-    assertTrue(!hemi.contains(
-        S2Cap.fromAxisAngle(new S2Point(1, 0, 0), S1Angle.radians(S2.M_PI_4 + EPS))));
+    assertTrue(
+        hemi.contains(S2Cap.fromAxisAngle(new S2Point(1, 0, 0), S1Angle.radians(S2.M_PI_4 - EPS))));
+    assertTrue(
+        !hemi.contains(
+            S2Cap.fromAxisAngle(new S2Point(1, 0, 0), S1Angle.radians(S2.M_PI_4 + EPS))));
     assertTrue(concave.contains(hemi));
     assertTrue(concave.interiorIntersects(hemi.complement()));
     assertTrue(!concave.contains(S2Cap.fromAxisHeight(S2Point.neg(concave.axis()), 0.1)));
+  }
+
+  public void testAddEmptyCapToNonEmptyCap() {
+    S2Cap nonEmptyCap = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.degrees(10));
+    assertEquals(nonEmptyCap, nonEmptyCap.addCap(S2Cap.empty()));
+  }
+
+  public void testAddNonEmptyCapToEmptyCap() {
+    S2Cap nonEmptyCap = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.degrees(10));
+    assertEquals(nonEmptyCap, S2Cap.empty().addCap(nonEmptyCap));
+  }
+
+  public void testCustomEmpty() {
+    // Verifies that clients can still create custom negative-height empty caps.
+    S2Cap empty = S2Cap.fromAxisHeight(S2Point.X_POS, -1);
+    assertEquals(-1.0, empty.height());
+    assertTrue(empty.isEmpty());
   }
 
   public void testRectBound() {
@@ -131,21 +162,24 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(rect.lng().isFull());
 
     // Cap that is tangent to the north pole.
-    rect = S2Cap.fromAxisAngle(S2Point.normalize(new S2Point(1, 0, 1)), S1Angle.radians(S2.M_PI_4))
-        .getRectBound();
+    rect =
+        S2Cap.fromAxisAngle(S2Point.normalize(new S2Point(1, 0, 1)), S1Angle.radians(S2.M_PI_4))
+            .getRectBound();
     assertDoubleNear(rect.lat().lo(), 0);
     assertDoubleNear(rect.lat().hi(), S2.M_PI_2);
     assertTrue(rect.lng().isFull());
 
-    rect = S2Cap
-        .fromAxisAngle(S2Point.normalize(new S2Point(1, 0, 1)), S1Angle.degrees(45)).getRectBound();
+    rect =
+        S2Cap.fromAxisAngle(S2Point.normalize(new S2Point(1, 0, 1)), S1Angle.degrees(45))
+            .getRectBound();
     assertDoubleNear(rect.latLo().degrees(), 0, kDegreeEps);
     assertDoubleNear(rect.latHi().degrees(), 90, kDegreeEps);
     assertTrue(rect.lng().isFull());
 
     // The eastern hemisphere.
-    rect = S2Cap
-        .fromAxisAngle(new S2Point(0, 1, 0), S1Angle.radians(S2.M_PI_2 + 5e-16)).getRectBound();
+    rect =
+        S2Cap.fromAxisAngle(new S2Point(0, 1, 0), S1Angle.radians(S2.M_PI_2 + 5e-16))
+            .getRectBound();
     assertDoubleNear(rect.latLo().degrees(), -90, kDegreeEps);
     assertDoubleNear(rect.latHi().degrees(), 90, kDegreeEps);
     assertTrue(rect.lng().isFull());
@@ -174,7 +208,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
 
     for (int face = 0; face < 6; ++face) {
       // The cell consisting of the entire face.
-      S2Cell rootCell = S2Cell.fromFacePosLevel(face, (byte) 0, 0);
+      S2Cell rootCell = S2Cell.fromFace(face);
 
       // A leaf cell at the midpoint of the v=1 edge.
       S2Cell edgeCell = new S2Cell(S2Projections.faceUvToXyz(face, 0, 1 - EPS));
@@ -208,8 +242,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
         assertEquals(covering.contains(edgeCell), center.dotProd(edgeCell.getCenter()) > 0.1);
         assertEquals(covering.contains(edgeCell), covering.mayIntersect(edgeCell));
         assertEquals(covering.contains(cornerCell), capFace == face);
-        assertEquals(
-            covering.mayIntersect(cornerCell), center.dotProd(cornerCell.getCenter()) > 0);
+        assertEquals(covering.mayIntersect(cornerCell), center.dotProd(cornerCell.getCenter()) > 0);
 
         // A cap that barely intersects the edges of 'cap_face'.
         S2Cap bulging = S2Cap.fromAxisAngle(center, S1Angle.radians(S2.M_PI_4 + EPS));
@@ -227,5 +260,35 @@ public strictfp class S2CapTest extends GeometryTestCase {
         assertTrue(!singleton.mayIntersect(cornerCell));
       }
     }
+  }
+
+  public void testSerialization() throws IOException {
+    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+    S2Cap testCap = S2Cap.fromAxisHeight(S2Point.X_NEG, 0.123);
+    testCap.encode(bos);
+    assertEquals(testCap, S2Cap.decode(new ByteArrayInputStream(bos.toByteArray())));
+  }
+
+  public void testDecodeEmptyCap() throws IOException {
+    checkCoder("000000000000F03F00000000000000000000000000000000000000000000F0BF", S2Cap.empty());
+  }
+
+  public void testDecodeFullCap() throws IOException {
+    checkCoder("000000000000F03F000000000000000000000000000000000000000000001040", S2Cap.full());
+  }
+
+  public void testDecodeCapWithHeight() throws IOException {
+    checkCoder(
+        "00000000000000000000000000000000000000000000F03F0000000000001040",
+        S2Cap.fromAxisHeight(new S2Point(0, 0, 1), 5.0));
+  }
+
+  private static void checkCoder(String hex, S2Cap expected) throws IOException {
+    BaseEncoding testFormat = BaseEncoding.base16();
+    ByteArrayInputStream bais = new ByteArrayInputStream(testFormat.decode(hex));
+    assertEquals(expected, S2Cap.decode(bais));
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    expected.encode(baos);
+    assertEquals(hex, testFormat.encode(baos.toByteArray()));
   }
 }

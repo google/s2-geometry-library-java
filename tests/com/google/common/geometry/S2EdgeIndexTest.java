@@ -16,9 +16,10 @@
 
 package com.google.common.geometry;
 
+import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.logging.Logger;
@@ -27,10 +28,10 @@ import java.util.logging.Logger;
  * Tests for {@link S2EdgeIndex}.
  *
  * @author andriy@google.com (Andriy Bihun) ported from util/geometry
- * @author pilloff@google.com (Mark Pilloff) original author
  */
+@GwtCompatible(emulated = true)
 public strictfp class S2EdgeIndexTest extends GeometryTestCase {
-  private static final Logger log = Logger.getLogger(S2EdgeIndexTest.class.getCanonicalName());
+  private static final Logger log = Platform.getLoggerForClass(S2EdgeIndexTest.class);
 
   public static class EdgeVectorIndex extends S2EdgeIndex {
     private List<S2Edge> edges;
@@ -40,30 +41,29 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     }
 
     @Override
-    protected int getNumEdges() {
+    public int getNumEdges() {
       return edges.size();
     }
 
     @Override
-    protected S2Point edgeFrom(int index) {
+    public S2Point edgeFrom(int index) {
       return edges.get(index).getStart();
     }
 
     @Override
-    protected S2Point edgeTo(int index) {
+    public S2Point edgeTo(int index) {
       return edges.get(index).getEnd();
     }
   }
 
-  /**
-   * Generates a random edge whose center is in the given cap.
-   */
+  /** Generates a random edge whose center is in the given cap. */
   private S2Edge randomEdgeCrossingCap(double maxLengthMeters, S2Cap cap) {
     // Pick the edge center at random.
     S2Point edgeCenter = samplePoint(cap);
     // Pick two random points in a suitably sized cap about the edge center.
-    S2Cap edgeCap = S2Cap.fromAxisAngle(
-        edgeCenter, S1Angle.radians(maxLengthMeters / S2LatLng.EARTH_RADIUS_METERS / 2));
+    S2Cap edgeCap =
+        S2Cap.fromAxisAngle(
+            edgeCenter, S1Angle.radians(maxLengthMeters / EARTH_RADIUS_METERS / 2));
     S2Point p1 = samplePoint(edgeCap);
     S2Point p2 = samplePoint(edgeCap);
     return new S2Edge(p1, p2);
@@ -76,8 +76,9 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
    */
   private void generateRandomEarthEdges(
       double edgeLengthMetersMax, double capSpanMeters, int numEdges, List<S2Edge> edges) {
-    S2Cap cap = S2Cap.fromAxisAngle(
-        randomPoint(), S1Angle.radians(capSpanMeters / S2LatLng.EARTH_RADIUS_METERS));
+    S2Cap cap =
+        S2Cap.fromAxisAngle(
+            randomPoint(), S1Angle.radians(capSpanMeters / EARTH_RADIUS_METERS));
     for (int i = 0; i < numEdges; ++i) {
       edges.add(randomEdgeCrossingCap(edgeLengthMetersMax, cap));
     }
@@ -104,8 +105,9 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
       }
 
       for (int i = 0; i < allEdges.size(); ++i) {
-        int crossing = S2EdgeUtil.robustCrossing(
-            e.getStart(), e.getEnd(), allEdges.get(i).getStart(), allEdges.get(i).getEnd());
+        int crossing =
+            S2EdgeUtil.robustCrossing(
+                e.getStart(), e.getEnd(), allEdges.get(i).getStart(), allEdges.get(i).getEnd());
         if (crossing >= 0) {
           StringBuilder sbError = new StringBuilder();
           sbError
@@ -131,8 +133,10 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
 
     log.info(
         "Pairs/num crossings/check crossing ratio: "
-            + Integer.toString(allEdges.size() * allEdges.size()) + "/"
-            + Double.toString(totalCrossings) + "/"
+            + Integer.toString(allEdges.size() * allEdges.size())
+            + "/"
+            + Double.toString(totalCrossings)
+            + "/"
             + Double.toString(totalIndexChecks / totalCrossings));
     assertTrue(minCrossings <= totalCrossings);
     assertTrue(totalCrossings * maxChecksCrossingsRatio >= totalIndexChecks);
@@ -142,8 +146,12 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
    * Generates random edges and tests, for each edge, that all those that cross
    * are candidates.
    */
-  private void tryCrossingsRandomInCap(int numEdges, double edgeLengthMax, double capSpanMeters,
-      int minCrossings, int maxChecksCrossingsRatio) {
+  private void tryCrossingsRandomInCap(
+      int numEdges,
+      double edgeLengthMax,
+      double capSpanMeters,
+      int minCrossings,
+      int maxChecksCrossingsRatio) {
     List<S2Edge> allEdges = Lists.newArrayList();
     generateRandomEarthEdges(edgeLengthMax, capSpanMeters, numEdges, allEdges);
     checkAllCrossings(allEdges, minCrossings, maxChecksCrossingsRatio);
@@ -174,17 +182,31 @@ public strictfp class S2EdgeIndexTest extends GeometryTestCase {
     checkAllCrossings(allEdges, 0, 16);
   }
 
-  public void testRandomEdgeCrossings() {
+  @GwtIncompatible("Too slow for GWT")
+  public void testRandomEdgeCrossingsSlow() {
     tryCrossingsRandomInCap(2000, 30, 5000, 500, 2);
     tryCrossingsRandomInCap(1000, 100, 5000, 500, 3);
     tryCrossingsRandomInCap(1000, 1000, 5000, 1000, 40);
     tryCrossingsRandomInCap(500, 5000, 5000, 5000, 20);
   }
 
-  public void testRandomEdgeCrossingsSparse() {
+  public void testRandomEdgeCrossingsFast() {
+    tryCrossingsRandomInCap(50, 5000, 5000, 100, 15);
+    tryCrossingsRandomInCap(75, 5000, 5000, 200, 15);
+  }
+
+  @GwtIncompatible("Too slow for GWT")
+  public void testRandomEdgeCrossingsSparseSlow() {
     for (int i = 0; i < 5; ++i) {
       tryCrossingsRandomInCap(2000, 100, 5000, 500, 8);
       tryCrossingsRandomInCap(2000, 300, 50000, 1000, 10);
+    }
+  }
+
+  public void testRandomEdgeCrossingsSparseFast() {
+    for (int i = 0; i < 5; ++i) {
+      tryCrossingsRandomInCap(50, 100, 5000, 40, 2);
+      tryCrossingsRandomInCap(50, 300, 50000, 40, 2);
     }
   }
 }
