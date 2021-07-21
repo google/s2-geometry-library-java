@@ -24,24 +24,71 @@
     <version>7</version>
   </parent>
 
-  <groupId>com.google.common.geometry</groupId>
-  <artifactId>s2-geometry-library-java</artifactId>
-  <version>HEAD-SNAPSHOT</version>
+  <groupId>com.google.geometry</groupId>
+  <artifactId>s2-geometry</artifactId>
+  <version>2.0.0</version>
   <name>S2 Geometry Library for Java</name>
   <description>
     Core geometry libraries for Java.
   </description>
+  <url>https://github.com/google/s2-geometry-library-java</url>
+
+  <licenses>
+    <license>
+      <name>The Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Chris Povirk</name>
+      <email>cpovirk@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </developer>
+
+    <developer>
+      <name>David Beaumont</name>
+      <email>dbeaumont@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </developer>
+
+    <developer>
+      <name>Eric Engle</name>
+      <email>eengle@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </developer>
+
+    <developer>
+      <name>Kurt Kluever</name>
+      <email>kak@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </developer>
+  </developers>
+
+  <contributors>
+    <contributor>
+      <name>Alexei Ababilov</name>
+      <email>aababilov@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </contributor>
+  </contributors>
 
   <properties>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
     <guava.version>25.1-jre</guava.version>
     <jsr305.version>3.0.1</jsr305.version>
-    <junit.version>4.13-SNAPSHOT</junit.version>
+    <junit.version>4.13</junit.version>
   </properties>
 
   <scm>
-    <url>https://github.com/google/s2-geometry-library-java</url>
+    <url>https://github.com/google/s2-geometry-library-java/tree/master</url>
     <connection>scm:git:git://github.com/google/s2-geometry-library-java.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/google/s2-geometry-library-java.git</developerConnection>
     <tag>HEAD</tag>
@@ -81,6 +128,72 @@
           </excludes>
         </configuration>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>2.2.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>2.9.1</version>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.0.1</version>
+        <executions>
+          <execution>
+            <id>sign-artifacts</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>sign</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.sonatype.plugins</groupId>
+        <artifactId>nexus-staging-maven-plugin</artifactId>
+        <version>1.6.7</version>
+        <extensions>true</extensions>
+        <configuration>
+          <serverId>sonatype-nexus-staging</serverId>
+          <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+          <autoReleaseAfterClose>false</autoReleaseAfterClose>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>sonatype-nexus-staging</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </snapshotRepository>
+    <repository>
+      <id>sonatype-nexus-staging</id>
+      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+    </repository>
+  </distributionManagement>
 </project>
