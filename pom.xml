@@ -26,7 +26,7 @@
 
   <groupId>com.google.geometry</groupId>
   <artifactId>s2-geometry</artifactId>
-  <version>HEAD-SNAPSHOT</version>
+  <version>2.0.0</version>
   <name>S2 Geometry Library for Java</name>
   <description>
     Core geometry libraries for Java.
