@@ -66,9 +66,6 @@ import java.util.PriorityQueue;
 public final class S2ClosestPointQuery<T> {
   // TODO(eengle): retune the constants.
 
-  /** The maximum number of points to process by brute force. */
-  private static final int MAX_BRUTE_FORCE_POINTS = 150;
-
   /** The maximum number of points to process without subdividing further. */
   private static final int MAX_LEAF_POINTS = 12;
 
@@ -142,7 +139,6 @@ public final class S2ClosestPointQuery<T> {
   /** Resets the query state. This method must be called after modifying the underlying index. */
   public void reset() {
     iter = index.iterator();
-    useBruteForce(index.numPoints() <= MAX_BRUTE_FORCE_POINTS);
   }
 
   /** Returns the underlying S2PointIndex. */
@@ -267,77 +263,28 @@ public final class S2ClosestPointQuery<T> {
     toList(results);
   }
 
-  /** A kind of query target. */
-  private interface Target {
-    /** Returns the approximate center of the target. */
-    S2Point center();
-    /** Returns the distance between this target and the given cell. */
-    S1ChordAngle getDistance(S2Cell cell);
-    /** Returns the radian radius of an angular cap that encloses this target. */
-    double radius();
-    /** Returns the smaller of {@code distance} and a new distance from target to {@code point}. */
-    S1ChordAngle getMinDistance(S2Point point, S1ChordAngle distance);
-  }
-
-  /** A point query, used to find the closest points to a query point. */
-  private static class PointTarget implements Target {
-    private final S2Point point;
+  private static class PointTarget extends S2MinDistancePointTarget {
 
     public PointTarget(S2Point point) {
-      this.point = point;
+      super(point);
     }
 
     @Override
-    public S2Point center() {
-      return point;
+    public int maxBruteForceIndexSize() {
+      return 150;
     }
 
-    @Override
-    public double radius() {
-      return 0;
-    }
-
-    @Override
-    public S1ChordAngle getMinDistance(S2Point x, S1ChordAngle minDist) {
-      S1ChordAngle angle = new S1ChordAngle(x, point);
-      // See comment regarding ">=" in the findClosestPoints() main loop.
-      return angle.compareTo(minDist) > 0 ? minDist : angle;
-    }
-
-    @Override
-    public S1ChordAngle getDistance(S2Cell cell) {
-      return cell.getDistance(point);
-    }
   }
 
-  /** An edge query, used to find the closest points to a query edge. */
-  private static class EdgeTarget implements Target {
-    private S2Point a;
-    private S2Point b;
+  static class EdgeTarget extends S2MinDistanceEdgeTarget {
 
     public EdgeTarget(S2Point a, S2Point b) {
-      this.a = a;
-      this.b = b;
+      super(a, b);
     }
 
     @Override
-    public S2Point center() {
-      return S2Point.normalize(S2Point.add(a, b));
-    }
-
-    @Override
-    public double radius() {
-      return 0.5 * a.angle(b);
-    }
-
-    @Override
-    public S1ChordAngle getMinDistance(S2Point x, S1ChordAngle minDist) {
-      return S2EdgeUtil.updateMinDistance(x, a, b, minDist);
-    }
-
-    @Override
-    public S1ChordAngle getDistance(S2Cell cell) {
-      return cell.getDistanceToEdge(a, b);
+    public int maxBruteForceIndexSize() {
+      return 100;
     }
   }
 
@@ -406,22 +353,22 @@ public final class S2ClosestPointQuery<T> {
     indexCovering.add(firstId.parent(level));
   }
 
-  private void findClosestPointsToTarget(Target target) {
+  private void findClosestPointsToTarget(S2MinDistanceTarget target) {
     maxDistanceLimit = S1ChordAngle.fromS1Angle(maxDistance);
-    if (useBruteForce) {
+    if (useBruteForce || index.numPoints() <= target.maxBruteForceIndexSize()) {
       findClosestPointsBruteForce(target);
     } else {
       findClosestPointsOptimized(target);
     }
   }
 
-  private void findClosestPointsBruteForce(Target target) {
+  private void findClosestPointsBruteForce(S2MinDistanceTarget target) {
     for (iter.restart(); !iter.done(); iter.next()) {
       maybeAddResult(iter.entry(), target);
     }
   }
 
-  private void findClosestPointsOptimized(Target target) {
+  private void findClosestPointsOptimized(S2MinDistanceTarget target) {
     initQueue(target);
     while (!queue.isEmpty()) {
       QueueEntry entry = queue.poll();
@@ -440,7 +387,7 @@ public final class S2ClosestPointQuery<T> {
     }
   }
 
-  private void maybeAddResult(Entry<T> entry, Target target) {
+  private void maybeAddResult(Entry<T> entry, S2MinDistanceTarget target) {
     S1ChordAngle distance = target.getMinDistance(entry.point(), maxDistanceLimit);
     if (distance == maxDistanceLimit) {
       // The previous 'max' reference is returned in this case, so only check object identity.
@@ -461,7 +408,7 @@ public final class S2ClosestPointQuery<T> {
     }
   }
 
-  private void initQueue(Target target) {
+  private void initQueue(S2MinDistanceTarget target) {
     // assert queue.isEmpty();
 
     // Optimization: rather than starting with the entire index, see if we can limit the search
@@ -524,7 +471,7 @@ public final class S2ClosestPointQuery<T> {
    * @return true if the cell was added to the queue, and false if it was processed immediately (in
    *     which case {@code iter} is left positioned at the next cell in S2CellId order.
    */
-  private boolean addCell(S2CellId id, S2Iterator<Entry<T>> iter, boolean seek, Target target) {
+  private boolean addCell(S2CellId id, S2Iterator<Entry<T>> iter, boolean seek, S2MinDistanceTarget target) {
     if (seek) {
       iter.seek(id.rangeMin());
     }

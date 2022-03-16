@@ -417,6 +417,37 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return cell.contains(this);
   }
 
+
+  /**
+   * Return true if the points A, B, C are strictly counterclockwise. Return false if the points are clockwise or
+   * collinear (i.e. if they are all contained on some great circle).
+   *
+   * Due to numerical errors, situations may arise that are mathematically impossible, e.g. ABC may be considered
+   * strictly CCW while BCA is not. However, the implementation guarantees the following:
+   *
+   *   If simpleCCW(a,b,c), then !simpleCCW(c,b,a) for all a,b,c.
+   *
+   * @param a a point
+   * @param b a point
+   * @param c a point
+   *
+   * @return true if the points are strictly counterclockwise.
+   */
+  public static boolean simpleCCW(S2Point a, S2Point b, S2Point c) {
+    // We compute the signed volume of the parallelepiped ABC.  The usual
+    // formula for this is (AxB).C, but we compute it here using (CxA).B
+    // in order to ensure that ABC and CBA are not both CCW.  This follows
+    // from the following identities (which are true numerically, not just
+    // mathematically):
+    //
+    //     (1) x.crossProd(y) == -(y.crossProd(x))
+    //     (2) (-x).dotProd(y) == -(x.dotProd(y))
+
+    return c.crossProd(a).dotProd(b) > 0;
+  }
+
+
+
   /** Writes this point to the given output stream. */
   public void encode(OutputStream os) throws IOException {
     encode(new LittleEndianOutput(os));
