@@ -14,6 +14,7 @@
   See the License for the specific language governing permissions and
   limitations under the License.
 -->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
@@ -24,14 +25,63 @@
     <version>7</version>
   </parent>
 
-  <groupId>com.google.geometry</groupId>
-  <artifactId>s2-geometry</artifactId>
-  <version>HEAD-SNAPSHOT</version>
-  <name>S2 Geometry Library for Java</name>
-  <description>
-    Core geometry libraries for Java.
-  </description>
+  <name>S2 Geometry for Java</name>
+  <description>Spherical geometry library for Java.</description>
   <url>https://github.com/google/s2-geometry-library-java</url>
+
+  <groupId>com.google.geometry</groupId>
+  <artifactId>s2-geometry-parent</artifactId>
+  <version>${revision}</version>
+  <packaging>pom</packaging>
+
+  <modules>
+   <module>library</module>
+   <module>testdatagenerator</module>
+   <module>tests</module>
+   <module>benchmarks</module>
+  </modules>
+
+  <build>
+  <plugins>
+    <plugin>
+      <groupId>org.codehaus.mojo</groupId>
+      <artifactId>flatten-maven-plugin</artifactId>
+      <version>1.1.0</version>
+      <configuration>
+        <updatePomFile>true</updatePomFile>
+        <flattenMode>resolveCiFriendliesOnly</flattenMode>
+      </configuration>
+      <executions>
+        <execution>
+          <id>flatten</id>
+          <phase>process-resources</phase>
+          <goals>
+            <goal>flatten</goal>
+          </goals>
+        </execution>
+        <execution>
+          <id>flatten.clean</id>
+          <phase>clean</phase>
+          <goals>
+            <goal>clean</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+  </plugins>
+  </build>
+
+  <!-- The following are inherited by the modules. -->
+
+  <properties>
+    <revision>HEAD-SNAPSHOT</revision>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <guava.version>29.0-jre</guava.version>
+    <jsr305.version>3.0.2</jsr305.version>
+    <jsinterop.version>2.0.0</jsinterop.version>
+    <surefire.version>3.0.0-M7</surefire.version>
+  </properties>
 
   <licenses>
     <license>
@@ -63,6 +113,13 @@
     </developer>
 
     <developer>
+      <name>Torrey Hoffman</name>
+      <email>torrey@google.com</email>
+      <organization>Google LLC</organization>
+      <organizationUrl>https://google.com</organizationUrl>
+    </developer>
+
+    <developer>
       <name>Kurt Kluever</name>
       <email>kak@google.com</email>
       <organization>Google LLC</organization>
@@ -79,15 +136,6 @@
     </contributor>
   </contributors>
 
-  <properties>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-    <guava.version>29.0-jre</guava.version>
-    <jsr305.version>3.0.1</jsr305.version>
-    <junit.version>4.13.1</junit.version>
-    <bnd.version>5.3.0</bnd.version>
-  </properties>
-
   <scm>
     <url>https://github.com/google/s2-geometry-library-java/tree/master</url>
     <connection>scm:git:git://github.com/google/s2-geometry-library-java.git</connection>
@@ -95,120 +143,69 @@
     <tag>HEAD</tag>
   </scm>
 
-  <dependencies>
-    <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-      <version>${guava.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.google.code.findbugs</groupId>
-      <artifactId>jsr305</artifactId>
-      <version>${jsr305.version}</version>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>${junit.version}</version>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
+  <profiles>
+    <profile>
+      <id>sonatype-oss-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>2.4</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
 
-  <build>
-    <sourceDirectory>src</sourceDirectory>
-    <testSourceDirectory>tests</testSourceDirectory>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>2.9.1</version>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
 
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>**/GeometryTestCase.java</exclude>
-          </excludes>
-        </configuration>
-      </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.0.1</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
 
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-source-plugin</artifactId>
-        <version>2.2.1</version>
-        <executions>
-          <execution>
-            <id>attach-sources</id>
-            <goals>
-              <goal>jar-no-fork</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <version>2.9.1</version>
-        <executions>
-          <execution>
-            <id>attach-javadocs</id>
-            <goals>
-              <goal>jar</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>biz.aQute.bnd</groupId>
-        <artifactId>bnd-maven-plugin</artifactId>
-        <version>${bnd.version}</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>bnd-process</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-gpg-plugin</artifactId>
-        <version>3.0.1</version>
-        <executions>
-          <execution>
-            <id>sign-artifacts</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>sign</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>org.sonatype.plugins</groupId>
-        <artifactId>nexus-staging-maven-plugin</artifactId>
-        <version>1.6.7</version>
-        <extensions>true</extensions>
-        <configuration>
-          <serverId>sonatype-nexus-staging</serverId>
-          <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-          <autoReleaseAfterClose>false</autoReleaseAfterClose>
-        </configuration>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <configuration>
-          <archive>
-            <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
-          </archive>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
+          <plugin>
+            <groupId>org.sonatype.plugins</groupId>
+            <artifactId>nexus-staging-maven-plugin</artifactId>
+            <version>1.6.7</version>
+            <extensions>true</extensions>
+            <configuration>
+              <serverId>sonatype-nexus-staging</serverId>
+              <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+              <autoReleaseAfterClose>false</autoReleaseAfterClose>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
   <distributionManagement>
     <snapshotRepository>
