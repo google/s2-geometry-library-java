@@ -73,7 +73,7 @@ import java.util.Set;
  * <ul>
  *   <li>we find all the document regions which intersect because a query cell is the same as or an
  *       ancestor of a document cell, by looking up each cell as an ancestor term; and
- *   <li>we find all the document regions which intersect because a query cell is an descendent of a
+ *   <li>we find all the document regions which intersect because a query cell is a descendent of a
  *       document cell, by looking up each ancestor of each cell as a covering term.
  * </ul>
  *
@@ -150,7 +150,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     /**
      * Sets the minimum level to be used (the one closest to the root of the hierarchy). See
-     * {@link S2RegionCoverer#setMinLevel()}.
+     * {@link S2RegionCoverer#setMinLevel(int)}.
      *
      * @param level The minimum level
      * @return This builder
@@ -163,7 +163,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     /**
      * Sets the maximum level to be used (the one closest to the leaves of the hierarchy). See
-     * {@link S2RegionCoverer#setMaxLevel()}.
+     * {@link S2RegionCoverer#setMaxLevel(int)}.
      *
      * @param level The minimum level
      * @return This builder
@@ -176,7 +176,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     /**
      * Sets the spacing of the levels in use: only levels an integer multiple of this above the
-     * minimum will be used. See {@link S2RegionCoverer#setLevelMod()}.
+     * minimum will be used. See {@link S2RegionCoverer#setLevelMod(int)}.
      *
      * @param spacing The level spacing
      * @return This builder
@@ -191,7 +191,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
      * Sets a limit on the number of cells to be used in a covering. This is a soft limit: it may be
      * exceeded if it is not possible to cover the region in this number of cells, or if it would
      * only be possible to use cells larger than the minimum level (i.e. {@link #setMinLevel} takes
-     * precedence over {@link #setMaxCells}). See {@link S2RegionCoverer#setMaxCells()}.
+     * precedence over {@link #setMaxCells}). See {@link S2RegionCoverer#setMaxCells(int)}.
      *
      * @param limit The limit on the number of cells
      * @return This builder

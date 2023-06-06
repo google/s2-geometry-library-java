@@ -28,12 +28,16 @@ final class Platform {
 
   private Platform() {}
 
-  /** @see Math#IEEEremainder(double, double) */
+  /**
+   * @see Math#IEEEremainder(double, double)
+   */
   static double IEEEremainder(double f1, double f2) {
     return Math.IEEEremainder(f1, f2);
   }
 
-  /** @see Math#getExponent(double) */
+  /**
+   * @see Math#getExponent(double)
+   */
   static int getExponent(double d) {
     return Math.getExponent(d);
   }
@@ -116,19 +120,25 @@ final class Platform {
    * techniques have been exhausted.
    */
   public static int sign(S2Point a, S2Point b, S2Point c) {
-    Real bycz = Real.mul(b.y, c.z);
-    Real bzcy = Real.mul(b.z, c.y);
-    Real bzcx = Real.mul(b.z, c.x);
-    Real bxcz = Real.mul(b.x, c.z);
-    Real bxcy = Real.mul(b.x, c.y);
-    Real bycx = Real.mul(b.y, c.x);
-    Real bcx = bycz.sub(bzcy);
-    Real bcy = bzcx.sub(bxcz);
-    Real bcz = bxcy.sub(bycx);
-    Real x = bcx.mul(a.x);
-    Real y = bcy.mul(a.y);
-    Real z = bcz.mul(a.z);
-    return x.add(y).add(z).signum();
+    try {
+      Real bycz = Real.strictMul(b.y, c.z);
+      Real bzcy = Real.strictMul(b.z, c.y);
+      Real bzcx = Real.strictMul(b.z, c.x);
+
+      Real bxcz = Real.strictMul(b.x, c.z);
+      Real bxcy = Real.strictMul(b.x, c.y);
+      Real bycx = Real.strictMul(b.y, c.x);
+
+      Real bcx = bycz.sub(bzcy);
+      Real bcy = bzcx.sub(bxcz);
+      Real bcz = bxcy.sub(bycx);
+      Real x = bcx.strictMul(a.x);
+      Real y = bcy.strictMul(a.y);
+      Real z = bcz.strictMul(a.z);
+      return x.add(y).add(z).signum();
+    } catch (ArithmeticException unused) {
+      return 0;
+    }
   }
 
   /**

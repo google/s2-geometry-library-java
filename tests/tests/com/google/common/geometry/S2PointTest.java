@@ -19,6 +19,7 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.TestDataGenerator.makePoint;
 import static java.lang.Math.PI;
+import static java.lang.Math.asin;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2Shape.MutableEdge;
@@ -29,6 +30,40 @@ import java.util.List;
 
 /** Verifies S2Point. */
 public class S2PointTest extends GeometryTestCase {
+  public void testAddition() {
+    S2Point a = new S2Point(1, 2, 3);
+    S2Point b = new S2Point(1, 1, 1);
+    S2Point aPlusB = a.add(b);
+    assertEquals(new S2Point(2, 3, 4), aPlusB);
+  }
+
+  public void testSubtraction() {
+    S2Point a = new S2Point(1, 2, 3);
+    S2Point b = new S2Point(1, 1, 1);
+    S2Point aMinusB = a.sub(b);
+    assertEquals(new S2Point(0, 1, 2), aMinusB);
+  }
+
+  public void testScalarMultiplication() {
+    S2Point a = new S2Point(1, 2, 3);
+    assertEquals(new S2Point(5, 10, 15), a.mul(5.0));
+  }
+
+  public void testScalarDivision() {
+    S2Point a = new S2Point(3, 6, 9);
+    assertEquals(new S2Point(1, 2, 3), a.div(3));
+  }
+
+  public void testNegation() {
+    S2Point a = new S2Point(3, 6, 9);
+    assertEquals(new S2Point(-3, -6, -9), a.neg());
+  }
+
+  public void testComponentWiseAbs() {
+    S2Point a = new S2Point(-3, 6, -9);
+    assertEquals(new S2Point(3, 6, 9), a.fabs());
+  }
+
   public void testVectorMethods() {
     S2Point a = new S2Point(1, 2, 3);
     S2Point b = new S2Point(0, 1, 0);
@@ -43,7 +78,7 @@ public class S2PointTest extends GeometryTestCase {
     assertEquals(S2Point.Y_NEG, S2Point.X_POS.ortho());
   }
 
-  public void testRotate() {
+  public void testRotateSimple() {
     // Check simple axial cases.
     S2Point p = makePoint("0:0");
     assertEquals(makePoint("0:90"), p.rotate(S2Point.Z_POS, M_PI_2), 1e-15);
@@ -64,6 +99,53 @@ public class S2PointTest extends GeometryTestCase {
       assertEquals(a.add(b).normalize(), a.rotate(axis, angle / 2), 1e-14);
       // Rotate 'b' to the antipodal point of 'a'.
       assertEquals(a.neg(), b.rotate(axis, PI - angle), 1e-14);
+    }
+  }
+
+  private static void checkRotate(S2Point p, S2Point axis, double angle) {
+    S2Point result = S2Point.rotate(p, axis, angle);
+
+    // "result" should be unit length.
+    assertTrue(S2.isUnitLength(result));
+
+    // "result" and "p" should be the same distance from "axis".
+    double kMaxPositionError = 1e-15;
+    assertLessOrEqual(
+        new S1Angle(result, axis).sub(new S1Angle(p, axis)).abs().radians(), kMaxPositionError);
+
+    // Check that the rotation angle is correct. We allow a fixed error in the *position* of the
+    // result, so we need to convert this into a rotation angle. The allowable error can be very
+    // large as "p" approaches "axis".
+    double axisDistance = p.crossProd(axis).norm();
+    double maxRotationError = (axisDistance < kMaxPositionError)
+        ? 2 * PI
+        : asin(kMaxPositionError / axisDistance);
+
+    double actualRotation = S2.turnAngle(p, axis, result) + PI;
+    double rotationError = Platform.IEEEremainder(angle - actualRotation, 2 * PI);
+    assertLessOrEqual(rotationError, maxRotationError);
+  }
+
+  public void testRotate() {
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2Point axis = data.getRandomPoint();
+      S2Point target = data.getRandomPoint();
+      // Choose a distance whose logarithm is uniformly distributed.
+      double distance = PI * Math.pow(1e-15, data.nextDouble());
+      // Sometimes choose points near the far side of the axis.
+      if (data.oneIn(5)) {
+        distance = PI - distance;
+      }
+      S2Point p = S2EdgeUtil.getPointOnLine(axis, target, S1Angle.radians(distance));
+      // Choose the rotation angle.
+      double angle = 2 * PI * Math.pow(1e-15, data.nextDouble());
+      if (data.oneIn(3)) {
+        angle = -angle;
+      }
+      if (data.oneIn(10)) {
+        angle = 0;
+      }
+      checkRotate(p, axis, angle);
     }
   }
 
@@ -109,6 +191,15 @@ public class S2PointTest extends GeometryTestCase {
       assertFalse(shape.hasInterior());
       assertEquals(subset.size(), shape.numEdges());
       assertEquals(subset.size(), shape.numChains());
+
+      if (j == 0) {
+        assertTrue(shape.isEmpty());
+        assertFalse(shape.isFull());
+      } else {
+        assertFalse(shape.isEmpty());
+        assertFalse(shape.isFull());
+      }
+
       MutableEdge edge = new MutableEdge();
       for (int i = 0; i < subset.size(); i++) {
         shape.getEdge(i, edge);
@@ -120,7 +211,6 @@ public class S2PointTest extends GeometryTestCase {
       }
     }
   }
-
 
   public void testSerialization() throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();

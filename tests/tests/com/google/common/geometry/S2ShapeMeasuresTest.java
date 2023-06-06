@@ -124,10 +124,12 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
 
   public void testAreaEmptyPolygon() {
     assertExactly(0.0, S2ShapeMeasures.area(makePolygon("empty").shape()));
+    assertExactly(0.0, S2ShapeMeasures.approxArea(makePolygon("empty").shape()));
   }
 
   public void testAreaFullPolygon() {
     assertExactly(4 * PI, S2ShapeMeasures.area(makePolygon("full").shape()));
+    assertExactly(4 * PI, S2ShapeMeasures.approxArea(makePolygon("full").shape()));
   }
 
   public void testAreaTwoTinyShellsPolygon() {
@@ -137,11 +139,13 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
         makePolygon("0:0, 0:1e-10, 1e-10:1e-10, 1e-10:0; 0:0, 0:-1e-10, -1e-10:-1e-10, -1e-10:0")
             .shape();
     assertDoubleNear(2 * side * side, S2ShapeMeasures.area(shape), 1e-12);
+    assertDoubleNear(2 * side * side, S2ShapeMeasures.approxArea(shape), 1e-12);
   }
 
   public void testAreaShellAndHolePolygon() {
     S2Shape shape = makePolygon("0:0, 1:0, 0:1; 0.3:0.3, 0.3:0.6, 0.6:0.3").shape();
     assertDoubleNear(1.386e-4, S2ShapeMeasures.area(shape), 1e-7);
+    assertDoubleNear(1.386e-4, S2ShapeMeasures.approxArea(shape), 1e-7);
   }
 
   public void testCanonicalLoopOrderAllDegeneracies() {

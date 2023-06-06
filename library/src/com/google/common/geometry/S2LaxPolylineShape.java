@@ -148,18 +148,26 @@ public interface S2LaxPolylineShape extends S2ShapeAspect.EdgeAspect.Open {
   }
 
   /** Returns true unless there is at least one edge in this line. */
+  @Override
   default boolean isEmpty() {
     return numEdges() == 0;
   }
 
   /** Returns false in all cases since a polyline may never cover the entire sphere. */
+  @Override
   default boolean isFull() {
     return false;
   }
 
   /** A polyline storing references to previously allocated S2Point instances. */
   static class SimpleArray extends ChainAspect.Simple.Array implements S2LaxPolylineShape {
+    /** This constructor copies the provided Iterable into an array. */
     private SimpleArray(Iterable<S2Point> vertices) {
+      super(vertices);
+    }
+
+    /** This constructor takes ownership of the provided array. */
+    SimpleArray(S2Point[] vertices) {
       super(vertices);
     }
   }

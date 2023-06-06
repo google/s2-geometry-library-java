@@ -85,9 +85,27 @@ public class S2Earth {
     return 8846;
   }
 
+  /** Converts the given distance in meters to an angle. */
+  @JsIgnore
+  public static S1Angle metersToAngle(double distanceMeters) {
+    return S1Angle.radians(metersToRadians(distanceMeters));
+  }
+
+  /** Converts the given distance in meters to an S1ChordAngle. */
+  @JsIgnore
+  public static S1ChordAngle metersToChordAngle(double distanceMeters) {
+    return S1ChordAngle.fromRadians(metersToRadians(distanceMeters));
+  }
+
   /** Converts the given angle to meters. */
   public static double toMeters(S1Angle angle) {
     return angle.radians() * getRadiusMeters();
+  }
+
+  /** Converts the given S1ChordAngle to meters. */
+  @JsIgnore
+  public static double toMeters(S1ChordAngle chordAngle) {
+    return chordAngle.radians() * getRadiusMeters();
   }
 
   /** Converts the given angle to kilometers. */

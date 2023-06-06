@@ -74,11 +74,14 @@ public class S2Error {
 
     // Error codes from S2Builder:
 
-    /** The S2Builder snap function moved a vertex by more than the specified snap radius. */
+    /**
+     * The S2Builder snap function moved a vertex by more than the specified snap radius. Also used
+     * if a Double.NaN is encountered on an input vertex.
+     */
     BUILDER_SNAP_RADIUS_TOO_SMALL(300),
     /**
-     * S2Builder expected all edges to have siblings (as specified by S2Builder.GraphOptions {@link
-     * SiblingPairs.REQUIRE}), but some were missing.
+     * S2Builder expected all edges to have siblings (as specified by
+     * {@link S2Builder.GraphOptions.SiblingPairs.REQUIRE}), but some were missing.
      */
     BUILDER_MISSING_EXPECTED_SIBLING_EDGES(301),
     /**
@@ -98,7 +101,11 @@ public class S2Error {
      * a predicate to decide whether the output is the empty polygon (containing no points) or the
      * full polygon (containing all points).
      */
-    BUILDER_IS_FULL_PREDICATE_NOT_SPECIFIED(305);
+    BUILDER_IS_FULL_PREDICATE_NOT_SPECIFIED(305),
+
+    /** Codes in the range USER_DEFINED_START .. USER_DEFINED_END can be defined by clients. */
+    USER_DEFINED_START(1000000),
+    USER_DEFINED_END(9999999);
 
     private final int code;
 
@@ -114,6 +121,12 @@ public class S2Error {
 
   private Code code = Code.NO_ERROR;
   private String text = "";
+
+  /** Prepares an S2Error instance for reuse by resetting it to its original state. */
+  public void clear() {
+    code = Code.NO_ERROR;
+    text = "";
+  }
 
   /**
    * Sets the error code and text description; the description is formatted according to the rules
@@ -141,5 +154,13 @@ public class S2Error {
   /** Returns the text string. */
   public String text() {
     return text;
+  }
+
+  @Override
+  public String toString() {
+    if (code == Code.NO_ERROR) {
+      return "OK";
+    }
+    return Platform.formatString("%s: %s", code, text);
   }
 }

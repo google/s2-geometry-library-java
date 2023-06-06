@@ -86,16 +86,18 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
         }
       };
 
-  // coordinates of the points
+  // Coordinates of the point.
   final double x;
   final double y;
   final double z;
 
+  /** Constructs an S2Point with all coordinates zero, i.e. at ORIGIN. */
   @JsIgnore
   public S2Point() {
     this(0, 0, 0);
   }
 
+  /** Constructs an S2Point from the given coordinates. */
   @JsConstructor
   public S2Point(double x, double y, double z) {
     this.x = x;
@@ -103,14 +105,35 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     this.z = z;
   }
 
+  /** Constructs an S2Point from the given vector of doubles in order x, y, z. */
+  @JsIgnore
+  public S2Point(double[] vec) {
+    this(vec[0], vec[1], vec[2]);
+  }
+
+  /** Fills the x, y, and z values of this S2Point in to the first three doubles in 'vec'. */
+  public void fill(double[] vec) {
+    vec[0] = x;
+    vec[1] = y;
+    vec[2] = z;
+  }
+
+  /** Returns the value of one of the components by axis index. The axes are ordered x, y, z. */
+  public final double get(int axis) {
+    return (axis == 0) ? x : (axis == 1) ? y : z;
+  }
+
+  /** Returns the 'x' component. */
   public double getX() {
     return x;
   }
 
+  /** Returns the 'y' component. */
   public double getY() {
     return y;
   }
 
+  /** Returns the 'z' component. */
   public double getZ() {
     return z;
   }
@@ -124,6 +147,20 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   @JsIgnore
   public static final S2Point add(final S2Point p1, final S2Point p2) {
     return new S2Point(p1.x + p2.x, p1.y + p2.y, p1.z + p2.z);
+  }
+
+  /** Returns the component-wise sum of all the given points. */
+  @JsIgnore
+  public static final S2Point sum(S2Point... points) {
+    double x = 0;
+    double y = 0;
+    double z = 0;
+    for (S2Point p : points) {
+      x += p.x;
+      y += p.y;
+      z += p.z;
+    }
+    return new S2Point(x, y, z);
   }
 
   /** Returns sub(this,p). */
@@ -188,7 +225,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
         p1.y * p2.z - p1.z * p2.y, p1.z * p2.x - p1.x * p2.z, p1.x * p2.y - p1.y * p2.x);
   }
 
-  /** Returns neg(this). */
+  /** Returns the component-size negation of 'this'. */
   public S2Point neg() {
     return S2Point.neg(this);
   }
@@ -199,7 +236,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return new S2Point(-p.x, -p.y, -p.z);
   }
 
-  /** Returns fabs(this). */
+  /** Returns the component-wise absolute value of this. */
   public S2Point fabs() {
     return S2Point.fabs(this);
   }
@@ -210,7 +247,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return new S2Point(abs(p.x), abs(p.y), abs(p.z));
   }
 
-  /** Returns normalize(this). */
+  /** Returns a copy of 'this' rescaled to be unit-length. */
   public S2Point normalize() {
     return S2Point.normalize(this);
   }
@@ -259,7 +296,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
    *
    * <p>Returns the 3D Cartesian distance (also called the slant distance) between this and that,
    * which are normal vectors on the surface of a unit sphere. If the S2Points represent points on
-   * Earth, use {@link S2Earth#getDistance(S2Point, S2Point)} to get distance in meters.
+   * Earth, use {@link S2Earth#getDistanceMeters(S2Point, S2Point)} to get distance in meters.
    */
   public double getDistance(S2Point that) {
     return sqrt(getDistance2(that));
@@ -310,10 +347,6 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return (absX > absY) ? ((absX > absZ) ? 0 : 2) : ((absY > absZ) ? 1 : 2);
   }
 
-  public final double get(int axis) {
-    return (axis == 0) ? x : (axis == 1) ? y : z;
-  }
-
   /**
    * Returns the norm of the cross product, {@code S2Point.crossProd(this, va).norm()}. This is more
    * efficient than calling crossProd() followed by norm().
@@ -328,22 +361,40 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   }
 
   /**
-   * Rotates this point around an arbitrary axis. The result is normalized.
+   * Rotates this point around an arbitrary axis. This point and the provided axis are not
+   * required to be normalized. However, if you already have a normalized point and axis, you can
+   * use the static method {@link #rotate(S2Point, S2Point, double)} below to avoid the cost of
+   * normalizing again. The returned result is normalized.
    *
-   * @param axis point around which rotation should be performed.
-   * @param radians radians to rotate the point counterclockwise around the given axis.
+   * @param axis point around which rotation should be performed
+   * @param radians radians to rotate the point counterclockwise around the given axis
    */
   public S2Point rotate(S2Point axis, double radians) {
-    S2Point point = normalize();
-    S2Point normAxis = axis.normalize();
-    S2Point pointOnAxis = normAxis.mul(point.dotProd(normAxis));
-    S2Point axisToPoint = point.sub(pointOnAxis);
-    S2Point axisToPointNormal = normAxis.crossProd(axisToPoint);
-    axisToPoint = axisToPoint.mul(cos(radians));
-    axisToPointNormal = axisToPointNormal.mul(sin(radians));
+    return rotate(normalize(), axis.normalize(), radians);
+  }
+
+  /**
+   * Rotates the given point around an arbitrary axis. The point and the provided axis must be
+   * normalized. The result is normalized.
+   *
+   * @param point which should be rotated
+   * @param axis point around which rotation should be performed
+   * @param radians radians to rotate the point counterclockwise around the given axis
+   */
+  public static S2Point rotate(S2Point point, S2Point axis, double radians) {
+    assert S2.isUnitLength(point);
+    assert S2.isUnitLength(axis);
+
+    S2Point center = axis.mul(point.dotProd(axis));
+    S2Point axisToCenter = point.sub(center);
+
     // Explicitly normalize the result because there are cases where the accumulated error is
     // a bit larger than the tolerance of isUnitLength().
-    return axisToPoint.add(axisToPointNormal).add(pointOnAxis).normalize();
+    return S2Point.sum(
+        axisToCenter.mul(cos(radians)),
+        axis.crossProd(point).mul(sin(radians)),
+        center)
+      .normalize();
   }
 
   /**
@@ -382,6 +433,10 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return this.x == that.x && this.y == that.y && this.z == that.z;
   }
 
+  /**
+   * Returns true if this point is less than the given point 'vb'. Comparison is first by X,
+   * breaking ties in X with Y, and then breaking ties in X and Y with Z.
+   */
   public boolean lessThan(S2Point vb) {
     if (x < vb.x) {
       return true;
@@ -412,13 +467,10 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return "(" + x + ", " + y + ", " + z + ")";
   }
 
+  /** Returns a string withe the representation of this point as a lat,lng in degrees. */
   public String toDegreesString() {
     S2LatLng s2LatLng = new S2LatLng(this);
-    return "("
-        + Double.toString(s2LatLng.latDegrees())
-        + ", "
-        + Double.toString(s2LatLng.lngDegrees())
-        + ")";
+    return "(" + s2LatLng.latDegrees() + ", " + s2LatLng.lngDegrees() + ")";
   }
 
   /** Returns a new Builder initialized to a copy of this point. */
@@ -427,7 +479,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   }
 
   /**
-   * Calcualates hashcode based on stored coordinates. Since we want +0.0 and -0.0 to be treated the
+   * Calculates hashcode based on stored coordinates. Since we want +0.0 and -0.0 to be treated the
    * same, we ignore the sign of the coordinates.
    */
   @Override
@@ -600,6 +652,13 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     public S2Point getChainVertex(int chainId, int edgeOffset) {
       Preconditions.checkElementIndex(edgeOffset, 2);
       return get(chainId);
+    }
+
+    @Override
+    public void getChainPosition(int edgeId, ChainPosition result) {
+      // Each edge is in its own chain.
+      Preconditions.checkElementIndex(edgeId, numEdges());
+      result.set(edgeId, 0);
     }
 
     @Override

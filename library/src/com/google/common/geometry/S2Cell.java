@@ -118,7 +118,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
     return level == S2CellId.MAX_LEVEL;
   }
 
-  /** As {@link #getVertexRaw(int)}, except the point is normalized to unit length. */
+  /**
+   * As {@link #getVertexRaw(int)}, except the point is normalized to unit length. For convenience,
+   * the argument is reduced modulo 4 to the range [0..3].
+   */
   public S2Point getVertex(int k) {
     return getVertexRaw(k).normalize();
   }
@@ -126,9 +129,10 @@ public final strictfp class S2Cell implements S2Region, Serializable {
   /**
    * Returns the k<sup>th</sup> vertex of the cell (k = 0,1,2,3). Vertices are returned in CCW order
    * (lower left, lower right, upper right, upper left in the UV plane). The points are not
-   * necessarily unit length.
+   * necessarily unit length. For convenience, the argument is reduced modulo 4 to the range [0..3].
    */
   public S2Point getVertexRaw(int k) {
+    k &= 3;
     // Vertices are returned in the order SW, SE, NE, NW.
     return S2Projections.faceUvToXyz(
         face, ((k >> 1) ^ (k & 1)) == 0 ? uMin : uMax, (k >> 1) == 0 ? vMin : vMax);
@@ -141,10 +145,11 @@ public final strictfp class S2Cell implements S2Region, Serializable {
 
   /**
    * Returns the inward-facing normal of the great circle passing through the edge from vertex k to
-   * vertex k+1 (mod 4). The normals returned by getEdgeRaw are not necessarily unit length.
+   * vertex k+1 (mod 4). The normals returned by getEdgeRaw are not necessarily unit length. For
+   * convenience, the argument is reduced modulo 4 to the range [0..3].
    */
   public S2Point getEdgeRaw(int k) {
-    switch (k) {
+    switch (k & 3) {
       case 0:
         return S2Projections.getVNorm(face, vMin); // Bottom
       case 1:

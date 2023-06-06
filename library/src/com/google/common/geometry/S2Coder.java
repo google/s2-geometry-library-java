@@ -108,6 +108,8 @@ public interface S2Coder<T> extends Serializable {
       }
 
       @Override public U decode(Bytes data, Cursor cursor) throws IOException {
+        // Note: When delegation passes through an AbstractList wrapper, and the data is short,
+        // AbstractList may convert an IndexOutOfBoundsException into a NoSuchElementException.
         return decode.apply(base.decode(data, cursor));
       }
 

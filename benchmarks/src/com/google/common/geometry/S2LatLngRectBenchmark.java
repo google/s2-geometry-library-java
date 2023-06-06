@@ -87,7 +87,7 @@ public class S2LatLngRectBenchmark {
     /**
      * Measures the time to create an empty S2LatLngRect.Builder, add 8 S2LatLngs to it, first
      * converting each to an S2Point, and then build and return the resulting S2LatLngRect.
-     * Note that converting S2Latlngs to S2Points before adding them to the builder is an bad idea.
+     * Note that converting S2Latlngs to S2Points before adding them to the builder is a bad idea.
      * The addPoint(S2Point) call immediately converts them back to S2LatLngs, and these two
      * conversions make it about 8 times slower than adding S2LatLngs directly.
      */

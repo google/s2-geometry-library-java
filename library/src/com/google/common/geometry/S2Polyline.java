@@ -97,16 +97,22 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   private final S2Point[] vertices;
 
   /**
-   * Create a polyline that connects the given vertices. Empty polylines are allowed. Adjacent
-   * vertices should not be identical or antipodal. All vertices should be unit length.
+   * Create a polyline that connects the given vertices, which are copied. Empty polylines are
+   * allowed. Adjacent vertices should not be identical or antipodal. All vertices should be
+   * unit length.
    */
   @JsIgnore
   public S2Polyline(List<S2Point> vertices) {
     this(vertices.toArray(ARR_TEMPLATE));
   }
 
+  /**
+   * As {@link S2Polyline(List)}, creates a polyline that connects the given vertices, but
+   * takes ownership of the provided array of points which may not be further modified by the
+   * caller.
+   */
   @JsConstructor
-  private S2Polyline(S2Point[] vertices) {
+  S2Polyline(S2Point[] vertices) {
     // assert isValid(vertices);
     this.numVertices = vertices.length;
     this.vertices = vertices;
@@ -118,8 +124,42 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   }
 
   /**
-   * Return true if the polyline is valid having all vertices be in unit length and having no
-   * identical or antipodal adjacent vertices.
+   * Checks that the polyline is valid. If any problem is found, fills in the provided error and
+   * returns true. Otherwise returns false.
+   */
+  public boolean findValidationError(S2Error error) {
+    // All vertices must be unit length.
+    int n = vertices.length;
+    for (int i = 0; i < n; ++i) {
+      if (!S2.isUnitLength(vertices[i])) {
+        error.init(S2Error.Code.NOT_UNIT_LENGTH, "Vertex " + i + " is not unit length");
+        return true;
+      }
+    }
+
+    // Adjacent vertices must not be identical or antipodal.
+    for (int i = 1; i < n; ++i) {
+      if (vertices[i - 1].equalsPoint(vertices[i])) {
+        error.init(
+            S2Error.Code.DUPLICATE_VERTICES,
+            "Vertices " + (i - 1) + " and " + i + " are identical");
+        return true;
+      }
+
+      if (vertices[i - 1].equalsPoint(S2Point.neg(vertices[i]))) {
+        error.init(
+            S2Error.Code.ANTIPODAL_VERTICES,
+            "Vertices " + (i - 1) + " and " + i + " are antipodal");
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Return true if the polyline is valid, having all vertices unit length and having no identical
+   * or antipodal adjacent vertices.
    */
   public boolean isValid() {
     return isValid(vertices());
@@ -127,7 +167,7 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
 
   /** Return true if the given vertices form a valid polyline. */
   @JsIgnore
-  public boolean isValid(List<S2Point> vertices) {
+  public static boolean isValid(List<S2Point> vertices) {
     // All vertices must be unit length.
     int n = vertices.size();
     for (int i = 0; i < n; ++i) {
@@ -625,6 +665,12 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   }
 
   @Override
+  public void getChainPosition(int edgeId, ChainPosition result) {
+    // All the edges are in the single chain.
+    result.set(0, edgeId);
+  }
+
+  @Override
   public int dimension() {
     return 1;
   }
@@ -689,7 +735,11 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   }
 
   private static S2Polyline decodeLossless(LittleEndianInput is) throws IOException {
-    S2Point[] vertices = new S2Point[is.readInt()];
+    int length = is.readInt();
+    if (length < 0) {
+      throw new IOException("Invalid length " + length);
+    }
+    S2Point[] vertices = new S2Point[length];
     for (int i = 0; i < vertices.length; i++) {
       vertices[i] = S2Point.decode(is);
     }
@@ -698,10 +748,13 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
 
   private static S2Polyline decodeCompressed(LittleEndianInput decoder) throws IOException {
     int level = decoder.readByte();
-    if (level > S2CellId.MAX_LEVEL) {
+    if (level > S2CellId.MAX_LEVEL || level < 0) {
       throw new IOException("Invalid level " + level);
     }
     int numVertices = decoder.readVarint32();
+    if (numVertices < 0) {
+      throw new IOException("Invalid number of vertices: " + numVertices);
+    }
     return new S2Polyline(S2PointCompression.decodePointsCompressed(numVertices, level, decoder));
   }
 

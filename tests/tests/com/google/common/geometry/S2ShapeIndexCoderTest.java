@@ -85,7 +85,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
             .put(256, 327)
             .put(4096, 8813)
             .put(65536, 168291)
-            .build();
+            .buildOrThrow();
     for (int numEdges : testCases.keySet()) {
       S2ShapeIndex expected = new S2ShapeIndex();
       S2Polygon poly =

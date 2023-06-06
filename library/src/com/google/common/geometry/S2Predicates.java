@@ -23,6 +23,7 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.sqrt;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.math.BigDecimal;
 
 /**
@@ -33,9 +34,10 @@ import java.math.BigDecimal;
  *       (-1), colinear (0), or counter-clockwise (1).
  * </ul>
  */
+@SuppressWarnings("assertions")
 public final strictfp class S2Predicates {
   /** Maximum rounding error of a 64 bit double. */
-  private static final double DBL_ERR = DBL_EPSILON / 2;
+  public static final double DBL_ERR = DBL_EPSILON / 2;
 
   /**
    * Rounding error of numeric type used for computation. This is a distinct value from {@link
@@ -84,15 +86,28 @@ public final strictfp class S2Predicates {
     return Sign.sign(a, b, c, true);
   }
 
+  /**
+   * If precomputed cross-product of A and B is available, this version of sign is more efficient.
+   * Otherwise use the version above. Note that aCrossB must be computed using {@link
+   * S2Point#crossProd(S2Point)} rather than {@link S2#robustCrossProd(S2Point, S2Point)}.
+   */
+  public static int sign(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
+    int sign = Sign.triage(a, b, c, aCrossB);
+    if (sign == 0) {
+      sign = Sign.expensive(a, b, c, true);
+    }
+    return sign;
+  }
+
   /** Tests of whether three points represent a left turn (+1), right turn (-1), or neither (0). */
   public static class Sign {
     /** No instantiation. */
     private Sign() {}
 
     /**
-     * This version of Sign returns +1 if the points are definitely CCW, -1 if they are definitely
-     * CW, and 0 if two points are identical or the result is uncertain. Uncertain cases can be
-     * resolved, if desired, by {@link #expensive}.
+     * This version of Sign.triage does not require 'aCrossB'. triage() returns +1 if the points are
+     * definitely CCW, -1 if they are definitely CW, and 0 if two points are identical or the result
+     * is uncertain. Uncertain cases can be resolved, if desired, by {@link #expensive}.
      *
      * <p>The purpose of this method is to allow additional cheap tests to be done, where possible,
      * in order to avoid calling more expensive operations unnecessarily.
@@ -113,13 +128,65 @@ public final strictfp class S2Predicates {
       double det = S2Point.scalarTripleProduct(c, a, b);
 
       // Double-check borderline cases in debug mode.
-      // assert (abs(det) <= kMinAbsValue) || (abs(det) >= 100 * kMinAbsValue)
-      //    || (det * expensiveCCW(a, b, c) > 0);
+      // assert (abs(det) <= kMaxDetError) || (abs(det) >= 100 * kMaxDetError)
+      //    || (det * expensive(a, b, c, true) > 0);
 
       if (det >= kMaxDetError) {
         return 1;
       }
       if (det <= -kMaxDetError) {
+        return -1;
+      }
+      return 0;
+    }
+
+    /**
+     * This version of Sign.triage takes a precomputed 'aCrossB', which must be computed by {@link
+     * S2Point#crossProd(S2Point)} rather than {@link S2#robustCrossProd(S2Point, S2Point)}. This is
+     * faster than the version above if 'aCrossB' is already available, but the version of triage
+     * above is faster than computing aCrossB and then calling this triage().
+     *
+     * <p>As above, triage() returns +1 if the points are definitely CCW, -1 if they are definitely
+     * CW, and 0 if two points are identical or the result is uncertain. Uncertain cases can be
+     * resolved, if desired, by calling {@link #expensive(S2Point, S2Point, S2Point, boolean)}.
+     *
+     * <p>The purpose of this method is to allow additional cheap tests to be done, where possible,
+     * in order to avoid calling more expensive operations unnecessarily.
+     */
+    public static int triage(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
+      // kMaxDetError is the maximum error in computing (AxB).C where all vectors are unit length.
+      // Using standard inequalities, it can be shown that
+      //
+      //  fl(AxB) = AxB + D where |D| <= (|AxB| + (2/sqrt(3))*|A|*|B|) * e
+      //
+      // where "fl()" denotes a calculation done in floating-point arithmetic, |x| denotes either
+      // absolute value or the L2-norm as appropriate, and e = 0.5*DBL_EPSILON. Similarly,
+      //
+      //  fl(B.C) = B.C + d where |d| <= (1.5*|B.C| + 1.5*|B|*|C|) * e .
+      //
+      // Applying these bounds to the unit-length vectors A,B,C and neglecting relative error (which
+      // does not affect the sign of the result), we get
+      //
+      //  fl((AxB).C) = (AxB).C + d where |d| <= (2.5 + 2/sqrt(3)) * e
+      //
+      // which is about 3.6548 * e, or 1.8274 * DBL_EPSILON.
+      double kMaxDetError = 1.8274 * DBL_EPSILON;
+
+      // assert S2.isUnitLength(a);
+      // assert S2.isUnitLength(b);
+      // assert S2.isUnitLength(c);
+      // assert aCrossB.equalsPoint(a.crossProd(b));
+      double det = aCrossB.dotProd(c);
+
+      // Double-check borderline cases in debug mode.
+      // assert abs(det) <= kMaxDetError
+      //    || abs(det) >= 100 * kMaxDetError
+      //    || det * expensive(a, b, c, true) > 0;
+
+      if (det > kMaxDetError) {
+        return 1;
+      }
+      if (det < -kMaxDetError) {
         return -1;
       }
       return 0;
@@ -132,9 +199,9 @@ public final strictfp class S2Predicates {
      */
     public static int sign(S2Point a, S2Point b, S2Point c, boolean perturb) {
       // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-      int ccw = Sign.triage(a, b, c);
+      int ccw = triage(a, b, c);
       if (ccw == 0) {
-        ccw = Sign.expensive(a, b, c, perturb);
+        ccw = expensive(a, b, c, perturb);
       }
       return ccw;
     }
@@ -883,6 +950,174 @@ public final strictfp class S2Predicates {
       BigDecimal sin2R = r2.multiply(BigDecimal.ONE.subtract(QUARTER.multiply(r2)));
       return square(sinD).compareTo(sin2R.multiply(x.norm2()).multiply(n.norm2()));
     }
+  }
+
+  /**
+   * Given two edges AB and CD that cross a great circle defined by a normal vector M, orders the
+   * crossings of AB and CD relative to another great circle N representing a zero point.
+   *
+   * <p>This predicate can be used in any circumstance where we have an exact normal
+   * vector to order edge crossings relative to some zero point.
+   *
+   * <p>As an example, if we have edges AB and CD that cross boundary 2 of a cell:
+   *
+   * <pre>
+   *                          B     D
+   *                          •  2  •
+   *                         ┌─\───/─┐
+   *                       3 │  • •  │ 1
+   *                            A C
+   * </pre>
+   *
+   * <p>We could order them by using the normal of boundary 2 as M, and the normal of
+   * either boundary 1 or 3 as N.  If we use boundary 1 as N, then:
+   *
+   * {@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == +1}
+   *
+   * <p>Indicating that CD is closer to boundary 1 than AB is. But, if we use boundary 3 as N,
+   * then:
+   *
+   * {@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == -1}
+   *
+   * <p>Indicating that AB is closer to boundary 3 than CD is.
+   *
+   * <p>These results are consistent but one needs to bear in mind what boundary is
+   * being used as the reference.
+   *
+   * <p>Requirements</p>
+   * <ul>
+   * <li>A and B are not equal or antipodal.
+   * <li>C and D are not equal or antipodal.
+   * <li>M and N are not equal or antipodal.
+   * <li>AB crosses M (vertices have opposite dot product signs with M)
+   * <li>CD crosses M (vertices have opposite dot product signs with M)
+   * <li>A and C are on the positive side of M
+   * <li>B and D are on the negative side of M
+   * <li>Intersection of AB and N is on the positive side of N
+   * <li>Intersection of CD and N is on the positive side of N
+   * </ul>
+   *
+   * <p>Returns:
+   * <ul>
+   * <li>-1 if crossing AB is closer to N than crossing CD
+   * <li>0 if the two edges cross at exactly the same position
+   * <li>+1 if crossing AB is further from N than crossing CD
+   * </ul>
+   */
+  public static int circleEdgeIntersectionOrdering(
+      S2Point a, S2Point b,
+      S2Point c, S2Point d,
+      S2Point m, S2Point n) {
+    int ans = triageIntersectionOrdering(a, b, c, d, m, n);
+    if (ans != 0) {
+      return ans;
+    }
+
+    // We got zero, check for duplicate/reverse duplicate edges before falling back to more
+    // precision.
+    if ((a.equalsPoint(c) && b.equalsPoint(d)) || (a.equalsPoint(d) && b.equalsPoint(c))) {
+      return 0;
+    }
+
+    return exactIntersectionOrdering(big(a), big(b), big(c), big(d), big(m), big(n));
+  }
+
+  @VisibleForTesting
+  static int triageIntersectionOrdering(
+      S2Point a, S2Point b,
+      S2Point c, S2Point d,
+      S2Point m, S2Point n) {
+    assert !a.equalsPoint(b);
+    assert !a.equalsPoint(b.neg());
+    assert !c.equalsPoint(d);
+    assert !c.equalsPoint(d.neg());
+    assert !m.equalsPoint(n);
+    assert !m.equalsPoint(n.neg());
+
+    // Given an edge AB, and the normal of a great circle M, the intersection of the edge with the
+    // great circle is given by the triple product (A×B)×M.
+    //
+    // Its distance relative to the reference circle N is then proportional to the dot product with
+    // N: d0 = ((A×B)×M)•N
+    //
+    // Edge CD is similar, we want to compute d1 = ((C×D)×M)•N and compare d0 to d1. If they're
+    // further than some error from each other, we can rely on the comparison, otherwise we fall
+    // back to more exact arithmetic.
+    //
+    // ((A×B)×M)•N is a quadruple product.  We can expand this out using Lagrange's formula for a
+    // vector triple product and then distribute the dot product, which eliminates all the cross
+    // products:
+    //
+    // d0 = ((A×B)×M)•N
+    // d0 = ((M•A)B - (M•B)A)•N
+    // d0 = (M•A)(N•B) - (M•B)(N•A)
+    //
+    // Similarly:
+    //
+    // d1 = (M•C)(N•D) - (M•D)(N•C)
+    //
+    // We can compute this difference with a maximum absolute error of 32ε (see the gappa proof in
+    // s2predicates.cc).
+    //
+    // NOTE: If we want to push this error bound down as far as possible, we could use the dot
+    // product algorithm created by Ogita et al:
+    //
+    //   Accurate Sum and Dot Product, Ogita, Rump, Oishi 2005.
+    //
+    // Along with the 2x2 determinant algorithm by Kahan (which is useful for any bilinear form):
+    //
+    //   Further Analysis of Kahan's Algorithm for the Accurate Computation of 2x2 Determinants
+    //   Jeannerod, Louvet, and Muller, 2013.
+    //
+    // Both algorithms allow us to have bounded relative error, and since we're only interested in
+    // the sign of this operation, as long as the relative error is < 1 we can never get a sign
+    // flip, which would make this exact for our purposes.
+    final double kMaxError = 32 * S2.DBL_EPSILON;
+
+    double mdota = m.dotProd(a);
+    double mdotb = m.dotProd(b);
+    double mdotc = m.dotProd(c);
+    double mdotd = m.dotProd(d);
+
+    double ndota = n.dotProd(a);
+    double ndotb = n.dotProd(b);
+    double ndotc = n.dotProd(c);
+    double ndotd = n.dotProd(d);
+
+    double prodab = mdota * ndotb - mdotb * ndota;
+    double prodcd = mdotc * ndotd - mdotd * ndotc;
+
+    if (abs(prodab - prodcd) > kMaxError) {
+      return prodab < prodcd ? -1 : +1;
+    }
+    return 0;
+  }
+
+  private static int exactIntersectionOrdering(
+      BigPoint a, BigPoint b,
+      BigPoint c, BigPoint d,
+      BigPoint m, BigPoint n) {
+    assert !a.equals(b);
+    assert !a.equals(b.neg());
+    assert !c.equals(d);
+    assert !c.equals(d.neg());
+    assert !n.equals(m);
+    assert !n.equals(m.neg());
+
+    BigDecimal mdota = m.dotProd(a);
+    BigDecimal mdotb = m.dotProd(b);
+    BigDecimal mdotc = m.dotProd(c);
+    BigDecimal mdotd = m.dotProd(d);
+
+    BigDecimal ndota = n.dotProd(a);
+    BigDecimal ndotb = n.dotProd(b);
+    BigDecimal ndotc = n.dotProd(c);
+    BigDecimal ndotd = n.dotProd(d);
+
+    BigDecimal prodab = mdota.multiply(ndotb).subtract(mdotb.multiply(ndota));
+    BigDecimal prodcd = mdotc.multiply(ndotd).subtract(mdotd.multiply(ndotc));
+
+    return prodab.compareTo(prodcd);
   }
 
   /**

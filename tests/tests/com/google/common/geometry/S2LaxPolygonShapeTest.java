@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class S2LaxPolygonShapeTest extends GeometryTestCase {
@@ -245,7 +246,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     return edge;
   }
 
-  private static void checkEncodeDecode(S2LaxPolygonShape expected) throws IOException {
+  private void checkEncodeDecode(S2LaxPolygonShape expected) throws IOException {
     for (S2Coder<S2LaxPolygonShape> coder :
         Lists.newArrayList(S2LaxPolygonShape.FAST_CODER, S2LaxPolygonShape.COMPACT_CODER)) {
       ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -253,6 +254,23 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
       Bytes data = Bytes.fromByteArray(out.toByteArray());
       Cursor cursor = data.cursor();
       S2LaxPolygonShape actual = coder.decode(data, cursor);
+
+      // Test the edges in random order.
+      int numEdges = expected.numEdges();
+      List<Integer> edgeIds = new ArrayList<>(numEdges);
+      for (int i = 0; i < numEdges; i++) {
+        edgeIds.add(i);
+      }
+      Collections.shuffle(edgeIds, rand());
+
+      S2Shape.ChainPosition expectedChainPosition = new S2Shape.ChainPosition();
+      S2Shape.ChainPosition actualChainPosition = new S2Shape.ChainPosition();
+      edgeIds.forEach(edgeId -> {
+        expected.getChainPosition(edgeId, expectedChainPosition);
+        actual.getChainPosition(edgeId, actualChainPosition);
+        assertTrue(expectedChainPosition.isEqualTo(actualChainPosition));
+      });
+
       assertTrue(S2ShapeUtil.equals(expected, actual));
       assertEquals(out.size(), cursor.position);
     }

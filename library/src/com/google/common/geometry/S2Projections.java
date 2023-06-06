@@ -627,7 +627,7 @@ public strictfp enum S2Projections {
 
   /**
    * Convert an s- or t-value to the corresponding u- or v-value. This is a non-linear
-   * transformation from [-1,1] to [-1,1] that attempts to make the cell sizes more uniform.
+   * transformation from [0,1] to [-1,1] that attempts to make the cell sizes more uniform.
    */
   public abstract double stToUV(double s);
 

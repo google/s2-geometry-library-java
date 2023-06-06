@@ -55,7 +55,8 @@ public interface Projection {
   /**
    * Returns the point obtained by interpolating the given fraction of the distance along the line
    * from A to B. Almost all projections should use the default implementation of this method, which
-   * simply interpolates linearly in R2 space. Fractions < 0 or > 1 result in extrapolation instead.
+   * simply interpolates linearly in R2 space. Fractions less than 0 or greater than 1 result in
+   * extrapolation instead.
    *
    * <p>The only reason to override this method is if you want edges to be defined as something
    * other than straight lines in the 2D projected coordinate system. For example, using a

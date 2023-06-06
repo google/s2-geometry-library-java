@@ -16,9 +16,11 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2Projections.PROJ;
+import static java.lang.Math.abs;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.scalb;
+import static java.lang.Math.sqrt;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Ascii;
@@ -140,6 +142,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     initLookupCell(0, 0, 0, SWAP_MASK | INVERT_MASK, 0, SWAP_MASK | INVERT_MASK);
   }
 
+  /** The face cell ids in increasing order. */
   public static final S2CellId[] FACE_CELLS = new S2CellId[6];
 
   static {
@@ -154,8 +157,14 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     @Override public void encode(S2CellId value, OutputStream output) throws IOException {
       LittleEndianOutput.writeLong(output, value.id());
     }
-    @Override public S2CellId decode(Bytes data, Cursor cursor) {
-      return new S2CellId(data.readLittleEndianLong(cursor));
+    @Override public S2CellId decode(Bytes data, Cursor cursor) throws IOException {
+      long id;
+      try {
+        id = data.readLittleEndianLong(cursor);
+      } catch (ArrayIndexOutOfBoundsException e) {
+        throw new IOException("Failed to read id.", e);
+      }
+      return new S2CellId(id);
     }
     @Override public boolean isLazy() {
       return false;
@@ -174,9 +183,19 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
       output.write(data);
     }
     @Override public S2CellId decode(Bytes data, Cursor cursor) throws IOException {
-      byte[] bytes = new byte[data.readByte(cursor)];
-      Preconditions.checkArgument(bytes.length == data.toInputStream(cursor).read(bytes));
-      return S2CellId.fromToken(new String(bytes, CHARSET));
+      try {
+        byte length = data.readByte(cursor);
+        if (length < 0) {
+          throw new IOException("Invalid input, length " + length);
+        }
+        byte[] bytes = new byte[length];
+        if (bytes.length != data.toInputStream(cursor).read(bytes)) {
+          throw new IOException("Insufficient input.");
+        }
+        return S2CellId.fromToken(new String(bytes, CHARSET));
+      } catch (ArrayIndexOutOfBoundsException | NumberFormatException e) {
+        throw new IOException("Invalid input ", e);
+      }
     }
     @Override public boolean isLazy() {
       return false;
@@ -227,8 +246,19 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   /**
-   * Return the leaf cell containing the given point (a direction vector, not necessarily unit
-   * length).
+   * Return a leaf cell containing the given point (a direction vector, not necessarily unit
+   * length). Usually there is is exactly one such cell, but for points along the edge of a cell,
+   * any adjacent cell may be (deterministically) chosen. This is because S2CellIds are considered
+   * to be closed sets. The returned cell will always contain the given point, i.e.
+   *
+   * <pre>{@code
+   *    new S2Cell(S2CellId.fromPoint(p)).contains(p)
+   * }</pre>
+   *
+   * <p>is always true. The point "p" does not need to be normalized.
+   *
+   * <p>If instead you want every point to be contained by exactly one S2Cell, you will need to
+   * convert the S2CellIds to S2Loops, which implement point containment this way.
    */
   public static S2CellId fromPoint(S2Point p) {
     int face = S2Projections.xyzToFace(p);
@@ -274,7 +304,14 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return ijLevelToBoundUv(getI(ijo), getJ(ijo), level());
   }
 
-  /** Returns a normalized S2Point corresponding to the center of the cell. */
+  /**
+   * Returns a normalized S2Point corresponding to the center of the cell. This method returns the
+   * same result as {@link S2Cell#getCenter()}.
+   *
+   * <p>The maximum directional error in toPoint() compared to the exact mathematical result is
+   * 1.5 * DBL_EPSILON radians, and the maximum length error is 2 * DBL_EPSILON: the same as
+   * normalize().
+   */
   public S2Point toPoint() {
     return toPointRaw().normalize();
   }
@@ -382,7 +419,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /** Return true if id() represents a valid cell. */
   public boolean isValid() {
-    return face() < NUM_FACES && ((lowestOnBit() & (0x1555555555555555L)) != 0);
+    return face() < NUM_FACES && ((lowestOnBit() & 0x1555555555555555L) != 0);
   }
 
   /** Which cube face this cell belongs to, in the range 0..5. */
@@ -883,9 +920,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   /**
-   * Return the neighbors of closest vertex to this cell at the given level, by appending them to
-   * "output". Normally there are four neighbors, but the closest vertex may only have three
-   * neighbors if it is one of the 8 cube vertices.
+   * Returns the S2CellIds of the neighbors of the closest vertex to this cell at the given level,
+   * by appending them to "output". Normally there are four neighbors, but the closest vertex may
+   * only have three neighbors if it is one of the 8 cube vertices.
    *
    * <p>Requires that {@code level < this.level()}, so that we can determine which vertex is closest
    * (in particular, {@code level == MAX_LEVEL} is not allowed). Also requires that this cell is
@@ -935,15 +972,16 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   /**
-   * Append all neighbors of this cell at the given level to "output". Two cells X and Y are
-   * neighbors if their boundaries intersect but their interiors do not. In particular, two cells
-   * that intersect at a single point are neighbors.
+   * Append all neighbors of this cell at the given level, which must be at least this.level(), to
+   * "output". Two cells X and Y are neighbors if their boundaries intersect but their interiors do
+   * not. In particular, two cells that intersect at a single point are neighbors. Note that for
+   * cells adjacent to a face vertex, the same neighbor may be appended more than once. Also
+   * requires that this cell id is valid.
    *
-   * <p>Requires that {@code nbrLevel >= this.level()}. Note that for cells adjacent to a face
-   * vertex, the same neighbor may be appended more than once. Also requires that this cell id is
-   * valid.
+   * @throws IllegalArgumentException if {@code nbrLevel < this.level()}.
    */
   public void getAllNeighbors(int nbrLevel, List<S2CellId> output) {
+    Preconditions.checkArgument(nbrLevel >= this.level());
     long ijo = toIJOrientation();
 
     // Find the coordinates of the lower left-hand leaf cell. We need to normalize (i,j) to a known
@@ -1065,10 +1103,10 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     int j = 0;
     for (int k = 7; k >= 0; --k) {
       final int nbits = (k == 7) ? (MAX_LEVEL - 7 * LOOKUP_BITS) : LOOKUP_BITS;
-      bits += (((int) (id >>> (k * 2 * LOOKUP_BITS + 1)) & ((1 << (2 * nbits)) - 1))) << 2;
+      bits += ((int) (id >>> (k * 2 * LOOKUP_BITS + 1)) & ((1 << (2 * nbits)) - 1)) << 2;
       bits = LOOKUP_IJ[bits];
       i += (bits >> (LOOKUP_BITS + 2)) << (k * LOOKUP_BITS);
-      j += (((bits >> 2) & LOOKUP_MASK)) << (k * LOOKUP_BITS);
+      j += ((bits >> 2) & LOOKUP_MASK) << (k * LOOKUP_BITS);
       bits = maskBits(bits);
     }
 
@@ -1159,6 +1197,78 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     interval.set(
         S2Projections.PROJ.ijToUV(ij, cellSize),
         S2Projections.PROJ.ijToUV(ij + cellSize, cellSize));
+  }
+
+  /**
+   * This is a helper function for expandedByDistanceUV().
+   *
+   * <p>Given an edge of the form (u,v0)-(u,v1), let maxV = max(abs(v0), abs(v1)). This method
+   * returns a new u-coordinate u' such that the distance from the line u=u' to the given edge
+   * (u,v0)-(u,v1) is exactly the given distance (which is specified as the sine of the angle
+   * corresponding to the distance).
+   */
+  private static double expandEndpoint(double u, double maxV, double sinDist) {
+    // This is based on solving a spherical right triangle, similar to the calculation in
+    // S2Cap.getRectBound.
+    double sinUShift = sinDist * sqrt((1 + u * u + maxV * maxV) / (1 + u * u));
+    double cosUShift = sqrt(1 - sinUShift * sinUShift);
+    // The following is an expansion of tan(atan(u) + asin(sinUShift)).
+    return (cosUShift * u + sinUShift) / (cosUShift - sinUShift * u);
+  }
+
+  /**
+   * Expand a rectangle in (u,v)-space so that it contains all points within the given distance of
+   * the boundary, and return the smallest such rectangle. If the distance is negative, then instead
+   * shrink this rectangle so that it excludes all points within the given absolute distance of the
+   * boundary.
+   *
+   * <p>Distances are measured *on the sphere*, not in (u,v)-space. For example, you can use this
+   * method to expand the (u,v)-bound of an S2CellId so that it contains all points within 5km of
+   * the original cell. You can then test whether a point lies within the expanded bounds like this:
+   *
+   * <pre>{@code
+   * R2Rect bounds = expandedByDistance(cellId.getBoundUV(), S1Angle.fromEarthDistance(5000));
+   * R2Vector uv = S2Projections.faceXyztoUv(face, point);
+   * if (bounds.contains(uv)) {
+   *   ...
+   * }
+   * }</pre>
+   *
+   * Limitations:
+   *
+   * <ul>
+   *   <li>Because the rectangle is drawn on one of the six cube-face planes (i.e., {x,y,z} = +/-1),
+   *       it can cover at most one hemisphere. This limits the maximum amount that a rectangle can
+   *       be expanded. For example, S2CellId bounds can be expanded safely by at most 45 degrees
+   *       (about 5000 km on the Earth's surface).
+   *   <li>The implementation is not exact for negative distances. The resulting rectangle will
+   *       exclude all points within the given distance of the boundary but may be slightly smaller
+   *       than necessary.
+   * </ul>
+   */
+  public static R2Rect expandedByDistanceUV(R2Rect uv, S1Angle distance) {
+    // Expand each of the four sides of the rectangle just enough to include all points within the
+    // given distance of that side. (The rectangle may be expanded by a different amount in (u,v)-
+    // space on each side.)
+    double u0 = uv.x().lo();
+    double u1 = uv.x().hi();
+    double v0 = uv.y().lo();
+    double v1 = uv.y().hi();
+    double maxU = max(abs(u0), abs(u1));
+    double maxV = max(abs(v0), abs(v1));
+    double sinDist = distance.sin();
+
+    R1Interval xinterv = new R1Interval(expandEndpoint(u0, maxV, -sinDist),
+                                        expandEndpoint(u1, maxV, sinDist));
+    R1Interval yinterv = new R1Interval(expandEndpoint(v0, maxU, -sinDist),
+                                        expandEndpoint(v1, maxU, sinDist));
+
+    // R2Rect requires both or neither dimension be empty, so if we shrank the rectangle too much,
+    // manually collapse to a degenerate rectangle at the first corner.
+    if (xinterv.isEmpty() || yinterv.isEmpty()) {
+      return R2Rect.fromPoint(new R2Vector(u0, v0));
+    }
+    return new R2Rect(xinterv, yinterv);
   }
 
   /**

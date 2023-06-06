@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.base.Preconditions;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.PrimitiveArrays.Longs;
@@ -25,7 +24,7 @@ import java.io.OutputStream;
 
 /**
  * An encoder/decoder of {@link Longs}. Either uint64 or uint32 values are supported. Decoding is
- * on-demand, so {@link S2Coder#isLazy() is true.
+ * on-demand, so {@link S2Coder#isLazy()} is true.
  */
 public class UintVectorCoder implements S2Coder<Longs> {
   /** An instance of an {@code UintVectorCoder} which encodes/decodes {@code uint32}s. */
@@ -97,18 +96,34 @@ public class UintVectorCoder implements S2Coder<Longs> {
   @Override
   public Longs decode(Bytes data, Cursor cursor) throws IOException {
     // See encode for documentation on the encoding format.
-    long totalBytes = data.readVarint64(cursor);
+    long totalBytes;
+    int size;
+    int bytesPerWord;
+
+    try {
+      // readVarint64 throws ArrayIndexOutOfBoundsException if data is too short.
+      totalBytes = data.readVarint64(cursor);
+      if (totalBytes < 0) {
+        throw new IOException("Invalid input data, totalBytes = " + totalBytes);
+      }
+      // checkedCast throws IllegalArgumentException if int would overflow.
+      size = Ints.checkedCast(totalBytes / typeBytes);
+      bytesPerWord = Ints.checkedCast((totalBytes & (typeBytes - 1)) + 1);
+    } catch (ArrayIndexOutOfBoundsException | IllegalArgumentException e) {
+      throw new IOException("Input data invalid or too short.", e);
+    }
     long offset = cursor.position;
-    int size = Ints.checkedCast(totalBytes / typeBytes);
-    int bytesPerWord = Ints.checkedCast((totalBytes & (typeBytes - 1)) + 1);
+
     // Update the position to after these Longs. Position calculations must be 64 bit.
     cursor.position += (long) size * (long) bytesPerWord;
 
     // Check that the Longs we're going to return won't read past the end of 'data'.
-    // TODO(user): Throw IOException instead of IllegalStateException.
-    Preconditions.checkState(cursor.position <= data.length(),
-        "Decoding from 'data' with length " + data.length() + " bytes, but " + cursor.position
-            + " bytes are required.");
+    if (cursor.position > data.length()) {
+      throw new IOException(Platform.formatString(
+        "Decoding from 'data' with length %s bytes, but %s bytes are required.",
+        data.length(),
+        cursor.position));
+    }
 
     return new Longs() {
       @Override

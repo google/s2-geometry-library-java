@@ -22,6 +22,7 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -322,6 +323,51 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     return maxDist;
   }
 
+  Set<S2CellId> fromTokens(String... tokens) {
+    Set<S2CellId> set = new HashSet<>();
+    for (String token : tokens) {
+      set.add(S2CellId.fromToken(token));
+    }
+    return set;
+  }
+
+  public void testExpandSingleCell() {
+    // This test expands a single level 3 cell (token "2ac") at the corner of a face.
+    ImmutableList<S2CellId> cornerCellId =
+        ImmutableList.of(S2CellId.FACE_CELLS[1].child(1).child(1).child(1));
+
+    // Expand at level 3 and check that all seven neighbors are added to the union. There are only
+    // seven neighbors because the cell is at the cube corner. Four of the eight resulting cells are
+    // siblings, so are normalized into their parent.
+    S2CellUnion testExpand = S2CellUnion.copyFrom(cornerCellId);
+    testExpand.expand(3);
+    Set<S2CellId> expected = fromTokens("2b", "6a4", "6ac", "aac", "ab4");
+    Set<S2CellId> actual = new HashSet<>();
+    actual.addAll(testExpand.cellIds());
+    assertEquals(expected, actual);
+
+    // Expand at level 4 and check that all 11 neighbors are added.
+    testExpand = S2CellUnion.copyFrom(cornerCellId);
+    testExpand.expand(4);
+    expected = fromTokens(
+            "2a5", "2a7", "2ac", "2b1", "2b3", "2bb", "6a7", "6a9", "6ab", "aab", "aad", "ab3");
+    actual.clear();
+    actual.addAll(testExpand.cellIds());
+    assertEquals(expected, actual);
+
+    // Check that expanding a level 3 cell at level 2 does what the documentation says, first
+    // replacing the level 3 cell with its level 2 parent, and then expanding around that with its
+    // level 2 neighbors. The level-3 cell "2ac" is replaced by its level 2 parent "2b", which is
+    // then buffered with seven neighbors including "29", "2d", and "2f". Those three and "2b" are
+    // then normalized into the level 1 cell "2c".
+    testExpand = S2CellUnion.copyFrom(cornerCellId);
+    testExpand.expand(2);
+    expected = fromTokens("6b", "69", "ad", "2c", "ab");
+    actual.clear();
+    actual.addAll(testExpand.cellIds());
+    assertEquals(expected, actual);
+}
+
   public void testExpand() {
     // This test generates coverings for caps of random sizes, expands the coverings by a random
     // radius, and then make sure that the new covering covers the expanded cap. It also makes sure
@@ -395,7 +441,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     S2CellUnion cellUnion = new S2CellUnion();
     cellUnion.initFromMinMax(minId, maxId);
     List<S2CellId> cellIds = cellUnion.cellIds();
-    assertTrue(cellIds.size() > 0);
+    assertTrue(!cellIds.isEmpty());
     assertEquals(minId, cellIds.get(0).rangeMin());
     assertEquals(maxId, cellIds.get(cellIds.size() - 1).rangeMax());
     for (int i = 1; i < cellIds.size(); i++) {

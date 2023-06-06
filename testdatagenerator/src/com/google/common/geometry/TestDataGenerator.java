@@ -26,7 +26,6 @@ import static java.lang.Math.sin;
 import static java.lang.Math.sqrt;
 import static java.lang.Math.tan;
 
-import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
@@ -37,9 +36,6 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -152,6 +148,14 @@ public strictfp class TestDataGenerator {
    */
   public S2CellId getRandomCellId() {
     return getRandomCellId(random(S2CellId.MAX_LEVEL + 1));
+  }
+
+  /** Return a random cell with face, pos, and level all selected uniformly at random. */
+  public S2CellId randomCell() {
+    int face = rand.nextInt(6);
+    long pos = rand.nextLong() & S2CellId.POS_BITS;
+    int level = rand.nextInt(30);
+    return S2CellId.fromFacePosLevel(face, pos, level);
   }
 
   /** Return a uniformly distributed "double" in the range [min, max). */
@@ -309,6 +313,28 @@ public strictfp class TestDataGenerator {
   /** Returns a random point on the boundary of the given S2Cap. */
   public S2Point sampleBoundary(S2Cap cap) {
     return S2EdgeUtil.interpolateAtDistance(cap.radius().toAngle(), cap.axis(), getRandomPoint());
+  }
+
+  /**
+   * Returns a random point on the boundary of the given R2Rect. Does not sample uniformly by
+   * distance; instead will choose one of the four edges with equal probability, and then sample
+   * uniformly along the chosen edge.
+   */
+  public R2Vector sampleBoundary(R2Rect rect) {
+    double x;
+    double y;
+    if (oneIn(2)) {
+      // Pick either the bottom or the top edge for y
+      y = oneIn(2) ? rect.y().lo() : rect.y().hi();
+      // And then sample uniformly in the x dimension along the bottom or top edge.
+      x = uniform(rect.x().lo(), rect.x().hi());
+    } else {
+      // Pick either the left or right edge for x
+      x = oneIn(2) ? rect.x().lo() : rect.x().hi();
+      // and then sample uniformly in the y dimension for the left or right edge.
+      y = uniform(rect.y().lo(), rect.y().hi());
+    }
+    return new R2Vector(x, y);
   }
 
   /** Ensures the index is built for the given loop. */
@@ -510,7 +536,7 @@ public strictfp class TestDataGenerator {
    */
   public static S2ShapeIndex makeIndex(String str) {
     S2ShapeIndex index = new S2ShapeIndex();
-    List<String> strs = ImmutableList.copyOf(Splitter.on('#').split(str));
+    ImmutableList<String> strs = ImmutableList.copyOf(Splitter.on('#').split(str));
     Preconditions.checkArgument(3 == strs.size(), "Must contain two # characters: %s", str);
     List<S2Point> points = new ArrayList<>();
     for (String point : Splitter.on('|').omitEmptyStrings().split(strs.get(0).trim())) {
@@ -527,16 +553,6 @@ public strictfp class TestDataGenerator {
       index.add(makePolygon(polygon).shape());
     }
     return index;
-  }
-
-  /** Returns the result of encoding and immediately decoding the given value. */
-  @SuppressWarnings("unchecked")
-  @GwtIncompatible("ByteArrayInputStream")
-  public static <E> E encodeDecode(Serializable value) throws Exception {
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    new ObjectOutputStream(bytes).writeObject(value);
-    ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()));
-    return (E) in.readObject();
   }
 
   /**

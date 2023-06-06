@@ -36,7 +36,7 @@ import javax.annotation.Nullable;
  *
  * <p>The predefined {@code FAST} and {@code COMPACT} S2TaggedShapeCoders support fast or compact
  * encoding and decoding of all kinds of S2Shapes, respectively. Decoding of some types of S2Shapes
- * is on-demand, so {@link S2Coder#isLazy() is true.
+ * is on-demand, so {@link S2Coder#isLazy()} is true.
  */
 public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
 
@@ -127,9 +127,16 @@ public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
       // A null shape is encoded as 0 bytes.
       return null;
     }
-    int typeTag = Ints.checkedCast(data.readVarint64(cursor));
+    int typeTag;
+    try {
+      typeTag = Ints.checkedCast(data.readVarint64(cursor));
+    } catch (ArrayIndexOutOfBoundsException | IllegalArgumentException e) {
+      throw new IOException("Invalid input ", e);
+    }
     S2Coder<? extends S2Shape> coder = typeTagToCoder.get(typeTag);
-    Preconditions.checkArgument(coder != null, "No S2Coder matched type tag %s", typeTag);
+    if (coder == null) {
+      throw new IOException(Platform.formatString("No S2Coder matched type tag %s", typeTag));
+    }
     return typeTagToCoder.get(typeTag).decode(data, cursor);
   }
 

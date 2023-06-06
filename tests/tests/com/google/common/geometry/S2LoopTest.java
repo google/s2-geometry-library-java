@@ -177,6 +177,17 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(a.contains(b));
   }
 
+  public void testIsEmptyOrIsFull() {
+    assertTrue(S2Loop.empty().isEmpty());
+    assertFalse(S2Loop.empty().isFull());
+
+    assertFalse(S2Loop.full().isEmpty());
+    assertTrue(S2Loop.full().isFull());
+
+    assertFalse(TestLoops.CANDY_CANE.loop.isEmpty());
+    assertFalse(TestLoops.CANDY_CANE.loop.isFull());
+  }
+
   public void testBounds() {
     assertTrue(S2Loop.empty().getRectBound().isEmpty());
     assertTrue(S2Loop.full().getRectBound().isFull());
@@ -613,10 +624,10 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
     if (test(flags, DISJOINT)) {
       checkDisjointPair(a, b);
-    } else if (!(test(flags, (CONTAINS | CONTAINED | COVERS)))) {
+    } else if (!test(flags, (CONTAINS | CONTAINED | COVERS))) {
       checkOverlappingPair(a, b);
     }
-    if (!sharedEdge && (test(flags, (CONTAINS | CONTAINED | DISJOINT)))) {
+    if (!sharedEdge && test(flags, (CONTAINS | CONTAINED | DISJOINT))) {
       assertEquals(a.contains(b), a.containsNested(b));
     }
     // A contains the boundary of B if either A contains B, or the two loops
@@ -624,7 +635,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     // least one such edge must be reversed, and therefore is not considered to
     // be contained according to the rules of CompareBoundary).
     int comparison = 0;
-    if (test(flags, CONTAINS) || ((test(flags, COVERS) && !sharedEdge))) {
+    if (test(flags, CONTAINS) || (test(flags, COVERS) && !sharedEdge)) {
       comparison = 1;
     }
     // Similarly, A excludes the boundary of B if either A and B are disjoint,

@@ -18,7 +18,6 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2Point.ORIGIN;
 import static com.google.common.geometry.S2Predicates.sign;
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
 import static java.lang.Math.PI;
 import static java.lang.Math.pow;
 import static java.lang.Math.tan;
@@ -926,6 +925,69 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  /**
+   * Verifies that CircleEdgeIntersectionOrdering(a, b, c, d, n, m) == expected, and that the
+   * minimum required precision is "expected_prec".
+   */
+  public void testCircleEdgeIntersectionOrdering() {
+    // Two cells who's left and right edges are on the prime meridian,
+    S2Cell cell0 = new S2Cell(S2CellId.fromToken("054"));
+    S2Cell cell1 = new S2Cell(S2CellId.fromToken("1ac"));
+
+    // And then the three neighbors above them.
+    S2Cell cella = new S2Cell(S2CellId.fromToken("0fc"));
+    S2Cell cellb = new S2Cell(S2CellId.fromToken("104"));
+    S2Cell cellc = new S2Cell(S2CellId.fromToken("10c"));
+
+    // Top, left and right edges of the cell as unnormalized vectors.
+    S2Point e3 = cell1.getEdgeRaw(3);
+    S2Point e2 = cell1.getEdgeRaw(2);
+    S2Point e1 = cell1.getEdgeRaw(1);
+    S2Point c1 = cell1.getCenter();
+    S2Point cb = cellb.getCenter();
+
+    // The same edge should cross at the same spot exactly.
+    checkIntersectionOrdering(c1, cb, c1, cb, e2, e1, 0, DOUBLE);
+
+    // Simple case where the crossings aren't too close, AB should cross after CD.
+    checkIntersectionOrdering(c1, cellb.getVertex(3), c1, cellb.getVertex(2), e2, e1, +1, DOUBLE);
+
+    // Swapping the boundary we're comparing against should negate the sign.
+    checkIntersectionOrdering(c1, cellb.getVertex(3), c1, cellb.getVertex(2), e2, e3, -1, DOUBLE);
+
+    // As should swapping the edge ordering.
+    checkIntersectionOrdering(c1, cellb.getVertex(2), c1, cellb.getVertex(3), e2, e1, -1, DOUBLE);
+    checkIntersectionOrdering(c1, cellb.getVertex(2), c1, cellb.getVertex(3), e2, e3, +1, DOUBLE);
+
+    // Nearly the same edge but with one endpoint perturbed enough to >double precision.
+    S2Point yeps = new S2Point(0, S2.DBL_EPSILON, 0);
+    checkIntersectionOrdering(c1, cb.add(yeps), c1, cb, e2, e1, -1, EXACT);
+    checkIntersectionOrdering(c1, cb.sub(yeps), c1, cb, e2, e1, +1, EXACT);
+    checkIntersectionOrdering(c1, cb, c1, cb.add(yeps), e2, e1, +1, EXACT);
+    checkIntersectionOrdering(c1, cb, c1, cb.sub(yeps), e2, e1, -1, EXACT);
+  }
+
+  void checkIntersectionOrdering(
+      S2Point a, S2Point b, S2Point c, S2Point d,
+      S2Point m, S2Point n,
+      int expected, int expectedPrec) {
+    int actual = S2Predicates.circleEdgeIntersectionOrdering(a, b, c, d, m, n);
+    assertEquals(expected, actual);
+
+    // We triage in double precision and then fall back to long double and exact
+    // for 0.
+    int actualPrec = EXACT;
+    if (S2Predicates.triageIntersectionOrdering(a, b, c, d, m, n) != 0) {
+      actualPrec = DOUBLE;
+    } else {
+      // Check for duplicate/reverse duplicate edges before falling back to more precision.
+      if ((a.equalsPoint(c) && b.equalsPoint(d)) || (a.equalsPoint(d) && b.equalsPoint(c))) {
+        actualPrec = DOUBLE;
+      }
+    }
+    assertEquals(expectedPrec, actualPrec);
+  }
+
   public void testEdgeCircumcenterSignCoverage() {
     CheckCircumcenterSign x = new CheckCircumcenterSign();
     x.coverage(p(1, 0, 0), p(1, 1, 0), p(0, 0, 1), p(1, 0, 1), p(0, 1, 1), 1, DOUBLE);
@@ -1231,7 +1293,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
       p = maybeNormalize(p);
       q = maybeNormalize(q);
 
-      // The internal methods (triage, exact, etc) require that site A is closer to P and site B is
+      // The internal methods (triage, exact, etc.) require that site A is closer to P and site B is
       // closer to Q. GetVoronoiSiteExclusion has special code to handle the case where this is not
       // true. We need to duplicate that code here. Essentially, as the API requires site A to be
       // closer than site B to P, then if site A is also closer to Q then site B must be excluded.

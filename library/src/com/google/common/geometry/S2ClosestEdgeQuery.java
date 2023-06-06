@@ -27,8 +27,8 @@ import java.util.Optional;
 
 /**
  * {@link S2ClosestEdgeQuery} is a helper class for searching within an {@link S2ShapeIndex} to find
- * the closest edge(s) to a given target point, edge, s2 cell, or {@link ShapeIndex geometry
- * collection}. Closest edges are those with minimum distance from any point on that edge to any
+ * the closest edge(s) to a given target point, edge, s2 cell, or {@link S2ShapeIndex} geometry
+ * collection. Closest edges are those with minimum distance from any point on that edge to any
  * point on the target geometry.
  *
  * <p>For example, given a set of polylines, the following code efficiently finds up to the closest
@@ -601,8 +601,8 @@ public abstract class S2ClosestEdgeQuery<D extends S1Distance<D>> extends S2Best
     }
 
     /**
-     * Like {@link S2ClosestEdgeQuery#isDistanceLess()}, but also returns true if the distance to
-     * "target" is exactly equal to "limit".
+     * Like {@link #isDistanceLess(S2BestDistanceTarget, S1Distance)}, but also returns true if
+     * the distance to "target" is exactly equal to "limit".
      */
     public boolean isDistanceLessOrEqual(Target<S1ChordAngle> target, S1ChordAngle limit) {
       // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,

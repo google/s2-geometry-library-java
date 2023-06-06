@@ -39,10 +39,13 @@ public final class LittleEndianInput {
   /**
    * Reads a fixed size of bytes from the input.
    *
-   * @param size the number of bytes to read.
+   * @param size the number of bytes to read. May be zero.
    * @throws IOException if past end of input or error in underlying stream
    */
   public byte[] readBytes(final int size) throws IOException {
+    if (size < 0) {
+      throw new IOException("Attempt to read " + size + " bytes");
+    }
     byte[] result = new byte[size];
     int numRead = input.read(result);
     if (numRead < size) {

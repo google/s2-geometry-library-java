@@ -76,7 +76,7 @@ import java.util.Optional;
  * }</pre>
  *
  * <p>For the definition of Hausdorff distance and other details see
- * https://en.wikipedia.org/wiki/HausdorffDistance.
+ * https://en.wikipedia.org/wiki/Hausdorff_distance.
  */
 @CheckReturnValue
 public final class S2HausdorffDistanceQuery {

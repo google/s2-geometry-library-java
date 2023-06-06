@@ -74,7 +74,7 @@ public final class BestEdgesBenchmarkHarness {
   }
 
   /**
-   * A container for an index, an closest or furthest edge query on that index, and a set of targets
+   * A container for an index, a closest or furthest edge query on that index, and a set of targets
    * to test with.
    */
   public abstract static class BestEdgeQueryWithTargets {

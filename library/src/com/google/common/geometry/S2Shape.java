@@ -95,12 +95,71 @@ public interface S2Shape {
     }
 
     /**
+     * Returns true if this MutableEdge currently has the same endpoints as the 'other' MutableEdge.
+     * Does not override Object.equals() because MutableEdge is mutable.
+     */
+    public boolean isEqualTo(MutableEdge other) {
+      return a.equalsPoint(other.a) && b.equalsPoint(other.b);
+    }
+
+    /**
      * Called by implementations of {@link S2Shape#getEdge(int, MutableEdge)} to update the
      * endpoints of this mutable edge to the given values.
      */
     public void set(S2Point start, S2Point end) {
       this.a = start;
       this.b = end;
+    }
+
+    /** Exchanges the endpoints of this edge. */
+    public void reverse() {
+      S2Point t = a;
+      a = b;
+      b = t;
+    }
+
+    public String toDegreesString() {
+      return a.toDegreesString() + "-" + b.toDegreesString();
+    }
+
+    @Override
+    public String toString() {
+      return toDegreesString();
+    }
+  }
+
+  /**
+   * The position of an edge within a given S2Shape's edge chains, specified as a (chainId, offset)
+   * pair. Chains are numbered sequentially starting from zero, and offsets are measured from the
+   * start of each chain. ChainPosition is mutable, as it is intended to be reused.
+   */
+  @JsType
+  final class ChainPosition {
+    int chainId;
+    int offset;
+
+    /** Sets this ChainPosition's chainId and offset. */
+    public void set(int chainId, int offset) {
+      this.chainId = chainId;
+      this.offset = offset;
+    }
+
+    /** Gets this ChainPosition's chainId. */
+    public int getChainId() {
+      return chainId;
+    }
+
+    /** Gets this ChainPosition's offset (how far from the start of the chain it is, from 0). */
+    public int getOffset() {
+      return offset;
+    }
+
+    /**
+     * True if this ChainPosition has the same chainId and offset as the 'other' ChainPosition. Does
+     * not override Object.equals() because ChainPosition is mutable.
+     */
+    public boolean isEqualTo(ChainPosition other) {
+      return chainId == other.chainId && offset == other.offset;
     }
   }
 
@@ -145,6 +204,12 @@ public interface S2Shape {
    *     #getChainLength(int)} - 1
    */
   void getChainEdge(int chainId, int offset, MutableEdge result);
+
+  /**
+   * Finds the chain containing the given edge, and returns the position of that edge as a (chainId,
+   * offset) pair in {@code result}.
+   */
+  void getChainPosition(int edgeId, ChainPosition result);
 
   /**
    * Returns the start point of the edge that would be returned by {@link S2Shape#getChainEdge}, or
@@ -208,6 +273,19 @@ public interface S2Shape {
    * been simplified to a single point.
    */
   int dimension();
+
+  /**
+   * Returns true if the shape contains no points. (Note that the full polygon is represented as a
+   * chain with zero edges.)
+   */
+  default boolean isEmpty() {
+    return numEdges() == 0 && (dimension() < 2 || numChains() == 0);
+  }
+
+  /** Returns true if the shape contains all points on the sphere and has no edges. */
+  default boolean isFull() {
+    return numEdges() == 0 && dimension() == 2 && numChains() > 0;
+  }
 
   /** Returns a point referenced to, i.e. indicating containment by, this shape. */
   default ReferencePoint getReferencePoint() {

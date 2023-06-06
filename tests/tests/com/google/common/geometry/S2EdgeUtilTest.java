@@ -800,22 +800,63 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     a = a.normalize();
     b = b.normalize();
     expected = expected.normalize();
-    S2Point actual = S2EdgeUtil.interpolate(t, a, b);
 
     // We allow a bit more than the usual 1e-15 error tolerance because interpolate() uses trig
     // functions.
-    assertTrue(S2.approxEquals(expected, actual, 3e-15));
+    final double kErrorRadians = 3e-15;
+    assertApproxEquals(expected, S2EdgeUtil.interpolate(t, a, b), kErrorRadians);
+
+    // Now test the other interpolation functions.
+    S1Angle r = new S1Angle(a, b).mul(t);
+    assertLessOrEqual(
+        new S1Angle(S2EdgeUtil.getPointOnLine(a, b, r), expected).radians(), kErrorRadians);
+    if (a.dotProd(b) == 0) {  // Common in the test cases below.
+      assertLessOrEqual(
+          new S1Angle(S2EdgeUtil.getPointOnRay(a, b, r), expected).radians(), kErrorRadians);
+    }
+    if (r.radians() >= 0 && r.radians() < 0.99 * PI) {
+      S1ChordAngle rCA = S1ChordAngle.fromS1Angle(r);
+      assertLessOrEqual(
+          new S1Angle(S2EdgeUtil.getPointOnLine(a, b, rCA), expected).radians(), kErrorRadians);
+      if (a.dotProd(b) == 0) {
+        assertLessOrEqual(
+            new S1Angle(S2EdgeUtil.getPointOnRay(a, b, rCA), expected).radians(), kErrorRadians);
+      }
+    }
   }
 
   public void testInterpolate() {
-    // A zero-length edge.
+    // A zero-length edge, getting the end points with 't' == 0 or 1.
     checkInterpolate(0, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
     checkInterpolate(1, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+    checkInterpolate(0.5, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+    checkInterpolate(
+        Double.MIN_VALUE, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+
+    // Cases where A and B are the same but actually trying to interpolate between them.
+    checkInterpolate(0.5, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
+    checkInterpolate(
+        Double.MIN_VALUE, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
 
     // Start, end, and middle of a medium-length edge.
     checkInterpolate(0, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(1, 0, 0));
     checkInterpolate(1, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(0, 1, 0));
     checkInterpolate(0.5, new S2Point(1, 0, 0), new S2Point(0, 1, 0), new S2Point(1, 1, 0));
+
+    // Choose test points designed to expose floating-point errors.
+    S2Point p1 = new S2Point(0.1, 1e-30, 0.3).normalize();
+    S2Point p2 = new S2Point(-0.7, -0.55, -1e30).normalize();
+
+    // Another zero-length edge.
+    checkInterpolate(0, p1, p1, p1);
+    checkInterpolate(1, p1, p1, p1);
+    checkInterpolate(0.5, p1, p1, p1);
+    checkInterpolate(Double.MIN_VALUE, p1, p1, p1);
+
+    // Start, end, and middle of a medium-length edge.
+    checkInterpolate(0, p1, p2, p1);
+    checkInterpolate(1, p1, p2, p2);
+    checkInterpolate(0.5, p1, p2, p1.add(p2).mul(0.5));
 
     // Test that interpolation is done using distances on the sphere rather than linear distances.
     checkInterpolate(
@@ -831,6 +872,13 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     for (double f = 0.4; f > 1e-15; f *= 0.1) {
       checkInterpolate(f, a, b, S2LatLng.fromRadians(0, f * kLng).toPoint());
       checkInterpolate(1 - f, a, b, S2LatLng.fromRadians(0, (1 - f) * kLng).toPoint());
+    }
+
+    // Test that interpolation on a 180 degree edge (antipodal endpoints) yields a result with the
+    // correct distance from each endpoint.
+    for (double t = 0; t <= 1; t += 0.125) {
+      S2Point actual = S2EdgeUtil.interpolate(t, p1, p1.neg());
+      assertDoubleNear(new S1Angle(actual, p1).radians(), t * PI, 3e-15);
     }
   }
 
@@ -876,6 +924,50 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       }
       assertTrue(S2.isUnitLength(a));
     }
+  }
+
+  public void testGetPointToLeftS1Angle() {
+    S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
+    S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
+    final S1Angle kDistance = metersToAngle(10);
+
+    S2Point c = S2EdgeUtil.getPointToLeft(a, b, kDistance);
+    assertDoubleNear(new S1Angle(a, c).radians(), kDistance.radians(), 1e-15);
+    // CAB must be a right angle with C to the left of AB.
+    assertDoubleNear(S2.turnAngle(c, a, b), M_PI_2 /*radians*/, 1e-15);
+  }
+
+  public void testGetPointToLeftS1ChordAngle() {
+    S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
+    S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
+    final S1Angle kDistance = metersToAngle(10);
+
+    S2Point c = S2EdgeUtil.getPointToLeft(a, b, S1ChordAngle.fromS1Angle(kDistance));
+    assertDoubleNear(new S1Angle(a, c).radians(), kDistance.radians(), 1e-15);
+    // CAB must be a right angle with C to the left of AB.
+    assertDoubleNear(S2.turnAngle(c, a, b),  M_PI_2 /*radians*/, 1e-15);
+  }
+
+  public void testGetPointToRightS1Angle() {
+    S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
+    S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
+    final S1Angle kDistance = metersToAngle(10);
+
+    S2Point c = S2EdgeUtil.getPointToRight(a, b, kDistance);
+    assertDoubleNear(new S1Angle(a, c).radians(), kDistance.radians(), 1e-15);
+    // CAB must be a right angle with C to the right of AB.
+    assertDoubleNear(S2.turnAngle(c, a, b),  -M_PI_2 /*radians*/, 1e-15);
+  }
+
+  public void testGetPointToRightS1ChordAngle() {
+    S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
+    S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
+    final S1Angle kDistance = metersToAngle(10);
+
+    S2Point c = S2EdgeUtil.getPointToRight(a, b, S1ChordAngle.fromS1Angle(kDistance));
+    assertDoubleNear(new S1Angle(a, c).radians(), kDistance.radians(), 1e-15);
+    // CAB must be a right angle with C to the right of AB.
+    assertDoubleNear(S2.turnAngle(c, a, b), -M_PI_2 /*radians*/, 1e-15);
   }
 
   /** Used to denote which method was used to calculate an intersection. */
@@ -1182,8 +1274,8 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
   }
 
   /**
-   * Given two edges a0a1 and b0b1, check that the maximum distance between them is
-   * "distance_radians". Parameters are passed by value so that this function can normalize them.
+   * Given two edges a0,a1 and b0,b1, check that the maximum distance between them is within 1e-15
+   * of "distanceRadians". Parameters are normalized before checking them.
    */
   private static void checkEdgePairMaxDistance(
       S2Point a0, S2Point a1, S2Point b0, S2Point b1, double distanceRadians) {
@@ -1196,6 +1288,36 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertSame(maxed, S1ChordAngle.STRAIGHT);
     S1ChordAngle value = S2EdgeUtil.getEdgePairMaxDistance(a0, a1, b0, b1, S1ChordAngle.NEGATIVE);
     assertEquals(distanceRadians, value.toAngle().radians(), 1e-15);
+  }
+
+  /** Simple tests for edge pair max distances. */
+  public void testEdgePairMaxDistanceSimple() {
+    // Some test points.
+    S2Point center = ll(12, 12);
+    S2Point north = ll(13, 12);
+    S2Point south = ll(11, 12);
+    S2Point east = ll(12, 13);
+    S2Point west = ll(12, 11);
+    S2Point nw = ll(13, 11);
+    S2Point sw = ll(11, 11);
+    S2Point ss = ll(10, 12); // Further south
+
+    // Edges with a common endpoint, where the maximum distance is between the other endpoints:
+    // Straight line north-south
+    checkEdgePairMaxDistance(north, center, center, south, north.angle(south));
+    // Straight line east-west
+    checkEdgePairMaxDistance(east, center, center, west, east.angle(west));
+    // 90 degree turn north to west
+    checkEdgePairMaxDistance(north, center, center, west, north.angle(west));
+
+    // Lines that cross:
+    // 90 degree crossing at 'center'
+    checkEdgePairMaxDistance(north, south, east, west, south.angle(west));
+    // Acute angle crossing at the midpoint between "west" and "center".
+    checkEdgePairMaxDistance(north, sw, south, nw, south.angle(north));
+
+    // Lines that don't cross. Max distance is between the most distant endpoints.
+    checkEdgePairMaxDistance(north, nw, south, ss, ss.angle(nw));
   }
 
   public void testEdgePairMaxDistance() {

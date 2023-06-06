@@ -17,6 +17,7 @@ package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import com.google.common.geometry.S2Shape.ChainPosition;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import java.util.AbstractList;
 import java.util.Arrays;
@@ -169,6 +170,9 @@ interface S2ShapeAspect {
     /** Returns the chain ID of a given edge. */
     int chainId(int edgeId);
 
+    /** Provides {@link S2Shape#getChainPosition}. */
+    void getChainPosition(int edgeId, ChainPosition result);
+
     /** Returns start edge ID of a chain, or the number of edges if {@code chainId==numChains()}. */
     int edgeId(int chainId);
 
@@ -213,12 +217,28 @@ interface S2ShapeAspect {
         return 0;
       }
 
+      @Override
+      public void getChainPosition(int edgeId, ChainPosition result) {
+        Preconditions.checkElementIndex(edgeId, numEdges());
+        // All the edges are in the single chain.
+        result.set(0, edgeId);
+      }
+
       /** A simple chain of S2Point references. */
       abstract static class Array extends Simple {
         private final S2Point[] vertices;
 
+        /** Copies the provided S2Point references. */
         Array(Iterable<S2Point> vertices) {
           this.vertices = toArray(vertices);
+        }
+
+        /**
+         * Takes ownership of the provided S2Point array, which may not be further modified by the
+         * caller.
+         */
+        Array(S2Point[] vertices) {
+          this.vertices = vertices;
         }
 
         @Override public int numVertices() {
@@ -351,10 +371,18 @@ interface S2ShapeAspect {
         return chainId;
       }
 
+      @Override
+      public void getChainPosition(int edgeId, ChainPosition result) {
+        int chainId = chainId(edgeId);
+        int offset = edgeId - cumulativeEdges[chainId];
+        result.set(chainId, offset);
+      }
+
       /** An array of S2Point references for multiple chains. */
       abstract static class Array extends Multi {
         private final S2Point[] vertices;
 
+        /** This constructor copies the provided Iterables into an array. */
         Array(Iterable<? extends Iterable<S2Point>> chains) {
           super(chains);
           this.vertices = Simple.Array.toArray(Iterables.concat(chains));

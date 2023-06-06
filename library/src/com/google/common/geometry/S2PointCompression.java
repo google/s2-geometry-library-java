@@ -82,6 +82,10 @@ public final strictfp class S2PointCompression {
     encodePointsCompressed(points, level, new LittleEndianOutput(output));
   }
 
+  /**
+   * If the list of points is empty, no faces will be encoded, and no (pi, qi) coordinates, but
+   * a single Varint32 of value zero will be written for the number of off-center points.
+   */
   static void encodePointsCompressed(List<S2Point> points, int level, LittleEndianOutput encoder)
       throws IOException {
     // Convert the points to (face, pi, qi) coordinates.
@@ -120,7 +124,8 @@ public final strictfp class S2PointCompression {
         // Simultaneously, we only write as many bytes as are actually required for the given level,
         // i.e. we wish to truncate the byte representation of the long. We do this by reversing the
         // bytes of the value, then truncating the byte array representing the result to the
-        // required length.
+        // required length. Note that if level is zero, bytesRequired is zero, and nothing is
+        // written.
         int bytesRequired = (level + 7) / 8 * 2;
         byte[] littleEndianInterleavedPiQiBytes =
             Arrays.copyOf(Longs.toByteArray(Long.reverseBytes(interleavedPiQi)), bytesRequired);
@@ -167,6 +172,9 @@ public final strictfp class S2PointCompression {
   static List<S2Point> decodePointsCompressed(int numVertices, int level, LittleEndianInput decoder)
       throws IOException {
     List<S2Point> vertices = new ArrayList<>(numVertices);
+    if (level > S2CellId.MAX_LEVEL || level < 0) {
+      throw new IllegalArgumentException("Invalid S2Cell level provided: " + level);
+    }
 
     FaceRunCoder faces = new FaceRunCoder();
     faces.decode(numVertices, decoder);
@@ -182,7 +190,8 @@ public final strictfp class S2PointCompression {
         // representation, but we need big-endian for Java, so reconstruct the necessary bytes here.
         // Do this by reading in the bytes as-is, padding the end with zeros to get the full 8-byte
         // array, converting to a long (still little-endian), and finally reversing the byte
-        // representation to get big-endian.
+        // representation to get big-endian. Note that if level is zero, bytesRequired is zero, and
+        // nothing is read.
         int bytesRequired = (level + 7) / 8 * 2;
         byte[] littleEndianBytes = decoder.readBytes(bytesRequired);
         long interleavedPiQi =
@@ -208,7 +217,11 @@ public final strictfp class S2PointCompression {
       double x = decoder.readDouble();
       double y = decoder.readDouble();
       double z = decoder.readDouble();
-      vertices.set(index, new S2Point(x, y, z));
+      try {
+        vertices.set(index, new S2Point(x, y, z));
+      } catch (IndexOutOfBoundsException e) {
+        throw new IOException("Insufficient or invalid data: ", e);
+      }
     }
 
     return vertices;
@@ -255,23 +268,30 @@ public final strictfp class S2PointCompression {
       }
     }
 
+    /** Writes the list of FaceRuns to the encoder. If 'faces' is an empty list, writes nothing. */
     public void encode(LittleEndianOutput encoder) throws IOException {
       for (FaceRun run : faces) {
         // It isn't necessary to encode the number of faces left for the last run, but since this
         // would only help if there were more than 21 faces, it will be a small overall savings,
         // much smaller than the bound encoding.
-        encoder.writeVarint64(S2CellId.NUM_FACES * run.count + run.face);
+        encoder.writeVarint64(S2CellId.NUM_FACES * (long) run.count + run.face);
       }
     }
 
+    /** Reads 'vertices' FaceRuns from the decoder. If 'vertices' is zero, reads nothing. */
     public void decode(int vertices, LittleEndianInput decoder) throws IOException {
       int facesParsed = 0;
       while (facesParsed < vertices) {
         long faceAndCount = decoder.readVarint64();
-        FaceRun run =
-            new FaceRun(
-                (int) (faceAndCount % S2CellId.NUM_FACES),
-                (int) (faceAndCount / S2CellId.NUM_FACES));
+        int face = (int) (faceAndCount % S2CellId.NUM_FACES);
+        int count = (int) (faceAndCount / S2CellId.NUM_FACES);
+        if (faceAndCount < 0) {
+          throw new IOException("Invalid face: " + face + ", from faceAndCount: " + faceAndCount);
+        }
+        if (count < 0) {
+          throw new IOException("Invalid count: " + count + ", from faceAndCount: " + faceAndCount);
+        }
+        FaceRun run = new FaceRun(face, count);
         faces.add(run);
         facesParsed += run.count;
       }

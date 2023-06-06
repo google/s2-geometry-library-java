@@ -83,7 +83,10 @@ public final class S2PointIndex<D> {
    * Returns a new iterator over the cells of this index, after sorting entries by cell ID if any
    * modifications have been made since the last iterator was created.
    */
+  @CanIgnoreReturnValue
   public S2Iterator<Entry<D>> iterator() {
+    // TODO(user): Make an "applyUpdates" method public, migrate clients who are currently
+    // using iterator() for the side effect, and annotate iterator() with @CheckReturnValue.
     if (!sorted) {
       Collections.sort(entries);
       sorted = true;

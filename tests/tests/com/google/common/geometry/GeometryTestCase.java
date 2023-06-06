@@ -19,6 +19,7 @@ import static com.google.common.geometry.TestDataGenerator.makePoint;
 import static java.lang.Math.abs;
 import static java.lang.Math.min;
 import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertFalse;
 
 import com.google.common.base.Splitter;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -26,6 +27,11 @@ import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.primitives.UnsignedLong;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import junit.framework.TestCase;
 
 /** Common code for geometry tests. */
@@ -37,10 +43,21 @@ public strictfp class GeometryTestCase extends TestCase {
   public static final int MAX_ULPS = 4;
 
   /**
+   * A not very accurate value for the radius of the Earth. For testing only, matches the value
+   * in the C++ implementation S2Testing::kEarthRadiusKm.
+   */
+  public static final double APPROXIMATE_EARTH_RADIUS_KM = 6371.01;
+
+  /**
    * The TestDataGenerator contains the Random used in unit tests as well as utility methods for
    * producing test data.
    */
   protected TestDataGenerator data;
+
+  /** For convenience, provides direct access to the TestDataGenerator's Random. */
+  protected Random rand() {
+    return data.rand;
+  }
 
   /**
    * Initializes the TestDataGenerator, and in particular, the random number generator it contains.
@@ -139,7 +156,6 @@ public strictfp class GeometryTestCase extends TestCase {
     assertTrue("Expected " + x + " > " + y + " but it is not.", x.compareTo(y) > 0);
   }
 
-
   /**
    * Assert that {@code val1} and {@code val2} are within the given {@code absError} of each other.
    *
@@ -190,6 +206,11 @@ public strictfp class GeometryTestCase extends TestCase {
     assertEquals(expected, actual, 0.0);
   }
 
+  /** Checks that two doubles are exactly equal as above, but with a custom error message. */
+  public static void assertExactly(String message, double expected, double actual) {
+    assertEquals(message, expected, actual, 0.0);
+  }
+
   /**
    * Assert that the S1ChordAngle {@code actual} is exactly equal to {@code expected}.
    */
@@ -211,17 +232,35 @@ public strictfp class GeometryTestCase extends TestCase {
         "expected: " + expected + " but was: " + actual, expected.getDistance2(actual) < eps * eps);
   }
 
+  /**
+   * Checks that the distance between {@code expected} and {@code actual} is at most
+   * {@code maxErrorRadians}.
+   */
+  public static void assertApproxEquals(S2Point expected, S2Point actual, double maxErrorRadians) {
+    assertTrue(
+        "expected: " + expected + " but was: " + actual,
+        S2.approxEquals(expected, actual, maxErrorRadians));
+  }
+
   /** Assets that the actual shape {@link S2ShapeUtil#equals equals} the expected shape. */
   public static void assertShapesEqual(S2Shape expected, S2Shape actual) {
     assertTrue(S2ShapeUtil.equals(expected, actual));
   }
 
   /**
-   * As {@link #checkCovering(S2Region, S2CellUnion, boolean, S2CellId)}, but creates a default and
-   * invalid S2CellId for the last argument.
+   * Returns an S1Angle approximately equal to the given distance in meters. Use S2Earth where
+   * accuracy is important.
    */
-  void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight) {
-    checkCovering(region, covering, checkTight, new S2CellId());
+  public static S1Angle metersToAngle(double meters) {
+    return kmToAngle(0.001 * meters);
+  }
+
+  /**
+   * Returns an S1Angle approximately equal to the given distance in kilometers. Use S2Earth where
+   * accuracy is important.
+   */
+  public static S1Angle kmToAngle(double km) {
+    return S1Angle.radians(km / APPROXIMATE_EARTH_RADIUS_KM);
   }
 
   /** A helper for testing {@link S2Coder} implementations. */
@@ -233,6 +272,19 @@ public strictfp class GeometryTestCase extends TestCase {
     } catch (IOException e) {
       throw new AssertionError(e);
     }
+  }
+
+  /** A concise expression to get an S2Point from a lat,lng in degrees. */
+  protected S2Point ll(double lat, double lng) {
+    return S2LatLng.fromDegrees(lat, lng).toPoint();
+  }
+
+  /**
+   * As {@link #checkCovering(S2Region, S2CellUnion, boolean, S2CellId)}, but creates a default and
+   * invalid S2CellId for the last argument.
+   */
+  void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight) {
+    checkCovering(region, covering, checkTight, new S2CellId());
   }
 
   /**
@@ -251,15 +303,15 @@ public strictfp class GeometryTestCase extends TestCase {
     if (!region.mayIntersect(new S2Cell(id))) {
       // If region does not intersect id, then neither should the covering.
       if (checkTight) {
-        assertTrue(!covering.intersects(id));
+        assertFalse(covering.intersects(id));
       }
 
     } else if (!covering.contains(id)) {
       // The region may intersect id, but we can't assert that the covering
       // intersects id because we may discover that the region does not actually
       // intersect upon further subdivision. (MayIntersect is not exact.)
-      assertTrue(!region.contains(new S2Cell(id)));
-      assertTrue(!id.isLeaf());
+      assertFalse(region.contains(new S2Cell(id)));
+      assertFalse(id.isLeaf());
       S2CellId end = id.childEnd();
       for (S2CellId child = id.childBegin(); !child.equals(end); child = child.next()) {
         checkCovering(region, covering, checkTight, child);
@@ -341,6 +393,135 @@ public strictfp class GeometryTestCase extends TestCase {
     int chainId = 0;
     for (int length : lengths) {
       assertEquals(length, shape.getChainLength(chainId++));
+    }
+  }
+
+
+  /**
+   * Returns a set of strings that are the "toToken" representation of the cell ids in the given
+   * S2CellUnion.
+   */
+  public static HashSet<String> toTokenSet(S2CellUnion cells) {
+    HashSet<String> tokens = new HashSet<>();
+    cells.forEach(cell -> tokens.add(cell.toToken()));
+    return tokens;
+  }
+
+  /**
+   * Returns a set of strings that are the "toToken" representation of the given set of cell ids.
+   */
+  public static HashSet<String> toTokenSet(Set<S2CellId> cells) {
+    HashSet<String> tokens = new HashSet<>();
+    cells.forEach(cell -> tokens.add(cell.toToken()));
+    return tokens;
+  }
+
+  /**
+   * Returns a set of Strings that are the "toToken" representations of the cell id of every node in
+   * the given density tree.
+   */
+  public static HashSet<String> toTokenSet(S2DensityTree tree) {
+    HashSet<String> tokens = new HashSet<>();
+    tree.visitCells(
+        (S2CellId cellId, S2DensityTree.Cell node) -> {
+          tokens.add(cellId.toToken());
+          return S2DensityTree.CellVisitor.Action.ENTER_CELL;
+        });
+    return tokens;
+  }
+
+  /** Returns a String representation of the given tree. */
+  public static String toString(S2DensityTree tree) {
+    return decodedTreeToString(tree.decode());
+  }
+
+  /**
+   * Returns a multi-line string representation of a decoded S2DensityTree, using indenting to show
+   * the tree structure. Useful for debugging and tests.
+   */
+  public static String decodedTreeToString(Map<S2CellId, Long> decodedTree) {
+    StringBuilder sb = new StringBuilder();
+    dumpTree(Arrays.asList(S2CellId.FACE_CELLS), decodedTree, 0, sb);
+    return sb.toString();
+  }
+
+  /** Recursive helper for decodedTreeToString. Appends to the given StringBuilder. */
+  private static void dumpTree(
+      Iterable<S2CellId> start, Map<S2CellId, Long> decoded, int indent, StringBuilder sb) {
+    for (S2CellId id : start) {
+      if (decoded.containsKey(id)) {
+        for (int i = 0; i < indent; i++) {
+          sb.append("    ");
+        }
+        sb.append(Platform.formatString("Level %s: node[%s] %s with weight %s\n",
+                      id.level(), id.toToken(), id, decoded.get(id)));
+        dumpTree(id.children(), decoded, indent + 1, sb);
+      }
+    }
+  }
+
+  /**
+   * Like S2Shape.MutableEdge, but immutable. Overrides hashCode() and equals() so it can be used
+   * as a HashMap key. This is not very memory efficient, but is convenient in tests. Equality to
+   * a MutableEdge is also defined and works as expected.
+   */
+  static class ImmutableEdge {
+    final S2Point a;
+    final S2Point b;
+
+    public ImmutableEdge(S2Point a, S2Point b) {
+      this.a = a;
+      this.b = b;
+    }
+    /** Constructs an ImmutableEdge with the same endpoints as the given S2Shape.MutableEdge. */
+    public ImmutableEdge(MutableEdge e) {
+      this.a = e.a;
+      this.b = e.b;
+    }
+
+    /** Returns true iff 'point' is either endpoint of this edge. */
+    public boolean isEndpoint(S2Point point) {
+      return a.equalsPoint(point) || b.equalsPoint(point);
+    }
+
+    /**
+     * Returns true if this ImmutableEdge has the same endpoints as the given S2Shape.MutableEdge
+     * currently does.
+     */
+    public boolean isEqualTo(MutableEdge other) {
+      return a.equalsPoint(other.a) && b.equalsPoint(other.b);
+    }
+
+    /**
+     * Returns true if this ImmutableEdge has the same endpoints as the other ImmutableEdge.
+     */
+    public boolean isEqualTo(ImmutableEdge other) {
+      return a.equalsPoint(other.a) && b.equalsPoint(other.b);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (other instanceof ImmutableEdge) {
+        return isEqualTo((ImmutableEdge) other);
+      }
+      if (other instanceof MutableEdge) {
+        return isEqualTo((MutableEdge) other);
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      return a.hashCode() * 3 + b.hashCode();
+    }
+
+    public String toDegreesString() {
+      return a.toDegreesString() + "-" + b.toDegreesString();
+    }
+
+    @Override
+    public String toString() {
+      return toDegreesString();
     }
   }
 }

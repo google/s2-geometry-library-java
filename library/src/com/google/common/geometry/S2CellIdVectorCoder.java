@@ -161,9 +161,22 @@ class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
    * starting at the given {@code cursor#position}. {@code cursor#position} is updated to the
    * position of the first byte in {@code data} following the encoded list of S2CellIds. See {@link
    * #encode(List, OutputStream)} for documentation of the encoding format.
+   *
+   * <p>Throws IOException if the input is invalid.
    */
   @Override
   public S2CellIdVector decode(Bytes data, Cursor cursor) throws IOException {
+    try {
+      return decodeInternal(data, cursor);
+    } catch (IndexOutOfBoundsException e) {
+      throw new IOException("Insufficient or invalid input bytes: ", e);
+    }
+  }
+
+  /**
+   * As above, but may also throw IndexOutOfBoundsException if the input data is too short.
+   */
+  private S2CellIdVector decodeInternal(Bytes data, Cursor cursor) throws IOException {
     // Invert the encoding of (shiftCode, baseBytes).
     int shiftCodeBaseBytes = data.get(cursor.position++) & 0xff;
     int shiftCode = shiftCodeBaseBytes >> 3;

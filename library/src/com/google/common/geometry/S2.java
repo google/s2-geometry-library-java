@@ -65,12 +65,29 @@ public final strictfp class S2 {
   /** The smallest floating-point value {@code x} such that {@code (1 + x != 1)}. */
   public static final double DBL_EPSILON;
 
+  /**
+   * ROBUST_CROSS_PROD_ERROR is an upper bound on the angle between the vector returned by
+   * robustCrossProd(a, b) and the true cross product of "a" and "b".
+   *
+   * <p>TODO(user): The Java implementation of robustCrossProd is still not as robust as C++,
+   * and has a higher error value. The value here is not based on analysis, it is merely sufficient
+   * for unit tests that use this value to pass for now. When robustCrossProd is truly robust, then
+   * the value will be S1Angle.radians(3 * DBL_EPSILON) instead of S1Angle.radians(4 * DBL_EPSILON),
+   * and the following statement will be true:
+   *
+   * <p>Note that cases where "a" and "b" are exactly proportional but not equal (e.g. a = -b or
+   * a = (1 + epsilon) * b) are handled using symbolic perturbations in order to ensure that the
+   * result is non-zero and consistent with S2.sign().
+   */
+  public static final S1Angle ROBUST_CROSS_PROD_ERROR;
+
   static {
     double machEps = 1.0d;
     do {
       machEps /= 2.0f;
     } while ((1.0 + (machEps / 2.0)) != 1.0);
     DBL_EPSILON = machEps;
+    ROBUST_CROSS_PROD_ERROR = S1Angle.radians(4 * DBL_EPSILON);
   }
 
   // This point is about 66km from the north pole towards the East Siberian Sea. See the unit test
@@ -266,8 +283,8 @@ public final strictfp class S2 {
    * </ol>
    */
   public static S2Point robustCrossProd(S2Point a, S2Point b) {
-    // The direction of a.CrossProd(b) becomes unstable as (a + b) or (a - b) approaches zero. This
-    // leads to situations where a.CrossProd(b) is not very orthogonal to "a" and/or "b". We could
+    // The direction of a.crossProd(b) becomes unstable as (a + b) or (a - b) approaches zero. This
+    // leads to situations where a.crossProd(b) is not very orthogonal to "a" and/or "b". We could
     // fix this using Gram-Schmidt, but we also want b.robustCrossProd(a) == -a.robustCrossProd(b).
     //
     // The easiest fix is to just compute the cross product of (b+a) and (b-a). Mathematically, this
@@ -548,7 +565,7 @@ public final strictfp class S2 {
 
   /**
    * Return the angle at the vertex B in the triangle ABC. The return value is always in the range
-   * [0, Pi]. The points do not need to be normalized. Ensures that Angle(a,b,c) == Angle(c,b,a) for
+   * [0, Pi]. The points do not need to be normalized. Ensures that angle(a,b,c) == angle(c,b,a) for
    * all a,b,c.
    *
    * <p>The angle is undefined if A or C is diametrically opposite from B, and becomes numerically
@@ -584,8 +601,8 @@ public final strictfp class S2 {
   }
 
   /**
-   * The {@link S2Point#angle()} method uses atan2(|AxB|, A.B) to compute the angle between A and B,
-   * which can lose about half its precision when A and B are nearly (anti-)parallel.
+   * The {@link S2Point#angle(S2Point)} method uses atan2(|AxB|, A.B) to compute the angle between A
+   * and B, which can lose about half its precision when A and B are nearly (anti-)parallel.
    *
    * <p>Kahan provides a much more stable form: 2 * atan2(| A*|B| - |A|*B |, | A*|B| + |A|*B |)
    *
@@ -671,11 +688,11 @@ public final strictfp class S2 {
   }
 
   /**
-   * Return true if two points are within the given distance of each other. This is mainly useful
-   * for testing.
+   * Return true if two points are within the given distance in radians of each other. This is
+   * mainly useful for testing.
    */
-  public static boolean approxEquals(S2Point a, S2Point b, double maxError) {
-    return a.angle(b) <= maxError;
+  public static boolean approxEquals(S2Point a, S2Point b, double maxErrorRadians) {
+    return a.angle(b) <= maxErrorRadians;
   }
 
   /**

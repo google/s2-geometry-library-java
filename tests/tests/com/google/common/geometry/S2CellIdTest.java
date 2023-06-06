@@ -15,16 +15,21 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2CellId.MAX_LEVEL;
 import static com.google.common.geometry.S2Projections.PROJ;
+import static java.lang.Math.abs;
 import static java.lang.Math.min;
 import static java.lang.Math.round;
+import static junit.framework.TestCase.fail;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -397,6 +402,39 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  public void testGetAllNeighbors() {
+    // A level 3 cell at a face corner.
+    S2CellId id = FACE_CELLS[1].child(1).child(1).child(1);
+    ArrayList<S2CellId> nbrs = Lists.newArrayList();
+    HashSet<S2CellId> uniqueNbrs = new HashSet<>();
+
+    // Get all level 3 neighbors. Since 'id' is at the corner of a cube face, it only has 7 unique
+    // neighbors, but getAllNeighbors appends one of them twice.
+    id.getAllNeighbors(3, nbrs);
+    assertEquals(8, nbrs.size());
+    uniqueNbrs.addAll(nbrs);
+    assertEquals(7, uniqueNbrs.size());
+
+    // Getting level-4 neighbors of a level-3 corner cell, there are two neighbors along each edge,
+    // and three corners, for a total of 11 unique neighbors.
+    nbrs.clear();
+    uniqueNbrs.clear();
+    id.getAllNeighbors(4, nbrs);
+    assertEquals(12, nbrs.size());
+    uniqueNbrs.addAll(nbrs);
+    assertEquals(11, uniqueNbrs.size());
+
+    // Getting level 2 neighbors of a level 3 cell does not work.
+    nbrs.clear();
+    uniqueNbrs.clear();
+    try {
+      id.getAllNeighbors(2, nbrs);
+      fail("Expected exception was not thrown.");
+    } catch (IllegalArgumentException expectedException) {
+      // Test passes.
+    }
+  }
+
   public void testToLoop() {
     try {
       S2CellId.FACE_CELLS[0].child(0).toLoop(0);
@@ -464,6 +502,73 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     List<S2Coder<S2CellId>> coders = ImmutableList.of(S2CellId.CODER, S2CellId.TOKEN_CODER);
     for (S2Coder<S2CellId> coder : coders) {
       assertEquals(S2CellId.FACE_CELLS[5], roundtrip(coder, S2CellId.FACE_CELLS[5]));
+    }
+  }
+
+  public void testS2CellIdExpandedByDistanceUV() {
+    double maxDistDegrees = 10;
+    for (int iter = 0; iter < 100; ++iter) {
+      S2CellId id = data.getRandomCellId();
+      double distDegrees = data.uniform(-maxDistDegrees, maxDistDegrees);
+      checkExpandedByDistanceUV(id, S1Angle.degrees(distDegrees));
+    }
+  }
+
+  /** Returns the closest point to "uv" on the boundary of "rect". */
+  private static R2Vector projectToBoundary(R2Vector uv, R2Rect rect) {
+    double du0 = abs(uv.x - rect.x().lo());
+    double du1 = abs(uv.x - rect.x().hi());
+    double dv0 = abs(uv.y - rect.y().lo());
+    double dv1 = abs(uv.y - rect.y().hi());
+    double dmin = min(min(du0, du1), min(dv0, dv1));
+    if (du0 == dmin) {
+      return new R2Vector(rect.x().lo(), rect.y().clampPoint(uv.y));
+    }
+    if (du1 == dmin) {
+      return new R2Vector(rect.x().hi(), rect.y().clampPoint(uv.y));
+    }
+    if (dv0 == dmin) {
+      return new R2Vector(rect.x().clampPoint(uv.x), rect.y().lo());
+    }
+    assertExactly("Bug in ProjectToBoundary", dmin, dv1);
+    return new R2Vector(rect.x().clampPoint(uv.x), rect.y().hi());
+  }
+
+  private void checkExpandedByDistanceUV(S2CellId id, S1Angle distance) {
+    R2Rect bound = id.getBoundUV();
+    R2Rect expanded = S2CellId.expandedByDistanceUV(bound, distance);
+    for (int iter = 0; iter < 100; ++iter) {
+      // Choose a point on the boundary of the rectangle.
+      int face = data.uniform(6);
+      R2Vector centerUV = data.sampleBoundary(bound);
+      S2Point center = S2Projections.faceUvToXyz(face, centerUV).normalize();
+
+      // Now sample a point from a disc of radius (2 * distance).
+      S2Point p = data.samplePoint(
+          S2Cap.fromAxisAngle(center, S1Angle.radians(abs(distance.radians() * 2))));
+
+      // Find the closest point on the boundary to the sampled point.
+      R2Vector uv = S2Projections.faceXyzToUv(face, p);
+      if (uv == null) {
+        continue;
+      }
+
+      R2Vector closestUV = projectToBoundary(uv, bound);
+      S2Point closest = S2Projections.faceUvToXyz(face, closestUV).normalize();
+      S1Angle actualDist = new S1Angle(p, closest);
+
+      if (distance.greaterOrEquals(S1Angle.ZERO)) {
+        // "expanded" should contain all points in the original bound, and also all points within
+        // "distance" of the boundary.
+        if (bound.contains(uv) || actualDist.lessThan(distance)) {
+          assertTrue(expanded.contains(uv));
+        }
+      } else {
+        // "expanded" should not contain any points within "distance" of the original boundary.
+        if (actualDist.lessThan(distance.neg())) {
+          assertFalse(expanded.contains(uv));
+        }
+      }
     }
   }
 }

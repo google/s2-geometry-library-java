@@ -130,7 +130,7 @@ public class LittleEndianInputTest extends TestCase {
 
   private void expectEOF(LittleEndianInput input) {
     try {
-      input.readByte();
+      byte unused = input.readByte();
       fail();
     } catch (IOException eof) {
       // Expected.

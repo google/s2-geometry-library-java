@@ -19,6 +19,7 @@ import static com.google.common.geometry.S2Projections.PROJ;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -87,6 +88,8 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
   @JsIgnore // J2CL warning "Iterable<S2CellId> ... is not usable by JavaScript" but not clear why.
   public static S2CellUnion copyFrom(Iterable<S2CellId> cells) {
     S2CellUnion result = new S2CellUnion();
+    // Note that if 'cells' are an AbstractList over lazily decoded data, addAll may throw
+    // NoSuchElementException.
     Iterables.addAll(result.cellIds, cells);
     return result;
   }
@@ -399,6 +402,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     return result.size() > 0;
   }
 
+  /** Returns the union of two S2CellUnions. */
+  public static S2CellUnion union(S2CellUnion x, S2CellUnion y) {
+    S2CellUnion result = new S2CellUnion();
+    result.getUnion(x, y);
+    return result;
+  }
+
   /** Sets this cell union to the union of {@code x} and {@code y}. */
   public void getUnion(S2CellUnion x, S2CellUnion y) {
     // assert (x != this && y != this);
@@ -436,6 +446,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     // assert isNormalized() || !x.isNormalized();
   }
 
+  /** Returns the intersection of two S2CellUnions. */
+  public static S2CellUnion intersection(S2CellUnion x, S2CellUnion y) {
+    S2CellUnion result = new S2CellUnion();
+    result.getIntersection(x, y);
+    return result;
+  }
+
   /**
    * Initializes this cell union to the intersection of the two given cell unions. Requires: x !=
    * this and y != this.
@@ -444,7 +461,11 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    * normalized.
    */
   @JsMethod(name = "getIntersectionCellUnion")
+  @SuppressWarnings("ReferenceEquality") // Precondition check is checking reference equality.
   public void getIntersection(S2CellUnion x, S2CellUnion y) {
+    // It's fine if 'this' and 'x' or 'y' are different cell unions with the same cells, but they
+    // may not be the same object.
+    Preconditions.checkArgument(x != this && y != this);
     getIntersection(x.cellIds, y.cellIds, cellIds);
     // The output is normalized as long as both inputs are normalized.
     // assert isNormalized() || (!x.isNormalized() || !y.isNormalized());
@@ -561,9 +582,16 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
   }
 
   /**
-   * Expands the cell union such that it contains all cells of the given level that are adjacent to
-   * any cell of the original union. Two cells are defined as adjacent if their boundaries have any
-   * points in common, i.e. most cells have 8 adjacent cells (not counting the cell itself).
+   * Expands the cell union by adding a buffer of cells at "expandLevel" around the union boundary.
+   *
+   * <p>For each cell "c" in the union, we add all neighboring cells at level "expandLevel" that are
+   * adjacent to "c". Note that there can be many such cells if "c" is large compared to
+   * "expandLevel". If "c" is smaller than "expandLevel", we first add the parent of "c" at
+   * "expandLevel", and then add all the neighbors of that cell. Note that this can cause the
+   * expansion around such cells to be up to almost twice as large as expected, because the union
+   * boundary is moved outward by up to the size difference between "c" and its parent at
+   * "expandLevel", (depending on the position of "c" in that parent) *before* the buffering
+   * neighbors are added.
    *
    * <p>Note that the size of the output is exponential in "level". For example, if level == 20 and
    * the input has a cell at level 10, there will be on the order of 4000 adjacent cells in the
@@ -571,13 +599,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    * use.
    */
   @JsMethod(name = "expandAtLevel")
-  public void expand(int level) {
+  public void expand(int expandLevel) {
     ArrayList<S2CellId> output = new ArrayList<>();
-    long levelLsb = S2CellId.lowestOnBitForLevel(level);
+    long levelLsb = S2CellId.lowestOnBitForLevel(expandLevel);
     for (int i = size(); --i >= 0; ) {
       S2CellId id = cellId(i);
       if (id.lowestOnBit() < levelLsb) {
-        id = id.parent(level);
+        id = id.parent(expandLevel);
         // Optimization: skip over any cells contained by this one. This is especially important
         // when very small regions are being expanded.
         while (i > 0 && id.contains(cellId(i - 1))) {
@@ -585,7 +613,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
         }
       }
       output.add(id);
-      id.getAllNeighbors(level, output);
+      id.getAllNeighbors(expandLevel, output);
     }
     initSwap(output);
   }
@@ -754,6 +782,11 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
       value = 37 * value + id.hashCode();
     }
     return value;
+  }
+
+  @Override
+  public String toString() {
+    return cellIds.toString();
   }
 
   /**

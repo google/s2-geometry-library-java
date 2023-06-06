@@ -304,8 +304,8 @@ public class S2CellIdVectorCoderTest extends TestCase {
     PrimitiveArrays.Bytes bytes = PrimitiveArrays.Bytes.fromByteArray(overflowBytes);
     try {
       S2CellIdVector unused = S2CellIdVectorCoder.INSTANCE.decode(bytes, bytes.cursor());
-      fail("Expected IllegalStateException, didn't get it.");
-    } catch (IllegalStateException expected) {
+      fail("Expected IOException, didn't get it.");
+    } catch (IOException expected) {
       // Expect "IOException: Decoding from 'data' with length 10 bytes, but 12884901894 bytes are
       // required."
     }

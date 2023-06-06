@@ -98,7 +98,7 @@ public final strictfp class R2Vector implements Serializable {
     this.y = y;
   }
 
-  /** Returns the vector result of {@code p1 - p2}. */
+  /** Returns the vector result of {@code p1 + p2}. */
   public static R2Vector add(final R2Vector p1, final R2Vector p2) {
     return new R2Vector(p1.x + p2.x, p1.y + p2.y);
   }
@@ -118,10 +118,7 @@ public final strictfp class R2Vector implements Serializable {
     return sub(this, p);
   }
 
-  /**
-   * Returns the element-wise multiplication of p1 and p2, e.g. {@code vector [p1.x*p2.x,
-   * p1.y*p2.y]}.
-   */
+  /** Returns the element-wise multiplication of p1 and m. */
   public static R2Vector mul(final R2Vector p, double m) {
     return new R2Vector(m * p.x, m * p.y);
   }

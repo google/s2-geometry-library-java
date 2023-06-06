@@ -291,8 +291,8 @@ public final class PrimitiveArrays {
     /**
      * Decodes and returns this array as an {@code int[]}.
      *
-     * <p>Throws an {@link IllegalArgumentException} if any value in this array is < {@link
-     * Integer#MIN_VALUE} or > {@link Integer#MAX_VALUE}.
+     * <p>Throws an {@link IllegalArgumentException} if any value in this array is less than {@link
+     * Integer#MIN_VALUE} or greater than {@link Integer#MAX_VALUE}.
      */
     default int[] toIntArray() {
       int[] result = new int[length()];
@@ -319,6 +319,13 @@ public final class PrimitiveArrays {
     /** Returns the number of remaining elements ({@code limit - position}). */
     public long remaining() {
       return limit - position;
+    }
+
+    /** Sets the cursor position to 'position' and returns this cursor. */
+    public Cursor seek(long position) {
+      Preconditions.checkArgument(position >= 0 && position < limit);
+      this.position = position;
+      return this;
     }
   }
 }

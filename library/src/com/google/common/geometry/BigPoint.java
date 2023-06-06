@@ -36,6 +36,11 @@ final strictfp class BigPoint implements Comparable<BigPoint> {
     this.z = z;
   }
 
+  /** Returns the negative of this point. */
+  public BigPoint neg() {
+    return new BigPoint(x.negate(), y.negate(), z.negate());
+  }
+
   /** Returns an S2Point by rounding 'this' to double precision. */
   S2Point toS2Point() {
     return new S2Point(x.doubleValue(), y.doubleValue(), z.doubleValue());

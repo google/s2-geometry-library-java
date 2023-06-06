@@ -203,6 +203,60 @@ public strictfp class RealTest extends GeometryTestCase {
     }
   }
 
+  public void testStrictMul() {
+    double a = -2.594E-321;
+    double b = 0.9991685425907498;
+    try {
+      Real unused = Real.strictMul(a, b);
+      fail();
+    } catch (ArithmeticException e) {
+      assertEquals("twoProductError underflowed", e.getMessage());
+    }
+
+    // Check edge cases for operands being 1.0 or 0.0
+    Real isZero = Real.strictMul(a, 0);
+    assertIdentical(0.0, isZero.doubleValue());
+
+    Real isA = Real.strictMul(a, 1.0);
+    assertIdentical(isA.doubleValue(), a);
+
+    // Check commutativity.
+    try {
+      Real unused = Real.strictMul(b, a);
+      fail();
+    } catch (ArithmeticException e) {
+      assertEquals("twoProductError underflowed", e.getMessage());
+    }
+  }
+
+  public void testStrictMulScale() {
+    Real realA = new Real(-2.594E-321);
+    double scaleA = 0.9991685425907498;
+    try {
+      Real unused = realA.strictMul(scaleA);
+      fail();
+    } catch (ArithmeticException e) {
+      assertEquals("twoProductError underflowed", e.getMessage());
+    }
+
+    // Check edge cases for operands being 1.0 or 0.0
+    Real isZero = realA.strictMul(0.0);
+    assertIdentical(0.0, isZero.doubleValue());
+
+    Real isA = realA.strictMul(1.0);
+    assertIdentical(isA.doubleValue(), realA.doubleValue());
+
+    // Check commutativity
+    Real realB = new Real(0.9991685425907498);
+    double scaleB = -2.594E-321;
+    try {
+      Real unused = realB.strictMul(scaleB);
+      fail();
+    } catch (ArithmeticException e) {
+      assertEquals("twoProductError underflowed", e.getMessage());
+    }
+  }
+
   private static Real det(S2Point a, S2Point b, S2Point c) {
     Real bycz = Real.mul(b.y, c.z);
     Real bzcy = Real.mul(b.z, c.y);

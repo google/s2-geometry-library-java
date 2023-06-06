@@ -29,9 +29,14 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
- * S2EdgeQuery is used to find edges or shapes that are crossed by an edge. If you need to query
- * many edges, it is more efficient to declare a single S2EdgeQuery object and reuse it so that
- * temporary storage does not need to be reallocated each time.
+ * S2EdgeQuery is used to find edges or shapes that are crossed by one edge at a time. See also
+ * {@link S2CrossingEdgesQuery}, which finds all crossing edge pairs in an S2ShapeIndex or between
+ * two S2ShapeIndexes, and is much more efficient for bulk queries. S2EdgeQuery is faster if you
+ * have just a few edges to query and they are not in an index.
+ *
+ * <p>If you are using S2EdgeQuery for multiple edges, it is more efficient to declare a single
+ * S2EdgeQuery object and reuse it so that temporary storage does not need to be reallocated each
+ * time.
  *
  * <p>Here is an example showing how to index a set of polylines, and then find the polylines that
  * are crossed by a given edge AB:
@@ -258,8 +263,11 @@ public class S2EdgeQuery {
   }
 
   /**
-   * Convenience method for calling {@link #getCells(S2Point, R2Vector, S2Point, R2Vector,
-   * S2PaddedCell, List)}.
+   * Adds all cells to {@code cells} that might intersect the query edge from {@code a} to {@code b}
+   * and the cell {@code root}. Returns true if one or more cells were found, false otherwise.
+   *
+   * <p>This is a convenience method for calling {@link #getCells(S2Point, R2Vector, S2Point,
+   * R2Vector, S2PaddedCell, List)}.
    */
   @CanIgnoreReturnValue
   public boolean getCells(S2Point a, S2Point b, S2PaddedCell root, List<S2ShapeIndex.Cell> cells) {
@@ -272,6 +280,8 @@ public class S2EdgeQuery {
    * Adds all cells to {@code cells} that might intersect the query edge from {@code a} to {@code b}
    * and the cell {@code root}. The {@code aVector} and {@code bVector} parameters are cached R2
    * versions of the [A, B] edge projected onto the same cube face as {@code root}.
+   *
+   * <p>Returns true if one or more cells were found, false otherwise.
    */
   @VisibleForTesting
   @CanIgnoreReturnValue

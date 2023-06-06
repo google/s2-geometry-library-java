@@ -528,7 +528,6 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
    * Returns true if this is *not* a valid polygon and sets {@code error} appropriately. Otherwise,
    * returns false and leaves {@code error} unchanged.
    */
-  @CanIgnoreReturnValue
   public boolean findValidationError(S2Error error) {
     for (int i = 0; i < numLoops(); ++i) {
       // Check for loop errors that don't require building an S2ShapeIndex.
@@ -1263,7 +1262,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
    *
    * <p>If you are going to convert the resulting polygon to a lower-precision format, it is
    * necessary to increase the merge radius in order to get a valid result after rounding (i.e., no
-   * duplicate vertices, etc). For example, if you are going to convert them to {@code
+   * duplicate vertices, etc.) For example, if you are going to convert them to {@code
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
    */
@@ -1784,10 +1783,10 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   /**
    * Returns true if two polygons have the same boundary, except for vertex perturbations. Both
    * polygons must have loops with the same cyclic vertex order and the same nesting hierarchy, but
-   * the vertex locations are allowed to differ by up to {@code maxError}. Note: This method is
-   * mostly useful only for testing purposes.
+   * the vertex locations are allowed to differ by up to {@code maxErrorRadians} radians. Note:
+   * This method is mostly useful for testing purposes.
    */
-  boolean boundaryApproxEquals(S2Polygon b, double maxError) {
+  boolean boundaryApproxEquals(S2Polygon b, double maxErrorRadians) {
     if (numLoops() != b.numLoops()) {
       return false;
     }
@@ -1799,7 +1798,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       boolean success = false;
       for (int j = 0; j < numLoops(); ++j) {
         S2Loop bLoop = b.loop(j);
-        if (bLoop.depth() == aLoop.depth() && bLoop.boundaryApproxEquals(aLoop, maxError)) {
+        if (bLoop.depth() == aLoop.depth() && bLoop.boundaryApproxEquals(aLoop, maxErrorRadians)) {
           success = true;
           break;
         }
@@ -1812,12 +1811,12 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   }
 
   /**
-   * Returns true if two polygons have boundaries that are within {@code maxError} of each other
-   * along their entire lengths. More precisely, there must be a bijection between the two sets of
-   * loops such that {@code aLoop.boundaryNear(bLoop)} is true for each aLoop in {@code this} and
-   * each bLoop in {@code b}.
+   * Returns true if two polygons have boundaries that are within {@code maxErrorRadians} of each
+   * other along their entire lengths. More precisely, there must be a bijection between the two
+   * sets of loops such that {@code aLoop.boundaryNear(bLoop)} is true for each aLoop in
+   * {@code this} and each bLoop in {@code b}.
    */
-  boolean boundaryNear(S2Polygon b, double maxError) {
+  boolean boundaryNear(S2Polygon b, double maxErrorRadians) {
     if (numLoops() != b.numLoops()) {
       return false;
     }
@@ -1828,7 +1827,7 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       boolean success = false;
       for (int j = 0; j < numLoops(); ++j) {
         S2Loop bLoop = b.loop(j);
-        if (bLoop.depth() == aLoop.depth() && bLoop.boundaryNear(aLoop, maxError)) {
+        if (bLoop.depth() == aLoop.depth() && bLoop.boundaryNear(aLoop, maxErrorRadians)) {
           success = true;
           break;
         }
@@ -2373,7 +2372,9 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
     // Polygons with no loops are explicitly allowed here: a newly created polygon has zero loops
     // and such polygons encode and decode properly.
     int numLoops = decoder.readInt();
-    Preconditions.checkState(numLoops >= 0, "Can only decode polygons with up to 2^31 - 1 loops");
+    if (numLoops < 0) {
+      throw new IOException("Can only decode polygons with up to 2^31 - 1 loops. Got " + numLoops);
+    }
     for (int i = 0; i < numLoops; i++) {
       S2Loop loop = S2Loop.decode(decoder);
       result.numVertices += loop.numVertices();
@@ -2389,12 +2390,15 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
   /** Decodes from the given input stream, stopping at the first byte after the polygon. */
   private static S2Polygon decodeCompressed(LittleEndianInput decoder) throws IOException {
     int level = decoder.readByte();
-    if (level > S2CellId.MAX_LEVEL) {
-      throw new IOException("Invalid level");
+    if (level > S2CellId.MAX_LEVEL || level < 0) {
+      throw new IOException("Invalid level " + level);
     }
     // Polygons with no loops are explicitly allowed here: a newly created polygon has zero loops
     // and such polygons encode and decode properly.
     int numLoops = decoder.readVarint32();
+    if (numLoops < 0) {
+      throw new IOException("Can only decode polygons with up to 2^31 - 1 loops. Got " + numLoops);
+    }
     List<S2Loop> loops = new ArrayList<>(numLoops);
     for (int i = 0; i < numLoops; i++) {
       loops.add(S2Loop.decodeCompressed(level, decoder));
@@ -2702,6 +2706,21 @@ public final strictfp class S2Polygon implements S2Region, Comparable<S2Polygon>
       Preconditions.checkElementIndex(edgeOffset, getChainLength(chainId) + 1);
       S2Loop loop = polygon.loop(chainId);
       return loop.orientedVertex(edgeOffset);
+    }
+
+    @Override
+    public void getChainPosition(int edgeId, ChainPosition result) {
+      Preconditions.checkArgument(edgeId < numEdges());
+
+      // When the number of loops is small, linear search is faster than a more complex approach,
+      // and most often there is exactly one loop and the code below executes zero times. Anyway,
+      // due to the way S2Polygon stores its data, a faster search along the lines of S2ShapeAspect
+      // .Multi is not straightforward.
+      int chainId = 0;
+      for (; edgeId >= polygon.loop(chainId).numVertices(); ++chainId) {
+        edgeId -= polygon.loop(chainId).numVertices();
+      }
+      result.set(chainId, edgeId);
     }
 
     @Override

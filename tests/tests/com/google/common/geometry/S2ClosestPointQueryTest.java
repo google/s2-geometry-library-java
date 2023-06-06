@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
 import static java.lang.Math.ceil;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
@@ -74,9 +73,9 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
       List<Result<Integer>> x,
       List<Result<Integer>> y,
       int maxSize,
-      S1Angle maxDistance,
+      S1ChordAngle maxDistance,
       S1Angle maxError,
-      S1Angle maxPruningError,
+      S1ChordAngle maxPruningError,
       String label) {
     // Results should be sorted by distance.
     assertTrue(Ordering.natural().reverse().isOrdered(x));
@@ -119,11 +118,11 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
       List<Result<Integer>> expected,
       List<Result<Integer>> actual,
       int maxSize,
-      S1Angle maxDistance,
+      S1ChordAngle maxDistance,
       S1Angle maxError) {
-    S1Angle maxPruningError = S1Angle.radians(1e-15);
+    S1ChordAngle maxPruningError = S1ChordAngle.fromRadians(1e-15);
     checkResultSet(actual, expected, maxSize, maxDistance, maxError, maxPruningError, "Missing");
-    checkResultSet(expected, actual, maxSize, maxDistance, maxError, S1Angle.ZERO, "Extra");
+    checkResultSet(expected, actual, maxSize, maxDistance, maxError, S1ChordAngle.ZERO, "Extra");
   }
 
   /** An abstract class that adds points to an S2PointIndex for benchmarking. */
@@ -257,7 +256,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
       Target target, S2ClosestPointQuery<Integer> query) {
     List<Result<Integer>> actual = target.findClosestPoints(query);
     assertTrue(actual.size() <= query.getMaxPoints());
-    if (query.getRegion() != null && query.getMaxDistance() == S1Angle.INFINITY) {
+    if (query.getRegion() != null && query.getMaxDistance() == S1ChordAngle.INFINITY) {
       // We can predict exactly how many points should be returned.
       assertEquals(min(query.getMaxPoints(), query.index().numPoints()), actual.size());
     }
@@ -266,7 +265,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
       // They may be slightly different because result.distance() is computed using S1ChordAngle.
       // Note that the error gets considerably larger (1e-7) as the angle approaches Pi.
       S2Point p = result.entry().point();
-      S1Angle angle = result.distance().toAngle();
+      S1ChordAngle angle = result.distance();
       assertEquals(target.getDistance(p).radians(), angle.radians(), MAX_CHORD_ANGLE_ERROR);
       // Check that the point satisfies the region() criteria.
       if (query.getRegion() != null) {

@@ -121,7 +121,12 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
   @Override
   public List<S2Point> decode(Bytes data, Cursor cursor) throws IOException {
     // Peek at the format but don't advance the decoder.
-    int format = data.get(cursor.position) & ENCODING_FORMAT_MASK;
+    int format;
+    try {
+      format = data.get(cursor.position) & ENCODING_FORMAT_MASK;
+    } catch (IndexOutOfBoundsException e) {
+      throw new IOException("Insufficient input data: ", e);
+    }
 
     switch (format) {
       case FORMAT_FAST:
@@ -129,7 +134,7 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
       case FORMAT_COMPACT:
         return decodeCompact(data, cursor);
       default:
-        throw new IllegalArgumentException("Unexpected format: " + format);
+        throw new IOException("Invalid encoding format: " + format);
     }
   }
 
@@ -154,10 +159,23 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
   }
 
   /** Decodes S2Points {@link S2Coder#isLazy on demand}. */
-  private static List<S2Point> decodeFast(Bytes data, Cursor cursor) {
-    long tmpSize = data.readVarint64(cursor);
+  private static List<S2Point> decodeFast(Bytes data, Cursor cursor) throws IOException {
+    long tmpSize;
+    try {
+      tmpSize = data.readVarint64(cursor);
+    } catch (ArrayIndexOutOfBoundsException e) {
+      throw new IOException("Insufficient input data: ", e);
+    } catch (IllegalArgumentException e) {
+      throw new IOException("Invalid input data: ", e);
+    }
+
     tmpSize >>= ENCODING_FORMAT_BITS;
-    int size = Ints.checkedCast(tmpSize);
+    int size;
+    try {
+      size = Ints.checkedCast(tmpSize);
+    } catch (IllegalArgumentException e) {
+      throw new IOException("Invalid input data: ", e);
+    }
     long offset = cursor.position;
     cursor.position += (long) size * (long) SIZEOF_S2POINT;
 
@@ -449,18 +467,30 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
     //  Byte 0, bits 4-7: (lastBlockSize - 1)
     //  Byte 1, bits 0-2: baseBytes
     //  Byte 1, bits 3-7: level (0-30)
-    int header1 = data.get(cursor.position++) & 0xFF;
-    int header2 = data.get(cursor.position++) & 0xFF;
-    Preconditions.checkArgument((header1 & 7) == FORMAT_COMPACT);
+    boolean haveExceptions;
+    int lastBlockCount;
+    int baseBytes;
+    int level;
+    long base;
 
-    boolean haveExceptions = (header1 & 8) != 0;
-    int lastBlockCount = (header1 >> 4) + 1;
-    int baseBytes = header2 & 7;
-    int level = header2 >> 3;
+    try {
+      int header1 = data.get(cursor.position++) & 0xFF;
+      int header2 = data.get(cursor.position++) & 0xFF;
+      if ((header1 & 7) != FORMAT_COMPACT) {
+        throw new IOException("Invalid encoding format.");
+      }
 
-    // Decode the base value (if any).
-    long tmpBase = data.readUintWithLength(cursor, baseBytes);
-    long base = tmpBase << baseShift(level, baseBytes << 3);
+      haveExceptions = (header1 & 8) != 0;
+      lastBlockCount = (header1 >> 4) + 1;
+      baseBytes = header2 & 7;
+      level = header2 >> 3;
+
+      // Decode the base value (if any).
+      long tmpBase = data.readUintWithLength(cursor, baseBytes);
+      base = tmpBase << baseShift(level, baseBytes << 3);
+    } catch (IndexOutOfBoundsException e) {
+      throw new IOException("Insufficient or invalid input bytes: ", e);
+    }
 
     // Initialize the vector of encoded blocks.
     Longs blockOffsets = UintVectorCoder.UINT64.decode(data, cursor);
@@ -582,7 +612,6 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
 
     CellPoint(int level, FaceSiTi faceSiTi) {
       this.level = (short) level;
-      // TODO(user): UnsignedBytes is marked GwtIncompatible. Use that here when we can.
       Preconditions.checkArgument(faceSiTi.face >> Byte.SIZE == 0);
       this.face = (byte) faceSiTi.face;
       this.si = UnsignedInts.checkedCast(faceSiTi.si);

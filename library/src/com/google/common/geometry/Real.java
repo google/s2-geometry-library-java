@@ -78,12 +78,29 @@ strictfp class Real extends Number {
     return new Real(error, x);
   }
 
-  /** Returns the result of a * b, without loss of precision. */
+  /** Returns the result of a * b, with minimal loss of precision. */
   public static Real mul(double a, double b) {
     double x = a * b;
     double bhi = splitHigh(b);
     double blo = splitLow(b, bhi);
     double error = twoProductError(a, bhi, blo, x);
+    return new Real(error, x);
+  }
+
+  /**
+   * Returns the result of {@code a * b}. An error is thrown if we detect precision loss. See {@
+   * link #twoProductUnderflowCheck} for more information.
+   *
+   * @throws ArithmeticException thrown when underflow occurs.
+   */
+  public static Real strictMul(double a, double b) {
+    double x = a * b;
+    double bhi = splitHigh(b);
+    double blo = splitLow(b, bhi);
+    double error = twoProductError(a, bhi, blo, x);
+    if (twoProductUnderflowCheck(a, b, x, error)) {
+      throw new ArithmeticException("twoProductError underflowed");
+    }
     return new Real(error, x);
   }
 
@@ -194,11 +211,28 @@ strictfp class Real extends Number {
 
   /** Returns the result of this * scale, without loss of precision. */
   public Real mul(double scale) {
+    return mul(scale, false);
+  }
+
+  /**
+   * Returns the result of {@code this * scale}. An error is thrown if we detect precision loss. See
+   * {@link #twoProductUnderflowCheck} for more information.
+   *
+   * @throws ArithmeticException thrown when underflow occurs.
+   */
+  public Real strictMul(double scale) {
+    return mul(scale, true);
+  }
+
+  private Real mul(double scale, boolean isStrict) {
     double[] result = new double[values.length * 2];
     double scaleHigh = splitHigh(scale);
     double scaleLow = splitLow(scale, scaleHigh);
     double quotient = values[0] * scale;
     double error = twoProductError(values[0], scaleHigh, scaleLow, quotient);
+    if (isStrict && twoProductUnderflowCheck(values[0], scale, quotient, error)) {
+      throw new ArithmeticException("twoProductError underflowed");
+    }
     int resultIndex = 0;
     if (error != 0) {
       result[resultIndex++] = error;
@@ -206,6 +240,10 @@ strictfp class Real extends Number {
     for (int i = 1; i < values.length; i++) {
       double term = values[i] * scale;
       double termError = twoProductError(values[i], scaleHigh, scaleLow, term);
+      if (isStrict && twoProductUnderflowCheck(values[0], scale, quotient, termError)) {
+        throw new ArithmeticException("twoProductError underflowed");
+      }
+
       double sum = quotient + termError;
       error = twoSumError(quotient, termError, sum);
       if (error != 0) {
@@ -339,5 +377,29 @@ strictfp class Real extends Number {
     double err2 = err1 - (alo * bhi);
     double err3 = err2 - (ahi * blo);
     return (alo * blo) - err3;
+  }
+
+  /**
+   * Check if {@link #twoProductError} underflows. Currently, only checks one situation:
+   *
+   * <ol>
+   *   <li>If the {@code error} is 0.0 and
+   *   <li>Either {@code a == x} or {@code b == x} and
+   *   <li>Neither {@code a} nor {@code b }are equal to 1.0.
+   * </ol>
+   *
+   * <p>One example is if {@code a = -2.594E-321} and {@code b = 0.9991685425907498}. The {@code
+   * error} from {@link #twoProductError} is 0.0 even though there should be some non-zero error.
+   */
+  private static boolean twoProductUnderflowCheck(double a, double b, double x, double error) {
+    if (error == 0.0) {
+      boolean operandEqualsOutput = (a == x) || (b == x);
+      boolean operandsNotOne = (a != 1.0) && (b != 1.0);
+      boolean operandsNotZero = (a != 0.0) && (b != 0.0);
+      if (operandEqualsOutput && operandsNotOne && operandsNotZero) {
+        return true;
+      }
+    }
+    return false;
   }
 }

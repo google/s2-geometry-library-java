@@ -113,6 +113,40 @@ final strictfp class S2ShapeMeasures {
   }
 
   /**
+   * Like area(), except that this method is faster and has more error. The additional error is at
+   * most 2.22e-15 steradians per vertex, which works out to about 0.09 square meters per vertex on
+   * the Earth's surface. For example, a loop with 100 vertices has a maximum error of about 9
+   * square meters. (The actual error is typically much smaller than this.)
+   */
+  public static double approxArea(S2Shape shape) {
+    if (shape.dimension() != 2) {
+      return 0;
+    }
+    double area = 0;
+    for (int chainId = 0; chainId < shape.numChains(); ++chainId) {
+      area += approxLoopArea(shape, chainId);
+    }
+
+    // Special case to ensure that full polygons are handled correctly.
+    if (area <= 4 * PI) {
+      return area;
+    }
+    return area % (4 * PI);
+  }
+
+  /**
+   * Like loopArea(), except that this method is faster and has more error. The result is between 0
+   * and 4*Pi steradians. The maximum error is 2.22e-15 steradians per loop vertex, which works out
+   * to about 0.09 square meters per vertex on the Earth's surface.  For example, a loop with 100
+   * vertices has a maximum error of about 9 square meters. (The actual error is typically much
+   * smaller than this.) The error bound can be computed using getTurningAngleMaxError(), which
+   * returns the maximum error in steradians.
+   */
+  public static double approxLoopArea(S2Shape shape, int chainId) {
+    return 2 * PI - turningAngle(shape, chainId);
+  }
+
+  /**
    * Returns the area of the loop interior, i.e. the region on the left side of the loop. The result
    * is between 0 and 4*Pi steradians. The implementation ensures that nearly-degenerate clockwise
    * loops have areas close to zero, while nearly-degenerate counter-clockwise loops have areas
@@ -189,8 +223,8 @@ final strictfp class S2ShapeMeasures {
     // approximately 2*Pi.
     //
     // The disadvantage of the Gauss-Bonnet method is that its absolute error is about 2e-15 times
-    // the number of vertices (see GetCurvatureMaxError). So, it cannot compute the area of small
-    // loops accurately.
+    // the number of vertices (see {@link getTurningAngleMaxError(S2Shape, int)}. So, it cannot
+    // compute the area of small loops accurately.
     //
     // The second method is based on splitting the loop into triangles and summing the area of each
     // triangle. To avoid the difficulty and expense of decomposing the loop into a union of non-
@@ -207,8 +241,8 @@ final strictfp class S2ShapeMeasures {
     // estimate the maximum error in this result. If the signed area is too close to zero (i.e.,
     // zero is within the error bounds), then we double-check the sign of the result using the
     // Gauss-Bonnet method. If the two methods disagree, we return the smallest possible positive
-    // or negative area based on the result of GetCurvature(). Otherwise we return the area that we
-    // computed originally.
+    // or negative area based on the result of {@link turningAngle()}. Otherwise we return the area
+    // that we computed originally.
     //
     // The signed area should be between approximately -4*Pi and 4*Pi.
     // Normalize it to be in the range [-2*Pi, 2*Pi].

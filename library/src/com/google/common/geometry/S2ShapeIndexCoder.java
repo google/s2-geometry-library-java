@@ -112,11 +112,11 @@ public class S2ShapeIndexCoder implements S2Coder<S2ShapeIndex> {
 
     S2ShapeIndex.Options options = new S2ShapeIndex.Options();
     options.setMaxEdgesPerCell(Ints.checkedCast(maxEdgesVersion >> 2));
-    // TODO(user): Throw IOExceptions.
     try {
       return new EncodedS2ShapeIndex(options, data, cursor, shapes);
     } catch (IOException e) {
-      throw new IllegalStateException("Underlying IO error", e);
+      // TODO(user): Throw IOExceptions.
+      throw new IllegalStateException("Underlying bad data / IO error ", e);
     }
   }
 
@@ -276,6 +276,16 @@ public class S2ShapeIndexCoder implements S2Coder<S2ShapeIndex> {
       @Override
       public int numShapes() {
         return loadClippedShapesFromCache().length;
+      }
+
+      @Override
+      public int numEdges() {
+        int sum = 0;
+        S2ClippedShape[] clippedShapes = loadClippedShapesFromCache();
+        for (S2ClippedShape shape : clippedShapes) {
+          sum += shape.numEdges();
+        }
+        return sum;
       }
 
       @Override

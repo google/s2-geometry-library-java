@@ -32,6 +32,7 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.geometry.S2Shape.ChainPosition;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayInputStream;
@@ -619,13 +620,13 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
-  public void testEncodingSize_EmptyPolygon() throws IOException {
+  public void testEncodingSize_emptyPolygon() throws IOException {
     byte[] encoded = encode(new S2Polygon());
     // 1 byte for version, 1 for the level, 1 for the length.
     assertEquals(3, encoded.length);
   }
 
-  public void testEncodingSize_SnappedPolygon() throws IOException {
+  public void testEncodingSize_snappedPolygon() throws IOException {
     S2Polygon snapped = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0", S2CellId.MAX_LEVEL);
     byte[] encoded = encode(snapped);
 
@@ -1604,6 +1605,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   public void testEmptyPolygonShape() {
     S2Polygon.Shape shape = empty.shape();
+    assertTrue(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertEquals(empty, shape.polygon());
     assertTrue(shape.hasInterior());
     assertFalse(shape.containsOrigin());
@@ -1614,6 +1617,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   public void testFullPolygonShape() {
     S2Polygon.Shape shape = full.shape();
+    assertFalse(shape.isEmpty());
+    assertTrue(shape.isFull());
     assertEquals(full, shape.polygon());
     assertTrue(shape.hasInterior());
     assertTrue(shape.containsOrigin());
@@ -1626,6 +1631,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   public void testOneLoopPolygonShape() {
     S2Polygon.Shape shape = near0.shape();
+    assertFalse(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertEquals(near0, shape.polygon());
     assertTrue(shape.hasInterior());
     assertFalse(shape.containsOrigin());
@@ -1639,6 +1646,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   public void testSeveralLoopPolygonShape() {
     S2Polygon.Shape shape = near3210.shape();
+    assertFalse(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertEquals(near3210, shape.polygon());
     assertTrue(shape.hasInterior());
     assertFalse(shape.containsOrigin());
@@ -1668,6 +1677,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   private static void checkGetEdge(S2Polygon polygon, S2Shape shape) {
     MutableEdge edge = new MutableEdge();
+    ChainPosition position = new ChainPosition();
     for (int e = 0, i = 0; i < polygon.numLoops(); ++i) {
       S2Loop loop = polygon.loop(i);
       for (int j = 0; j < loop.numVertices(); ++j, ++e) {
@@ -1678,6 +1688,10 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
           shape.getChainEdge(i, j, edge);
           assertEquals(loop.orientedVertex(j), edge.a);
           assertEquals(loop.orientedVertex(j + 1), edge.b);
+          // Assert the consistency of getChainPosition with getChainEdge and getEdge.
+          shape.getChainPosition(e, position);
+          assertEquals(position.getChainId(), i);
+          assertEquals(position.getOffset(), j);
         }
       }
     }

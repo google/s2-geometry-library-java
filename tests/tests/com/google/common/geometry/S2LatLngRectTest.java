@@ -334,7 +334,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
-  public void testBoundaryIntersects_EmptyRectangle() {
+  public void testBoundaryIntersects_emptyRectangle() {
     S2LatLngRect rect = S2LatLngRect.empty();
     S2Point lo = rect.lo().toPoint();
     S2Point hi = rect.hi().toPoint();
@@ -342,7 +342,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertFalse(rect.boundaryIntersects(lo, hi));
   }
 
-  public void testBoundaryIntersects_FullRectangle() {
+  public void testBoundaryIntersects_fullRectangle() {
     S2LatLngRect rect = S2LatLngRect.full();
     S2Point lo = rect.lo().toPoint();
     S2Point hi = rect.hi().toPoint();
@@ -350,7 +350,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertFalse(rect.boundaryIntersects(lo, hi));
   }
 
-  public void testBoundaryIntersects_SphericalLune() {
+  public void testBoundaryIntersects_sphericalLune() {
     // This rectangle only has two non-degenerate sides.
     S2LatLngRect rect = rectFromDegrees(-90, 100, 90, 120);
     assertFalse(
@@ -367,7 +367,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("60:115"), S2TextFormat.makePointOrDie("80:125")));
   }
 
-  public void testBoundaryIntersects_NorthHemisphere() {
+  public void testBoundaryIntersects_northHemisphere() {
     // This rectangle only has only one non-degenerate side.
     S2LatLngRect rect = rectFromDegrees(0, -180, 90, 180);
     assertFalse(
@@ -381,7 +381,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("-10:-180"), S2TextFormat.makePointOrDie("10:-180")));
   }
 
-  public void testBoundaryIntersects_SouthHemisphere() {
+  public void testBoundaryIntersects_southHemisphere() {
     // This rectangle only has only one non-degenerate side.
     S2LatLngRect rect = rectFromDegrees(-90, -180, 0, 180);
     assertFalse(
@@ -395,7 +395,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("-10:-180"), S2TextFormat.makePointOrDie("10:-180")));
   }
 
-  public void testBoundaryIntersects_RectCrossingAntiMeridian() {
+  public void testBoundaryIntersects_rectCrossingAntiMeridian() {
     S2LatLngRect rect = rectFromDegrees(20, 170, 40, -170);
     assertTrue(rect.contains(S2TextFormat.makePointOrDie("30:180")));
 

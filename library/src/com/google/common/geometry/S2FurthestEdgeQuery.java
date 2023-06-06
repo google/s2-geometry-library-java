@@ -26,8 +26,8 @@ import java.util.Optional;
 
 /**
  * {@link S2FurthestEdgeQuery} is a helper class for searching within an {@link S2ShapeIndex} to
- * find the furthest edge(s) to a given target point, edge, S2Cell, or {@link ShapeIndex geometry
- * collection}. Furthest edges are those with maximum distance from any point on that edge to any
+ * find the furthest edge(s) to a given target point, edge, S2Cell, or {@link S2ShapeIndex} geometry
+ * collection. Furthest edges are those with maximum distance from any point on that edge to any
  * point on the target geometry.
  *
  * <p>For example, given a set of polylines, the following code efficiently finds the furthest 100
@@ -139,11 +139,9 @@ class FurthestEdgeDemo {
  *
  * <pre>{@code
  * options.setMinDistance(S2Earth.toAngle(new Length.Kilometers(5)));
- * }</pre
+ * }</pre>
  *
- * <p>
- *
- * By default, *all* edges are returned, so you should always specify either maxResults() or
+ * <p>By default, *all* edges are returned, so you should always specify either maxResults() or
  * minDistance() or both. Setting min distance may not be very restrictive, so strongly consider
  * using maxResults().There is also a findFurthestEdge() convenience method that returns only the
  * single furthest edge.
@@ -302,7 +300,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
   /**
    * Visits shapes in the index with interiors antipodal to a point of a connected component of the
    * given target. Returns true if all such shapes were visited, or false if the {@link
-   * Options#maxShapes()} limit was reached. Note that the visited shapes may either intersect or
+   * Options#maxResults()} limit was reached. Note that the visited shapes may either intersect or
    * completely contain a connected component of the target.
    *
    * <p>This is a low-level method, visible for testing. Clients should use {@link
@@ -386,10 +384,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       return this;
     }
 
-    /**
-     * Like {@link Options.Builder#setMinDistance(S1ChordAngle)}, but minDistance is provided as an
-     * S1Angle.
-     */
+    /** Like {@link #setMinDistance(S1ChordAngle)}, but minDistance is provided as an S1Angle. */
     @CanIgnoreReturnValue
     public Builder setMinDistance(S1Angle minDistance) {
       this.distanceLimit = S1ChordAngle.fromS1Angle(minDistance);
@@ -406,7 +401,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       return this;
     }
 
-    /** Like {@link setInclusiveMinDistance(S1ChordAngle)} but takes an S1Angle for convenience. */
+    /** Like {@link #setInclusiveMinDistance(S1ChordAngle)} but takes an S1Angle for convenience. */
     @CanIgnoreReturnValue
     public Builder setInclusiveMinDistance(S1Angle minDistance) {
       setInclusiveMinDistance(S1ChordAngle.fromS1Angle(minDistance));

@@ -26,7 +26,7 @@ import com.google.common.geometry.R2Rect.Axis;
  */
 public class R2RectTest extends GeometryTestCase {
   /**
-   * Tests all of the interval operations on the given pair of intervals.
+   * Tests all of the interval operations on the given pair of rectangles.
    *
    * @param x The first rectangle to test.
    * @param y The second rectangle to test.

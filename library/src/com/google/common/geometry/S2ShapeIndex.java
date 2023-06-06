@@ -23,6 +23,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.geometry.S2Shape.MutableEdge;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.ArrayList;
@@ -239,7 +240,10 @@ public strictfp class S2ShapeIndex implements Serializable {
    * Returns a new iterator over the cells of this index, positioned at the first cell in the index,
    * after initializing any pending updates.
    */
+  @CanIgnoreReturnValue
   public S2Iterator<Cell> iterator() {
+    // TODO(user): Make applyUpdates public, migrate clients who are currently using
+    // iterator() for the side effect, and annotate iterator() with @CheckReturnValue.
     applyUpdates();
     return S2Iterator.create(cells);
   }
@@ -259,7 +263,6 @@ public strictfp class S2ShapeIndex implements Serializable {
    *
    * <p>This operation is thread safe, guarded by 'this'.
    */
-  @VisibleForTesting
   void applyUpdates() {
     // The most common case is that the index is already fresh. So just return in that case without
     // taking a lock.
@@ -1041,6 +1044,9 @@ public strictfp class S2ShapeIndex implements Serializable {
     /** Returns the number of clipped shapes in this cell. */
     public abstract int numShapes();
 
+    /** Returns the number of clipped edges in this cell (shape edges that intersect the cell). */
+    public abstract int numEdges();
+
     /**
      * Returns the clipped shape at the given index.
      *
@@ -1083,6 +1089,11 @@ public strictfp class S2ShapeIndex implements Serializable {
       }
 
       @Override
+      public int numEdges() {
+        return shape1.numEdges() + shape2.numEdges();
+      }
+
+      @Override
       public S2ClippedShape clipped(int i) {
         switch (i) {
           case 0:
@@ -1110,6 +1121,15 @@ public strictfp class S2ShapeIndex implements Serializable {
       @Override
       public int numShapes() {
         return clippedShapes.length;
+      }
+
+      @Override
+      public int numEdges() {
+        int sum = 0;
+        for (S2ClippedShape shape : clippedShapes) {
+          sum += shape.numEdges();
+        }
+        return sum;
       }
 
       @Override
@@ -1203,6 +1223,7 @@ public strictfp class S2ShapeIndex implements Serializable {
     public abstract boolean containsCenter();
 
     /** Returns the number of edges that intersect the S2CellId. */
+    @Override
     public abstract int numEdges();
 
     /**

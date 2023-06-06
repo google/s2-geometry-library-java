@@ -519,14 +519,10 @@ public final strictfp class S2Cap implements S2Region, Serializable {
     return 37 * (17 * 37 + axis.hashCode()) + radius.hashCode();
   }
 
-  // /////////////////////////////////////////////////////////////////////
-  // The following static methods are convenience functions for assertions and testing purposes
-  // only.
-
   /**
-   * Returns true if the angle between axes of this and 'other' is at most 'maxError' radians, and
+   * Returns true if the angle between axes of 'this' and 'other' is at most 'maxError' radians, and
    * the difference between the squared chord distance radii of 'this' and 'other' is also at most
-   * 'maxError'.
+   * 'maxError'. Intended for use in testing and assertions.
    */
   boolean approxEquals(S2Cap other, double maxError) {
     double r2 = radius.getLength2();
@@ -538,6 +534,11 @@ public final strictfp class S2Cap implements S2Region, Serializable {
         || (other.isFull() && r2 >= 2 - maxError);
   }
 
+  /**
+   * Returns true if the angle between axes of 'this' and 'other' is at most 1e-14 radians, (about
+   * 63 nanometers on the Earth's surface) and the difference between the squared chord distance
+   * radii of 'this' and 'other' is also at most 1e-14. Intended for use in testing and assertions.
+   */
   boolean approxEquals(S2Cap other) {
     return approxEquals(other, 1e-14);
   }
@@ -568,7 +569,12 @@ public final strictfp class S2Cap implements S2Region, Serializable {
   /** Returns a new S2Cap decoded from the given little endian input stream. */
   static S2Cap decode(LittleEndianInput is) throws IOException {
     S2Point axis = S2Point.decode(is);
-    S1ChordAngle chord = S1ChordAngle.fromLength2(is.readDouble());
+    double length2 = is.readDouble();
+    // Negative values encode an empty cap, but length2 must be a number.
+    if (Double.isNaN(length2)) {
+      throw new IOException("Invalid decoded length2: " + length2);
+    }
+    S1ChordAngle chord = S1ChordAngle.fromLength2(length2);
     return S2Cap.fromAxisChord(axis, chord);
   }
 }

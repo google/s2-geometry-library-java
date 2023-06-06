@@ -291,7 +291,9 @@ public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Se
   @JsConstructor
   private S1ChordAngle(double length2) {
     this.length2 = length2;
-    checkArgument(isValid());
+    if (!isValid()) {
+      throw new IllegalArgumentException("Invalid length2: " + length2);
+    }
   }
 
   /**

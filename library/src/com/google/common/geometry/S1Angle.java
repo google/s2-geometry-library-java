@@ -186,10 +186,12 @@ public final strictfp class S1Angle implements S1Distance<S1Angle>, Serializable
     return this.radians >= that.radians;
   }
 
+  /** Returns the larger of the angles "left" and "right", or if they're equal, "left". */
   public static S1Angle max(S1Angle left, S1Angle right) {
     return right.greaterThan(left) ? right : left;
   }
 
+  /** Returns the smaller of the angles "left" and "right", or if they're equal, "right". */
   public static S1Angle min(S1Angle left, S1Angle right) {
     return right.greaterThan(left) ? left : right;
   }
@@ -199,6 +201,12 @@ public final strictfp class S1Angle implements S1Distance<S1Angle>, Serializable
     return radians * radius;
   }
 
+  /** Returns an {@link S1Angle} whose angle is <code>abs(this)</code>. */
+  public S1Angle abs() {
+    return new S1Angle(Math.abs(radians));
+  }
+
+  /** Returns an {@link S1Angle} whose angle is <code>(-this)</code>. */
   public S1Angle neg() {
     return new S1Angle(-radians);
   }
@@ -227,23 +235,24 @@ public final strictfp class S1Angle implements S1Distance<S1Angle>, Serializable
     return new S1Angle(radians / d);
   }
 
-  /**
-   * Returns the trigonometric cosine of the angle.
-   */
+  /** Returns <code>(this.radians / other.radians)</code>. */
+  @JsIgnore
+  @CheckReturnValue
+  public double div(S1Angle other) {
+    return radians / other.radians;
+  }
+
+  /** Returns the trigonometric cosine of the angle. */
   public double cos() {
     return Math.cos(radians);
   }
 
-  /**
-   * Returns the trigonometric sine of the angle.
-   */
+  /** Returns the trigonometric sine of the angle. */
   public double sin() {
     return Math.sin(radians);
   }
 
-  /**
-   * Returns the trigonometric tangent of the angle.
-   */
+  /** Returns the trigonometric tangent of the angle. */
   public double tan() {
     return Math.tan(radians);
   }

@@ -102,14 +102,22 @@ public final class S2Edge implements Serializable, S2Shape {
 
   @Override
   public void getChainEdge(int chainId, int offset, MutableEdge result) {
+    // getChainLength validates chainId.
     Preconditions.checkElementIndex(offset, getChainLength(chainId));
     result.set(start, end);
   }
 
   @Override
   public S2Point getChainVertex(int chainId, int edgeOffset) {
-    Preconditions.checkElementIndex(edgeOffset, getChainLength(chainId));
+    Preconditions.checkElementIndex(chainId, numChains());
+    Preconditions.checkElementIndex(edgeOffset, 2); // There are two vertices.
     return edgeOffset == 0 ? start : end;
+  }
+
+  @Override
+  public void getChainPosition(int edgeId, ChainPosition result) {
+    Preconditions.checkArgument(edgeId == 0);
+    result.set(0, 0);
   }
 
   @Override

@@ -28,6 +28,7 @@ import com.google.common.collect.Sets;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
 import com.google.common.geometry.S2Error.Code;
+import com.google.common.geometry.S2Shape.ChainPosition;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2Shape.ReferencePoint;
 import com.google.common.geometry.S2ShapeIndex.Cell;
@@ -119,6 +120,12 @@ public strictfp class S2ShapeUtil {
     public void getChainEdge(int chainId, int offset, MutableEdge result) {
       Preconditions.checkElementIndex(offset, getChainLength(chainId));
       getEdge(chainId, result);
+    }
+
+    @Override
+    public void getChainPosition(int edgeId, ChainPosition result) {
+      // Each edge is its own single-element chain.
+      result.set(edgeId, 0);
     }
 
     @Override
@@ -262,7 +269,10 @@ public strictfp class S2ShapeUtil {
     return low;
   }
 
-  /** Returns the lowest index in the range {@code [low, high)} greater than a target. */
+  /**
+   * Returns the lowest index in the range {@code [low, high)} greater than a target. If every value
+   * is less than or equal to the target, returns {@code high}.
+   */
   public static int upperBound(int low, int high, IntPredicate targetIsSmaller) {
     while (low < high) {
       int middle = low + (high - low) / 2;

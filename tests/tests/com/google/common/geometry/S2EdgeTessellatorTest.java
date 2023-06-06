@@ -370,7 +370,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
   // conservative, (2) verify the optimality of the interpolation fraction "t",
   // and (3) estimate the amount of overtessellation that occurs for various
   // types of edges (e.g., short vs. long edges, edges that follow lines of
-  // latitude or longitude, etc).
+  // latitude or longitude, etc.)
   void testEdgeError(Projection projection, double t) {
     double x = 1 - 2 * t;
     double quarterPi = Math.PI / 4;

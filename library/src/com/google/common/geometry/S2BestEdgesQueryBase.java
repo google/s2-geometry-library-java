@@ -209,8 +209,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
 
   /**
    * Returns true if the given {@link DistanceCollector#distance()} has reached the best
-   * possible distance, and therefore no further calls to {@link DistanceCollector#update()} will
-   * change the value.
+   * possible distance, and therefore no further calls to update the DistanceCollector will change
+   * the value.
    */
   protected abstract boolean atBestLimit(DistanceCollector<D> distanceCollector);
 
@@ -503,8 +503,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     /**
      * maxResults specifies the maximum number of results to be returned by a query.
      *
-     * <p>maxResults must be >=1, and the default value set by implementations should normally be
-     * Integer.MAX_VALUE.
+     * <p>maxResults must be greater than or equal to 1, and the default value set by
+     * implementations should normally be Integer.MAX_VALUE.
      */
     public int maxResults() {
       return maxResults;
@@ -905,9 +905,9 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
    * entries with {@code edgeId == -1}. This indicates that some point on a connected component of
    * the target is at the best possible distance from the interior of the {@link Result#shape()}.
    *
-   * <p>If the target has s2 cells, or polygons with {@link Target#includeInteriors()}, then the
-   * results will include entries for any indexed shape edges that have the best possible distance
-   * target polygon or s2 cell interiors.
+   * <p>If the target has s2 cells, or polygons with
+   * {@link S2BestDistanceTarget#includeInteriors()}, then the results will include entries for any
+   * indexed shape edges that have the best possible distance target polygon or s2 cell interiors.
    */
   public List<Result<D>> findBestEdges(S2BestDistanceTarget<D> target) {
     // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,

@@ -28,7 +28,7 @@ import java.util.AbstractList;
 import java.util.List;
 
 /**
- * An encoder/decoder of {@link List}s. Decoding is on-demand, so {@link S2Coder#isLazy() is true.
+ * An encoder/decoder of {@link List}s. Decoding is on-demand, so {@link S2Coder#isLazy()} is true.
  */
 public class VectorCoder<T> implements S2Coder<List<T>> {
 
@@ -40,10 +40,16 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
     }
 
     @Override
-    public byte[] decode(Bytes data, Cursor cursor) {
+    public byte[] decode(Bytes data, Cursor cursor) throws IOException {
       byte[] b = new byte[Ints.checkedCast(cursor.remaining())];
-      for (int i = 0; i < b.length; i++) {
-        b[i] = data.get(cursor.position++);
+      try {
+        for (int i = 0; i < b.length; i++) {
+          b[i] = data.get(cursor.position++);
+        }
+      } catch (IndexOutOfBoundsException e) {
+        // TODO(user): Find what causes this and fix the underlying issue.
+        throw new IOException(
+            "'data' and 'cursor' are out of sync. Expected to read " + b.length + " bytes.", e);
       }
       return b;
     }

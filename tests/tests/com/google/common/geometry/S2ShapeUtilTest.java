@@ -25,6 +25,7 @@ import com.google.common.collect.Multimap;
 import com.google.common.geometry.S2Polygon.Shape;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2Shape.ReferencePoint;
+import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.geometry.S2ShapeUtil.RangeIterator;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
@@ -262,7 +263,7 @@ public class S2ShapeUtilTest extends GeometryTestCase {
     S2ShapeIndex index = new S2ShapeIndex();
     // TODO(eengle): Should be S2TextFormat.makeIndexOrDie("0:0 | 0:90 | 90:0 # #"), but j2cl fails.
     index.add(S2Point.Shape.fromList(Arrays.asList(S2Point.X_POS, S2Point.Y_POS, S2Point.Z_POS)));
-    RangeIterator<S2ShapeIndex.Cell> it = new RangeIterator<>(index.iterator());
+    RangeIterator<Cell> it = new RangeIterator<>(index.iterator());
     assertEquals(0, it.id().face());
     it.next();
     assertEquals(1, it.id().face());
@@ -279,8 +280,8 @@ public class S2ShapeUtilTest extends GeometryTestCase {
     S2ShapeIndex nonEmpty = new S2ShapeIndex();
     // TODO(eengle): Should be S2TextFormat.makeIndexOrDie("0:0 # #"), but fails j2cl.
     nonEmpty.add(S2Point.Shape.singleton(S2Point.X_POS));
-    RangeIterator<S2ShapeIndex.Cell> emptyIt = new RangeIterator<>(empty.iterator());
-    RangeIterator<S2ShapeIndex.Cell> nonEmptyIt = new RangeIterator<>(nonEmpty.iterator());
+    RangeIterator<Cell> emptyIt = new RangeIterator<>(empty.iterator());
+    RangeIterator<Cell> nonEmptyIt = new RangeIterator<>(nonEmpty.iterator());
     assertFalse(nonEmptyIt.done());
     assertTrue(emptyIt.done());
 

@@ -62,11 +62,15 @@ public final strictfp class S2LatLng implements Serializable {
       LittleEndianOutput.writeDouble(output, value.lngRadians);
     }
 
-    @Override public S2LatLng decode(Bytes data, Cursor cursor) {
-      double lat = data.readLittleEndianDouble(cursor.position);
-      double lng = data.readLittleEndianDouble(cursor.position + Doubles.BYTES);
-      cursor.position += 2 * Doubles.BYTES;
-      return S2LatLng.fromRadians(lat, lng);
+    @Override public S2LatLng decode(Bytes data, Cursor cursor) throws IOException {
+      try {
+        double lat = data.readLittleEndianDouble(cursor.position);
+        double lng = data.readLittleEndianDouble(cursor.position + Doubles.BYTES);
+        cursor.position += 2 * Doubles.BYTES;
+        return S2LatLng.fromRadians(lat, lng);
+      } catch (ArrayIndexOutOfBoundsException e) {
+        throw new IOException("Insufficient or invalid input bytes: ", e);
+      }
     }
 
     @Override public boolean isLazy() {
@@ -100,6 +104,11 @@ public final strictfp class S2LatLng implements Serializable {
   /** Returns a new S2LatLng converted from tenths of a microdegree. */
   public static S2LatLng fromE7(int latE7, int lngE7) {
     return new S2LatLng(S1Angle.e7(latE7), S1Angle.e7(lngE7));
+  }
+
+  /** Returns a new S2LatLng converted from an S2Point (not necessarily normalized). */
+  public static S2LatLng fromPoint(S2Point p) {
+    return new S2LatLng(p);
   }
 
   /**
@@ -215,8 +224,16 @@ public final strictfp class S2LatLng implements Serializable {
   }
 
   /**
-   * Convert an S2LatLng to the equivalent unit-length vector (S2Point). The S2LatLng must be
-   * normalized.
+   * Convert an S2LatLng to the equivalent unit-length vector (S2Point). Unnormalized values (see
+   * {@link normalized()}) are wrapped around the sphere as would be expected based on their
+   * definition as spherical angles. So for example the following pairs yield equivalent points
+   * (modulo numerical error):
+   * <pre>
+   *   (90.5, 10) =~ (89.5, -170)
+   *   (a, b) =~ (a + 360 * n, b)
+   * </pre>
+   * The maximum error in the result is 1.5 * DBL_EPSILON. (This does not include the error of
+   * converting degrees, E5, E6, or E7 to radians.)
    */
   public S2Point toPoint() {
     // assert isValid();

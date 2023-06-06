@@ -227,11 +227,13 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
   }
 
   /** Returns true if this polygon contains no area, i.e. has no loops. */
+  @Override
   default boolean isEmpty() {
     return numChains() == 0;
   }
 
   /** Returns true if this polygon contains all points, i.e. there are loops, but all are empty. */
+  @Override
   default boolean isFull() {
     int n = numChains();
     for (int i = 0; i < n; i++) {
@@ -317,6 +319,8 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
   static class MultiList extends ChainAspect.Multi implements S2LaxPolygonShape {
     private final List<S2Point> vertices;
 
+    // Note this will throw an IllegalArgumentException if any of the Long cumulativeEdges cannot
+    // be represented as an int.
     private MultiList(List<S2Point> vertices, Longs cumulativeEdges) {
       super(cumulativeEdges.toIntArray());
       this.vertices = vertices;
@@ -373,24 +377,38 @@ public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
 
     @Override
     public S2LaxPolygonShape decode(Bytes data, Cursor cursor) throws IOException {
-      byte version = data.get(cursor.position++);
-      if (version != CURRENT_ENCODING_VERSION) {
-        throw new IllegalArgumentException(
-            Platform.formatString(
-                "Expected encoding version %s, got %s.", CURRENT_ENCODING_VERSION, version));
+      long numChains;
+      try {
+        // Bytes.get throws IndexOutOfBoundsException if the data is short.
+        byte version = data.get(cursor.position++);
+        if (version != CURRENT_ENCODING_VERSION) {
+          throw new IOException(
+              Platform.formatString(
+                  "Expected encoding version %s, got %s.", CURRENT_ENCODING_VERSION, version));
+        }
+        // Bytes.readVarint64 throws IllegalArgumentException if the varint is malformed.
+        numChains = data.readVarint64(cursor);
+      } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
+        throw new IOException("Insufficient or invalid input bytes: ", e);
       }
 
-      long numChains = data.readVarint64(cursor);
       // Both FAST and COMPACT coders are capable of decoding any encoding format. Both decode
       // points lazily (on-demand).
       List<S2Point> vertices = S2PointVectorCoder.FAST.decode(data, cursor);
-
       if (numChains == 0) {
         return S2LaxPolygonShape.EMPTY;
       } else if (numChains == 1) {
         return new SimpleList(vertices);
       }
-      return new MultiList(vertices, UintVectorCoder.UINT32.decode(data, cursor));
+      Longs cumulativeEdges = UintVectorCoder.UINT32.decode(data, cursor);
+      if (cumulativeEdges.length() < 0) {
+        throw new IOException("Invalid cumulative edges length: " + cumulativeEdges.length());
+      }
+      try {
+        return new MultiList(vertices, cumulativeEdges);
+      } catch (IllegalArgumentException e) {
+        throw new IOException("Invalid input data: ", e);
+      }
     }
 
     @Override public boolean isLazy() {

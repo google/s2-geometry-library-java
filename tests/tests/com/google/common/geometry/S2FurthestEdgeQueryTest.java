@@ -20,10 +20,10 @@ import static com.google.common.geometry.S2Projections.PROJ;
 import static com.google.common.geometry.S2TextFormat.makeIndexOrDie;
 import static com.google.common.geometry.S2TextFormat.makePointOrDie;
 import static com.google.common.geometry.S2TextFormat.parsePointsOrDie;
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.BestEdgesTestUtils.MinOrMax;
 import com.google.common.geometry.S2BestEdgesQueryBase.Result;
@@ -487,6 +487,132 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertFalse(optimizedQuery.isDistanceGreater(target, upperBound));
     assertTrue(optimizedQuery.isDistanceGreater(target, bruteForceMaxDistance.predecessor()));
     assertTrue(optimizedQuery.isConservativeDistanceGreaterOrEqual(target, bruteForceMaxDistance));
+  }
+
+  /**
+   * Puts shape A in a shape index, edge B in an edge target, and uses a FurthestEdge query to get
+   * the maximum distance between them, after setting 'includeInteriors' for shape A on the query.
+   * Compares the distance to "expectedDistanceRadians".
+   */
+  private void checkShapeToEdgeMaxDistance(
+    // TODO(user): Port checkShapeToEdgeMaxDistance and the unit tests that use it to C++.
+      S2Shape a, boolean includeInteriors, S2Point b0, S2Point b1, double expectedDistanceRadians) {
+    b0 = b0.normalize();
+    b1 = b1.normalize();
+
+    S2ShapeIndex index = new S2ShapeIndex();
+    index.add(a);
+
+    S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.EdgeTarget<>(b0, b1);
+
+    // Get the single furthest edge.
+    S2FurthestEdgeQuery.Builder builder = S2FurthestEdgeQuery.builder();
+    builder.setIncludeInteriors(includeInteriors);
+    Query query = builder.build(index);
+    Optional<Result<S1ChordAngle>> opt = query.findFurthestEdge(target);
+    assertTrue(opt.isPresent());
+    Result<S1ChordAngle> result = opt.get();
+
+    // Get the indexed edge that's farthest from the target.
+    S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
+    result.shape().getEdge(result.edgeId(), edge);
+
+    assertEquals("Furthest Indexed Edge from target is " + edge.toDegreesString(),
+        expectedDistanceRadians, result.distance().radians(), 1e-15);
+  }
+
+  /**
+   * Puts edge A in a shape index, edge B in an edge target, and uses a FurthestEdge query to get
+   * the maximum distance between them. Compares to "expectedDistanceRadians".
+   */
+  private void checkEdgePairMaxDistance(
+      S2Point a0, S2Point a1, S2Point b0, S2Point b1, double expectedDistanceRadians) {
+    checkShapeToEdgeMaxDistance(
+        new S2Edge(a0.normalize(), a1.normalize()), false, b0, b1, expectedDistanceRadians);
+  }
+
+  /**
+   * Exactly the same test cases as {@link S2EdgeUtilTest#testEdgePairMaxDistanceSimple()} but using
+   * FurthestEdgeQuery. This demonstrates that for simple edge-to-edge queries, the maximum distance
+   * between the index and the target is the maximum distance between the edges.
+   */
+  public void testFurthestEdgeDistanceEdgePairs() {
+    // Some test points.
+    S2Point center = ll(12, 12);
+    S2Point north = ll(13, 12);
+    S2Point south = ll(11, 12);
+    S2Point east = ll(12, 13);
+    S2Point west = ll(12, 11);
+    S2Point nw = ll(13, 11);
+    S2Point sw = ll(11, 11);
+    S2Point ss = ll(10, 12); // Further south
+
+    // Edges with a common endpoint, where the maximum distance is between the other endpoints:
+    // Straight line north-south
+    checkEdgePairMaxDistance(north, center, center, south, north.angle(south));
+    // Straight line east-west
+    checkEdgePairMaxDistance(east, center, center, west, east.angle(west));
+    // 90 degree turn north to west
+    checkEdgePairMaxDistance(north, center, center, west, north.angle(west));
+
+    // Lines that cross:
+    // 90 degree crossing at 'center'
+    checkEdgePairMaxDistance(north, south, east, west, south.angle(west));
+    // Acute angle crossing at the midpoint between "west" and "center".
+    checkEdgePairMaxDistance(north, sw, south, nw, south.angle(north));
+
+    // Lines that don't cross. Max distance is between the most distant endpoints.
+    checkEdgePairMaxDistance(north, nw, south, ss, ss.angle(nw));
+  }
+
+  /** Tests simple cases of maximum distance from an edge to a polygon. */
+  public void testFurthestEdgeDistanceEdgeToPolygon() {
+    S2Point center = ll(12, 12);
+    // Four points around the center
+    S2Point ne = ll(13, 13);
+    S2Point nw = ll(13, 11);
+    S2Point sw = ll(11, 11);
+    S2Point se = ll(11, 13);
+    // A test square, two degrees on a side, centered at 'center'. (The interior of the polygon is
+    // on the left when walking the vertices in the given order).
+    S2LaxPolygonShape square = S2LaxPolygonShape.fromLoop(ImmutableList.of(ne, nw, sw, se));
+    // The same square, but reversed, so representing the sphere with a square hole cut out of it.
+    S2LaxPolygonShape hole = S2LaxPolygonShape.fromLoop(ImmutableList.of(se, sw, nw, ne));
+
+    // A point just inside the square, 0.1 degrees from the west edge (i.e. (13,11) to (11,11))
+    S2Point inside = ll(12, 11.1);
+
+    // Two points outside the square, half a degree to the west and east.
+    S2Point west = ll(12, 10.5);
+    S2Point east = ll(12, 13.5);
+
+    // Check the maximum distance between the square and an edge inside the square, with one edge
+    // endpoint at the center of the square and one endpoint close to a side of the square. The
+    // maximum distance is from the endpoint near the western edge of the square, to the south east
+    // corner of the square.
+    checkShapeToEdgeMaxDistance(square, false, inside, center, inside.angle(se));
+    // The edge same inside the square hole has the same maximum distance.
+    checkShapeToEdgeMaxDistance(hole, false, inside, center, inside.angle(se));
+
+    // Check the maximum distance between the square and an edge crossing one square edge, with one
+    // edge endpoint half a degree outside the square on the west, and one endpoint close to the
+    // west edge inside the square. The maximum distance is
+    // attained between the outside endpoint at 'west' and the opposite (east) side of the square:
+    // the south east corner specifically.
+    checkShapeToEdgeMaxDistance(square, false, west, inside, west.angle(se));
+    checkShapeToEdgeMaxDistance(hole, false, west, inside, west.angle(se));
+
+    // Check the maximum distance between the square and an edge crossing two edges of the square,
+    // so both endpoints are outside the square. In some intuitive sense, the maximum distance
+    // between the edge and the square is between the center of the edge and a corner of the square,
+    // but that is the point on the edge furthest from ALL points on the square. The query returns
+    // the maximum distance between the edge and ANY point on the square, which is the same as the
+    // previous case: the distance from an edge endpoint and a corner of the square on the opposite
+    // side.
+    checkShapeToEdgeMaxDistance(square, false, east, west, west.angle(se));
+    // Here, both edge endpoints are inside the polygon, but it makes no difference.
+    checkShapeToEdgeMaxDistance(hole, false, east, west, west.angle(se));
   }
 
   /**

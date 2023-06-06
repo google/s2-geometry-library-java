@@ -22,6 +22,7 @@ import static java.lang.Double.NEGATIVE_INFINITY;
 import static java.lang.Double.NaN;
 import static java.lang.Double.POSITIVE_INFINITY;
 
+import com.google.common.annotations.GwtIncompatible;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import junit.framework.TestCase;
@@ -151,7 +152,7 @@ public class PlatformTest extends TestCase {
     assertExactly(-3.1415926535897927, Platform.nextAfter(-Math.PI, POSITIVE_INFINITY));
 
     // -min
-    assertExactly(-1.0E-323, Platform.nextAfter(-MIN_VALUE, NEGATIVE_INFINITY));
+    assertExactly(-9.9E-324, Platform.nextAfter(-MIN_VALUE, NEGATIVE_INFINITY));
     assertExactly(-MIN_VALUE, Platform.nextAfter(-MIN_VALUE, -MIN_VALUE));
     assertExactly(NEGATIVE_ZERO, Platform.nextAfter(-MIN_VALUE, 0));
 
@@ -166,7 +167,7 @@ public class PlatformTest extends TestCase {
     assertExactly(0.0, Platform.nextAfter(MIN_VALUE, -MIN_VALUE));
     assertExactly(0.0, Platform.nextAfter(MIN_VALUE, 0));
     assertExactly(MIN_VALUE, Platform.nextAfter(MIN_VALUE, MIN_VALUE));
-    assertExactly(1.0E-323, Platform.nextAfter(MIN_VALUE, Math.PI));
+    assertExactly(9.9E-324, Platform.nextAfter(MIN_VALUE, Math.PI));
 
     // +pi
     assertExactly(3.1415926535897927, Platform.nextAfter(Math.PI, -Math.PI));
@@ -193,5 +194,25 @@ public class PlatformTest extends TestCase {
 
     // Assert rounded value.
     assertEquals(ideal.round(new MathContext(actual.precision())), actual);
+  }
+
+  @GwtIncompatible("Javascript uses its own version of Platform#sign")
+  public void testSign() {
+    // Run some standard determinant checks.
+    S2Point a = new S2Point(1.0, 0.0, 0.0);
+    S2Point b = new S2Point(0.0, 2.0, 0.0);
+    S2Point c = new S2Point(0.0, 0.0, 3.0);
+    S2Point d = new S2Point(0.0, 0.0, 0.0);
+    assertEquals(1, Platform.sign(a, b, c));
+    assertEquals(-1, Platform.sign(a, c, b));
+    assertEquals(0, Platform.sign(a, a, c));
+    assertEquals(0, Platform.sign(a, b, d));
+
+    // These should result in 0.
+    S2Point q = new S2Point(-2.594E-321, 0.0, 1.0);
+    S2Point r = new S2Point(1.0, 0.9991685425907498, 0.0);
+    S2Point s = new S2Point(0.0, 0.9991685425907498, 1.0);
+    int result = Platform.sign(q, r, s);
+    assertEquals(0, result);
   }
 }

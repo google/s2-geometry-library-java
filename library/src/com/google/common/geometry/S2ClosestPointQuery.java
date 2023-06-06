@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
+import javax.annotation.Nullable;
 
 /**
  * Given a set of points stored in an S2PointIndex, S2ClosestPointQuery provides methods that find
@@ -81,10 +82,10 @@ public final class S2ClosestPointQuery<T> {
   private int maxPoints;
 
   /** The max distance to search for points. */
-  private S1Angle maxDistance;
+  private S1ChordAngle maxDistance;
 
   /** The region to restrict closest point search to. */
-  private S2Region region;
+  @Nullable private S2Region region;
 
   /** Whether to use brute force, which is cheaper when the index has few edges. */
   private boolean useBruteForce;
@@ -136,7 +137,7 @@ public final class S2ClosestPointQuery<T> {
   public S2ClosestPointQuery(S2PointIndex<T> index) {
     this.index = index;
     maxPoints = Integer.MAX_VALUE;
-    maxDistance = S1Angle.INFINITY;
+    maxDistance = S1ChordAngle.INFINITY;
     region = null;
     reset();
   }
@@ -163,17 +164,76 @@ public final class S2ClosestPointQuery<T> {
     this.maxPoints = maxPoints;
   }
 
-  /** Returns the max distance between returned points and the given target. Default is +inf. */
-  public S1Angle getMaxDistance() {
-    return maxDistance;
+  /**
+   * Like setInclusiveMaxDistance(), except that "maxDistance" is also increased by the maximum
+   * error in the distance calculation. This ensures that all points whose true distance is less
+   * than or equal to "maxDistance" will be returned (along with some points whose true distance is
+   * slightly greater).
+   *
+   * <p>Algorithms that need to do exact distance comparisons can use this option to find a set of
+   * candidate points that can then be filtered further (e.g., using {@link
+   * S2Predicates#compareDistance(S2Point, S2Point, double)}).
+   */
+  public void setConservativeMaxDistance(S1ChordAngle maxDistance) {
+    setMaxDistance(
+        maxDistance.plusError(S2EdgeUtil.getMinDistanceMaxError(maxDistance)).successor());
   }
 
-  /** Sets a new max distance to search for points. */
-  public void setMaxDistance(S1Angle maxDistance) {
+  /**
+   * A version of {@link #setConservativeMaxDistance(S1ChordAngle)} that takes an S1Angle and
+   * converts it to an S1ChordAngle, for convenience.
+   */
+  public void setConservativeMaxDistance(S1Angle maxDistance) {
+    setConservativeMaxDistance(S1ChordAngle.fromS1Angle(maxDistance));
+  }
+
+  /**
+   * Like setMaxDistance(), except that points whose distance is exactly equal to "maxDistance" are
+   * also returned. Equivalent to calling setMaxDistance(maxDistance.successor()).
+   */
+  public void setInclusiveMaxDistance(S1ChordAngle maxDistance) {
+    setMaxDistance(maxDistance.successor());
+  }
+
+  /**
+   * A version of {@link #setInclusiveMaxDistance(S1ChordAngle)} that takes an S1Angle and converts
+   * it to an S1ChordAngle, for convenience.
+   */
+  public void setInclusiveMaxDistance(S1Angle maxDistance) {
+    setInclusiveMaxDistance(S1ChordAngle.fromS1Angle(maxDistance));
+  }
+
+  /**
+   * Specifies that only points whose distance to the target is less than "maxDistance" should be
+   * returned.
+   *
+   * <p>Note that points whose distance is exactly equal to "maxDistance" are not returned. In most
+   * cases this doesn't matter (since distances are not computed exactly in the first place), but if
+   * such points are needed then you can retrieve them by specifying "maxDistance" as the next
+   * largest representable Distance. The provided {@link #setInclusiveMaxDistance(S1ChordAngle)}
+   * method does this for you.
+   */
+  public void setMaxDistance(S1ChordAngle maxDistance) {
     this.maxDistance = maxDistance;
   }
 
+  /**
+   * A version of {@link #setMaxDistance(S1ChordAngle)} that takes an S1Angle and converts it to an
+   * S1ChordAngle, for convenience.
+   */
+  public void setMaxDistance(S1Angle maxDistance) {
+    this.maxDistance = S1ChordAngle.fromS1Angle(maxDistance);
+  }
+
+  /**
+   * Returns the maximum distance between returned points and the given target. The default is +inf.
+   */
+  public S1ChordAngle getMaxDistance() {
+    return maxDistance;
+  }
+
   /** Returns the region in which point searches will be done. */
+  @Nullable
   public S2Region getRegion() {
     return region;
   }
@@ -186,7 +246,7 @@ public final class S2ClosestPointQuery<T> {
    * use setMaxDistance() instead. You can also call both methods, e.g. if you want to limit the
    * maximum distance to the target and also require that points lie within a given rectangle.
    */
-  public void setRegion(S2Region region) {
+  public void setRegion(@Nullable S2Region region) {
     this.region = region;
   }
 
@@ -207,11 +267,11 @@ public final class S2ClosestPointQuery<T> {
   }
 
   /**
-   * Creates an empty list if 'list' is null, otherwise uses 'list'. Polls all results out of
-   * {@link #results} and appends them to 'list' in reverse order. Returns the resulting list.
+   * Creates an empty list if 'list' is null, otherwise uses 'list'. Polls all results out of {@link
+   * #results} and appends them to 'list' in reverse order. Returns the resulting list.
    */
   @CanIgnoreReturnValue
-  private List<Result<T>> toList(List<Result<T>> list) {
+  private List<Result<T>> toList(@Nullable List<Result<T>> list) {
     int size = results.size();
     int index = size;
     if (list == null) {
@@ -241,7 +301,7 @@ public final class S2ClosestPointQuery<T> {
 
   /**
    * As {@link #findClosestPoints(S2Point)}, but sorts the results and adds them at the end of the
-   * given list.
+   * given list. Note: Does NOT first clear the results list.
    *
    * <p>This class, including this method, is not thread-safe.
    */
@@ -274,6 +334,7 @@ public final class S2ClosestPointQuery<T> {
 
   /**
    * As {@link #findClosestPointsToEdge(S2Point, S2Point)}, but adds results to the given list.
+   * WARNING: Does NOT first clear the results list.
    *
    * <p>This class, including this method, is not thread-safe.
    */
@@ -422,7 +483,7 @@ public final class S2ClosestPointQuery<T> {
   }
 
   private void findClosestPointsToTarget(Target target) {
-    maxDistanceLimit = S1ChordAngle.fromS1Angle(maxDistance);
+    maxDistanceLimit = maxDistance;
     if (useBruteForce) {
       findClosestPointsBruteForce(target);
     } else {
@@ -533,8 +594,8 @@ public final class S2ClosestPointQuery<T> {
 
   /**
    * Processes the cell at {@code id}, adding the contents of the cell immediately, or if there are
-   * too many points, adding it to the queue to be subdivided. If {@code seek} is false, then
-   * {@code iter} must already be positioned at the first indexed point within this cell.
+   * too many points, adding it to the queue to be subdivided. If {@code seek} is false, then {@code
+   * iter} must already be positioned at the first indexed point within this cell.
    *
    * @return true if the cell was added to the queue, and false if it was processed immediately (in
    *     which case {@code iter} is left positioned at the next cell in S2CellId order.

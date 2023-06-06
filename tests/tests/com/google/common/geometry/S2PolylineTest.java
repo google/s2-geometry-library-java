@@ -485,6 +485,8 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
 
   public void testEmptyShape() {
     S2Shape shape = makePolyline("");
+    assertTrue(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertFalse(shape.hasInterior());
     assertEquals(0, shape.numEdges());
     assertEquals(0, shape.numChains());
@@ -493,6 +495,8 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
 
   public void testSingleVertexShape() {
     S2Shape shape = makePolyline("0:0");
+    assertTrue(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertFalse(shape.hasInterior());
     assertEquals(0, shape.numEdges());
     assertEquals(0, shape.numChains());
@@ -501,6 +505,8 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
 
   public void testDoubleVertexShape() {
     S2Shape shape = makePolyline("0:0, 1:1");
+    assertFalse(shape.isEmpty());
+    assertFalse(shape.isFull());
     assertFalse(shape.hasInterior());
     assertEquals(1, shape.numEdges());
     checkFirstNEdges(shape, "0:0|1:1");

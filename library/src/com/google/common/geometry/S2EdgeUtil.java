@@ -20,6 +20,7 @@ import static com.google.common.geometry.S2.DBL_EPSILON;
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2.M_SQRT1_2;
 import static com.google.common.geometry.S2.M_SQRT2;
+import static com.google.common.geometry.S2.ROBUST_CROSS_PROD_ERROR;
 import static com.google.common.geometry.S2.isUnitLength;
 import static com.google.common.geometry.S2Point.ORIGIN;
 import static com.google.common.geometry.S2Point.Z_POS;
@@ -67,8 +68,8 @@ public strictfp class S2EdgeUtil {
 
   /**
    * The maximum angle between a returned vertex and the nearest point on the exact edge AB. It is
-   * equal to the maximum directional error in {@link S2#robustCrossProd}, plus the error when
-   * projecting points onto a cube face.
+   * equal to the maximum directional error in {@link S2#robustCrossProd(S2Point, S2Point)}, plus
+   * the error when projecting points onto a cube face.
    */
   public static final double FACE_CLIP_ERROR_RADIANS = 3 * DBL_EPSILON;
 
@@ -114,13 +115,24 @@ public strictfp class S2EdgeUtil {
       FACE_CLIP_ERROR_UV_COORD + INTERSECTS_RECT_ERROR_UV_DIST;
 
   /**
-   * {@code INTERSECTION_ERROR} can be set somewhat arbitrarily, because the algorithm uses more
+   * An upper bound on the distance (in radians) from the intersection point returned by
+   * {@link #getIntersection(S2Point, S2Point, S2Point, S2Point)} to the true intersection point.
+   *
+   * <p>{@code INTERSECTION_ERROR} can be set somewhat arbitrarily, because the algorithm uses more
    * precision than necessary in order to achieve the specified error. The only strict requirement
    * is that {@code INTERSECTION_ERROR >= 2 * DBL_EPSILON} radians. However, using a larger error
    * tolerance makes the algorithm more efficient because it reduces the number of cases where exact
    * arithmetic is needed.
    */
   public static final double INTERSECTION_ERROR = 8 * DBL_EPSILON;
+
+  /**
+   * This value can be used as the S2Builder snapRadius() to ensure that edges that have been
+   * displaced by up to INTERSECTION_ERROR are merged back together again. For example, this can
+   * happen when geometry is intersected with a set of tiles and then unioned. It is equal to twice
+   * the intersection error because input edges might have been displaced in opposite directions.
+   */
+  public static final S1Angle INTERSECTION_MERGE_RADIUS = S1Angle.radians(2 * INTERSECTION_ERROR);
 
   /** Used to denote which point should be used when finding distances/points. */
   private enum ClosestPoint {
@@ -133,8 +145,9 @@ public strictfp class S2EdgeUtil {
 
   /**
    * Used to efficiently test a fixed edge AB against an edge chain. To use it, {@link
-   * #init(S2Point, S2Point) initialize} with the edge AB, and call {@link #robustCrossing(S2Point,
-   * S2Point)} or {@link #edgeOrVertexCrossing(S2Point, S2Point)} with each edge of the chain.
+   * #init(S2Point, S2Point) initialize} with the edge AB, and call
+   * {@link #robustCrossing(S2Point, S2Point)} or {@link #edgeOrVertexCrossing(S2Point, S2Point)}
+   * with each edge of the chain.
    *
    * <p>This class is <strong>not</strong> thread-safe.
    */
@@ -156,10 +169,10 @@ public strictfp class S2EdgeUtil {
     int bdaReturn;
 
     /**
-     * True if the tangents have been computed. To reduce the number of calls to {@link
-     * S2Predicates.Sign#expensive}, we compute an outward-facing tangent at A and B if necessary.
-     * If the plane perpendicular to one of these tangents separates AB from CD (i.e., one edge on
-     * each side) then there is no intersection.
+     * True if the tangents have been computed. To reduce the number of calls to
+     * {@link S2Predicates.Sign#expensive(S2Point, S2Point, S2Point, boolean)}, we compute an
+     * outward-facing tangent at A and B if necessary. If the plane perpendicular to one of these
+     * tangents separates AB from CD (i.e., one edge on each side) then there is no intersection.
      */
     private boolean haveTangents;
 
@@ -190,8 +203,8 @@ public strictfp class S2EdgeUtil {
     }
 
     /**
-     * Initialize this edge crosser with the given endpoints, available via {@link #a} and {@link
-     * #b}, and computes the approximate edge normal, available via {@link #normal}.
+     * Initialize this edge crosser with the given endpoints, available via {@link #a()} and
+     * {@link #b()}, and computes the approximate edge normal, available via {@link #normal()}.
      */
     public void init(S2Point a, S2Point b) {
       this.a = a;
@@ -265,10 +278,10 @@ public strictfp class S2EdgeUtil {
     }
 
     /**
-     * This method is equivalent to calling the {@link #robustCrossing} function (defined below) on
-     * the edges AB and CD. It returns +1 if there is a crossing, -1 if there is no crossing, and 0
-     * if two points from different edges are the same. As a side effect, it saves vertex D to be
-     * used as the next vertex C.
+     * This method is equivalent to calling the {@link #robustCrossing(S2Point, S2Point)} function
+     * (defined below) on the edges AB and CD. It returns +1 if there is a crossing, -1 if there is
+     * no crossing, and 0 if two points from different edges are the same. As a side effect, it
+     * saves vertex D to be used as the next vertex C.
      */
     public int robustCrossing(S2Point d) {
       // For there to be an edge crossing, the triangles ACB, CBD, BDA, DAC must all be oriented the
@@ -306,9 +319,10 @@ public strictfp class S2EdgeUtil {
     }
 
     /**
-     * This method is equivalent to the {@link #edgeOrVertexCrossing} method defined below. It is
-     * similar to {@link #robustCrossing}, but handles cases where two vertices are identical in a
-     * way that makes it easy to implement point-in-polygon containment tests.
+     * This method is equivalent to the {@link #edgeOrVertexCrossing(S2Point, S2Point)} method
+     * defined below. It is similar to {@link #robustCrossing(S2Point, S2Point)}, but handles cases
+     * where two vertices are identical in a way that makes it easy to implement point-in-polygon
+     * containment tests.
      */
     public boolean edgeOrVertexCrossing(S2Point d) {
       // Copy c, since the reference may be replaced by robustCrossing().
@@ -457,17 +471,17 @@ public strictfp class S2EdgeUtil {
     public RectBounder() {}
 
     /**
-     * This method is called to add each vertex to the chain. This method is much faster than {@link
-     * #addPoint(S2Point)}, since converting S2LatLng to an S2Point is much faster than the other
-     * way around..
+     * This method is called to add each vertex to the chain. This method is much faster than
+     * {@link #addPoint(S2Point)}, since converting S2LatLng to an S2Point is much faster than the
+     * other way around.
      */
     public void addPoint(S2LatLng b) {
       addPoint(b.toPoint(), b);
     }
 
     /**
-     * This method is called to add each vertex to the chain. Prefer calling {@link
-     * #addPoint(S2LatLng)} if you have that type available. The point must be unit length.
+     * This method is called to add each vertex to the chain. Prefer calling
+     * {@link #addPoint(S2LatLng)} if you have that type available. The point must be unit length.
      */
     public void addPoint(S2Point b) {
       addPoint(b, new S2LatLng(b));
@@ -637,8 +651,8 @@ public strictfp class S2EdgeUtil {
 
     /**
      * Returns the maximum error in getBound() provided that the result does not include either
-     * pole. It is only to be used for testing purposes (e.g., by passing it to {@link
-     * S2LatLngRect#approxEquals}).
+     * pole. It is only to be used for testing purposes (e.g., by passing it to
+     * {@link S2LatLngRect#approxEquals(S2LatLngRect)}).
      *
      * TODO(user): Verify the analysis and bounds from the C++ implementation are valid here.
      */
@@ -777,7 +791,7 @@ public strictfp class S2EdgeUtil {
 
       // Next we need to check whether the subregion might contain any edges that span (M_PI - 2 *
       // DBL_EPSILON) radians or more in longitude, since AddPoint sets the longitude bound to
-      // Full() in that case. This corresponds to testing whether (lngGap <= 0) in "lng_expansion"
+      // Full() in that case. This corresponds to testing whether (lngGap <= 0) in "lngExpansion"
       // below.
 
       // Otherwise, the maximum latitude error in AddPoint is 4.8 * DBL_EPSILON. In the worst case,
@@ -1321,9 +1335,9 @@ public strictfp class S2EdgeUtil {
    *
    * <p>This method guarantees that the returned segments form a continuous path from A to B, and
    * that all vertices are within FACE_CLIP_ERROR_UV_DIST of the line AB. All vertices lie within
-   * the [-1,1]x[-1,1] cube face rectangles. The results are consistent with {@link
-   * S2Predicates.Sign#expensive}, i.e. the edge is well-defined even if its endpoints are
-   * antipodal.
+   * the [-1,1]x[-1,1] cube face rectangles. The results are consistent with
+   * {@link S2Predicates.Sign#expensive(S2Point, S2Point, S2Point, boolean)}, i.e. the edge is well-
+   * defined even if its endpoints are antipodal.
    *
    * <p>TODO(user): Extend the implementation of S2.robustCrossProd so that the statement
    * above is true. The C++ implementation uses exact math and symbolic perturbations if needed, but
@@ -1645,19 +1659,23 @@ public strictfp class S2EdgeUtil {
    * <ol>
    *   <li>If x == a, then x1 = a1 (exactly).
    *   <li>If x == b, then x1 = b1 (exactly).
-   *   <li>If a <= x <= b, then a1 <= x1 <= b1 (even if a1 == b1).
+   *   <li>If If a <= x <= b and a1 <= b1, then a1 <= x1 <= b1 (even if a1 == b1).
+   *   <li>More generally, if x is between a and b, then x1 is between a1 and b1.
    * </ol>
    *
-   * <p>Results are undefined if a==b.
+   * <p>Results are undefined if a==b. When a <= x <= b or b <= x <= a we can prove the error
+   * bound on the resulting value is 2.25*DBL_EPSILON. The error for extrapolating an x value
+   * outside of a and b can be much worse. See the gappa proof in s2edge_clipping.h in the C++
+   * implementation of S2.
    */
   static double interpolateDouble(double x, double a, double b, double a1, double b1) {
     // assert a != b;
     // To get results that are accurate near both A and B, we interpolate starting from the closer
     // of the two points.
     if (abs(a - x) <= abs(b - x)) {
-      return a1 + (b1 - a1) * (x - a) / (b - a);
+      return a1 + (b1 - a1) * ((x - a) / (b - a));
     } else {
-      return b1 + (a1 - b1) * (x - b) / (a - b);
+      return b1 + (a1 - b1) * ((x - b) / (a - b));
     }
   }
 
@@ -2096,9 +2114,9 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * Like {@link #updateMinDistance}, but computes the minimum distance between the given pair of
-   * edges. (If the two edges cross, the distance is zero.) The cases {@code a0.equals(a1)} and
-   * {@code b0.equals(b1)} are handled correctly.
+   * Like {@link #updateMinDistance(S2Point, S2Point, S2Point, S1ChordAngle)}, but computes the
+   * minimum distance between the given pair of edges. (If the two edges cross, the distance is
+   * zero.) The cases {@code a0.equals(a1)} and {@code b0.equals(b1)} are handled correctly.
    */
   public static S1ChordAngle getEdgePairMinDistance(
       final S2Point a0,
@@ -2283,18 +2301,24 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * Like {@link #updateMaxDistance}, but computes the maximum distance between the given pair of
-   * edges. If the two edges cross, the distance is zero. The cases {@code a0.equals(a1)} and
+   * Like {@link #updateMaxDistance(S2Point, S2Point, S2Point, S1ChordAngle)}, but computes the
+   * maximum of the given 'maxDist' and the maximum distance between the given pair of edges. The
+   * maximum distance between edges is usually between the furthest separated pair of endpoints, but
+   * due to the curve of the sphere it is possible for the maximum distance to be between one
+   * edge's endpoint and the interior of the other edge, or even between the interiors of both edges
+   * if one edge is antipodal to the other at some point. The cases {@code a0.equals(a1)} and
    * {@code b0.equals(b1)} are handled correctly.
    */
   public static S1ChordAngle getEdgePairMaxDistance(
       S2Point a0, S2Point a1,
       S2Point b0, S2Point b1,
       S1ChordAngle maxDist) {
+    // If maxDist is already the maximum it can't be increased.
     if (S1ChordAngle.STRAIGHT.equals(maxDist)) {
       return maxDist;
     }
 
+    // If one edge intersects the reflection of the other, they are antipodal at one point.
     if (S2EdgeUtil.robustCrossing(a0, a1, b0.neg(), b1.neg()) >= 0) {
       return S1ChordAngle.STRAIGHT;
     }
@@ -2344,9 +2368,9 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * As {@link #getClosestPoint(S2Point, S2Point, S2Point)}, but faster if the cross product between
-   * a and b has already been computed. All points must be unit length; results are undefined if
-   * that is not the case.
+   * As {@link #getClosestPoint(S2Point, S2Point, S2Point)}, returns the point on edge AB closest to
+   * X, but faster if the cross product between 'a' and 'b' has already been computed. All points
+   * must be unit length; results are undefined if that is not the case.
    */
   public static S2Point getClosestPoint(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
     // assert isUnitLength(a);
@@ -2374,15 +2398,242 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * A slightly more efficient version of {@link #interpolateAtDistance} that can be used when the
-   * distance AB is already known. Requires that all vectors have unit length.
+   * Returns the point along the edge AB that is closest to the point X. Requires that A, B, and X
+   * have unit length.
+   *
+   * <p>The fractional distance of this point along the edge AB can be obtained using
+   * {@link #getDistanceFraction(S2Point, S2Point, S2Point)}.
    */
+  public static S2Point project(S2Point x, S2Point a, S2Point b) {
+    return project(x, a, b, S2.robustCrossProd(a, b));
+  }
+
+  /**
+   * Returns the point along the edge AB that is closest to the point X. The cross product aCrossB
+   * does not need to be normalized, but should be computed using S2.robustCrossProd() for the most
+   * accurate results. Requires that A, B, and X have unit length. This version is slightly more
+   * efficient if the cross product of the two endpoints has been precomputed.
+   *
+   * <p>The result is within {@link PROJECT_PERPENDICULAR_ERROR} of the edge AB. Note that this only
+   * bounds the error perpendicular to the edge, not the error parallel to it, and in particular, if
+   * X is nearly perpendicular to the plane containing AB, the accuracy of the returned result may
+   * be low.
+   *
+   * <p>The fractional distance of the returned point along the edge AB can be obtained using
+   * {@link #getDistanceFraction(S2Point, S2Point, S2Point)}.
+   */
+  public static S2Point project(S2Point x, S2Point a, S2Point b, S2Point aCrossB) {
+    // assert isUnitLength(a);
+    // assert isUnitLength(b);
+    // assert isUnitLength(x);
+
+    // TODO(user): When X is nearly perpendicular to the plane containing AB, the result is
+    // guaranteed to be close to the edge AB but may be far from the true projected result. This
+    // could be fixed by computing the product (A x B) x X x (A x B) using methods similar to
+    // S2.robustCrossProd() and S2.getIntersection(). However note that the error tolerance would
+    // need to be significantly larger in order for this calculation to succeed in double precision
+    // most of the time. For example to avoid higher precision when X is within 60 degrees of AB
+    // the minimum error would be 18 * DBL_ERR, and to avoid higher precision when X is within 87
+    // degrees of AB the minimum error would be 120 * DBL_ERR.
+
+    // The following is not necessary to meet accuracy guarantees but helps to avoid unexpected
+    // results in unit tests.
+    if (x.equalsPoint(a) || x.equalsPoint(b)) {
+      return x;
+    }
+
+    // Find the closest point to X along the great circle through AB.  Note that we use "n" rather
+    // than aCrossB in the final cross product in order to avoid the possibility of underflow.
+    // TODO(user): Require caller to normalize aCrossB instead of repeatedly doing it here.
+    S2Point n = aCrossB.normalize();
+    S2Point p = S2.robustCrossProd(n, x).crossProd(n).normalize();
+
+    // If this point is on the edge AB, then it's the closest point.
+    S2Point pn = p.crossProd(n);
+    if (S2Predicates.sign(p, n, a, pn) > 0 && S2Predicates.sign(p, n, b, pn) < 0) {
+      return p;
+    }
+
+    // Otherwise, the closest point is either A or B.
+    return (x.getDistance2(a) <= x.getDistance2(b)) ? a : b;
+  }
+
+  /**
+   * Returns the point at distance "r" along the ray with the given origin and direction. "dir" is
+   * required to be perpendicular to "origin" (since this is how directions on the sphere are
+   * represented).
+   *
+   * <p>This function is similar to getPointOnLine() except that (1) the first two arguments are
+   * required to be perpendicular and (2) it is much faster. It can be used as an alternative to
+   * repeatedly calling getPointOnLine() by computing "dir" as:
+   * <pre>{@code
+   *   S2Point dir = S2.robustCrossProd(a, b).crossProd(a).normalize();
+   * }</pre>
+   * REQUIRES: "origin" and "dir" are perpendicular to within the tolerance of the calculation
+   * above.
+   */
+  public static S2Point getPointOnRay(S2Point origin, S2Point dir, S1ChordAngle r) {
+    assert isUnitLength(origin);
+    assert isUnitLength(dir);
+    // The error bound below includes the error in computing the dot product.
+    assert origin.dotProd(dir) <= ROBUST_CROSS_PROD_ERROR.radians() + 0.75 * DBL_EPSILON;
+
+    // Mathematically the result should already be unit length, but we normalize it anyway to ensure
+    // that the error is within acceptable bounds. (Otherwise errors can build up when the result of
+    // one interpolation is fed into another interpolation.)
+    //
+    // Note that it is much cheaper to compute the sine and cosine of an S1ChordAngle than an
+    // S1Angle.
+    // (cos(r) * origin + sin(r) * dir).normalize();
+    return origin.mul(S1ChordAngle.cos(r)).add(dir.mul(S1ChordAngle.sin(r))).normalize();
+  }
+
+  /**
+   * Returns the point at distance "r" along the ray with the given origin and direction. "dir" is
+   * required to be perpendicular to "origin" (since this is how directions on the sphere are
+   * represented).
+   *
+   * <p>This function is similar to getPointOnLine() except that (1) the first two arguments are
+   * required to be perpendicular and (2) it is much faster. It can be used as an alternative to
+   * repeatedly calling getPointOnLine() by computing "dir" as:
+   * <pre>
+   *   S2Point dir = S2.robustCrossProd(a, b).crossProd(a).normalize();
+   * </pre>
+   * REQUIRES: "origin" and "dir" are perpendicular to within the tolerance of the calculation
+   * above.
+   */
+  public static S2Point getPointOnRay(S2Point origin, S2Point dir, S1Angle r) {
+    // See comments above.
+    assert isUnitLength(origin);
+    assert isUnitLength(dir);
+    assert origin.dotProd(dir) <= ROBUST_CROSS_PROD_ERROR.radians() + 0.75 * DBL_EPSILON;
+
+    // (cos(r) * origin + sin(r) * dir).normalize();
+    return origin.mul(r.cos()).add(dir.mul(r.sin())).normalize();
+  }
+
+  /**
+   * Returns the point at distance "r" from A along the line AB. Not quite as fast as the variant
+   * taking S1ChordAngle to specify distance (i.e. 140 ns vs. 116 ns).
+   *
+   * <p>Note that the line AB has a well-defined direction even when A and B are antipodal or nearly
+   * so. If A == B then an arbitrary direction is chosen.
+   */
+  public static S2Point getPointOnLine(S2Point a, S2Point b, S1Angle r) {
+    // Use robustCrossProd() to compute the tangent vector at A towards B. This technique is robust
+    // even when A and B are antipodal or nearly so.
+    S2Point dir = S2.robustCrossProd(a, b).crossProd(a).normalize();
+    return getPointOnRay(a, dir, r);
+  }
+
+  /**
+   * Returns the point at distance "r" from A along the line AB. Slightly faster than the variant
+   * taking an S1Angle to specify distance, but cannot accurately represent distances near 180
+   * degrees due to the limitations of S1ChordAngle.
+   *
+   * <p>Note that the line AB has a well-defined direction even when A and B are antipodal or nearly
+   * so. If A == B then an arbitrary direction is chosen.
+   */
+  public static S2Point getPointOnLine(S2Point a, S2Point b, S1ChordAngle r) {
+    // Use robustCrossProd() to compute the tangent vector at A towards B. This technique is robust
+    // even when A and B are antipodal or nearly so.
+    S2Point dir = S2.robustCrossProd(a, b).crossProd(a).normalize();
+    return getPointOnRay(a, dir, r);
+  }
+
+  /**
+   * Returns the S2Point to the left of the edge from "a" to "b" which is the distance "r" away from
+   * "a", orthogonal to the specified edge:
+   *
+   * <pre>{@code
+   *     c (result)
+   *     ^
+   *     |  r
+   *     |
+   *     a --------> b
+   * }</pre>
+   */
+  public static S2Point getPointToLeft(S2Point a, S2Point b, S1Angle r) {
+    return getPointOnRay(a, S2.robustCrossProd(a, b).normalize(), r);
+  }
+
+  /**
+   * Returns the S2Point to the left of the edge from "a" to "b" which is the distance "r" away from
+   * "a", orthogonal to the specified edge. This version is faster than the version using S1Angle.
+   *
+   * <pre>{@code
+   *     c (result)
+   *     ^
+   *     |  r
+   *     |
+   *     a --------> b
+   * }</pre>
+   */
+  public static S2Point getPointToLeft(S2Point a, S2Point b, S1ChordAngle r) {
+    return getPointOnRay(a, S2.robustCrossProd(a, b).normalize(), r);
+  }
+
+  /**
+   * Returns the S2Point to the right of the edge from "a" to "b" which is the distance "r" away
+   * from "a", orthogonal to the specified edge:
+   *
+   * <pre>{@code
+   *     a --------> b
+   *     |
+   *     |  r
+   *     v
+   *     c (result)
+   * }</pre>
+   */
+  public static S2Point getPointToRight(S2Point a, S2Point b, S1Angle r) {
+    return getPointOnRay(a, S2.robustCrossProd(b, a).normalize(), r);
+  }
+
+  /**
+   * Returns the S2Point to the right of the edge from "a" to "b" which is the distance "r" away
+   * from "a", orthogonal to the specified edge. This version is faster than the version using
+   * S1Angle.
+   *
+   * <pre>{@code
+   *     a --------> b
+   *     |
+   *     |  r
+   *     v
+   *     c (result)
+   * }</pre>
+   */
+  public static S2Point getPointToRight(S2Point a, S2Point b, S1ChordAngle r) {
+    return getPointOnRay(a, S2.robustCrossProd(b, a).normalize(), r);
+  }
+
+  /**
+   * Like {@link #interpolate(double, S2Point, S2Point)}, returns a point X along the line segment
+   * AB, except the distance from A is specified by the parameter "ax" which represents the desired
+   * distance from A to the result X, rather than a fraction between 0 and 1. This is a slightly
+   * more efficient version of {@link #interpolateAtDistance(S1Angle, S2Point, S2Point)} that can
+   * be used when the distance AB is already known. Requires that {@code a} and {@code b} are unit
+   * length.
+   *
+   * <p>Angles 'ax' that are not in the range 0 to the angle between a and b will result in
+   * extrapolation along the great circle through 'a' and 'b', either past 'b' for larger angles, or
+   * past 'a' for negative angles.
+   *
+   * @deprecated This method is not as accurate as getPointOnLine(a, b, ax), and only slightly
+   * faster. If computing 'ab' is included, this method is slower. Just call getPointOnLine.
+   */
+  @Deprecated
   public static S2Point interpolateAtDistance(S1Angle ax, S2Point a, S2Point b, S1Angle ab) {
     // assert isUnitLength(a);
     // assert isUnitLength(b);
 
     double axRadians = ax.radians();
     double abRadians = ab.radians();
+
+    // If the distance "ax" is zero, then produce "a" directly.
+    // This avoids producing NaN in the case where both ax = 0 and ab = 0.
+    if (axRadians == 0.0) {
+      return a;
+    }
 
     // The result X is some linear combination X = e*A + f*B of the input points. The fractions "e"
     // and "f" can be derived by looking at the components of this equation that are parallel and
@@ -2403,14 +2654,18 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * Like {@link #interpolate}, except that the parameter "ax" represents the desired distance from
-   * A to the result X rather than a fraction between 0 and 1. Requires that {@code a} and {@code b}
-   * are unit length. Angles 'ax' that are not in the range 0 to the angle between a and b will
-   * result in extrapolation along the great circle through 'a' and 'b', either past 'b' for larger
-   * angles, or past 'a' for negative angles.
+   * Like {@link #interpolate(double, S2Point, S2Point)}, returns the point X along the line
+   * segment AB, except the distance from A is specified by the parameter "ax" which represents the
+   * desired distance from A to the result X, rather than a fraction between 0 and 1. Requires that
+   * {@code a} and {@code b} are unit length. Angles 'ax' that are not in the range 0 to the angle
+   * between a and b will result in extrapolation along the great circle through 'a' and 'b', either
+   * past 'b' for larger angles, or past 'a' for negative angles.
+   *
+   * @deprecated Call getPointOnLine(a, b, ax).
    */
+  @Deprecated
   public static S2Point interpolateAtDistance(S1Angle ax, S2Point a, S2Point b) {
-    return interpolateAtDistance(ax, a, b, new S1Angle(a, b));
+    return getPointOnLine(a, b, ax);
   }
 
   /**
@@ -2427,13 +2682,15 @@ public strictfp class S2EdgeUtil {
       return b;
     }
     S1Angle ab = new S1Angle(a, b);
-    return interpolateAtDistance(S1Angle.radians(t * ab.radians()), a, b, ab);
+    return getPointOnLine(a, b, S1Angle.radians(t * ab.radians()));
   }
 
   /**
-   * Returns the maximum error in the result of {@link #updateMinDistance}, assuming that all input
-   * points are normalized to within the bounds guaranteed by {@link S2Point#normalize}. The error
-   * can be added or subtracted from an S1ChordAngle "x" using {@code x.plusError(error)}.
+   * Returns the maximum error in the result of
+   * {@link #updateMinDistance(S2Point, S2Point, S2Point, S1ChordAngle)} (and associated functions),
+   * assuming that all input points are normalized to within the bounds guaranteed by
+   * {@link S2Point#normalize()}. The error can be added or subtracted from an S1ChordAngle "x"
+   * using {@code x.plusError(error)}.
    */
   static double getMinInteriorDistanceMaxError(S1ChordAngle distance) {
     // If a point is more than 90 degrees from an edge, then the minimum distance is always to one
@@ -2455,10 +2712,11 @@ public strictfp class S2EdgeUtil {
   }
 
   /**
-   * Returns the maximum error in the result of {@link #updateMinDistance} (and associated
+   * Returns the maximum error in the result of
+   * {@link #updateMinDistance(S2Point, S2Point, S2Point, S1ChordAngle)} (and associated
    * functions), assuming that all input points are normalized to within the bounds guaranteed by
-   * {@link S2Point#normalize}. The error can be added or subtracted from an S1ChordAngle "x" using
-   * {@code x.plusError(error)}.
+   * {@link S2Point#normalize()}. The error can be added or subtracted from an S1ChordAngle "x"
+   * using {@code x.plusError(error)}.
    *
    * <p>Note that accuracy goes down as the distance approaches 0 degrees or 180 degrees (for
    * different reasons). Near 0 degrees the error is acceptable for all practical purposes (about
@@ -2614,7 +2872,7 @@ public strictfp class S2EdgeUtil {
 
   /**
    * Returns 2x the dot product of x and aNormal, and writes to resultError a bound on the error
-   * given that aNormal was calculated using {@link S2#robustCrossProd}.
+   * given that aNormal was calculated using {@link S2#robustCrossProd(S2Point, S2Point)}.
    *
    * <p>The remaining parameters allow this calculation to be computed more accurately and
    * efficiently. They include the length of aNormal (aNormalLen) and the edge endpoints a0 and a1.

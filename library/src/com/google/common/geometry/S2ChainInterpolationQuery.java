@@ -22,18 +22,18 @@ import java.util.ArrayList;
 
 /**
  * S2ChainInterpolationQuery is a helper class for querying points along an S2Shape's edges (chains
- * of vertices) by spherical angular distances.  The distance, measured in radians, is computed
+ * of vertices) by spherical angular distances. The distance, measured in radians, is computed
  * accumulatively along the edges contained in the shape, using the order in which the edges are
  * stored by the S2Shape object.
  *
  * <p>If a particular edge chain is specified at the query initialization, then the distances are
- * along that single chain, which allows per-chain operations.  If no chain is specified, then the
+ * along that single chain, which allows per-chain operations. If no chain is specified, then the
  * interpolated points as a function of distance will have discontinuities at chain boundaries.
  * This makes it easier to implement some algorithms, such as random sampling along the total length
  * of a multiline.
  *
  * <p>Once the query object is initialized, the complexity of each subsequent query is O(log(m)),
- * where m is the number of edges.  The complexity of the constructor and the memory footprint of
+ * where m is the number of edges. The complexity of the constructor and the memory footprint of
  * the query object are both O(m).
  */
 public class S2ChainInterpolationQuery {
@@ -91,7 +91,7 @@ public class S2ChainInterpolationQuery {
 
   /**
    * Gets the maximum absolute accumulated length, which corresponds to the end vertex of the last
-   * selected edge.  Returns zero for shapes containing no edges.
+   * selected edge. Returns zero for shapes containing no edges.
    */
   public S1Angle getLength() {
     // The total length equals the cumulative value at the end of the last edge, iff there is at
@@ -101,9 +101,10 @@ public class S2ChainInterpolationQuery {
 
   /**
    * Computes the S2Point located at the given distance along the edges from the first vertex of the
-   * first edge.  Also computes the edge id and the actual normalized distance corresponding to the
-   * resulting point.  The values computed during the last findPoint() call are accessible via the
-   * respective result*() methods, and are valid iff the last findPoint() call returned true.
+   * first edge. Also computes the edge id and the actual normalized distance corresponding to the
+   * resulting point. The values computed during the last findPoint() or findPointAtFraction() call
+   * are accessible via the respective result*() methods, and are valid iff the last such call
+   * returned true.
    *
    * <p>This method returns true iff the query has been initialized with at least one edge.
    *
@@ -123,7 +124,7 @@ public class S2ChainInterpolationQuery {
 
     // Binary search in the list of cumulative values, which by construction are sorted in ascending
     // order, to obtain the lowest cumulative value that is not smaller than the target distance.
-    // The input distance must then be on the edge ending at the corresponding vertex.  If every
+    // The input distance must then be on the edge ending at the corresponding vertex. If every
     // cumulative value is smaller, lowerBound returns cumulativeValues.size().
     final int lowerBound = S2ShapeUtil.lowerBound(0, cumulativeValues.size(),
         i -> cumulativeValues.get(i).compareTo(distance) < 0);
@@ -160,9 +161,14 @@ public class S2ChainInterpolationQuery {
   }
 
   /**
-   * Similar to the above function.  Takes a normalized fraction of the distance as input, with
-   * fraction = 0 corresponding to the beginning of the shape or chain and fraction = 1 to the end.
-   * Forwards the call to findPoint(S1Angle distance).  A small precision loss may occur due to
+   * Computes the S2Point located at the given normalized fraction along the edges from the first
+   * vertex of the first edge. A fraction = 0 corresponds to the beginning of the shape or chain,
+   * and fraction = 1 to the end. Also computes the edge id and the actual normalized distance
+   * corresponding to the resulting point. The values computed during the last findPoint() or
+   * findPointAtFraction() call are accessible via the respective result*() methods, and are valid
+   * iff the last such call returned true.
+   *
+   * <p>Forwards the call to findPoint(S1Angle distance). A small precision loss may occur due to
    * converting the fraction to a distance by multiplying it by the total length.
    */
   public boolean findPointAtFraction(double fraction) {
@@ -170,7 +176,7 @@ public class S2ChainInterpolationQuery {
   }
 
   /**
-   * Returns the point which is the result of the last query.  The point is valid iff the last
+   * Returns the point which is the result of the last query. The point is valid iff the last
    * findPoint*() call returned true.
    */
   public S2Point resultPoint() {
@@ -178,7 +184,7 @@ public class S2ChainInterpolationQuery {
   }
 
   /**
-   * Returns the index of the edge on which the point from the last query is located.  The edge id
+   * Returns the index of the edge on which the point from the last query is located. The edge id
    * is valid iff the last findPoint*() call returned true.
    */
   public int resultEdgeId() {
@@ -186,9 +192,9 @@ public class S2ChainInterpolationQuery {
   }
 
   /**
-   * Returns the actual distance of the resulting point from the last query.  It may differ from the
+   * Returns the actual distance of the resulting point from the last query. It may differ from the
    * input distance if the latter is negative or exceeds the total length of the shape's chain(s),
-   * in which case the resulting distance is snapped to 0 or total length, respectively.  The
+   * in which case the resulting distance is snapped to 0 or total length, respectively. The
    * distance value is valid iff the last findPoint*() call returned true.
    */
   public S1Angle resultDistance() {

@@ -17,11 +17,9 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2.M_PI_4;
-import static com.google.common.geometry.TestDataGenerator.encodeDecode;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 
-import com.google.common.annotations.GwtIncompatible;
 import java.io.IOException;
 
 /** Verifies S2LatLng. */
@@ -53,12 +51,12 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertDoubleEquals(better.lng().radians(), 0);
 
     assertTrue(
-        (S2LatLng.fromDegrees(10, 20).add(S2LatLng.fromDegrees(20, 30)))
+         S2LatLng.fromDegrees(10, 20).add(S2LatLng.fromDegrees(20, 30))
             .approxEquals(S2LatLng.fromDegrees(30, 50)));
     assertTrue(
-        (S2LatLng.fromDegrees(10, 20).sub(S2LatLng.fromDegrees(20, 30)))
+         S2LatLng.fromDegrees(10, 20).sub(S2LatLng.fromDegrees(20, 30))
             .approxEquals(S2LatLng.fromDegrees(-10, -10)));
-    assertTrue((S2LatLng.fromDegrees(10, 20).mul(0.5)).approxEquals(S2LatLng.fromDegrees(5, 10)));
+    assertTrue(S2LatLng.fromDegrees(10, 20).mul(0.5).approxEquals(S2LatLng.fromDegrees(5, 10)));
   }
 
   public void testConversion() {
@@ -107,12 +105,6 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
         S2LatLng.fromDegrees(47, -127).getDistance(S2LatLng.fromDegrees(-47, 53)).degrees(),
         180,
         2e-6);
-  }
-
-  @GwtIncompatible("GeometryTestCase.encodeDecode")
-  public void testSerializable() throws Exception {
-    S2LatLng latLong = S2LatLng.fromDegrees(-37, 25);
-    assertEquals(latLong, encodeDecode(latLong));
   }
 
   public void testCoder() throws IOException {

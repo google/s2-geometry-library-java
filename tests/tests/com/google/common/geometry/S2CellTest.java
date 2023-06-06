@@ -61,9 +61,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
           vertexCounts.put(cell.getVertexRaw(k), 1);
         }
         assertDoubleEquals(cell.getVertexRaw(k).dotProd(cell.getEdgeRaw(k)), 0);
-        assertDoubleEquals(cell.getVertexRaw((k + 1) & 3).dotProd(cell.getEdgeRaw(k)), 0);
+        assertDoubleEquals(cell.getVertexRaw(k + 1).dotProd(cell.getEdgeRaw(k)), 0);
         assertDoubleEquals(
-            cell.getVertexRaw(k).crossProd(cell.getVertexRaw((k + 1) & 3)).normalize()
+            cell.getVertexRaw(k).crossProd(cell.getVertexRaw(k + 1)).normalize()
                 .dotProd(cell.getEdge(k)),
             1.0);
       }
@@ -145,11 +145,11 @@ public strictfp class S2CellTest extends GeometryTestCase {
     double minAngleSpan = 100;
     double maxAngleSpan = 0;
     for (int i = 0; i < 4; ++i) {
-      double edge = cell.getVertexRaw(i).angle(cell.getVertexRaw((i + 1) & 3));
+      double edge = cell.getVertexRaw(i).angle(cell.getVertexRaw(i + 1));
       minEdge = min(edge, minEdge);
       maxEdge = max(edge, maxEdge);
       avgEdge += 0.25 * edge;
-      S2Point mid = cell.getVertexRaw(i).add(cell.getVertexRaw((i + 1) & 3));
+      S2Point mid = cell.getVertexRaw(i).add(cell.getVertexRaw(i + 1));
       double width = S2.M_PI_2 - mid.angle(cell.getEdgeRaw(i ^ 2));
       minWidth = min(width, minWidth);
       maxWidth = max(width, maxWidth);
@@ -185,7 +185,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     s.maxApproxRatio = max(approxRatio, s.maxApproxRatio);
   }
 
-  public void testSubdivide(S2Cell cell) {
+  public void checkSubdivide(S2Cell cell) {
     gatherStats(cell);
     if (cell.isLeaf()) {
       return;
@@ -307,7 +307,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
         }
       }
       if (forceSubdivide || cell.level() < (DEBUG_MODE ? 5 : 6) || data.oneIn(DEBUG_MODE ? 5 : 4)) {
-        testSubdivide(children[i]);
+        checkSubdivide(children[i]);
       }
     }
 
@@ -327,7 +327,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     assertTrue(abs(log(averageArea / cell.averageArea())) <= abs(log1p(1e-15)));
   }
 
-  public void testMinMaxAvg(
+  public void checkMinMaxAvg(
       String label,
       int level,
       double count,
@@ -384,7 +384,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
 
   public void testSubdivide() {
     for (int face = 0; face < 6; ++face) {
-      testSubdivide(S2Cell.fromFace(face));
+      checkSubdivide(S2Cell.fromFace(face));
     }
 
     // The maximum edge *ratio* is the ratio of the longest edge of any cell to the shortest edge of
@@ -433,7 +433,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
       // The various length calculations are only accurate to 1e-15 or so, so we need to allow for
       // this amount of discrepancy with the theoretical minimums and maximums. The area calculation
       // is accurate to about 1e-15 times the cell width.
-      testMinMaxAvg(
+      checkMinMaxAvg(
           "area",
           i,
           s.count,
@@ -444,7 +444,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
           PROJ.minArea,
           PROJ.maxArea,
           PROJ.avgArea);
-      testMinMaxAvg(
+      checkMinMaxAvg(
           "width",
           i,
           s.count,
@@ -455,7 +455,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
           PROJ.minWidth,
           PROJ.maxWidth,
           PROJ.avgWidth);
-      testMinMaxAvg(
+      checkMinMaxAvg(
           "edge",
           i,
           s.count,
@@ -466,7 +466,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
           PROJ.minEdge,
           PROJ.maxEdge,
           PROJ.avgEdge);
-      testMinMaxAvg(
+      checkMinMaxAvg(
           "diagonal",
           i,
           s.count,
@@ -477,7 +477,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
           PROJ.minDiag,
           PROJ.maxDiag,
           PROJ.avgDiag);
-      testMinMaxAvg(
+      checkMinMaxAvg(
           "angle span",
           i,
           s.count,
@@ -528,7 +528,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     for (int iter = 0; iter < 1000; /* advanced in loop below */ ) {
       S2Cell cell = new S2Cell(data.getRandomCellId());
       int i1 = data.nextInt(4);
-      int i2 = (i1 + 1) & 3;
+      int i2 = i1 + 1;
       S2Point v1 = cell.getVertex(i1);
       S2Point v2 =
           data.samplePoint(S2Cap.fromAxisAngle(cell.getVertex(i2), S1Angle.radians(1e-15)));
@@ -546,7 +546,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
 
     for (int iter = 0; iter < 1000; ++iter) {
       S2Cell cell = new S2Cell(data.getRandomCellId());
-      int i = data.uniform(4);
+      int i = data.nextInt(4);
       S2Point v1 = cell.getVertex(i);
       S2Point v2 =
           data.samplePoint(S2Cap.fromAxisAngle(cell.getVertex(i + 1), S1Angle.radians(1e-15)));
@@ -618,7 +618,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     S1ChordAngle minDistance = S1ChordAngle.INFINITY;
     for (int i = 0; i < 4; ++i) {
       S2Point a = cell.getVertex(i);
-      S2Point b = cell.getVertex((i + 1) & 3);
+      S2Point b = cell.getVertex(i + 1);
       minDistance = S2EdgeUtil.updateMinDistance(target, a, b, minDistance);
     }
     return minDistance;
@@ -632,7 +632,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     for (int i = 0; i < 4; ++i) {
       maxDistance =
           S2EdgeUtil.updateMaxDistance(
-              target, cell.getVertex(i), cell.getVertex((i + 1) % 4), maxDistance);
+              target, cell.getVertex(i), cell.getVertex(i + 1), maxDistance);
     }
     return maxDistance;
   }
@@ -671,7 +671,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     S1ChordAngle minDist = S1ChordAngle.INFINITY;
     for (int i = 0; i < 4; i++) {
       S2Point v0 = cell.getVertex(i);
-      S2Point v1 = cell.getVertex((i + 1) & 3);
+      S2Point v1 = cell.getVertex(i + 1);
       // If the edge crosses through the cell, max distance is 0.
       if (S2EdgeUtil.robustCrossing(a, b, v0, v1) >= 0) {
         return S1ChordAngle.ZERO;
@@ -708,7 +708,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     S1ChordAngle maxDist = S1ChordAngle.NEGATIVE;
     for (int i = 0; i < 4; ++i) {
       S2Point v0 = cell.getVertex(i);
-      S2Point v1 = cell.getVertex((i + 1) & 3);
+      S2Point v1 = cell.getVertex(i + 1);
       // If the antipodal edge crosses through the cell, max distance is Pi.
       if (S2EdgeUtil.robustCrossing(a.neg(), b.neg(), v0, v1) >= 0) {
         return S1ChordAngle.STRAIGHT;
@@ -740,6 +740,31 @@ public strictfp class S2CellTest extends GeometryTestCase {
       // Occasionally replace edge with antipodal edge.
       edge.a = edge.a.neg();
       edge.b = edge.b.neg();
+    }
+  }
+
+  public void testGetMaxDistanceToCellAntipodal() {
+    S2Point p = S2LatLng.fromDegrees(0, 0).toPoint();
+    S2Cell cell = new S2Cell(p);
+    S2Cell antipodalCell = new S2Cell(p.neg());
+    S1ChordAngle dist = cell.getMaxDistance(antipodalCell);
+    assertEquals(S1ChordAngle.STRAIGHT, dist);
+  }
+
+  public void testGetMaxDistanceToCell() {
+    double tolerance = 1e-8;
+    for (int i = 0; i < 1000; i++) {
+      S2CellId id = data.getRandomCellId();
+      S2Cell cell = new S2Cell(id);
+      S2CellId testId = data.getRandomCellId();
+      S2Cell testCell = new S2Cell(testId);
+      S2CellId antipodalLeafId = S2CellId.fromPoint(testCell.getCenter().neg());
+      S2Cell antipodalTestCell = new S2Cell(antipodalLeafId.parent(testCell.level()));
+
+      S1ChordAngle distFromMin = S1ChordAngle.sub(
+          S1ChordAngle.STRAIGHT, cell.getDistance(antipodalTestCell));
+      S1ChordAngle distFromMax = cell.getMaxDistance(testCell);
+      assertEquals(distFromMin.radians(), distFromMax.radians(), tolerance);
     }
   }
 }
