@@ -16,11 +16,16 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.GeometryTestCase.assertExactly;
+import static org.junit.Assert.assertEquals;
 
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for the {@link Matrix} class. */
-public class MatrixTest extends TestCase {
+@RunWith(JUnit4.class)
+public class MatrixTest {
+  @Test
   public void testCtor() {
     Matrix m = new Matrix(2, 1, 2, 3, 4, 5, 6);
     assertEquals(2, m.cols());
@@ -32,11 +37,13 @@ public class MatrixTest extends TestCase {
     assertExactly(1D, m.get(1, 1));
   }
 
+  @Test
   public void testMatrixTranspose() {
     Matrix m = new Matrix(2, 1, 2, 3, 4);
     assertEquals(new Matrix(2, 1, 3, 2, 4), m.transpose());
   }
 
+  @Test
   public void testMatrixMult() {
     Matrix a = new Matrix(3, 1, 2, 3, 4, 5, 6);
     Matrix b = new Matrix(1, 3, 2, 1);

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 package com.google.common.geometry;
+import com.google.common.base.Strings;
 import jsinterop.annotations.JsType;
 
 /**
@@ -27,7 +28,9 @@ public class S2Error {
     /** No problems detected. */
     NO_ERROR(0),
 
+    ////////////////////////////////////////////////////////////////////
     // Generic errors, not specific to geometric objects:
+
     /** Unknown error. */
     UNKNOWN(1000),
     /** Operation is not implemented. */
@@ -44,20 +47,33 @@ public class S2Error {
     DATA_LOSS(1006),
     /** A resource has been exhausted. */
     RESOURCE_EXHAUSTED(1007),
+    /** Operation was cancelled. */
+    CANCELLED(1008),
 
+    ////////////////////////////////////////////////////////////////////
     // Error codes that apply to more than one type of geometry:
+
     /** Vertex is not unit length. */
     NOT_UNIT_LENGTH(1),
     /** There are two identical vertices. */
     DUPLICATE_VERTICES(2),
     /** There are two antipodal vertices. */
     ANTIPODAL_VERTICES(3),
+    /** Edges of a chain aren't continuous. */
+    NOT_CONTINUOUS(4),
+    /** Vertex has value that's inf or NaN. */
+    INVALID_VERTEX(5),
 
-    // Error codes that only apply to certain geometric objects:
+    ////////////////////////////////////////////////////////////////////
+    // S2Loop errors:
+
     /** Loop with fewer than 3 vertices. */
     LOOP_NOT_ENOUGH_VERTICES(100),
     /** Loop has a self-intersection. */
     LOOP_SELF_INTERSECTION(101),
+
+    ////////////////////////////////////////////////////////////////////
+    // S2Polygon / S2Shape errors:
 
     /** Two polygon loops share an edge. */
     POLYGON_LOOPS_SHARE_EDGE(200),
@@ -67,12 +83,25 @@ public class S2Error {
     POLYGON_EMPTY_LOOP(202),
     /** Non-full polygon has a full loop. */
     POLYGON_EXCESS_FULL_LOOP(203),
+    /**
+     * Inconsistent loop orientations were detected, indicating that the interior is not on the left
+     * of all edges.
+     */
+    POLYGON_INCONSISTENT_LOOP_ORIENTATIONS(204),
     /** Loop depths don't correspond to any valid nesting hierarchy. */
     POLYGON_INVALID_LOOP_DEPTH(205),
     /** Actual polygon nesting does not correspond to the nesting given in the loop depths. */
     POLYGON_INVALID_LOOP_NESTING(206),
 
-    // Error codes from S2Builder:
+    /** Shape dimension isn't valid. */
+    INVALID_DIMENSION(207),
+    /** Interior split by holes. */
+    SPLIT_INTERIOR(208),
+    /** Geometry overlaps where it shouldn't. */
+    OVERLAPPING_GEOMETRY(209),
+
+    ////////////////////////////////////////////////////////////////////
+    // S2Builder errors:
 
     /**
      * The S2Builder snap function moved a vertex by more than the specified snap radius. Also used
@@ -80,8 +109,8 @@ public class S2Error {
      */
     BUILDER_SNAP_RADIUS_TOO_SMALL(300),
     /**
-     * S2Builder expected all edges to have siblings (as specified by
-     * {@link S2Builder.GraphOptions.SiblingPairs.REQUIRE}), but some were missing.
+     * S2Builder expected all edges to have siblings (as specified by {@link
+     * S2Builder.GraphOptions.SiblingPairs#REQUIRE}), but some were missing.
      */
     BUILDER_MISSING_EXPECTED_SIBLING_EDGES(301),
     /**
@@ -130,15 +159,27 @@ public class S2Error {
 
   /**
    * Sets the error code and text description; the description is formatted according to the rules
-   * defined in {@link String#format(String, Object...)}. This method may be called more than once,
-   * so that various layers may surround the error message with additional context:
-   * <pre>{@code
-   *     error.init(error.code(), "Loop %d: %s", j, error.text());
-   * }</pre>
+   * defined in {@link Strings#lenientFormat(String, Object...)}, except that '%d' positional
+   * arguments are also handled.
+   *
+   * <p>Note that this does not use String.format() because J2CL does not support that, and we
+   * want to produce the same (or at least similar, readable) error texts on J2CL as Java. To
+   * including Double values in the error text, %s in the format string and Double.toString() on the
+   * value works well, except that the J2CL implementation of Double.toString() does not behave
+   * exactly the same as the Java implementation, so messages will still be slightly different in
+   * some cases (fewer decimal digits in J2CL, typically).
+   *
+   * <p>This method may be called more than once, so that various layers may surround the error
+   * message with additional context:
+   *
+   * {@snippet :
+   *     error.init(error.code(), "Loop %s: %s", j, error.text());
+   * }
    */
   public void init(Code code, String format, Object... args) {
     this.code = code;
-    this.text = Platform.formatString(format, args);
+    format = format.replace("%d", "%s");
+    this.text = Strings.lenientFormat(format, args);
   }
 
   /** Returns the code of this error. */
@@ -161,6 +202,6 @@ public class S2Error {
     if (code == Code.NO_ERROR) {
       return "OK";
     }
-    return Platform.formatString("%s: %s", code, text);
+    return Strings.lenientFormat("%s: %s", code, text);
   }
 }

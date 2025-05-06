@@ -16,12 +16,21 @@
 
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import com.google.common.annotations.GwtIncompatible;
 import java.util.ArrayList;
 import java.util.List;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Test case for {@link S2RegionIntersection}. */
-public class S2RegionIntersectionTest extends TestCase {
+@RunWith(JUnit4.class)
+public class S2RegionIntersectionTest extends GeometryTestCase {
+  @Test
   public void testEmptyRegions() throws Exception {
     List<S2Region> regions = new ArrayList<>();
     S2RegionIntersection regionIntersection = new S2RegionIntersection(regions);
@@ -29,7 +38,7 @@ public class S2RegionIntersectionTest extends TestCase {
     assertTrue(regionIntersection.getRectBound().isFull());
   }
 
-  public void testThreeRegions() throws Exception {
+  private S2RegionIntersection threeRegions() throws Exception {
     S2LatLngRect rect1 =
         new S2LatLngRect(S2LatLng.fromDegrees(-35, -30), S2LatLng.fromDegrees(30, 15));
     S2LatLngRect rect2 =
@@ -41,8 +50,12 @@ public class S2RegionIntersectionTest extends TestCase {
     regions.add(rect2);
     regions.add(rect3);
 
-    S2RegionIntersection regionIntersection = new S2RegionIntersection(regions);
+    return new S2RegionIntersection(regions);
+  }
 
+  @Test
+  public void testThreeRegions() throws Exception {
+    S2RegionIntersection regionIntersection = threeRegions();
     S2LatLngRect expectedRect =
         new S2LatLngRect(S2LatLng.fromDegrees(-25, -10), S2LatLng.fromDegrees(20, 15));
     assertEquals(expectedRect, regionIntersection.getRectBound());
@@ -59,5 +72,12 @@ public class S2RegionIntersectionTest extends TestCase {
     S2Cell center = new S2Cell(expectedRect.getCenter());
     assertTrue(regionIntersection.mayIntersect(center));
     assertTrue(regionIntersection.contains(center));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2RegionIntersectionSerialization() throws Exception {
+    S2RegionIntersection regionIntersection = threeRegions();
+    doSerializationTest(regionIntersection);
   }
 }

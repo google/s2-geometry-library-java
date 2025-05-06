@@ -19,14 +19,14 @@ import static com.google.common.geometry.EncodedInts.varIntSize;
 import static com.google.common.geometry.EncodedInts.writeVarint64;
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2CellId.MAX_LEVEL;
-import static com.google.common.geometry.S2Projections.PROJ;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static java.lang.Math.toIntExact;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
+import com.google.common.collect.Maps;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder.CellWeightFunction;
@@ -34,6 +34,7 @@ import com.google.common.geometry.S2ShapeIndexRegion.ShapeVisitor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,7 +44,6 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -58,8 +58,8 @@ import jsinterop.annotations.JsType;
  * datasets are well-known for their skew, which would defeat a regular tiling of the surface. But
  * with detailed spatial density, we can easily divide the surface into equal-weight shards.
  *
- * <p>A density tree is more formally a map from S2CellIds to weights of objects that intersect that
- * cell, with these properties:
+ * <p>A density tree is more formally a map from S2CellIds to weights of objects that intersect or
+ * contain that cell, with these properties:
  *
  * <ul>
  *   <li>If any cell is present in the tree, then all of its ancestors are present in the tree.
@@ -67,9 +67,15 @@ import jsinterop.annotations.JsType;
  *       include the weight of all objects intersecting the parent.
  * </ul>
  *
- * <p>As a consequence of these properties, if a shape intersects a density tree, it intersects at
- * least one leaf cell in the tree. Note that the weight of a parent cell is generally not the sum
- * of the weights of its children. It may be less, as an object may intersect multiple children.
+ * <p>Some consequences of these properties are:
+ *
+ * <ul>
+ *   <li>If a shape intersects a density tree, it intersects at least one leaf cell in the tree.
+ *   <li>All the shapes are covered by leaf cells of the tree.
+ * </ul>
+ *
+ * <p>Note that the weight of a parent cell is generally not the sum of the weights of its children.
+ * It may be less, as an object may intersect multiple children.
  *
  * <p>Weights have no units. Their meaning is defined by the operation that computes them. For
  * example, the weight of a shape could be the number of vertices in each shape. Generally a client
@@ -87,8 +93,8 @@ import jsinterop.annotations.JsType;
  *
  * <p>It's strongly encouraged to use the bulk versions of the above methods if they will be called
  * more than once, as they involve a lot of temporary allocations that may be pooled by {@link
- * #createShapeDensityOp}, {@link #createVertexDensityOp}, {@link #createSumDensityOp}, and
- * {@link #createIntersectionDensityOp}.
+ * #createShapeDensityOp}, {@link #createVertexDensityOp}, {@link #createSumDensityOp}, and {@link
+ * #createIntersectionDensityOp}.
  *
  * <p>Density trees are fast and cheap to initialize from a {@link Bytes buffer}, but the entries
  * are parsed lazily. If lookups will visited more often than there are entries, it may be faster to
@@ -97,35 +103,39 @@ import jsinterop.annotations.JsType;
  *
  * <p>S2DensityTrees can be created with a restricted size threshold:
  *
- * <pre>{@code
+ * {@snippet :
  * S2ShapeIndex index = new S2ShapeIndex();
  * index.add(...);
  * S2DensityTree tree = S2DensityTree.vertexDensity(index, 10_000, 15);
- * }</pre>
+ * }
  *
  * <p>An example of summing trees:
  *
- * <pre>{@code
+ * {@snippet :
  * List<S2DensityTree> trees = ...;
  * S2DensityTree sumTree = S2DensityTree.sumDensity(trees, 100_000, 15);
- * }</pre>
+ * }
  *
  * <p>Example of getting approximately 100MiB disjoint shards from a given tree (assuming weights
  * are bytes):
  *
- * <pre>{@code
+ * {@snippet :
  * S2DensityTree tree = ...;
  * List<S2CellId> partitions = tree.getPartitioning(100 * 2 << 10);
- * }</pre>
+ * }
  */
 @JsType
+@SuppressWarnings("Assertion")
 public class S2DensityTree {
   /** The current version string that prefixes all density trees, in the latin1 charset. */
   public static final String VERSION = "S2DensityTree0";
+
   /** The {@link #VERSION} as latin1 bytes. */
   private static final byte[] VERSION_BYTES = VERSION.getBytes(StandardCharsets.ISO_8859_1);
+
   /** The {@link #VERSION_BYTES} backwards since we write them this way before reversing. */
   private static final byte[] REVERSED_VERSION_BYTES = new byte[VERSION_BYTES.length];
+
   static {
     for (int i = 0, j = VERSION_BYTES.length - 1; j >= 0; i++, j--) {
       REVERSED_VERSION_BYTES[i] = VERSION_BYTES[j];
@@ -133,20 +143,24 @@ public class S2DensityTree {
   }
 
   /** An {@link S2Coder} of density trees. */
-  public static final S2Coder<S2DensityTree> CODER = new S2Coder<S2DensityTree>() {
-    @JsIgnore // OutputStream is not available in J2CL.
-    @Override public void encode(S2DensityTree value, OutputStream output) throws IOException {
-      value.encoded.writeTo(output);
-    }
+  public static final S2Coder<S2DensityTree> CODER =
+      new S2Coder<S2DensityTree>() {
+        @JsIgnore // OutputStream is not available in J2CL.
+        @Override
+        public void encode(S2DensityTree value, OutputStream output) throws IOException {
+          value.encoded.writeTo(output);
+        }
 
-    @Override public S2DensityTree decode(Bytes data, Cursor cursor) throws IOException {
-      return S2DensityTree.decode(data, cursor);
-    }
+        @Override
+        public S2DensityTree decode(Bytes data, Cursor cursor) throws IOException {
+          return S2DensityTree.decode(data, cursor);
+        }
 
-    @Override public boolean isLazy() {
-      return true;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return true;
+        }
+      };
 
   private static final int CHILD_MASK_BITS = 4;
   private static final int CHILD_MASK = (1 << CHILD_MASK_BITS) - 1;
@@ -184,9 +198,9 @@ public class S2DensityTree {
 
   /**
    * Returns a fully-decoded map of this tree. This is only useful if far more lookups will be done
-   * than there are entries in the map, and the lookups are sufficiently random that a
-   * {@link DecodedPath} is not sufficient. In that case fully decoding all the cells may be faster
-   * than lazily-decoding cells on each lookup.
+   * than there are entries in the map, and the lookups are sufficiently random that a {@link
+   * DecodedPath} is not sufficient. In that case fully decoding all the cells may be faster than
+   * lazily-decoding cells on each lookup.
    *
    * <p>Since the result is space-inefficient, considering using visitors to collect decoded results
    * instead of this method.
@@ -203,81 +217,158 @@ public class S2DensityTree {
   }
 
   /**
-   * Visits nodes in depth-first order while the visitor returns true, and returns false iff
-   * visitor returns false.
+   * Visits nodes in depth-first order while the visitor returns true, and returns false iff visitor
+   * returns false.
    */
   public boolean visitWhile(CellVisitor.While visitor) {
-    return visitCells((cell, node) ->
-        visitor.visit(cell, node.weight) ? CellVisitor.Action.ENTER_CELL : CellVisitor.Action.STOP);
+    return visitCells(
+        (cell, node) ->
+            visitor.visit(cell, node.weight)
+                ? CellVisitor.Action.ENTER_CELL
+                : CellVisitor.Action.STOP);
   }
 
   /** Returns an S2Region view of the density tree. */
   public S2Region asRegion() {
     DecodedPath path = new DecodedPath(this);
     return new S2Region() {
-      @Override public S2Cap getCapBound() {
+      @Override
+      public S2Cap getCapBound() {
         return S2Cap.full();
       }
-      @Override public S2LatLngRect getRectBound() {
+
+      @Override
+      public S2LatLngRect getRectBound() {
         return S2LatLngRect.full();
       }
-      @Override public boolean mayIntersect(S2Cell cell) {
-        Cell unusedCell = path.cell(cell.id());
-        return path.last != null && path.last.intersects(cell.id());
+
+      @Override
+      public boolean mayIntersect(S2Cell cell) {
+        // If the cell is in the tree, or its last ancestor in the tree is a leaf, then the objects
+        // weighed by the tree may intersect the given cell. Otherwise, the spatial extent of the
+        // objects weighed by the tree cannot intersect the cell.
+        Cell node = path.cell(cell.id());
+        return !node.isEmpty();
       }
-      @Override public boolean contains(S2Cell cell) {
+
+      @Override
+      public boolean contains(S2Cell cell) {
         return contains(cell.id());
       }
-      @Override public boolean contains(S2Point p) {
+
+      @Override
+      public boolean contains(S2Point p) {
         return contains(S2CellId.fromPoint(p));
       }
+
       private boolean contains(S2CellId id) {
-        Cell c = path.cell(id);
-        return path.last != null && path.last.contains(id) && !c.hasChildren();
+        // If the cell for the given id (or an ancestor) is in the tree and is a leaf, it is
+        // contained by the objects weighed by the tree (or the tree has insufficient detail to
+        // differentiate between containment and intersection, which we treat as containment).
+        // Otherwise the node is either empty, indicating the cell id is disjoint from the tree, or
+        // it has children, indicating the cell id is not contained by all the objects weighed by
+        // the tree.
+        Cell node = path.cell(id);
+        return !node.isEmpty() && !node.hasChildren();
       }
     };
   }
 
   /**
+   * Density trees map cells to weights that intersect that cell, but larger features may intersect
+   * many density cells, so the deeper into the tree we look, the more a feature will contribute
+   * undetected duplicates of its weight many times.
+   *
+   * <p>So we offer building a normalized version of the tree where every node's weight is scaled by
+   * (its parent's weight / the sum of weights of the node and its siblings). This makes the weight
+   * of a parent equal to the sum of its children.
+   */
+  public S2DensityTree normalize() {
+    // Visit cells in depth-first order.
+    Map<S2CellId, Long> normalizedWeights = new HashMap<>();
+    DecodedPath path = new DecodedPath(this);
+    visitAll(
+        (cell, weight) -> {
+          if (!cell.isFace()) {
+            S2CellId parent = cell.parent();
+            long parentWeight = normalizedWeights.get(parent);
+            long siblingWeight = 0;
+            for (int i = 0; i < 4; i++) {
+              siblingWeight += path.weight(parent.child(i));
+            }
+            // Rescale weight by the ratio of parentWeight/siblingWeight, which will be less than 1.
+            if (parentWeight < Long.MAX_VALUE / weight) {
+              // The product weight*parentWeight can't overflow, so use the fast formula.
+              weight = (weight * parentWeight - 1) / siblingWeight + 1;
+            } else {
+              // The product very likely overflows, so use the more expensive formula.
+              // This is likely to be used in the first few levels of a density tree for large
+              // datasets, but the fast formula should be used for most cells.
+              weight =
+                  BigInteger.valueOf(weight)
+                      .multiply(BigInteger.valueOf(parentWeight))
+                      .subtract(BigInteger.ONE)
+                      .divide(BigInteger.valueOf(siblingWeight))
+                      .add(BigInteger.ONE)
+                      .longValue();
+            }
+          }
+          normalizedWeights.put(cell, weight);
+        });
+    TreeEncoder encoder = new TreeEncoder();
+    normalizedWeights.forEach(encoder::put);
+    return encoder.build();
+  }
+
+  /**
    * Returns a selection of disjoint cells with generally 25% to 100% of 'maxWeight' weight per
-   * cell. The cells as a set cover the density tree's spatial extent. If the density tree's leaves
-   * are ever heavier than 'maxWeight' then those cells will be heavier.
+   * cell. The cells as a set cover the spatial extent of the objects whose weight is captured in
+   * the tree. If the density tree's leaves are ever heavier than 'maxWeight' then those cells will
+   * be heavier.
    */
   public List<S2CellId> getPartitioning(int maxWeight) {
     List<S2CellId> clusters = new ArrayList<>();
-    visitCells((cell, node) -> {
-      if (node.weight > maxWeight && node.hasChildren()) {
-        return CellVisitor.Action.ENTER_CELL;
-      } else {
-        clusters.add(cell);
-        return CellVisitor.Action.SKIP_CELL;
-      }
-    });
+    visitCells(
+        (cell, node) -> {
+          if (node.weight > maxWeight && node.hasChildren()) {
+            return CellVisitor.Action.ENTER_CELL;
+          } else {
+            clusters.add(cell);
+            return CellVisitor.Action.SKIP_CELL;
+          }
+        });
     return clusters;
   }
 
-  /** Returns the S2CellIds of the leaves of this tree. */
+  /** Returns the S2CellIds of the leaves of this tree as an S2CellUnion. */
   public S2CellUnion getLeaves() {
-    ArrayList<S2CellId> leaves = new ArrayList<>();
-    visitCells((cell, node) -> {
-      if (node.hasChildren()) {
-        return CellVisitor.Action.ENTER_CELL;
-      }
-      leaves.add(cell);
-      return CellVisitor.Action.SKIP_CELL;
-    });
     S2CellUnion result = new S2CellUnion();
-    result.initRawCellIds(leaves);
+    result.initRawCellIds(getLeavesAsList());
     return result;
+  }
+
+  /** Returns the S2CellIds of the leaves of this tree as an ArrayList. */
+  public ArrayList<S2CellId> getLeavesAsList() {
+    ArrayList<S2CellId> leaves = new ArrayList<>();
+    visitCells(
+        (cell, node) -> {
+          if (node.hasChildren()) {
+            return CellVisitor.Action.ENTER_CELL;
+          }
+          leaves.add(cell);
+          return CellVisitor.Action.SKIP_CELL;
+        });
+    return leaves;
   }
 
   /** Returns the maximum level of any node in this tree. */
   public int getMaxLevel() {
     final int[] maxLevel = new int[1]; // Array is workaround for Java lambdas requiring final
-    visitCells((cell, node) -> {
-      maxLevel[0] = max(maxLevel[0], cell.level());
-      return CellVisitor.Action.ENTER_CELL;
-    });
+    visitCells(
+        (cell, node) -> {
+          maxLevel[0] = max(maxLevel[0], cell.level());
+          return CellVisitor.Action.ENTER_CELL;
+        });
     return maxLevel[0];
   }
 
@@ -343,14 +434,15 @@ public class S2DensityTree {
       SKIP_CELL,
       /** Continue visitation with the children of this node. */
       ENTER_CELL,
-      /** Abort visitation. {@link CellVisitor#visitCells(CellVisitor)} will return false. */
+      /** Abort visitation. {@link S2DensityTree#visitCells(CellVisitor)} will return false. */
       STOP
     }
 
     /** A visitor of all nodes. */
     @JsType
     interface All extends CellVisitor {
-      @Override default Action visit(S2CellId cell, Cell node) {
+      @Override
+      default Action visit(S2CellId cell, Cell node) {
         visit(cell, node.weight);
         return Action.ENTER_CELL;
       }
@@ -382,8 +474,8 @@ public class S2DensityTree {
   @JsType
   public interface ShapeWeightFunction extends ToLongFunction<S2Shape> {
     /**
-     * Returns the weight of the given shape, which must be in the closed range
-     * [0, {@link #MAX_WEIGHT}].
+     * Returns the weight of the given shape, which must be in the closed range [0, {@link
+     * #MAX_WEIGHT}].
      */
     @Override
     long applyAsLong(S2Shape shape);
@@ -401,14 +493,14 @@ public class S2DensityTree {
    * reusable {@link ShapeDensityOp} that is often much faster for repeated calls.
    *
    * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
-   * level at a time until this limit is reached, so in practice the actual size may be up to 4x
-   * this limit in the worst-case
+   *     level at a time until this limit is reached, so in practice the actual size may be up to 4x
+   *     this limit in the worst-case
    * @param maxLevel the max level to create in the tree, where most paths in the tree will reach
-   * this limit except cells contained by polygons, which can save a lot of space in polygonal
-   * datasets
+   *     this limit except cells contained by polygons, which can save a lot of space in polygonal
+   *     datasets
    */
-  public static S2DensityTree shapeDensity(S2ShapeIndex index, ShapeWeightFunction weigher,
-      int approximateSizeBytes, int maxLevel) {
+  public static S2DensityTree shapeDensity(
+      S2ShapeIndex index, ShapeWeightFunction weigher, int approximateSizeBytes, int maxLevel) {
     return createShapeDensityOp(approximateSizeBytes, maxLevel).apply(index, weigher);
   }
 
@@ -418,11 +510,11 @@ public class S2DensityTree {
    * {@link VertexDensityOp} that is often much faster for repeated calls.
    *
    * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
-   * level at a time until this limit is reached, so in practice the actual size may be up to 4x
-   * this limit in the worst-case
+   *     level at a time until this limit is reached, so in practice the actual size may be up to 4x
+   *     this limit in the worst-case
    * @param maxLevel the max level to create in the tree, where most paths in the tree will reach
-   * this limit except cells contained by polygons, which can save a lot of space in polygonal
-   * datasets
+   *     this limit except cells contained by polygons, which can save a lot of space in polygonal
+   *     datasets
    */
   public static S2DensityTree vertexDensity(
       S2ShapeIndex index, int approximateSizeBytes, int maxLevel) {
@@ -438,8 +530,12 @@ public class S2DensityTree {
    * @param weights a lookup function that gets the weight of each feature
    * @param <F> the type of feature
    */
-  public static <F> S2DensityTree featureDensity(int approximateSizeBytes, int maxLevel,
-      S2ShapeIndex shapes, FeatureLookup<F> features, FeatureWeigher<F> weights) {
+  public static <F> S2DensityTree featureDensity(
+      int approximateSizeBytes,
+      int maxLevel,
+      S2ShapeIndex shapes,
+      FeatureLookup<F> features,
+      FeatureWeigher<F> weights) {
     FeatureDensityOp<F> op = createFeatureDensityOp(approximateSizeBytes, maxLevel);
     return op.apply(shapes, features, weights);
   }
@@ -471,23 +567,25 @@ public class S2DensityTree {
     // to determine which nodes in the density tree are on the spatial boundary, and thus need to be
     // dilated.
     S2CellUnion leaves = tree.getLeaves();
-    S2Polygon leafBoundaries = S2Polygon.fromCellUnionBorder(leaves);
-    S2LaxPolylineShape boundary = S2LaxPolylineShape.createMulti(leafBoundaries.shape().chains());
-    S2ShapeIndex index = new S2ShapeIndex();
-    index.add(boundary);
-    S2ShapeIndexRegion boundaryRegion = new S2ShapeIndexRegion(index);
 
     // Create an empty Map<S2CellId, Long> weights in which we will compute the new density tree.
     final Map<S2CellId, Long> weights = new HashMap<>();
 
-    // radiusLevel is the highest cell level (smallest possible cells) that could be used for
-    // neighboring cells that will cover all areas within 'radius' of the tree. Existing cells
-    // in the tree at higher levels will be dropped.
-    int radiusLevel = PROJ.minWidth.getMaxLevel(radius.radians());
+    // 'radiusLevel' is the highest cell level (smallest possible cells) that could be used for
+    // dilation that will cover all areas within 'radius' of the tree. Existing cells in the tree
+    // at higher levels will be dropped.
+    int radiusLevel = S2Projections.MIN_WIDTH.getMaxLevel(radius.radians());
 
-    // A list of neighbors of leaves, reused for each dilated leaf.
-    final ArrayList<S2CellId> neighbors = new ArrayList<>();
+    // Compute an S2CellUnion 'dilationCells' of the 'halo' around the existing leaves that will
+    // contain the cells added by dilation, and does not contain the existing leaves. Note that
+    // expansion may use a level lower than radiusLevel.
+    S2CellUnion expandedLeaves = S2CellUnion.copyFrom(leaves);
+    expandedLeaves.expand(radius, maxLevelDiff);
+    S2CellUnion dilationCells = new S2CellUnion();
+    dilationCells.getDifference(expandedLeaves, leaves);
 
+    // Visit all the cells in the current tree, copying them to the dilated tree, and where required
+    // also adding neighboring cells for dilation.
     tree.visitCells(
         (S2CellId cellId, Cell node) -> {
           // Add this existing node to the output tree. If it is already present in the tree (as a
@@ -496,42 +594,42 @@ public class S2DensityTree {
           long dilatedWeight = max(weights.getOrDefault(cellId, 0L), node.weight());
           weights.put(cellId, dilatedWeight);
 
-          // If this node has children, and has a level less than radiusLevel, then dilation should
-          // be done at the children.
+          // If this node has children, and has a level less than radiusLevel, it will become an
+          // internal node of the dilated tree, so dilation will occur at its children.
           if (node.hasChildren() && cellId.level() < radiusLevel) {
             return CellVisitor.Action.ENTER_CELL;
           }
 
-          // The cell is either a leaf of the input tree or has level "radiusLevel". Either way, it
-          // will be a leaf of the dilated tree.
+          // Otherwise, this cell is either a leaf of the input tree, or has level "radiusLevel".
+          // Either way, it will be a leaf of the dilated tree. It may need to be dilated.
+          // (Determining precisely which leaves must be dilated could be done better at the cost of
+          // some additional complexity: the current implementation does more dilation than needed.)
 
-          // If this cell does not intersect the boundary, dilation is unnecessary.
-          if (!boundaryRegion.mayIntersect(new S2Cell(cellId))) {
-            return CellVisitor.Action.SKIP_CELL;
-          }
-
-          // Otherwise, this node intersects the boundary so must be dilated. We want to use the
-          // highest level possible for accuracy, which is radiusLevel, but the cell level to
-          // use for dilating may not be more than the current cell level plus maxLevelDiff.
+          // To dilate this output leaf, we want to use the highest level possible for accuracy,
+          // which is radiusLevel, but the cell level to use for dilating may not be more than the
+          // current cell level plus maxLevelDiff.
           int dilateLevel = min(radiusLevel, maxLevelDiff + cellId.level());
 
-          neighbors.clear();
-          cellId.getAllNeighbors(dilateLevel, neighbors);
-          for (S2CellId nbr : neighbors) {
-            // If this neighbor is already present with sufficient weight, go to the next.
-            if (weights.getOrDefault(nbr, 0L) >= dilatedWeight) {
-              continue;
-            }
-
-            // Otherwise, insert it or increase the weight to 'dilatedWeight', and ensure that all
-            // its ancestors also have weight at least 'dilatedWeight' so the tree is valid.
-            weights.put(nbr, dilatedWeight);
-            for (;
-                nbr.level() > 0 && weights.getOrDefault(nbr.parent(), 0L) < dilatedWeight;
-                nbr = nbr.parent()) {
-              weights.put(nbr.parent(), dilatedWeight);
-            }
-          }
+          // For each neighbor that intersects the dilation area, and is not already present with
+          // sufficient weight, insert it or increase the weight to 'dilatedWeight'. Also ensure
+          // that all its ancestors also have weight at least 'dilatedWeight' so the tree is valid.
+          cellId.visitNeighbors(
+              dilateLevel,
+              nbr -> {
+                if (!dilationCells.intersects(nbr)) {
+                  // This neighbor isn't in the area of dilation, ignore it but keep going.
+                  return true;
+                }
+                if (weights.getOrDefault(nbr, 0L) < dilatedWeight) {
+                  weights.put(nbr, dilatedWeight);
+                  for (;
+                      nbr.level() > 0 && weights.getOrDefault(nbr.parent(), 0L) < dilatedWeight;
+                      nbr = nbr.parent()) {
+                    weights.put(nbr.parent(), dilatedWeight);
+                  }
+                }
+                return true;
+              });
 
           return CellVisitor.Action.SKIP_CELL;
         });
@@ -545,16 +643,16 @@ public class S2DensityTree {
   /**
    * Returns a new density tree that contains the summed weights across the cells in the given input
    * trees. This sum may be a lossy operation if any of the input trees are more detailed than the
-   * other limit parameters allow. If this will be called multiple times, use
-   * {@link #createSumDensityOp} to get a reusable {@link AggregateDensityOp} that is often much
-   * faster for repeated calls.
+   * other limit parameters allow. If this will be called multiple times, use {@link
+   * #createSumDensityOp} to get a reusable {@link AggregateDensityOp} that is often much faster for
+   * repeated calls.
    *
    * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
-   * level at a time until this limit is reached, so in practice the actual size may be up to 4x
-   * this limit in the worst-case
+   *     level at a time until this limit is reached, so in practice the actual size may be up to 4x
+   *     this limit in the worst-case
    * @param maxLevel the max level to create in the tree, where most paths in the tree will reach
-   * this limit except cells contained by polygons, which can save a lot of space in polygonal
-   * datasets
+   *     this limit except cells contained by polygons, which can save a lot of space in polygonal
+   *     datasets
    */
   @JsIgnore // Iterable<S2DensityTree> "is not usable by JavaScript" but not clear why.
   public static S2DensityTree sumDensity(
@@ -563,19 +661,19 @@ public class S2DensityTree {
   }
 
   /**
-  * Returns a new density tree that contains summed weights of cells in the given input trees where
-   * *all* the input trees contribute non-zero weight *at their leaves* to every output cell.
-   * Cells where any input tree has no weight at the leaves are pruned from the output tree.
+   * Returns a new density tree that contains summed weights of cells in the given input trees where
+   * *all* the input trees contribute non-zero weight *at their leaves* to every output cell. Cells
+   * where any input tree has no weight at the leaves are pruned from the output tree.
    *
-   * <p>For example, given two input trees, one of which covers a collection of features in
-   * Portland and one of which covers a collection of features in Seattle, the intersection of the
-   * two trees is empty, even though both trees have the level 5 cell with token "5494" in common,
-   * along with all the ancestors of that cell.
+   * <p>For example, given two input trees, one of which covers a collection of features in Portland
+   * and one of which covers a collection of features in Seattle, the intersection of the two trees
+   * is empty, even though both trees have the level 5 cell that covers both cities in common, along
+   * with all the ancestors of that cell.
    *
    * <p>This sum may be a lossy operation if any of the input trees are more detailed than the other
    * limit parameters allow. If this will be called multiple times, use {@link
-   * #createIntersectionDensityOp} to get a reusable {@link AggregateDensityOp} that is
-   * often much faster for repeated calls.
+   * #createIntersectionDensityOp} to get a reusable {@link AggregateDensityOp} that is often much
+   * faster for repeated calls.
    *
    * @param trees S2DensityTrees to combine
    * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
@@ -619,8 +717,8 @@ public class S2DensityTree {
   public interface FeatureDensityOp<F> {
     /**
      * Returns the density of {@code shapes}, by converting shapes that intersect each cell to
-     * features with {@code features}, and weighing each <strong>instance</strong> of the
-     * feature with {@code weights} just once.
+     * features with {@code features}, and weighing each <strong>instance</strong> of the feature
+     * with {@code weights} just once.
      */
     S2DensityTree apply(S2ShapeIndex shapes, FeatureLookup<F> features, FeatureWeigher<F> weights);
   }
@@ -688,42 +786,77 @@ public class S2DensityTree {
   /** A weigher of feature weights, where each feature may have multiple shapes. */
   @JsType
   public static class FeatureDensityWeigher<T> implements CellWeightFunction {
+    /** The region to test each cell against. */
     private S2ShapeIndexRegion region;
-    private FeatureLookup<T> features;
-    private FeatureWeigher<T> weights;
-    private final Set<T> found = Sets.newIdentityHashSet();
+
+    /** Maps shape IDs to the feature ID that owns the shape, i.e. {@code id = ids[shapeId]}. */
+    private int[] ids;
+
+    /** Maps feature IDs to weights, i.e. {@code weight = weights[ids[shapeId]]}. */
+    private int[] weights;
+
+    /** The last call each ID was seen in, i.e. {@code call = lastCall[ids[shapeId]]}. */
+    private int[] lastCall;
+
+    /** The next call number. Increment to separate previous results from new results. */
+    private int nextCall;
+
+    /** The sum of weight seen in the current cell. */
     private long sum;
+
+    /** If true then all features contained the current cell. */
     private boolean allContained;
 
     /**
      * Initialize this weigher.
      *
      * @param shapes an index that gets the shapes that intersect a cell to weigh
-     * @param features a lookup function that gets the features corresponding to each shape
-     * @param weights a lookup function that gets the weight of each feature
+     * @param featureLookup a lookup function that gets the features corresponding to each shape
+     * @param weightLookup a lookup function that gets the weight of each feature
      */
     public void init(
-        S2ShapeIndex shapes, FeatureLookup<T> features, FeatureWeigher<T> weights) {
-      this.region = new S2ShapeIndexRegion(shapes);
-      this.features = features;
-      this.weights = weights;
+        S2ShapeIndex shapes, FeatureLookup<T> featureLookup, FeatureWeigher<T> weightLookup) {
+      region = new S2ShapeIndexRegion(shapes);
+      ids = new int[shapes.shapes.size()];
+      // Assign consecutive integer ids to features in shape ID order.
+      IdentityHashMap<T, Integer> map = Maps.newIdentityHashMap();
+      for (int i = 0; i < this.ids.length; i++) {
+        T feature = featureLookup.feature(shapes.shapes.get(i));
+        ids[i] = map.computeIfAbsent(feature, s -> map.size());
+      }
+      // Compute the weights of each feature.
+      weights = new int[map.size()];
+      lastCall = new int[weights.length];
+      nextCall = 1;
+      map.forEach(
+          (feature, id) -> {
+            weights[id] = toIntExact(weightLookup.weight(feature));
+          });
     }
 
     @Override
     public long applyAsLong(S2CellId cell) {
-      Preconditions.checkState(found.isEmpty());
       sum = 0;
       allContained = true;
       region.visitIntersectingShapes(new S2Cell(cell), this::sumFeatures);
-      found.clear();
+      // sumFeatures uses lastCall[id]==nextCall to detect whether it's the first time we have seen
+      // a feature *for this cell*. Rather than clear a set of IDs, just increment nextCall so all
+      // lastCall elements can be seen the first time. If the nextCall value reaches its max value,
+      // only then do we reset things to the starting position, but unlike Set.clear() after each
+      // call to this method, rolling over the nextCall should be incredibly rare.
+      if (++nextCall == Integer.MAX_VALUE) {
+        nextCall = 1;
+        Arrays.fill(lastCall, 0);
+      }
       return allContained ? -sum : sum;
     }
 
     /** Adds the weight of this shape if it belongs to a feature we haven't yet seen. */
-    private boolean sumFeatures(S2Shape shape, boolean containsTarget) {
-      T feature = features.feature(shape);
-      if (found.add(feature)) {
-        sum += weights.weight(feature);
+    private boolean sumFeatures(int shapeId, boolean containsTarget) {
+      int featureId = ids[shapeId];
+      if (lastCall[featureId] != nextCall) {
+        lastCall[featureId] = nextCall;
+        sum += weights[featureId];
         allContained &= containsTarget;
       }
       return true;
@@ -768,8 +901,9 @@ public class S2DensityTree {
    *
    * <p>This class is not thread safe, but reusing an instance saves a lot of allocation.
    */
-  @VisibleForTesting
-  static class IndexCellWeightFunction implements BreadthFirstTreeBuilder.CellWeightFunction {
+  public static class IndexCellWeightFunction
+      implements BreadthFirstTreeBuilder.CellWeightFunction {
+    private final S2ShapeIndex index;
     private final S2ShapeIndexRegion region;
     private final ShapeWeightFunction weigher;
 
@@ -778,22 +912,25 @@ public class S2DensityTree {
      * @param weigher The weigher of each shape in the given index
      */
     public IndexCellWeightFunction(S2ShapeIndex index, ShapeWeightFunction weigher) {
+      this.index = index;
       this.region = new S2ShapeIndexRegion(index);
       this.weigher = weigher;
     }
 
     /**
-     * Returns the total weight of all shapes that intersect the given cell. This function can
-     * return negative weights, which indicates that the cell is fully contained by all shapes that
-     * intersect it.
+     * Returns the total weight of all shapes that intersect the given cell. Negates the returned
+     * total if the cell is fully contained by all shapes that intersect it.
      */
-    @Override public long applyAsLong(S2CellId cell) {
+    @Override
+    public long applyAsLong(S2CellId cell) {
       class IntersectingVisitor implements ShapeVisitor {
         long sum = 0;
         long limit = MAX_WEIGHT;
         boolean allContained = true;
-        @Override public boolean test(S2Shape shape, boolean containsTarget) {
-          long weight = weigher.applyAsLong(shape);
+
+        @Override
+        public boolean test(int shapeId, boolean containsTarget) {
+          long weight = weigher.applyAsLong(index.getShapes().get(shapeId));
           Preconditions.checkState(weight >= 0, "Weight must not be negative.");
           limit -= weight;
           Preconditions.checkState(limit >= 0, "Weight must be at most " + MAX_WEIGHT);
@@ -801,6 +938,7 @@ public class S2DensityTree {
           allContained &= containsTarget;
           return true;
         }
+
         /** Returns the sum of the shape weights, negated if all shapes contained the cell. */
         long finalWeight() {
           return allContained ? -sum : sum;
@@ -813,12 +951,86 @@ public class S2DensityTree {
     }
   }
 
-  /**
-   * An abstract combiner of {@link S2DensityTree}s.
-   */
+  /** A weigher of features described by cells. */
+  public static class CellDensityFunction implements CellWeightFunction {
+    private final S2CellIndex index;
+    private final S2CellUnion[] coverings;
+    private final long[] weights;
+    private final S2CellUnion query = new S2CellUnion();
+
+    /**
+     * Creates a new cell density function. The index must have been created from 'coverings', as
+     * done by {@link #fromArrays}.
+     *
+     * @param index the index of cell->row, which must contain 'coverings'
+     * @param coverings an array of coverings indexed by label in 'index'
+     * @param weights an array of weights indexed by label in 'index'
+     */
+    public CellDensityFunction(S2CellIndex index, S2CellUnion[] coverings, long[] weights) {
+      Preconditions.checkArgument(coverings.length == weights.length);
+      this.index = index;
+      this.coverings = coverings;
+      this.weights = weights;
+    }
+
+    /**
+     * Creates a new cell density function. A cell index is created from 'coverings' with the
+     * corresponding weights. If the index of 'coverings' has already been created, consider calling
+     * the {@link CellDensityFunction () constructor} instead.
+     *
+     * @param coverings an array of coverings, pairwise with 'weights'
+     * @param weights an array of weights, pairwise with 'coverings'
+     */
+    public static CellDensityFunction fromArrays(S2CellUnion[] coverings, long[] weights) {
+      S2CellIndex index = new S2CellIndex();
+      for (int i = 0; i < coverings.length; i++) {
+        index.add(coverings[i], i);
+      }
+      index.build();
+      return new CellDensityFunction(index, coverings, weights);
+    }
+
+    @Override
+    public long applyAsLong(S2CellId cell) {
+      query.cellIds().add(cell);
+      long sum = 0;
+      boolean contained = true;
+      for (int label : index.getIntersectingLabels(query)) {
+        sum += weights[label];
+        contained &= coverings[label].contains(query);
+      }
+      query.cellIds().clear();
+      return contained ? -sum : sum;
+    }
+
+    /** Returns a weigher of features, given functions to extract the covering and weight. */
+    public static <T> CellWeightFunction fromFeatures(
+        List<T> features, Function<T, S2CellUnion> covering, ToLongFunction<T> weight) {
+      S2CellUnion[] coverings = new S2CellUnion[features.size()];
+      long[] weights = new long[features.size()];
+      for (int i = 0; i < features.size(); i++) {
+        T feature = features.get(i);
+        coverings[i] = covering.apply(feature);
+        weights[i] = weight.applyAsLong(feature);
+      }
+      return fromArrays(coverings, weights);
+    }
+
+    /** Returns density of 'features', using given functions to get covering and weight. */
+    public static <T> S2DensityTree density(
+        List<T> features,
+        Function<T, S2CellUnion> covering,
+        ToLongFunction<T> weight,
+        BreadthFirstTreeBuilder builder) {
+      return builder.build(fromFeatures(features, covering, weight));
+    }
+  }
+
+  /** An abstract combiner of {@link S2DensityTree}s. */
   abstract static class AggregateDensity implements BreadthFirstTreeBuilder.CellWeightFunction {
     /** The decoded path for each input. */
     protected final List<DecodedPath> decodedPaths = new ArrayList<>();
+
     /** The number of trees being combined. */
     protected int size;
 
@@ -846,37 +1058,37 @@ public class S2DensityTree {
    * discard higher level cells from the resulting density map, so space remains bounded while we
    * gradually lose precision.
    */
-  @VisibleForTesting
-  static class SumDensity extends AggregateDensity {
+  public static class SumDensity extends AggregateDensity {
     /**
-     * Sums the weights in 'cell', returning negative weight if all inputs are contained by or
-     * disjoint from all the input trees.
+     * Sums the weights for the given cell id over all the input trees. A positive weight is
+     * returned if at least one of the trees has children at the cell with the given id. A negative
+     * weight is returned if the given cell id is a leaf or a child of a leaf in all the trees.
      */
     @Override
-    public long applyAsLong(S2CellId cell) {
+    public long applyAsLong(S2CellId id) {
       long sum = 0;
-      boolean contained = true;
+      boolean allContained = true;
       for (int i = 0; i < size; i++) {
-        Cell node = decodedPaths.get(i).cell(cell);
+        Cell node = decodedPaths.get(i).cell(id);
         sum += node.weight;
-        contained &= !node.hasChildren();
+        allContained &= !node.hasChildren();
       }
-      sum = Math.min(MAX_WEIGHT, sum);
-      return contained ? -sum : sum;
+      sum = min(MAX_WEIGHT, sum);
+      return allContained ? -sum : sum;
     }
   }
 
   /**
    * A combiner of {@link S2DensityTree} that sums the weights of the input density trees in cells
    * that intersect the leaves of all the provided density trees. Cells that do not intersect every
-   * tree at the leaves are pruned from the combined tree. Like {@link SumDensity}, respects a
-   * given max size in bytes. If the set of trees remains under the max size, then the highest level
-   * cells will be the most detailed paths in any of the input trees. If the set of trees exceeds
-   * the max size, then we will prefer to discard higher level cells from the resulting density map,
-   * so space remains bounded while we gradually lose precision.
+   * tree at the leaves are pruned from the combined tree. Like {@link SumDensity}, respects a given
+   * max size in bytes. If the set of trees remains under the max size, then the highest level cells
+   * will be the most detailed paths in any of the input trees. If the set of trees exceeds the max
+   * size, then we will prefer to discard higher level cells from the resulting density map, so
+   * space remains bounded while we gradually lose precision.
    */
   @VisibleForTesting
-  static class IntersectionDensity extends AggregateDensity {
+  static class IntersectionDensity extends SumDensity {
     private final S2CellUnion intersectingLeaves;
 
     /** Constructs a combiner of input densities for the given trees. */
@@ -905,40 +1117,40 @@ public class S2DensityTree {
       return intersectingLeaves;
     }
 
+    /**
+     * Sums the weights for the given cell id over the intersection of the input trees. If any of
+     * the input trees doesn't have a leaf intersecting the given cell, returns zero. Otherwise,
+     * behaves the same as SumDensity.
+     */
     @Override
-    public long applyAsLong(S2CellId cell) {
-      // If 'cell' intersects 'intersectingLeaves', this is exactly like SumDensity.applyAsLong().
-      // Otherwise, return zero.
-      if (!intersectingLeaves.intersects(cell)) {
-        return 0;
-      }
-      long sum = 0;
-      boolean contained = true;
-      for (int i = 0; i < size; i++) {
-        Cell node = decodedPaths.get(i).cell(cell);
-        sum += node.weight;
-        contained &= !node.hasChildren();
-      }
-      sum = min(MAX_WEIGHT, sum);
-      return contained ? -sum : sum;
+    public long applyAsLong(S2CellId id) {
+      return intersectingLeaves.intersects(id) ? super.applyAsLong(id) : 0;
     }
   }
 
   /**
    * A random access cell decoder that only decodes as much of the path from the root down to the
    * specified cell id passed to {@link #weight} or {@link #cell} as is different from the last
-   * call. The path's current {@link #cell} is either from the tree, or has weight 0 and no
-   * children if the current path is disjoint from the tree. Greatly accelerates calls to many
-   * nearby cells.
+   * call. The path's current {@link #cell} is either from the tree, or has weight 0 and no children
+   * if the current path is disjoint from the tree. Greatly accelerates calls to many nearby cells.
    */
   public static class DecodedPath {
     private S2DensityTree tree;
     private Cursor cursor;
     private final List<Cell> stack = new ArrayList<>();
-    private S2CellId last;
+
+    /** The id of the cell last actually decoded, or null. Not an empty cell. */
+    private S2CellId lastDecoded;
+
+    private static final Cell EMPTY_CELL;
+
+    static {
+      EMPTY_CELL = new Cell();
+      EMPTY_CELL.setNoChildren();
+    }
 
     /** Default constructor. {@link #set(S2DensityTree)} must be called before use. */
-    public DecodedPath() { }
+    public DecodedPath() {}
 
     /** Constructor that calls set(). */
     public DecodedPath(S2DensityTree tree) {
@@ -949,84 +1161,88 @@ public class S2DensityTree {
     public void set(S2DensityTree tree) {
       this.tree = tree;
       this.cursor = tree.encoded.cursor();
-      this.last = null;
+      this.lastDecoded = null;
     }
 
     /**
-     * Returns the weight of the tree in the given cell or 0 if it does not exist. The stack
-     * remembers the path to the last weighed cell in order to skip decoding unchanged parents.
+     * Returns the weight of the Cell at 'cell' or the weight of the leaf containing 'cell', if
+     * present in the tree. Otherwise returns weight 0. The stack remembers the path to the last
+     * decoded cell in order to skip decoding unchanged parents.
      */
     public long weight(S2CellId id) {
       return cell(id).weight;
     }
 
     /**
-     * As {@link #weight}, but returns the cell. If the cell is not present in the tree, an
-     * {@link Cell#isEmpty() empty cell} is returned.
+     * Returns the Cell at 'cell' or that is a leaf containing 'cell', if present in the tree.
+     * Otherwise, 'cell' has weight 0, so an {@link Cell#isEmpty() empty cell} is returned. The
+     * stack remembers the path to the last decoded cell in order to skip decoding unchanged
+     * parents.
      */
-    public Cell cell(S2CellId id) {
-      int level = id.level();
-      int loadedLevel = loadedLevel(id);
-      Cell cell = null;
-      if (loadedLevel < 0) {
-        cell = loadFace(id.face());
-        loadedLevel = 0;
+    public Cell cell(S2CellId cell) {
+      int decodedLevel = decodedLevel(cell);
+      if (decodedLevel < 0) {
+        Cell node = loadFace(cell.face());
+        if (node.isEmpty()) {
+          return node;
+        }
+        decodedLevel = 0;
       }
-      if (level >= 0) {
-        cell = loadCell(loadedLevel, level, id);
-      }
-      return cell;
+      return loadCell(decodedLevel, cell);
     }
 
-    /** Returns the level of the first already-loaded parent, or -1 if none are loaded. */
-    private int loadedLevel(S2CellId cell) {
-      if (last == null) {
+    /**
+     * Returns the level of the deepest already-decoded parent of the given cell id, or -1 if none
+     * are decoded.
+     */
+    private int decodedLevel(S2CellId cell) {
+      if (lastDecoded == null) {
         return -1;
-      } else if (last.contains(cell)) {
-        return last.level();
+      } else if (lastDecoded.contains(cell)) {
+        return lastDecoded.level();
       } else {
-        return last.getCommonAncestorLevel(cell);
+        return lastDecoded.getCommonAncestorLevel(cell);
       }
     }
 
     /**
-     * Returns a decoded face cell from the stack set to the values in 'cell'. If the cell is not
-     * present in the tree, an {@link Cell#isEmpty() empty cell} is returned.
-    */
+     * Returns a decoded face cell from the stack for the given face, in [0..5]. If the face cell is
+     * not present in the tree, an {@link Cell#isEmpty() empty cell} is returned.
+     */
     private Cell loadFace(int face) {
       Cell cell = get(0);
       if (tree.facePositions[face] < 0) {
         // The face cell isn't present in this tree, so return no weight or children.
         cell.weight = 0;
         cell.setNoChildren();
-        last = null;
+        lastDecoded = null;
       } else {
         // The face cell is present so load the weight and child positions.
         cursor.position = tree.facePositions[face];
         cell.decode(tree.encoded, cursor);
-        last = FACE_CELLS[face];
+        lastDecoded = FACE_CELLS[face];
       }
       return cell;
     }
 
     /**
-     * Returns a decoded cell for 'cell'. Only levels above 'loadedLevel' must be loaded. If the
-     * cell is not present in the tree, a cell with zero weight and no children is returned.
+     * Returns a decoded Cell for 'cell', or if that Cell is not in the tree, the deepest ancestor
+     * of 'id' in the tree, if that ancestor is a leaf. Otherwise, returns an empty Cell. Only
+     * levels above 'decodedLevel' must be loaded.
      */
-    private Cell loadCell(int loadedLevel, int level, S2CellId cell) {
-      Cell decodedCell = get(loadedLevel);
-      for (int i = loadedLevel + 1; i <= level; i++) {
+    private Cell loadCell(int decodedLevel, S2CellId cell) {
+      Cell decodedCell = get(decodedLevel);
+      for (int i = decodedLevel + 1; i <= cell.level(); i++) {
         cursor.position = decodedCell.positions[cell.childPosition(i)];
-        decodedCell = get(i);
         if (cursor.position < 0) {
-          // This tree doesn't contain the requested cell.
-          decodedCell.weight = 0;
-          decodedCell.setNoChildren();
-        } else {
-          // We have a child to load, so go load it.
-          decodedCell.decode(tree.encoded, cursor);
+          // This tree doesn't contain the requested cell. Return the last available ancestor, if
+          // that ancestor is a leaf, otherwise an empty cell.
+          return decodedCell.hasChildren() ? EMPTY_CELL : decodedCell;
         }
-        last = cell;
+        decodedCell = get(i);
+        // We have a child to decode, so decode it.
+        decodedCell.decode(tree.encoded, cursor);
+        lastDecoded = cell.parent(i);
       }
       return decodedCell;
     }
@@ -1059,7 +1275,7 @@ public class S2DensityTree {
 
     /**
      * @param approximateSizeBytes The max size in bytes to aim for, actual usage may be 4x higher,
-     * but averages around this size
+     *     but averages around this size
      * @param maxLevel The max level to compute density information for
      */
     @JsIgnore
@@ -1087,8 +1303,8 @@ public class S2DensityTree {
      * which must produce values greater than 0 for cells to have their children weighed.
      *
      * @param weigher A producer of the absolute weight of each cell, which must produce 0 if the
-     * cell is disjoint, a weight between 1 and {@link #MAX_WEIGHT} if the cell intersects, and a
-     * negation of the weight if the cell is contained.
+     *     cell is disjoint, a weight between 1 and {@link #MAX_WEIGHT} if the cell intersects, and
+     *     a negation of the weight if the cell is contained.
      */
     public S2DensityTree build(CellWeightFunction weigher) {
       clear();
@@ -1110,7 +1326,7 @@ public class S2DensityTree {
               // Skip disjoint cells.
               continue;
             } else if (weight < 0) {
-              // Get the absolute weight and skip searching the children.
+              // Get the absolute weight and skip searching children, as there are none.
               weight = -weight;
             } else {
               // Add this hilbert range to the ranges to scan at the next level.
@@ -1213,6 +1429,7 @@ public class S2DensityTree {
 
     /** The weight of this cell. */
     long weight;
+
     /** The position of each child in {@link S2CellId#childPosition} order, or -1 if child unset. */
     final int[] positions = new int[4];
 
@@ -1269,6 +1486,13 @@ public class S2DensityTree {
     /** Returns the weight in this node. */
     public long weight() {
       return weight;
+    }
+
+    /** For debugging or logging. */
+    @Override
+    public String toString() {
+      return Platform.formatString(
+          "Cell[weight=%d, positions=%s]", weight, Arrays.toString(positions));
     }
   }
 
@@ -1328,17 +1552,18 @@ public class S2DensityTree {
 
     /**
      * Orders by rangeMin and breaks ties by reversed cell level, so reading from the end is a
-     * preorder s2cell traversal where faces and children are reversed.
+     * preorder S2Cell traversal where faces and children are reversed.
      */
-    private static final Comparator<WeightedCell> ENCODER_ORDER = (a, b) -> {
-      if (b.cell.contains(a.cell)) {
-        return -1;
-      } else if (a.cell.contains(b.cell)) {
-        return 1;
-      } else {
-        return a.cell.compareTo(b.cell);
-      }
-    };
+    private static final Comparator<WeightedCell> ENCODER_ORDER =
+        (a, b) -> {
+          if (b.cell.contains(a.cell)) {
+            return -1;
+          } else if (a.cell.contains(b.cell)) {
+            return 1;
+          } else {
+            return a.cell.compareTo(b.cell);
+          }
+        };
 
     /** Encodes the current set of cell/weight pairs and returns the new density tree. */
     public S2DensityTree build() {
@@ -1350,7 +1575,7 @@ public class S2DensityTree {
         int faceMask = 0;
         while (size > 0) {
           WeightedCell weighted = weights[--size];
-          // assert weighted.cell.level() == 0 : "First cell of a face must be a face cell";
+          assert weighted.cell.level() == 0 : "First cell of a face must be a face cell";
           int face = weighted.cell.face();
           encodeCellReverse(0, weighted);
           lengths.next();
@@ -1375,7 +1600,7 @@ public class S2DensityTree {
       ReversedLengthsWriter lengths = new ReversedLengthsWriter(output);
       while (size > 0 && parent.cell.contains(weights[size - 1].cell)) {
         WeightedCell child = weights[--size];
-        // assert parent.cell.equals(child.cell.parent()) : "Must be a direct descendant";
+        assert parent.cell.equals(child.cell.parent()) : "Must be a direct descendant";
         int childLevel = level + 1;
         childMask |= 1 << child.cell.childPosition(childLevel);
         encodeCellReverse(childLevel, child);
@@ -1390,6 +1615,7 @@ public class S2DensityTree {
     private static class WeightedCell {
       S2CellId cell;
       long weight;
+
       void set(S2CellId cell, long weight) {
         this.cell = cell;
         this.weight = weight;
@@ -1456,16 +1682,19 @@ public class S2DensityTree {
         return size;
       }
 
-      @Override public void write(int b) {
+      @Override
+      public void write(int b) {
         maybeResize(1);
         bytes[size++] = (byte) b;
       }
 
-      @Override public void write(byte[] b) {
+      @Override
+      public void write(byte[] b) {
         write(b, 0, b.length);
       }
 
-      @Override public void write(byte[] b, int off, int len) {
+      @Override
+      public void write(byte[] b, int off, int len) {
         maybeResize(len);
         for (int i = 0; i < len; i++) {
           bytes[size++] = b[off++];
@@ -1503,4 +1732,3 @@ public class S2DensityTree {
     }
   }
 }
-

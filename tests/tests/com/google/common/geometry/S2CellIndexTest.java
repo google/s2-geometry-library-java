@@ -15,6 +15,10 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.S2CellIndex.CellIterator;
 import com.google.common.geometry.S2CellIndex.ContentsIterator;
@@ -27,32 +31,41 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2CellIndex}. */
+@RunWith(JUnit4.class)
 public class S2CellIndexTest extends GeometryTestCase {
   private final S2CellIndex index = new S2CellIndex();
   private final List<LabelledCell> contents = new ArrayList<>();
 
-  @Override
-  public void setUp() {
-    super.setUp();
+  @Before
+  public void clear() {
     index.clear();
     contents.clear();
   }
 
+  @Test
   public void testEmpty() {
     quadraticValidate();
   }
 
+  @Test
   public void testOneFaceCell() {
     add("0/", 0);
     quadraticValidate();
   }
 
+  @Test
   public void testOneLeafCell() {
     add("1/012301230123012301230123012301", 12);
     quadraticValidate();
   }
 
+  @Test
   public void testDuplicateValues() {
     add("0/", 0);
     add("0/", 0);
@@ -61,12 +74,14 @@ public class S2CellIndexTest extends GeometryTestCase {
     quadraticValidate();
   }
 
+  @Test
   public void testDisjointCells() {
     add("0/", 0);
     add("3/", 0);
     quadraticValidate();
   }
 
+  @Test
   public void testNestedCells() {
     // Tests nested cells, including cases where several cells have the same rangeMin() or
     // rangeMax() and with randomly ordered labels.
@@ -87,6 +102,7 @@ public class S2CellIndexTest extends GeometryTestCase {
     quadraticValidate();
   }
 
+  @Test
   public void testRandomCellUnions() {
     // Construct cell unions from random S2CellIds at random levels. Note that because the cell
     // level is chosen uniformly, there is a very high likelihood that the cell unions will overlap.
@@ -96,6 +112,7 @@ public class S2CellIndexTest extends GeometryTestCase {
     quadraticValidate();
   }
 
+  @Test
   public void testContentsIteratorSuppressesDuplicates() {
     // Checks that ContentsIterator stops reporting values once it reaches a node of the cell tree
     // that was visited by the previous call to begin().
@@ -144,6 +161,7 @@ public class S2CellIndexTest extends GeometryTestCase {
   }
 
   // Tests various corner cases for the binary search optimization in visitIntersectingCells.
+  @Test
   public void testIntersectionOptimization() {
     add("1/001", 1);
     add("1/333", 2);
@@ -154,6 +172,7 @@ public class S2CellIndexTest extends GeometryTestCase {
     checkIntersection(makeCellUnion("2/010", "2/011", "2/02"));
   }
 
+  @Test
   public void testIntersectionRandomUnions() {
     // Construct cell unions from random S2CellIds at random levels. Note that because the cell
     // level is chosen uniformly, there is a very high likelihood that the cell unions will overlap.
@@ -167,6 +186,7 @@ public class S2CellIndexTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIntersectionSemiRandomUnions() {
     // This test also uses random S2CellUnions, but the unions are specially constructed so that
     // interesting cases are more likely to arise.
@@ -197,6 +217,7 @@ public class S2CellIndexTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLabelsEmptyNormalize() {
     Labels labels = new Labels();
     labels.normalize();

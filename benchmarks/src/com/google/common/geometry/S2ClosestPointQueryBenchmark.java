@@ -29,7 +29,6 @@ import com.google.common.geometry.S2PointIndex;
 import com.google.common.geometry.TestDataGenerator;
 import com.google.common.geometry.TestDataGenerator.PointFactory;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -208,7 +207,7 @@ public class S2ClosestPointQueryBenchmark {
     // Reset all the data for each iteration, as the queries build up internal state.
     @Setup(Level.Iteration)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       benchmarkData = new BMData(data, factory, numPoints, -1.0, target, false, false);
       rep = 0;
@@ -255,7 +254,7 @@ public class S2ClosestPointQueryBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       benchmarkData =
           new BMData(
@@ -298,7 +297,7 @@ public class S2ClosestPointQueryBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       benchmarkData = new BMData(data, factory, numPoints, -1, target, true, false);
     }

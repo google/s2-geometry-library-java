@@ -45,7 +45,7 @@ public class S2BenchmarkBaseState {
    * Reinitializes the TestDataGenerator, which reinitializes the contained Random to a known state.
    * This is equivalent to calling data.resetSeed().
    */
-  public void setup() throws IOException {
+  public void setup() {
     data = new TestDataGenerator();
   }
 
@@ -81,7 +81,6 @@ public class S2BenchmarkBaseState {
     protected static final int NUM_QUERY_SAMPLES = 10;
     protected static final int NUM_POLYGONS = 5;
 
-    protected boolean preindexOption;
     protected List<S2Polygon> polygons = new ArrayList<>(NUM_POLYGONS);
     protected List<List<S2Point>> queries = new ArrayList<>(NUM_POLYGONS);
     protected int polygonIndex;
@@ -97,8 +96,6 @@ public class S2BenchmarkBaseState {
         int totalNumVertices,
         boolean preindexOption)
         throws IOException {
-      // Saved so subclasses can use it to index their polygons.
-      this.preindexOption = preindexOption;
       polygons.clear();
       queries.clear();
 
@@ -149,7 +146,6 @@ public class S2BenchmarkBaseState {
    */
   public abstract static class PolygonListState extends S2BenchmarkBaseState {
     protected static final int NUM_POLYGONS = 10;
-    protected boolean preindexOption;
     protected ArrayList<S2Polygon> polygons = new ArrayList<>(NUM_POLYGONS);
     protected ArrayList<S2Polygon> copies = new ArrayList<>(NUM_POLYGONS);
     protected ArrayList<S2Polygon> bounds = new ArrayList<>(NUM_POLYGONS);
@@ -163,7 +159,6 @@ public class S2BenchmarkBaseState {
         boolean preindexOption)
         throws IOException {
       super.setup();
-      this.preindexOption = preindexOption;
 
       polygons.clear();
       copies.clear();

@@ -16,12 +16,21 @@
 
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.List;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2ShapeIndexRegion}. */
+@RunWith(JUnit4.class)
 public class S2ShapeIndexRegionTest extends GeometryTestCase {
   /**
    * When building the S2ShapeIndex, each UV rectangle around an index cell is padded slightly to
@@ -35,12 +44,13 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
 
   private S2ShapeIndex index;
 
-  @Override
-  protected void setUp() {
-    super.setUp();
+  @Before
+  public void newIndex() {
     index = new S2ShapeIndex();
   }
 
+
+  @Test
   public void testGetCapBound() {
     S2CellId id = S2CellId.fromDebugString("3/0123012301230123012301230123");
 
@@ -57,6 +67,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
             <= 1.00001 * cellBound.radius().toAngle().radians());
   }
 
+  @Test
   public void testGetRectBound() {
     S2CellId id = S2CellId.fromDebugString("3/0123012301230123012301230123");
 
@@ -67,6 +78,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     assertEquals(indexBound, cellBound);
   }
 
+  @Test
   public void testGetCellUnionBoundMultipleFaces() {
     S2CellId[] ids = {S2CellId.fromDebugString("3/00123"), S2CellId.fromDebugString("2/11200013")};
     for (S2CellId id : ids) {
@@ -78,6 +90,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     assertEquals(Arrays.asList(ids), covering);
   }
 
+  @Test
   public void testGetCellUnionBoundOneFace() {
     // This tests consists of 3 pairs of S2CellIds. Each pair is located within one of the children
     // of face 5, namely the cells 5/0, 5/1, and 5/3. We expect GetCellUnionBound to compute the
@@ -106,6 +119,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     assertEquals(Arrays.asList(expected), actual);
   }
 
+  @Test
   public void testContainsCellMultipleShapes() {
     // Create a debug cell, and shapes slightly smaller and larger than that cell.
     S2CellId id = S2CellId.fromDebugString("3/0123012301230123012301230123");
@@ -129,6 +143,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIntersectsShrunkenCell() {
     S2CellId target = S2CellId.fromDebugString("3/0123012301230123012301230123");
 
@@ -145,6 +160,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIntersectsExactCell() {
     S2CellId target = S2CellId.fromDebugString("3/0123012301230123012301230123");
 
@@ -186,7 +202,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
     private final S2ShapeIndex index;
     private final S2Iterator<S2ShapeIndex.Cell> iter;
     private final S2ShapeIndexRegion region;
-    private final IdentityHashMap<S2Shape, S2ShapeIndex> shapeIndexes;
+    private final List<S2ShapeIndex> shapeIndexes = new ArrayList<>();
 
     public VisitIntersectingShapesTest(S2ShapeIndex index) {
       this.index = index;
@@ -195,11 +211,10 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
 
       // Create an S2ShapeIndex for each shape in the original index, so that we can use
       // mayIntersect() and contains() to determine the status of individual shapes.
-      shapeIndexes = new IdentityHashMap<>();
       for (S2Shape shape : index.getShapes()) {
         S2ShapeIndex shapeIndex = new S2ShapeIndex();
         shapeIndex.add(shape);
-        shapeIndexes.put(shape, shapeIndex);
+        shapeIndexes.add(shapeIndex);
       }
     }
 
@@ -211,23 +226,21 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
 
     private void testCell(S2Cell target) {
       // Indicates whether each shape that intersects "target" also contains it.
-      IdentityHashMap<S2Shape, Boolean> shapeContains = new IdentityHashMap<>();
-      assertTrue(region.visitIntersectingShapes(target, new S2ShapeIndexRegion.ShapeVisitor() {
-        @Override
-        public boolean test(S2Shape shape, boolean containsTarget) {
-          // Verify that each shape is visited at most once.
-          assertFalse(shapeContains.containsKey(shape));
-          shapeContains.put(shape, containsTarget);
-          return true;
-        }
+      boolean[] shapeSeen = new boolean[index.getShapes().size()];
+      boolean[] shapeContains = new boolean[index.getShapes().size()];
+      assertTrue(region.visitIntersectingShapes(target, (shapeId, containsTarget) -> {
+        // Verify that each shape is visited at most once.
+        assertFalse(shapeSeen[shapeId]);
+        shapeSeen[shapeId] = true;
+        shapeContains[shapeId] = containsTarget;
+        return true;
       }));
 
-      for (S2Shape shape : index.getShapes()) {
-        S2ShapeIndexRegion shapeRegion = new S2ShapeIndexRegion(shapeIndexes.get(shape));
-        if (!shapeRegion.mayIntersect(target)) {
-          assertFalse(shapeContains.containsKey(shape));
-        } else {
-          assertEquals(shapeRegion.contains(target), shapeContains.get(shape).booleanValue());
+      for (int shapeId = 0; shapeId < index.getShapes().size(); shapeId++) {
+        S2ShapeIndexRegion shapeRegion = new S2ShapeIndexRegion(shapeIndexes.get(shapeId));
+        assertEquals(shapeSeen[shapeId], shapeRegion.mayIntersect(target));
+        if (shapeSeen[shapeId]) {
+          assertEquals(shapeContains[shapeId], shapeRegion.contains(target));
         }
       }
 
@@ -259,6 +272,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
   }
 
   /** Test visitIntersectingShapes with a single shape of 100 points. */
+  @Test
   public void testVisitIntersectingShapes_points() {
     List<S2Point> vertices = new ArrayList<>();
     for (int i = 0; i < 100; ++i) {
@@ -270,6 +284,7 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
   }
 
   /** Test visitIntersectingShapes with 50 randomly located regular polyline shapes. */
+  @Test
   public void testVisitIntersectingShapes_polylines() {
     S2ShapeIndex index = new S2ShapeIndex();
     S2Cap centerCap = S2Cap.fromAxisAngle(new S2Point(1, 0, 0), S1Angle.radians(0.5));
@@ -285,15 +300,21 @@ public class S2ShapeIndexRegionTest extends GeometryTestCase {
             S2Loop.makeRegularVertices(
                 center, S1Angle.radians(data.nextDouble()), data.uniform(20) + 3);
       }
-      index.add(new S2Polyline(vertices));
+      // Internal assertions must be disabled to allow invalid polylines to be built.
+      index.add(uncheckedCreatePolyline(vertices));
     }
     new VisitIntersectingShapesTest(index).run();
+  }
+
+  private S2Polyline uncheckedCreatePolyline(List<S2Point> vertices) {
+    return uncheckedCreate(() -> new S2Polyline(vertices));
   }
 
   /**
    * Test visitIntersectingShapes with 10 fractal polygon loops plus one big polygon that contains
    * most of the others.
    */
+  @Test
   public void testVisitIntersectingShapes_polygons() {
     S2ShapeIndex index = new S2ShapeIndex();
     S2Cap centerCap = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.radians(0.5));

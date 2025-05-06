@@ -152,7 +152,7 @@ public class S2Earth {
     return steradians * getRadiusKm() * getRadiusKm();
   }
 
-  /** Converts the given steradians to square kilometers. */
+  /** Converts the given steradians to square meters. */
   public static double steradiansToSquareMeters(double steradians) {
     return steradians * getRadiusMeters() * getRadiusMeters();
   }
@@ -169,7 +169,10 @@ public class S2Earth {
     return toKm(a.getDistance(b));
   }
 
-  /** Returns the distance between two {@link S2Point}s on the globe in meters. */
+  /**
+   * Returns the distance between two {@link S2Point}s on the globe in meters. The points are not
+   * required to be unit-length.
+   */
   @JsMethod(name = "getDistanceBetweenPointsMeters")
   public static double getDistanceMeters(S2Point a, S2Point b) {
     return radiansToMeters(a.angle(b));

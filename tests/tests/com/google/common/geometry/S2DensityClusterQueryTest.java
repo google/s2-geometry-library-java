@@ -15,30 +15,45 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.geometry.S2DensityClusterQuery.CellInterpolator;
 import com.google.common.geometry.S2DensityTree.DecodedPath;
 import com.google.common.geometry.S2DensityTree.TreeEncoder;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Unit tests for {@link S2DensityClusterQuery}. */
+@RunWith(JUnit4.class)
 public final class S2DensityClusterQueryTest extends GeometryTestCase {
 
   /**
-   * Returns the map that contains the sum of cells in 'bases' and the parents of bases with the
-   * corresponding weights.
+   * Given a Map of S2CellId to weights for the leaves of a density tree, this function returns an
+   * expanded map, adding all the required ancestors of those leaves, assigning them the weight of
+   * the sum of the weights of all the leaves below them.
    */
-  private static Map<S2CellId, Long> sumToRoot(Map<S2CellId, Long> bases) {
-    return bases.keySet().stream()
+  private static Map<S2CellId, Long> sumToRoot(Map<S2CellId, Long> leafWeights) {
+    return leafWeights.keySet().stream()
         .flatMap(
             cell ->
                 IntStream.range(0, cell.level() + 1)
-                    .mapToObj(level -> Map.entry(cell.parent(level), bases.get(cell))))
+                    .mapToObj(level -> Map.entry(cell.parent(level), leafWeights.get(cell))))
         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, Long::sum));
   }
 
   // Set clustering in the scenario where clusters one or more whole face cells.
+  @Test
   public void testClustersAsFaces() {
     ImmutableMap<S2CellId, Long> leaves =
         ImmutableMap.of(
@@ -54,20 +69,9 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     sumToRoot(leaves).forEach(encoder::put);
     S2DensityTree tree = encoder.build();
 
-    // Test low level operations
-    DecodedPath path = new DecodedPath(S2DensityClusterQuery.normalizedTree(tree));
-    assertEquals(S2CellId.fromFace(0), S2DensityClusterQuery.firstLeafInTree(path));
-    assertEquals(S2CellId.fromFace(5), S2DensityClusterQuery.lastLeafInTree(path));
-    assertEquals(
-        S2CellId.fromFace(1), S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(0)));
-    assertEquals(
-        S2CellId.fromFace(5), S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(4)));
-    assertEquals(
-        S2CellId.sentinel(), S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(5)));
-
     // Cluster the tree
     S2DensityClusterQuery query100 = new S2DensityClusterQuery(100);
-    List<S2CellUnion> wt100clusters = query100.clusters(tree);
+    List<S2CellUnion> wt100clusters = query100.tightCoverings(tree);
 
     // Verify clusters are each a single face.
     assertEquals(6, wt100clusters.size());
@@ -79,7 +83,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
 
     // If the clusters have double the weight, there should be only three, each covering two faces.
     S2DensityClusterQuery query200 = new S2DensityClusterQuery(200);
-    List<S2CellUnion> wt200clusters = query200.clusters(tree);
+    List<S2CellUnion> wt200clusters = query200.tightCoverings(tree);
 
     // Verify clusters are each two faces.
     assertEquals(3, wt200clusters.size());
@@ -93,6 +97,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
   }
 
   // Check clustering that requires descending into children but not subdividing tree cells.
+  @Test
   public void testClustersDivideFaces() {
     ImmutableMap<S2CellId, Long> leaves =
         ImmutableMap.of(
@@ -109,51 +114,12 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     sumToRoot(leaves).forEach(encoder::put);
     S2DensityTree tree = encoder.build();
 
-    // Test low level operations
-    DecodedPath path = new DecodedPath(S2DensityClusterQuery.normalizedTree(tree));
-    assertEquals(S2CellId.fromFace(0).child(1),
-        S2DensityClusterQuery.firstLeafInTree(path));
-    assertEquals(S2CellId.fromFace(1).child(2).child(0),
-        S2DensityClusterQuery.lastLeafInTree(path));
-
-    // There are two leaves under face 0.
-    S2CellUnion leavesUnder = new S2CellUnion();
-    S2DensityClusterQuery.collectLeavesInTree(path, leavesUnder, S2CellId.fromFace(0));
-    assertEquals(2, leavesUnder.size());
-    assertEquals(S2CellId.fromFace(0).child(1), leavesUnder.cellIds().get(0));
-    assertEquals(S2CellId.fromFace(0).child(2), leavesUnder.cellIds().get(1));
-
-    // And four leaves under face 1.
-    leavesUnder.cellIds().clear();
-    S2DensityClusterQuery.collectLeavesInTree(path, leavesUnder, S2CellId.fromFace(1));
-    assertEquals(4, leavesUnder.size());
-    assertEquals(S2CellId.fromFace(1).child(0).child(0), leavesUnder.cellIds().get(0));
-    assertEquals(S2CellId.fromFace(1).child(0).child(1), leavesUnder.cellIds().get(1));
-    assertEquals(S2CellId.fromFace(1).child(0).child(2), leavesUnder.cellIds().get(2));
-    assertEquals(S2CellId.fromFace(1).child(2).child(0), leavesUnder.cellIds().get(3));
-
-    // Test nextLeafInTree for internal nodes.
-
-    // Test nextLeafInTree() for each leaf in the tree.
-    assertEquals(
-        S2CellId.fromFace(0).child(2),
-        S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(0).child(1)));
-    assertEquals(
-        S2CellId.fromFace(1).child(0).child(0),
-        S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(0).child(2)));
-    assertEquals(
-        S2CellId.fromFace(1).child(0).child(1),
-        S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(1).child(0).child(0)));
-    assertEquals(
-        S2CellId.fromFace(1).child(2).child(0),
-        S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(1).child(0).child(2)));
-    assertEquals(
-        S2CellId.sentinel(),
-        S2DensityClusterQuery.nextLeafInTree(path, S2CellId.fromFace(1).child(2).child(0)));
+    // Test that tree.normalize() and creating a new DecodedPath doesn't crash.
+    DecodedPath unused = new DecodedPath(tree.normalize());
 
     // If divided into clusters of weight 50, faces 0 and 1 will both be split into two clusters.
     S2DensityClusterQuery query50 = new S2DensityClusterQuery(50);
-    List<S2CellUnion> clusters50 = query50.clusters(tree);
+    List<S2CellUnion> clusters50 = query50.tightCoverings(tree);
 
     // There should be a total of four clusters.
     assertEquals(4, clusters50.size());
@@ -178,6 +144,14 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     assertEquals(S2CellId.fromFace(1).child(2).child(0), cluster.cellId(1));
   }
 
+  @Test
+  public void testUninterpolate() {
+    S2CellId face = S2CellId.fromFace(0);
+    S2CellId child1 = face.child(1);
+    assertAlmostEquals(0.25, new CellInterpolator(face).uninterpolate(child1));
+  }
+
+  @Test
   public void testNormalizingTree() {
     ImmutableMap<S2CellId, Long> leaves =
         ImmutableMap.ofEntries(
@@ -207,7 +181,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
 
     // Create clusters of weight 400 using the query.
     S2DensityClusterQuery query400 = new S2DensityClusterQuery(400);
-    List<S2CellUnion> clusters400 = query400.clusters(tree);
+    List<S2CellUnion> clusters400 = query400.tightCoverings(tree);
 
     // If S2DensityClusterQuery does not call normalizedTree(), there would be five clusters of
     // weight 400: one for each of the four children of (face 0, child 0), and one for (face 0,
@@ -240,7 +214,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
 
     // Cluster with size 50, which will split the face into two by interpolation.
     S2DensityClusterQuery query50 = new S2DensityClusterQuery(50);
-    List<S2CellUnion> clusters50 = query50.clusters(tree);
+    List<S2CellUnion> clusters50 = query50.tightCoverings(tree);
 
     // There should be two clusters, each with two level 1 cells.
     assertEquals(2, clusters50.size());
@@ -258,10 +232,11 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     // Cluster with size 32. This should produce three clusters, where the last cluster is slightly
     // larger but within the acceptable 20% tolerance.
     S2DensityClusterQuery query32 = new S2DensityClusterQuery(32);
-    List<S2CellUnion> clusters32 = query32.clusters(tree);
+    List<S2CellUnion> clusters32 = query32.tightCoverings(tree);
     assertEquals(3, clusters32.size());
   }
 
+  @Test
   public void testInterpolationOnFaces() {
     checkInterpolationOnFace(0);
     checkInterpolationOnFace(1);
@@ -269,6 +244,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
   }
 
   // Tests accessing tree nodes with DecodedPath.
+  @Test
   public void testDecodedPath() {
     ImmutableMap<S2CellId, Long> leaves =
         ImmutableMap.of(
@@ -323,5 +299,101 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     assertEquals(50, decoder.cell(S2CellId.fromFace(2).child(2)).weight);
     assertTrue(decoder.cell(S2CellId.fromFace(2).child(3)).isEmpty());
     assertEquals(0, decoder.cell(S2CellId.fromFace(2).child(3)).weight);
+  }
+
+  private S2DensityTree buildDensityTree(S2Polygon polygon, int treeSizeBytes, int maxLevel) {
+    S2ShapeIndex index = new S2ShapeIndex();
+    IdentityHashMap<S2Shape, S2Polygon> features = new IdentityHashMap<>();
+    S2Shape shape = polygon.shape();
+    index.add(shape);
+    features.put(shape, polygon);
+    S2DensityTree result = S2DensityTree.featureDensity(
+        treeSizeBytes, maxLevel, index, features::get, weight -> 1);
+    return result;
+  }
+
+  private final S2RegionSharder sharder(String stageName, S2DensityTree tree, int clusterWeight) {
+    System.err.println(
+        Strings.lenientFormat("%s/InputTreeNumLeaves=%s", stageName, tree.getLeaves().size()));
+    System.err.println(
+        Strings.lenientFormat("%s/ClusterTargetWeight=%s", stageName, clusterWeight));
+
+    List<S2CellUnion> partitions = new S2DensityClusterQuery(clusterWeight).tightCoverings(tree);
+    System.err.println(Strings.lenientFormat("%s/ShardCount=%s", stageName, partitions.size()));
+
+    // Shards should never be empty.
+    for (S2CellUnion partition : partitions) {
+      assertFalse(partition.isEmpty());
+    }
+
+    return new S2RegionSharder(partitions);
+  }
+
+  /**
+   * Reproduces a bug that used to occur when feature weights are low, like the default 1, resulting
+   * normalizedTree setting normalized weights to zero.
+   */
+  @Test
+  public void testClustering() {
+    // Values from GeoDensityOp & GeoClusterOp
+    final int defaultTreeSizeBytes = 1 << 20;
+    final int defaultMaxLevel = 20;
+    final int defaultClusterWeight = 64 * (1 << 20);
+
+    Pair<S2Polygon, S2Polygon> polygons = intersectingPolygons();
+    S2DensityTree leftTree =
+        buildDensityTree(polygons.getFirst(), defaultTreeSizeBytes, defaultMaxLevel);
+    S2DensityTree rightTree =
+        buildDensityTree(polygons.getSecond(), defaultTreeSizeBytes, defaultMaxLevel);
+    S2DensityTree sumDensity =
+        S2DensityTree.sumDensity(
+            ImmutableList.of(leftTree, rightTree), defaultTreeSizeBytes, defaultMaxLevel);
+
+    S2RegionSharder sharder = sharder("testClustering", sumDensity, defaultClusterWeight);
+
+    // Each polygon should intersect the single cluster.
+    ImmutableList<Integer> intersectingShardsLeft = ImmutableList.copyOf(
+        sharder.getIntersectingShards(polygons.getFirst()));
+    assertEquals(1, intersectingShardsLeft.size());
+    ImmutableList<Integer> intersectingShardsRight= ImmutableList.copyOf(
+        sharder.getIntersectingShards(polygons.getSecond()));
+    assertEquals(1, intersectingShardsRight.size());
+  }
+
+  /** Returns a pair of polygons created by buffering intersecting lines. */
+  private Pair<S2Polygon, S2Polygon> intersectingPolygons() {
+    S2RegionCoverer coverer = S2RegionCoverer.builder().setMaxLevel(22).setMaxCells(1000).build();
+
+    // These lines intersect.
+    S2Polyline leftLine =
+        new S2Polyline(
+            ImmutableList.of(
+                S2LatLng.fromDegrees(-7.285604594541237E-4, 1.4571098021440003E-4).toPoint(),
+                S2LatLng.fromDegrees(-7.285604593975788E-4, 7.285604594564796E-4).toPoint()));
+    S2Polyline rightLine =
+        new S2Polyline(
+            ImmutableList.of(
+                S2LatLng.fromDegrees(-4.371346081495913E-4, 4.371346081623137E-4).toPoint(),
+                S2LatLng.fromDegrees(-0.0010199885340521325, 4.371346081623137E-4).toPoint()));
+
+    S2Polygon leftPolygon =
+        S2Polygon.fromCellUnionBorder(
+            coverer.getCovering(
+                new S2ShapeIndexBufferedRegion(
+                    S2ShapeIndex.fromShapes(leftLine), S2Earth.metersToAngle(1.0))));
+    S2Polygon rightPolygon =
+        S2Polygon.fromCellUnionBorder(
+            coverer.getCovering(
+                new S2ShapeIndexBufferedRegion(
+                    S2ShapeIndex.fromShapes(rightLine), S2Earth.metersToAngle(1.0))));
+    return Pair.of(leftPolygon, rightPolygon);
+  }
+
+  /** A weight of one shouldn't degenerate to weights of zero internally. */
+  @Test
+  public void testMinClusterBoundsAreNonZero() {
+    S2DensityClusterQuery query = new S2DensityClusterQuery(1);
+    assertEquals(1, query.minClusterWeight());
+    assertEquals(1, query.maxClusterWeight());
   }
 }

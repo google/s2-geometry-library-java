@@ -15,30 +15,38 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertTrue;
+
 import com.google.common.primitives.Bytes;
 import com.google.common.primitives.Ints;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
-import junit.framework.TestCase;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link LittleEndianOutput}. */
-public class LittleEndianOutputTest extends TestCase {
+@RunWith(JUnit4.class)
+public class LittleEndianOutputTest {
   private ByteArrayOutputStream bytes;
   private LittleEndianOutput output;
 
-  @Override
-  protected void setUp() {
+  @Before
+  public void setUp() {
     bytes = new ByteArrayOutputStream();
     output = new LittleEndianOutput(bytes);
   }
 
+  @Test
   public void testByte() throws IOException {
     output.writeByte((byte) 0x00);
     output.writeByte((byte) 0xFF);
     expect(0, -1);
   }
 
+  @Test
   public void testBytes() throws IOException {
     byte[][] input = {Bytes.toArray(Ints.asList(0, 1, 2)), Bytes.toArray(Ints.asList(3, 4, 5))};
     output.writeBytes(input[0]);
@@ -46,18 +54,21 @@ public class LittleEndianOutputTest extends TestCase {
     expect(0, 1, 2, 3, 4, 5);
   }
 
+  @Test
   public void testInt() throws IOException {
     output.writeInt(0);
     output.writeInt(-1);
     expect(0, 0, 0, 0, -1, -1, -1, -1);
   }
 
+  @Test
   public void testLong() throws IOException {
     output.writeLong(0);
     output.writeLong(-1);
     expect(0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1);
   }
 
+  @Test
   public void testFloat() throws IOException {
     output.writeFloat(0F);
     output.writeFloat(Float.MIN_VALUE);
@@ -66,6 +77,7 @@ public class LittleEndianOutputTest extends TestCase {
     expect(0, 0, 0, 0, 1, 0, 0, 0, 0, 0, -64, 127, 0, 0, -128, 127);
   }
 
+  @Test
   public void testDouble() throws IOException {
     output.writeDouble(0D);
     output.writeDouble(Double.MIN_VALUE);
@@ -76,6 +88,7 @@ public class LittleEndianOutputTest extends TestCase {
         -16, 127);
   }
 
+  @Test
   public void testVarint32() throws IOException {
     output.writeVarint32(0);
     output.writeVarint32(1);
@@ -85,6 +98,7 @@ public class LittleEndianOutputTest extends TestCase {
     expect(0, 1, 127, 0xa2, 0x74);
   }
 
+  @Test
   public void testVarint64() throws IOException {
     // 2961488830
     output.writeVarint64((0x3e << 0) | (0x77 << 7) | (0x12 << 14) | (0x04 << 21) | (0x0bL << 28));

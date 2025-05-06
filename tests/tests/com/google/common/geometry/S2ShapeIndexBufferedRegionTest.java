@@ -17,14 +17,19 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2TextFormat.makeIndexOrDie;
 import static com.google.common.geometry.S2TextFormat.makePointOrDie;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
+
+/** Tests for {@link S2ShapeIndexBufferedRegion}. */
+@RunWith(JUnit4.class)
 public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
 
-  @Override
-  protected void setUp() {
-    super.setUp();
-  }
-
+  @Test
   public void testEmptyIndex() {
     // Test buffering an empty S2ShapeIndex.
     S2ShapeIndex index = new S2ShapeIndex();
@@ -35,6 +40,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
     assertTrue(covering.isEmpty());
   }
 
+  @Test
   public void testFullPolygon() {
     // Test buffering an S2ShapeIndex that contains a full polygon.
     S2ShapeIndex index = makeIndexOrDie("# # full");
@@ -48,6 +54,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testFullAfterBuffering() {
     // Test a region that becomes the full polygon after buffering.
     S2ShapeIndex index = makeIndexOrDie("0:0 | 0:90 | 0:180 | 0:-90 | 90:0 | -90:0 # #");
@@ -61,6 +68,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testPointZeroRadius() {
     // Test that buffering a point using a zero radius produces a non-empty covering. (This
     // requires using "less than or equal to" distance tests.)
@@ -74,6 +82,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testBufferedPointVsCap() {
     // Compute an S2Cell covering of a buffered S2Point, then make sure that the covering is
     // equivalent to the corresponding S2Cap.
@@ -117,13 +126,13 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
     assertFalse(query.isDistanceLess(target, distance));
   }
 
-
   // Each of the following tests verifies that a S2ShapeIndex containing some kind of shape is
   // buffered correctly, by first converting the covering to an S2Polygon and then checking that
   // (a) the S2Polygon contains the original geometry and (b) the distance between the original
   // geometry and the boundary of the S2Polygon is at least "radius".
 
   // Test buffering a set of points.
+  @Test
   public void testPointSet() {
     S2Point.Shape pointShape =
         S2Point.Shape.fromList(S2TextFormat.parsePointsOrDie("10:20, 10:23, 10:26"));
@@ -141,6 +150,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
   }
 
   // Test buffering a polyline.
+  @Test
   public void testPolyline() {
     String polylineString = "10:5, 20:30, -10:60, -60:100";
     S2LaxPolylineShape lineShape = S2TextFormat.makeLaxPolylineOrDie(polylineString);
@@ -159,8 +169,9 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
   }
 
   // Test buffering a polygon with a hole.
+  @Test
   public void testPolygonWithHole() {
-    String polygonString = "10:10, 10:100, 70:0; 11:11, 69:0, 11:99";
+    String polygonString = "10:10, 20:10, 20:20, 10:20; 11:11, 11:19, 19:19, 19:11";
     S2LaxPolygonShape laxPolygonShape = S2TextFormat.makeLaxPolygonOrDie(polygonString);
     S1ChordAngle distance = S1ChordAngle.fromDegrees(2);
     S2Polygon coveringPolygon = getBufferedIndexPolygon(laxPolygonShape, distance);
@@ -174,6 +185,7 @@ public final class S2ShapeIndexBufferedRegionTest extends GeometryTestCase {
   }
 
   // Test buffering a single point by 200 degrees.
+  @Test
   public void testHugeBufferRadius() {
     S2Point.Shape pointShape = S2Point.Shape.fromList(S2TextFormat.parsePointsOrDie("10:20"));
     S1ChordAngle distance = S1ChordAngle.fromDegrees(200);

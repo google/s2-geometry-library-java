@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
 import static com.google.common.primitives.Ints.min;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -31,9 +30,11 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
-import javax.annotation.Nullable;
+import jsinterop.annotations.JsConstructor;
+import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An S2RegionCoverer is a class that allows arbitrary regions to be approximated as unions of cells
@@ -45,7 +46,7 @@ import jsinterop.annotations.JsType;
  *    S2Cap cap = S2Cap.fromAxisAngle(...);
  *    S2CellUnion covering;
  *    coverer.getCovering(cap, covering);
- * }</pre>
+ * }
  *
  * <p>This yields a cell union of at most 5 cells that is guaranteed to cover the given cap (a
  * disc-shaped region on the sphere).
@@ -70,12 +71,17 @@ import jsinterop.annotations.JsType;
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2RegionCoverer implements Serializable {
+@SuppressWarnings("Assertion")
+public final class S2RegionCoverer implements Serializable {
+  /**
+   * By default, the covering uses at most 8 cells at any level. This gives a reasonable tradeoff
+   * between the number of cells used and the accuracy of the approximation (see table below).
+   */
+  public static final int DEFAULT_MAX_CELLS = 8;
 
   /**
    * A S2RegionCoverer configured with the default options. The min level, max level, and level mod
-   * are unrestricted, and maxCells is {@link Builder#DEFAULT_MAX_CELLS}. See {@link Builder} for
-   * details.
+   * are unrestricted, and maxCells is {@link DEFAULT_MAX_CELLS}.
    */
   public static final S2RegionCoverer DEFAULT = builder().build();
 
@@ -127,7 +133,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
    * instance.
    */
   public static Builder builder() {
-    return new Builder();
+    return new Builder(0, S2CellId.MAX_LEVEL, 1, DEFAULT_MAX_CELLS);
   }
 
   /**
@@ -141,14 +147,9 @@ public final strictfp class S2RegionCoverer implements Serializable {
     maxCells = builder.getMaxCells();
   }
 
-  /** A Build to construct a {@link S2RegionCoverer} with options. */
+  /** A Builder to construct a {@link S2RegionCoverer} with options. */
   @JsType
-  public static final class Builder {
-    /**
-     * By default, the covering uses at most 8 cells at any level. This gives a reasonable tradeoff
-     * between the number of cells used and the accuracy of the approximation (see table below).
-     */
-    private static final int DEFAULT_MAX_CELLS = 8;
+  public static class Builder {
 
     private int minLevel = 0;
     private int maxLevel = S2CellId.MAX_LEVEL;
@@ -156,7 +157,19 @@ public final strictfp class S2RegionCoverer implements Serializable {
     private int maxCells = DEFAULT_MAX_CELLS;
 
     /** Users should create a Builder via the S2RegionCoverer.builder() method. */
-    private Builder() {}
+    @JsConstructor
+    public Builder(int minLevel, int maxLevel, int levelMod, int maxCells) {
+      this.minLevel = minLevel;
+      this.maxLevel = maxLevel;
+      this.levelMod = levelMod;
+      this.maxCells = maxCells;
+    }
+
+    /** Copy constructor. */
+    @JsIgnore
+    public Builder(Builder other) {
+      this(other.minLevel, other.maxLevel, other.levelMod, other.maxCells);
+    }
 
     // Set the minimum and maximum cell level to be used. The default is to use all cell levels.
     // Requires: maxLevel() >= minLevel().
@@ -179,7 +192,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
      */
     @CanIgnoreReturnValue
     public Builder setMinLevel(int minLevel) {
-      // assert (minLevel >= 0 && minLevel <= S2CellId.MAX_LEVEL);
+      assert minLevel >= 0 && minLevel <= S2CellId.MAX_LEVEL : "Invalid minLevel: " + minLevel;
       this.minLevel = max(0, min(S2CellId.MAX_LEVEL, minLevel));
       return this;
     }
@@ -196,7 +209,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
      */
     @CanIgnoreReturnValue
     public Builder setMaxLevel(int maxLevel) {
-      // assert (maxLevel >= 0 && maxLevel <= S2CellId.MAX_LEVEL);
+      assert maxLevel >= 0 && maxLevel <= S2CellId.MAX_LEVEL : "Invalid maxLevel: " + maxLevel;
       this.maxLevel = max(0, min(S2CellId.MAX_LEVEL, maxLevel));
       return this;
     }
@@ -216,7 +229,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
      */
     @CanIgnoreReturnValue
     public Builder setLevelMod(int levelMod) {
-      // assert (levelMod >= 1 && levelMod <= 3);
+      assert (levelMod >= 1 && levelMod <= 3) : "Invalid levelMod: " + levelMod;
       this.levelMod = max(1, min(3, levelMod));
       return this;
     }
@@ -377,7 +390,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
 
   /**
    * Given a connected region and a starting point, return a set of cells at the given level that
-   * cover the region.
+   * cover the region. The starting point does not need to be unit length.
    */
   public static void getSimpleCovering(
       S2Region region, S2Point start, int level, ArrayList<S2CellId> output) {
@@ -413,7 +426,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
 
     // Find the maximum level such that the cap contains at most one cell vertex and such that
     // S2CellId.appendVertexNeighbors() can be called.
-    int level = S2Projections.PROJ.minWidth.getMaxLevel(2 * cap.angle().radians());
+    int level = S2Projections.MIN_WIDTH.getMaxLevel(2 * cap.angle().radians());
     level = min(level, S2CellId.MAX_LEVEL - 1);
 
     if (level == 0) {
@@ -522,8 +535,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
      * If the cell intersects the given region, return a new candidate with no children, otherwise
      * return null. Also marks the candidate as "terminal" if it should not be expanded further.
      */
-    @Nullable
-    private Candidate newCandidate(S2Cell cell) {
+    private @Nullable Candidate newCandidate(S2Cell cell) {
       if (!region.mayIntersect(cell)) {
         return null;
       }
@@ -570,10 +582,9 @@ public final strictfp class S2RegionCoverer implements Serializable {
         result.add(candidate.cell.id());
         return;
       }
-      // assert (candidate.numChildren == 0);
+      assert candidate.numChildren == 0;
 
-      // Expand one level at a time until we hit minLevel to ensure that
-      // we don't skip over it.
+      // Expand one level at a time until we hit minLevel to ensure that we don't skip over it.
       int numLevels = (candidate.cell.level() < minLevel) ? 1 : levelMod;
       int numTerminals = expandChildren(candidate, candidate.cell, numLevels);
 
@@ -644,7 +655,7 @@ public final strictfp class S2RegionCoverer implements Serializable {
         S2Cap cap = region.getCapBound();
         int level =
             min(
-                PROJ.minWidth.getMaxLevel(2 * cap.angle().radians()),
+                S2Projections.MIN_WIDTH.getMaxLevel(2 * cap.angle().radians()),
                 maxLevel(),
                 S2CellId.MAX_LEVEL - 1);
         if (levelMod() > 1 && level > minLevel()) {

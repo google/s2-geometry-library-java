@@ -22,13 +22,23 @@ import static java.lang.Math.abs;
 import static java.lang.Math.asin;
 import static java.lang.Math.sin;
 import static java.lang.Math.sqrt;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.function.Supplier;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for {@link S2LatLngRect}. */
-public strictfp class S2LatLngRectTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2LatLngRectTest extends GeometryTestCase {
   public void testIntervalOps(
       S2LatLngRect x,
       S2LatLngRect y,
@@ -50,10 +60,48 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(x.union(y).equals(expectedUnion));
     assertTrue(x.intersection(y).equals(expectedIntersection));
 
-    if (y.getSize() == S2LatLng.fromRadians(0, 0)) {
+    if (y.getSize().equals(S2LatLng.fromRadians(0, 0))) {
       S2LatLngRect r = x.addPoint(y.lo());
-      assertTrue(r == expectedUnion);
+      assertTrue(r.equals(expectedUnion));
     }
+  }
+
+  /**
+   * Verify that calling the given S2LatLngRect construction method throws an assertion, unless
+   * {@link S2GeometryTestCase#uncheckedCreate(Supplier)} is used.
+   */
+  private void checkInvalidConstructionAsserts(
+      Supplier<S2LatLngRect> supplier, boolean expectedIsValid) {
+    assertThrows(AssertionError.class, supplier::get);
+    S2LatLngRect rect = uncheckedCreate(supplier);
+    assertEquals(expectedIsValid, rect.isValid());
+  }
+
+  @Test
+  public void testConstructorsCheckValidity() {
+    // An S2LatLng with a latitude of 100 degrees is invalid.
+    S2LatLng invalidLatLng = uncheckedCreate(() -> S2LatLng.fromDegrees(100, 100));
+    assertFalse(invalidLatLng.isValid());
+    S2LatLng validLatLng = uncheckedCreate(() -> S2LatLng.fromDegrees(30, 30));
+
+    // S2LatLngRect construction from a single invalid latlng produces an invalid rect.
+    checkInvalidConstructionAsserts(() -> S2LatLngRect.fromPoint(invalidLatLng), false);
+
+    // S2LatLngRect construction from a pair of latlngs, where one is invalid produces an invalid
+    // rect.
+    checkInvalidConstructionAsserts(
+        () -> S2LatLngRect.fromPointPair(invalidLatLng, validLatLng), false);
+
+    // S2LatLngRect construction from an edge, where one of the points is not unit length. The
+    // resulting rectangle is valid.
+    S2Point invalidPoint = new S2Point(1, 1, 1);
+    S2Point validPoint = validLatLng.toPoint();
+    checkInvalidConstructionAsserts(() -> S2LatLngRect.fromEdge(invalidPoint, validPoint), true);
+
+    // S2LatLngRect construction from minimum and maximum latitudes and longitudes where
+    // lo.lat() > hi.lat() produces an invalid rect.
+    checkInvalidConstructionAsserts(
+        () -> new S2LatLngRect(S2LatLng.fromE7(30, 30), S2LatLng.fromE7(10, 10)), false);
   }
 
   public void testCellOps(S2LatLngRect r, S2Cell cell, int level) {
@@ -73,6 +121,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(r.contains(cell), level >= 4);
   }
 
+  @Test
   public void testBasic() {
     // Most of the S2LatLngRect methods have trivial implementations that use the R1Interval and
     // S1Interval classes, so most of the testing is done in those unit tests.
@@ -89,10 +138,10 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
 
     // assertTrue various constructors and accessor methods.
     S2LatLngRect d1 = rectFromDegrees(-90, 0, -45, 180);
-    assertDoubleEquals(d1.latLo().degrees(), -90);
-    assertDoubleEquals(d1.latHi().degrees(), -45);
-    assertDoubleEquals(d1.lngLo().degrees(), 0);
-    assertDoubleEquals(d1.lngHi().degrees(), 180);
+    assertAlmostEquals(d1.latLo().degrees(), -90);
+    assertAlmostEquals(d1.latHi().degrees(), -45);
+    assertAlmostEquals(d1.lngLo().degrees(), 0);
+    assertAlmostEquals(d1.lngHi().degrees(), 180);
     assertEquals(new R1Interval(-M_PI_2, -M_PI_4), d1.lat());
     assertEquals(new S1Interval(0, PI), d1.lng());
 
@@ -334,6 +383,76 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  /** This input formerly caused S2LatLngRect.fromEdge() to return an invalid rectangle. */
+  @Test
+  public void testFromEdgeFailureCase() {
+    S2LatLngRect fromEdge =
+        S2LatLngRect.fromEdge(
+            new S2Point(0.9999999999975326, -1.5707963267923128E-6, -1.5707963267942506E-6),
+            new S2Point(0.9999999999975326, 1.5707963267923128E-6, -1.5707963267942506E-6));
+    assertTrue(fromEdge.isValid());
+  }
+
+
+  /** These inputs caused S2LatLngRect.fromEdge() to compute an empty latitude range. */
+  @Test
+  public void testMoreFromEdgeFailureCases() {
+    // This was fixed by using robustCrossProd() at the final step of fromEdge().
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.3156250120761348, -0.63738798840256, 0.7029348504606083),
+                new S2Point(0.3156250131885867, -0.6373879878516904, 0.7029348504606083))
+            .isValid());
+    // The following cases were fixed by skipping the unstable computation for short edges not near
+    // the poles.
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.6222031541781053, -0.0012010169661361184, 0.7828548987450126),
+                new S2Point(0.6222031541990669, -0.0012010061066424615, 0.7828548987450126))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.6222043926287885, -0.0012099035594651246, 0.7828539007546793),
+                new S2Point(0.6222043926541284, -0.0012098905280467980, 0.7828539007546793))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(-0.23938555407630038, 0.9706618207407677, 0.022587302977567832),
+                new S2Point(-0.23938551849968670, 0.9706618295147058, 0.022587302977567832))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(-0.23938500927252382, 0.9706627232835381, 0.022554267076968025),
+                new S2Point(-0.23938502790791027, 0.9706627186876757, 0.022554267076968025))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(-0.2005556574627997, -0.9003577589543843, 0.38617785300338353),
+                new S2Point(-0.2005556857483730, -0.9003577526537420, 0.38617785300338353))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(1.0, 8.726646259971647E-9, 5.235987755982988E-9),
+                new S2Point(0.9999999999999999, 1.7453292519943295E-8, 5.235987755982988E-9))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.577275413432586, -0.025897409133813325, 0.8161387267164772),
+                new S2Point(0.5772754141105785, -0.025897394020778335, 0.8161387267164772))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.03504821081044592, -0.8198407082589851, 0.5715180102152443),
+                new S2Point(0.035048197932418104, -0.8198407088095211, 0.5715180102152443))
+            .isValid());
+    assertTrue(
+        S2LatLngRect.fromEdge(
+                new S2Point(0.9999238466874082, -0.0017451981114497389, -0.012217000835247169),
+                new S2Point(0.9999238467178675, -0.0017451806594863447, -0.012217000835247169))
+            .isValid());
+  }
+
+  @Test
   public void testBoundaryIntersects_emptyRectangle() {
     S2LatLngRect rect = S2LatLngRect.empty();
     S2Point lo = rect.lo().toPoint();
@@ -342,6 +461,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertFalse(rect.boundaryIntersects(lo, hi));
   }
 
+  @Test
   public void testBoundaryIntersects_fullRectangle() {
     S2LatLngRect rect = S2LatLngRect.full();
     S2Point lo = rect.lo().toPoint();
@@ -350,6 +470,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertFalse(rect.boundaryIntersects(lo, hi));
   }
 
+  @Test
   public void testBoundaryIntersects_sphericalLune() {
     // This rectangle only has two non-degenerate sides.
     S2LatLngRect rect = rectFromDegrees(-90, 100, 90, 120);
@@ -367,6 +488,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("60:115"), S2TextFormat.makePointOrDie("80:125")));
   }
 
+  @Test
   public void testBoundaryIntersects_northHemisphere() {
     // This rectangle only has only one non-degenerate side.
     S2LatLngRect rect = rectFromDegrees(0, -180, 90, 180);
@@ -381,6 +503,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("-10:-180"), S2TextFormat.makePointOrDie("10:-180")));
   }
 
+  @Test
   public void testBoundaryIntersects_southHemisphere() {
     // This rectangle only has only one non-degenerate side.
     S2LatLngRect rect = rectFromDegrees(-90, -180, 0, 180);
@@ -395,6 +518,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("-10:-180"), S2TextFormat.makePointOrDie("10:-180")));
   }
 
+  @Test
   public void testBoundaryIntersects_rectCrossingAntiMeridian() {
     S2LatLngRect rect = rectFromDegrees(20, 170, 40, -170);
     assertTrue(rect.contains(S2TextFormat.makePointOrDie("30:180")));
@@ -429,6 +553,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             S2TextFormat.makePointOrDie("45:-5"), S2TextFormat.makePointOrDie("30:-5")));
   }
 
+  @Test
   public void testExpandedByDistancePositive() {
     assertTrue(rectFromDegrees(0, 170, 0, -170).expandedByDistance(S1Angle.degrees(15))
         .approxEquals(rectFromDegrees(-15, 155, 15, -155)));
@@ -436,6 +561,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         .approxEquals(rectFromDegrees(45, -180, 90, 180)));
   }
 
+  @Test
   public void testExpandedByDistanceContractNorthEast() {
     S2LatLngRect inRect = rectFromDegrees(0, 0, 30, 90);
     S1Angle distance = S1Angle.degrees(5);
@@ -443,6 +569,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(outRect.toString(), outRect.approxEquals(inRect));
   }
 
+  @Test
   public void testExpandedByDistanceContractSouthWest() {
     S2LatLngRect inRect = rectFromDegrees(-30, -90, 0, 0);
     S1Angle distance = S1Angle.degrees(5);
@@ -450,36 +577,43 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(outRect.toString(), outRect.approxEquals(inRect));
   }
 
+  @Test
   public void testExpandedByDistanceContractLatWithNorthPole() {
     S2LatLngRect rect = rectFromDegrees(0, -90, 90, 180).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.approxEquals(rectFromDegrees(5, 0, 85, 90)));
   }
 
+  @Test
   public void testExpandedByDistanceContractLatWithNorthPoleAndLngFull() {
     S2LatLngRect rect = rectFromDegrees(0, -180, 90, 180).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.approxEquals(rectFromDegrees(5, -180, 90, 180)));
   }
 
+  @Test
   public void testExpandedByDistanceContractLatWithSouthPole() {
     S2LatLngRect rect = rectFromDegrees(-90, -90, 0, 180).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.approxEquals(rectFromDegrees(-85, 0, -5, 90)));
   }
 
+  @Test
   public void testExpandedByDistanceContractLatWithSouthPoleAndLngFull() {
     S2LatLngRect rect = rectFromDegrees(-90, -180, 0, 180).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.approxEquals(rectFromDegrees(-90, -180, -5, 180)));
   }
 
+  @Test
   public void testExpandedByDistanceContractLngFull() {
     S2LatLngRect rect = rectFromDegrees(0, -180, 30, 180).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.approxEquals(rectFromDegrees(5, -180, 25, 180)));
   }
 
+  @Test
   public void testExpandedByDistanceContractLatResultEmpty() {
     S2LatLngRect rect = rectFromDegrees(0, 0, 9.9, 90).expandedByDistance(S1Angle.degrees(-5));
     assertTrue(rect.toString(), rect.isEmpty());
   }
 
+  @Test
   public void testExpandedByDistanceContractLngResultEmpty() {
     S2LatLngRect rect = rectFromDegrees(0, 0, 30, 11).expandedByDistance(S1Angle.degrees(-5));
 
@@ -489,6 +623,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(rect.toString(), rect.isEmpty());
   }
 
+  @Test
   public void testPolarClosure() {
     assertEquals(rectFromDegrees(-89, 0, 89, 1), rectFromDegrees(-89, 0, 89, 1).polarClosure());
     assertEquals(
@@ -498,6 +633,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(S2LatLngRect.full(), rectFromDegrees(-90, -145, 90, -144).polarClosure());
   }
 
+  @Test
   public void testApproxEquals() {
     // S1Interval and R1Interval have additional testing.
 
@@ -522,22 +658,53 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
             .approxEquals(rectFromDegrees(-1, 8, 21, 32), S2LatLng.fromDegrees(0.999, 1.999)));
   }
 
+  @Test
   public void testArea() {
     assertExactly(0.0, S2LatLngRect.empty().area());
-    assertDoubleEquals(4 * PI, S2LatLngRect.full().area());
-    assertDoubleEquals(M_PI_2, rectFromDegrees(0, 0, 90, 90).area());
+    assertAlmostEquals(4 * PI, S2LatLngRect.full().area());
+    assertAlmostEquals(M_PI_2, rectFromDegrees(0, 0, 90, 90).area());
   }
 
+  @Test
+  public void testFromEdgeNearEquator() {
+    double oneHundredKm = S2Earth.kmToRadians(100); // 0.01569609
+    double oneThousandKm = S2Earth.kmToRadians(1000); // 0.1569609
+
+    // Check at different longitudes all the way around the sphere.
+    for (int i = 0; i < 12; ++i) {
+      double lng = PI * i / 6;
+
+      // A 200 km long edge that's 100km north of the equator and centered on 'lng'.
+      S2LatLngRect r = S2LatLngRect.fromEdge(
+            S2LatLng.fromRadians(oneHundredKm, -oneHundredKm + lng).toPoint(),
+            S2LatLng.fromRadians(oneHundredKm, oneHundredKm + lng).toPoint());
+      // The maximum latitude is only 0.000002 more than the minimum latitude at the endpoints.
+      assertBetween(r.lat().hi(), oneHundredKm + 0.000001, oneHundredKm + 0.000003);
+      assertDoubleNear(r.lat().lo(), oneHundredKm, 1e-15);
+
+      // Test a 2000 km long edge that's 1000 km south of the equator and centered on 'lng'.
+      r = S2LatLngRect.fromEdge(
+            S2LatLng.fromRadians(-oneThousandKm, -oneThousandKm + lng).toPoint(),
+            S2LatLng.fromRadians(-oneThousandKm, oneThousandKm + lng).toPoint());
+      // The maximum latitude is at the edge endpoints.
+      assertDoubleNear(r.lat().hi(), -oneThousandKm, 1e-15);
+      // Since this edge is longer and further from the equator, it deviates more from the
+      // nominal latitude of the endpoints, by 0.001921
+      assertBetween(r.lat().lo(), -oneThousandKm - 0.002, -oneThousandKm - 0.0019);
+    }
+  }
+
+  @Test
   public void testEdgeBound() {
     // assertTrue cases where min/max latitude is not at a vertex.
-    assertDoubleEquals(getEdgeBound(1, 1, 1, 1, -1, 1).lat().hi(), M_PI_4); // Max, CW
-    assertDoubleEquals(getEdgeBound(1, -1, 1, 1, 1, 1).lat().hi(), M_PI_4); // Max, CCW
-    assertDoubleEquals(getEdgeBound(1, -1, -1, -1, -1, -1).lat().lo(), -M_PI_4); // Min, CW
-    assertDoubleEquals(getEdgeBound(-1, 1, -1, -1, -1, -1).lat().lo(), -M_PI_4); // Min, CCW
+    assertDoubleNear(getEdgeBound(1, 1, 1, 1, -1, 1).lat().hi(), M_PI_4, 1e-14); // Max, CW
+    assertDoubleNear(getEdgeBound(1, -1, 1, 1, 1, 1).lat().hi(), M_PI_4, 1e-14); // Max, CCW
+    assertDoubleNear(getEdgeBound(1, -1, -1, -1, -1, -1).lat().lo(), -M_PI_4, 1e-14); // Min, CW
+    assertDoubleNear(getEdgeBound(-1, 1, -1, -1, -1, -1).lat().lo(), -M_PI_4, 1e-14); // Min, CCW
 
     // assertTrue cases where the edge passes through one of the poles.
-    assertDoubleEquals(getEdgeBound(.3, .4, 1, -.3, -.4, 1).lat().hi(), M_PI_2);
-    assertDoubleEquals(getEdgeBound(.3, .4, -1, -.3, -.4, -1).lat().lo(), -M_PI_2);
+    assertAlmostEquals(getEdgeBound(.3, .4, 1, -.3, -.4, 1).lat().hi(), M_PI_2);
+    assertAlmostEquals(getEdgeBound(.3, .4, -1, -.3, -.4, -1).lat().lo(), -M_PI_2);
 
     // assertTrue cases where the min/max latitude is attained at a vertex.
     final double kCubeLat = asin(sqrt(1. / 3)); // 35.26 degrees
@@ -547,6 +714,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         getEdgeBound(1, -1, 1, 1, 1, -1).lat().approxEquals(new R1Interval(-kCubeLat, kCubeLat)));
   }
 
+  @Test
   public void testGetDistanceOverlapping() {
     // Check pairs of rectangles that overlap: (should all return 0):
     S2LatLngRect a = rectFromDegrees(0, 0, 2, 2);
@@ -564,6 +732,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(zero, a.getDistance(rectFromDegrees(2, 2, 4, 4)));
   }
 
+  @Test
   public void testGetDistanceRectVsPoint() {
     // Rect that spans 180.
     S2LatLngRect a = rectFromDegrees(-1, -1, 2, 1);
@@ -612,6 +781,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDistance(pointRectFromDegrees(89, 181), c);
   }
 
+  @Test
   public void testGetDistanceRectVsRect() {
     // Rect that spans 180.
     S2LatLngRect a = rectFromDegrees(-1, -1, 2, 1);
@@ -628,6 +798,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDistance(b, rectFromDegrees(-84, 181, -83, 182));
   }
 
+  @Test
   public void testGetDistanceRandomPairs() {
     // Test random pairs.
     for (int i = 0; i < 10000; ++i) {
@@ -678,6 +849,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(a + ":" + b, maxDistance.radians() >= hausdorffDistance.radians() - resolution);
   }
 
+  @Test
   public void testGetDirectedHausdorffDistanceRandomPairs() {
     // Test random pairs.
     final int iterations = 1000;
@@ -704,6 +876,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetDirectedHausdorffDistanceContained() {
     // Caller rect is contained in callee rect. Should return 0.
     S2LatLngRect a = rectFromDegrees(-10, 20, -5, 90);
@@ -717,24 +890,26 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         S1Angle.radians(0), a.getDirectedHausdorffDistance(rectFromDegrees(-11, 19, -4, 91)));
   }
 
+  @Test
   public void testGetDirectHausdorffDistancePointToRect() {
     // The Hausdorff distance from a point to a rect should be the same as its distance to the rect.
     S2LatLngRect a1 = pointRectFromDegrees(5, 8);
     S2LatLngRect a2 = pointRectFromDegrees(90, 10); // north pole
 
     S2LatLngRect b = rectFromDegrees(-85, -50, -80, 10);
-    assertDoubleEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
-    assertDoubleEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
+    assertAlmostEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
+    assertAlmostEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
 
     b = rectFromDegrees(4, -10, 80, 10);
-    assertDoubleEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
-    assertDoubleEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
+    assertAlmostEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
+    assertAlmostEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
 
     b = rectFromDegrees(70, 170, 80, -170);
-    assertDoubleEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
-    assertDoubleEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
+    assertAlmostEquals(a1.getDirectedHausdorffDistance(b).radians(), a1.getDistance(b).radians());
+    assertAlmostEquals(a2.getDirectedHausdorffDistance(b).radians(), a2.getDistance(b).radians());
   }
 
+  @Test
   public void testGetDirectedHausdorffDistanceRectToPoint() {
     S2LatLngRect a = rectFromDegrees(1, -8, 10, 20);
     verifyGetDirectedHausdorffDistance(a, pointRectFromDegrees(5, 8));
@@ -745,6 +920,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDirectedHausdorffDistance(a, pointRectFromDegrees(90, 0));
   }
 
+  @Test
   public void testGetDirectedHausdorffDistanceRectToRectNearPole() {
     // Tests near south pole.
     S2LatLngRect a = rectFromDegrees(-87, 0, -85, 3);
@@ -756,6 +932,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     verifyGetDirectedHausdorffDistance(a, rectFromDegrees(-84, 181, -83, 182));
   }
 
+  @Test
   public void testGetDirectedHausdorffDistanceRectToRectDegenerateCases() {
     // Rectangles that contain poles.
     verifyGetDirectedHausdorffDistance(
@@ -790,6 +967,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         rectFromDegrees(-20, 95, 20, 105), rectFromDegrees(-30, 5, 30, 15));
   }
 
+  @Test
   public void testConvolveWithCap() {
     // ConvolveWithCap()
     S2LatLngRect.Builder llr1 =
@@ -805,6 +983,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertTrue(llr1.approxEquals(llr2));
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     S2LatLngRect r = rectFromDegrees(-20, -80, 10, 20);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -815,6 +994,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(r, decoded);
   }
 
+  @Test
   public void testCoder() {
     S2LatLngRect value = S2LatLngRect.fromEdge(S2Point.X_POS, S2Point.Y_POS);
     assertEquals(value, roundtrip(S2LatLngRect.CODER, value));
@@ -843,6 +1023,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetCentroid() {
     // Empty and full rectangles.
     assertEquals(S2Point.ORIGIN, S2LatLngRect.empty().getCentroid());
@@ -881,16 +1062,19 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
         new S2LatLngRect(S2LatLngRect.fullLat(), new S1Interval(-3.14, 3.14)), 10 /*splits_left*/);
   }
 
+  @Test
   public void testBuilder_empty() {
     assertEquals(S2LatLngRect.empty(), S2LatLngRect.Builder.empty().build());
   }
 
+  @Test
   public void testBuilder_full() {
     assertEquals(
         S2LatLngRect.full(),
         S2LatLngRect.Builder.empty().addPoint(new S2Point(0.3, 0.2, 0.1)).setFull().build());
   }
 
+  @Test
   public void testBuilder_fromPoints() {
     S2LatLngRect.Builder builder =
         new S2LatLngRect.Builder(S2LatLng.fromDegrees(-1, 2), S2LatLng.fromDegrees(1, 3));
@@ -899,6 +1083,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(rectFromDegrees(-1, -0.17, 5.6, 6.5), builder.build());
   }
 
+  @Test
   public void testBuilder_union() {
     S2LatLngRect.Builder builder =
         S2LatLngRect.Builder.empty()
@@ -911,6 +1096,7 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     assertEquals(rectFromDegrees(-2, 170, 11, -175), rect2);
   }
 
+  @Test
   public void testBuilder_intersection() {
     S2LatLngRect.Builder builder =
         rectFromDegrees(14.7, -17.5, 31.8, 34.2) // Sahara
@@ -1057,5 +1243,12 @@ public strictfp class S2LatLngRectTest extends GeometryTestCase {
     S1Angle distance1 = bruteForceDistance(a, b);
     S1Angle distance2 = a.getDistance(b);
     assertEquals(distance1.radians(), distance2.radians(), 1e-10);
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2LatLngRectSerialization() {
+    doSerializationTest(
+        new S2LatLngRect(S2LatLng.fromRadians(0.1, 0.2), S2LatLng.fromRadians(1.1, 1.2)));
   }
 }

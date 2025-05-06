@@ -15,12 +15,13 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static com.google.common.geometry.TestDataGenerator.concentricLoopsPolygon;
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
-import static com.google.common.geometry.TestDataGenerator.makeVerbatimPolygon;
 import static java.lang.Math.max;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Lists;
@@ -29,17 +30,24 @@ import com.google.common.geometry.S2ShapeIndex.CellRelation;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CyclicBarrier;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2ShapeIndex construction and structure. */
-public strictfp class S2ShapeIndexTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2ShapeIndexTest extends GeometryTestCase {
+  @Test
   public void testNoEdges() {
     S2ShapeIndex index = new S2ShapeIndex();
     assertTrue(index.iterator().done());
     checkIteratorMethods(index);
   }
 
+  @Test
   public void testOneEdge() {
     S2ShapeIndex index = new S2ShapeIndex();
     index.add(new S2EdgeVectorShape(S2Point.X_POS, S2Point.Y_POS));
@@ -54,6 +62,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
    * other cells on that face should also have index entries, in order to indicate that they are
    * contained by the loop.
    */
+  @Test
   public void testShrinkToFitOptimization() {
     S2ShapeIndex index = new S2ShapeIndex();
     S2Point axis = S2Point.normalize(new S2Point(1, 0.5, 0.5));
@@ -62,6 +71,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     quadraticValidate(index);
   }
 
+  @Test
   public void testLoopsSpanningThreeFaces() {
     // Construct two loops centered around the cube vertex at the start of the Hilbert curve.
     S2Point center = S2Point.normalize(new S2Point(1, -1, -1));
@@ -76,6 +86,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     checkIteratorMethods(index);
   }
 
+  @Test
   public void testManyIdenticalEdges() {
     S2Point a = S2Point.normalize(new S2Point(0.99, 0.99, 1));
     S2Point b = S2Point.normalize(new S2Point(-0.99, -0.99, 1));
@@ -96,6 +107,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
    * This test inserts many edges into a single leaf cell, to check that subdivision stops when no
    * further subdivision is possible.
    */
+  @Test
   public void testManyTinyEdges() {
     // Construct two points in the same leaf cell.
     S2Point a = S2CellId.fromPoint(S2Point.X_POS).toPoint();
@@ -115,6 +127,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     assertTrue(it.done());
   }
 
+  @Test
   public void testHasCrossing() {
     // Coordinates are (lat,lng), which can be visualized as (y,x).
     checkHasCrossing("0:0, 0:1, 0:2, 1:2, 1:1, 1:0", false);
@@ -125,6 +138,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     checkHasCrossing("0:0, 0:2, 2:2, 2:0; 1:1, 0:2, 3:1, 2:0", true); // vertex crossing
   }
 
+  @Test
   public void testLinearSpace() {
     // Add shapes to a pair of indexes to demonstrate the need for Options.minShortEdgeFraction to
     // be non-zero in order to use a non-quadratic amount of space. For both indexes, the maximum
@@ -180,6 +194,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     assertTrue(cellCount > numClusters);
   }
 
+  @Test
   public void testLongIndexEntriesBound() {
     // This test demonstrates that the c2 = 366 upper bound (using default parameter values)
     // mentioned in the S2ShapeIndex.makeIndexCell() comments is achievable.
@@ -193,8 +208,8 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     // This is a worst-case edge AB that touches as many cells as possible at level 30 while still
     // being considered "short" at level 29. We create an index consisting of two copies of this
     // edge plus a full polygon.
-    S2Point a = S2Projections.PROJ.faceSiTiToXyz(0, 0, (1 << 30) + 0).normalize();
-    S2Point b = S2Projections.PROJ.faceSiTiToXyz(0, 0, (1 << 30) + 6).normalize();
+    S2Point a = S2Projections.faceSiTiToXyz(0, 0, (1 << 30) + 0).normalize();
+    S2Point b = S2Projections.faceSiTiToXyz(0, 0, (1 << 30) + 6).normalize();
     for (int i = 0; i < 2; ++i) {
       index.add(new S2EdgeVectorShape(a, b));
     }
@@ -214,6 +229,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
   }
 
   @GwtIncompatible(value = "No support for threads")
+  @Test
   public void testConstMethodsThreadSafe() throws Exception {
     // Ensure that lazy updates are thread-safe. In other words, make sure that nothing bad happens
     // when multiple threads call methods that cause pending updates to be applied.
@@ -234,7 +250,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       final CyclicBarrier end = new CyclicBarrier(numReaders + 1);
 
       // Mutate the index.
-      int numVertices = 4 * data.skewed(10); // Up to 4K vertices
+      int numVertices = max(3, 4 * data.skewed(10)); // At least 3, up to 4K vertices
       S2Loop loop = S2Loop.makeRegularLoop(data.getRandomPoint(), kmToAngle(5), numVertices);
       index.reset();
       index.add(loop);
@@ -267,6 +283,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testUVRegression() {
     // Regression test that verifies the FaceEdge direction is correct.
     S2Loop loop = null;
@@ -280,6 +297,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     quadraticValidate(index);
   }
 
+  @Test
   public void testEdgeRangeRegression() {
     // Regression test that catches error where EdgeRange was used incorrectly, when an intermediate
     // edge is not part of the second shape in a multi-shape cell.
@@ -289,6 +307,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     quadraticValidate(index);
   }
 
+  @Test
   public void testReset() {
     S2ShapeIndex index = new S2ShapeIndex();
     for (int i = 0; i < 10; i++) {
@@ -299,6 +318,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testPolylineRegression() {
     // Regression test that catches error where a 0-edged clipped shape of a polyline was being
     // added to the index.
@@ -312,7 +332,8 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       S2ShapeIndex.Cell cell = it.entry();
       for (int i = 0; i < cell.numShapes(); ++i) {
         S2ShapeIndex.S2ClippedShape clipped = cell.clipped(i);
-        assertTrue(clipped.shape().hasInterior() || clipped.numEdges() > 0);
+        S2Shape shape = index.getShapes().get(clipped.shapeId());
+        assertTrue(shape.hasInterior() || clipped.numEdges() > 0);
       }
     }
   }
@@ -352,10 +373,11 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       int numShortEdges = 0;
       // shapes containing cell's entry vertex
       int numContainingShapes = 0;
-      for (S2Shape shape : index.shapes) {
+      for (int i = 0; i < index.shapes.size(); i++) {
+        S2Shape shape = index.shapes.get(i);
         S2ClippedShape clipped = null;
         if (!it.done()) {
-          clipped = it.entry().findClipped(shape);
+          clipped = it.entry().findClipped(i);
         }
 
         // First check that containsCenter() is set correctly.
@@ -468,7 +490,7 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
       }
       if (!ids.isEmpty()) {
         assertFalse(it.atBegin());
-        it2.position(it);
+        it2 = it.copy();
         it2.prev();
         assertEquals(ids.get(ids.size() - 1), it2.id());
         it2.next();
@@ -528,7 +550,8 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
         for (int k = 0; k < origLoop.numVertices(); k++) {
           vertices.add(origLoop.vertex(j + k));
         }
-        S2Loop newLoop = new S2Loop(vertices);
+        // Allow invalid loops here, as we expect edge crossings.
+        S2Loop newLoop = uncheckedCreate(() -> new S2Loop(vertices));
         loops.set(i, newLoop);
         checkHasCrossingPermutations(loops, i + 1, hasCrossing);
       }
@@ -546,5 +569,24 @@ public strictfp class S2ShapeIndexTest extends GeometryTestCase {
     List<S2Loop> loops = Lists.newArrayList();
     polygon.release(loops);
     checkHasCrossingPermutations(loops, 0, hasCrossing);
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2ShapeIndexSerialization() {
+    Comparator<S2ShapeIndex> comparator = (a, b) -> {
+      if (S2ShapeUtil.equals(a, b)) {
+        return 0;
+      }
+      // Only equality matters for the serialization test.
+      return Integer.compare(a.shapes.size(), b.shapes.size());
+    };
+
+    S2ShapeIndex index = new S2ShapeIndex();
+    index.add(makePolyline("2:1, 6:1"));
+    index.add(makeLoop("0:2, 0:3, 1:3, 1:2"));
+    index.add(makeLoop("3:6, 3:7, 4:7, 4:6"));
+    index.add(makeLoop("3:6, 3:7, 4:7, 4:6"));
+    doSerializationTest(index, comparator);
   }
 }

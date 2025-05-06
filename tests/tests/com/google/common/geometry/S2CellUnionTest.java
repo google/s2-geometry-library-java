@@ -16,12 +16,17 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2Projections.MIN_WIDTH;
 import static java.lang.Math.PI;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.io.ByteArrayInputStream;
@@ -32,27 +37,29 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2CellUnion. */
-public strictfp class S2CellUnionTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2CellUnionTest extends GeometryTestCase {
+  @Test
   public void testBasic() {
-    S2CellUnion empty = new S2CellUnion();
     ArrayList<S2CellId> ids = Lists.newArrayList();
-    empty.initFromCellIds(ids);
+    S2CellUnion empty = new S2CellUnion().initFromCellIds(ids);
     assertEquals(0, empty.size());
 
     S2CellId face1Id = S2CellId.fromFace(1);
-    S2CellUnion face1Union = new S2CellUnion();
     ids.add(face1Id);
-    face1Union.initFromCellIds(ids);
+    S2CellUnion face1Union = new S2CellUnion().initFromCellIds(ids);
     assertEquals(1, face1Union.size());
     assertEquals(face1Id, face1Union.cellId(0));
 
     S2CellId face2Id = S2CellId.fromFace(2);
-    S2CellUnion face2Union = new S2CellUnion();
     ArrayList<Long> cellids = Lists.newArrayList();
     cellids.add(face2Id.id());
-    face2Union.initFromIds(cellids);
+    S2CellUnion face2Union = new S2CellUnion().initFromIds(cellids);
     assertEquals(1, face2Union.size());
     assertEquals(face2Id, face2Union.cellId(0));
 
@@ -62,6 +69,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertTrue(!face1Union.contains(face2Cell));
   }
 
+  @Test
   public void testValid() {
     S2CellUnion cells = new S2CellUnion();
     cells.initRawCellIds(
@@ -75,32 +83,30 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertTrue(cells.isValid());
   }
 
+  @Test
   public void testContainsCellUnion() {
-    Set<S2CellId> randomCells = new HashSet<S2CellId>();
+    Set<S2CellId> randomCells = new HashSet<>();
     for (int i = 0; i < 100; i++) {
       randomCells.add(data.getRandomCellId(S2CellId.MAX_LEVEL));
     }
 
-    S2CellUnion union = new S2CellUnion();
-    union.initFromCellIds(Lists.newArrayList(randomCells));
+    S2CellUnion union = new S2CellUnion().initFromCellIds(Lists.newArrayList(randomCells));
 
     // Add one more
     while (!randomCells.add(data.getRandomCellId(S2CellId.MAX_LEVEL))) {}
 
-    S2CellUnion unionPlusOne = new S2CellUnion();
-    unionPlusOne.initFromCellIds(Lists.newArrayList(randomCells));
+    S2CellUnion unionPlusOne = new S2CellUnion().initFromCellIds(Lists.newArrayList(randomCells));
 
     assertTrue(unionPlusOne.contains(union));
     assertFalse(union.contains(unionPlusOne));
 
     // Build the set of parent cells and check containment
-    Set<S2CellId> parents = new HashSet<S2CellId>();
+    Set<S2CellId> parents = new HashSet<>();
     for (S2CellId cellId : union) {
       parents.add(cellId.parent());
     }
 
-    S2CellUnion parentUnion = new S2CellUnion();
-    parentUnion.initFromCellIds(Lists.newArrayList(parents));
+    S2CellUnion parentUnion = new S2CellUnion().initFromCellIds(Lists.newArrayList(parents));
 
     assertTrue(parentUnion.contains(union));
     assertFalse(union.contains(parentUnion));
@@ -168,6 +174,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testNormalize() {
     // Try a bunch of random test cases, and keep track of average statistics for normalization (to
     // see if they agree with the analysis above).
@@ -331,6 +338,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     return set;
   }
 
+  @Test
   public void testExpandSingleCell() {
     // This test expands a single level 3 cell (token "2ac") at the corner of a face.
     ImmutableList<S2CellId> cornerCellId =
@@ -368,6 +376,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, actual);
 }
 
+  @Test
   public void testExpand() {
     // This test generates coverings for caps of random sizes, expands the coverings by a random
     // radius, and then make sure that the new covering covers the expanded cap. It also makes sure
@@ -398,7 +407,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
       for (int j = 0; j < covering.size(); ++j) {
         minLevel = min(minLevel, covering.cellId(j).level());
       }
-      int expandLevel = min(minLevel + maxLevelDiff, PROJ.minWidth.getMaxLevel(radius));
+      int expandLevel = min(minLevel + maxLevelDiff, MIN_WIDTH.getMaxLevel(radius));
 
       // Generate a covering for the expanded cap, and measure the new maximum distance from the cap
       // center to any point in the covering.
@@ -409,10 +418,11 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
       // If the covering includes a tiny cell along the boundary, in theory the maximum angle of the
       // covering from the cap axis can increase by up to twice the maximum length of a cell
       // diagonal.
-      assertTrue(expandedCoveringRadius - coveringRadius <= 2 * PROJ.maxDiag.getValue(expandLevel));
+      assertTrue(expandedCoveringRadius - coveringRadius <= 2 * MAX_DIAG.getValue(expandLevel));
     }
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     ArrayList<S2CellId> cellIds =
         new ArrayList<>(
@@ -426,6 +436,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     checkEncodeDecode(cellUnion);
   }
 
+  @Test
   public void testEncodeDecodeEmpty() throws IOException {
     checkEncodeDecode(new S2CellUnion());
   }
@@ -450,6 +461,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertFalse(cellUnion.normalize());
   }
 
+  @Test
   public void testInitFromRange() {
     // Check the very first leaf cell and face cell.
     S2CellId face1Id = S2CellId.fromFace(0);
@@ -474,6 +486,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInitFromBeginEnd() {
     // Since initFromRange() is implemented in terms of initFromBeginEnd(), we focus on test cases
     // that generate an empty range.
@@ -500,6 +513,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLeafCellsCovered() {
     S2CellUnion cellUnion = new S2CellUnion();
     assertEquals(0, cellUnion.leafCellsCovered());
@@ -536,6 +550,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.leafCellsCovered());
   }
 
+  @Test
   public void testEmpty() {
     S2CellUnion empty = new S2CellUnion();
     S2CellId face1 = S2CellId.fromFace(1);
@@ -588,13 +603,13 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
    * Demonstrates that the output of getIntersection() may not be normalized if one of the inputs is
    * not.
    */
+  @Test
   public void testIntersectionOneInputNormalized() {
     S2CellId id = S2CellId.fromFace(3);  // arbitrary
     ArrayList<S2CellId> ids = new ArrayList<>();
     ids.add(id);
 
-    S2CellUnion parent = new S2CellUnion();
-    parent.initFromCellIds(ids);
+    S2CellUnion parent = new S2CellUnion().initFromCellIds(ids);
 
     ids = new ArrayList<>();
     ids.add(id.child(0));
@@ -610,6 +625,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(intersection, children);
   }
 
+  @Test
   public void testAverageBasedArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -625,6 +641,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.averageBasedArea(), 0.0);
   }
 
+  @Test
   public void testApproxArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -640,6 +657,7 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
     assertEquals(expected, cellUnion.approxArea(), 0.0);
   }
 
+  @Test
   public void testExactArea() {
     S2CellUnion cellUnion = new S2CellUnion();
 
@@ -653,5 +671,22 @@ public strictfp class S2CellUnionTest extends GeometryTestCase {
 
     double expected = new S2Cell(ids.get(0)).exactArea() + new S2Cell(ids.get(1)).exactArea();
     assertEquals(expected, cellUnion.averageBasedArea(), 1e-15);
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testCellUnionSerialization() {
+    S2CellUnion union = new S2CellUnion();
+    union.initFromIds(
+        Lists.newArrayList(ImmutableList.of(0x33L, 0x8e3748fabL, 0x91230abcdef83427L)));
+    doSerializationTest(union);
+  }
+
+  @Test
+  public void testWholeSphere() {
+    var wholeSphere = S2CellUnion.wholeSphere();
+    assertEquals(6 * (1L << 60), wholeSphere.leafCellsCovered());
+    wholeSphere.expand(0);
+    assertEquals(S2CellUnion.wholeSphere(), wholeSphere);
   }
 }

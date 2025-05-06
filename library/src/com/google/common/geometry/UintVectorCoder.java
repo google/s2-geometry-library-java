@@ -29,6 +29,7 @@ import java.io.OutputStream;
 public class UintVectorCoder implements S2Coder<Longs> {
   /** An instance of an {@code UintVectorCoder} which encodes/decodes {@code uint32}s. */
   public static final UintVectorCoder UINT32 = new UintVectorCoder(Ints.BYTES);
+
   /** An instance of an {@code UintVectorCoder} which encodes/decodes {@code uint64}s. */
   public static final UintVectorCoder UINT64 =
       new UintVectorCoder(com.google.common.primitives.Longs.BYTES);
@@ -119,10 +120,10 @@ public class UintVectorCoder implements S2Coder<Longs> {
 
     // Check that the Longs we're going to return won't read past the end of 'data'.
     if (cursor.position > data.length()) {
-      throw new IOException(Platform.formatString(
-        "Decoding from 'data' with length %s bytes, but %s bytes are required.",
-        data.length(),
-        cursor.position));
+      throw new IOException(
+          Platform.formatString(
+              "Decoding from 'data' with length %s bytes, but %s bytes are required.",
+              data.length(), cursor.position));
     }
 
     return new Longs() {

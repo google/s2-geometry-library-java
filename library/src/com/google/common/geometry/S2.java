@@ -29,8 +29,6 @@ import static java.lang.Math.tan;
 
 import com.google.common.base.Preconditions;
 import com.google.errorprone.annotations.Immutable;
-import java.io.Serializable;
-import jsinterop.annotations.JsType;
 
 /**
  * The S2 class is simply a namespace for constants and static utility functions related to
@@ -44,55 +42,65 @@ import jsinterop.annotations.JsType;
  * obtained by subdividing each cell into four children recursively.
  *
  * <p>This file also contains documentation of the various coordinate systems and conventions used.
- * TODO(torrey): Fix this link after Copybara migration is done.
- * For more details, see go s2.
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public final strictfp class S2 {
+@SuppressWarnings({"Assertion", "NonFinalStaticField"})
+public final class S2 {
   // Declare some frequently used constants
   public static final double M_PI = PI;
   public static final double M_1_PI = 1.0 / PI;
   public static final double M_PI_2 = PI / 2.0;
   public static final double M_PI_4 = PI / 4.0;
+
   /** Inverse of the root of 2. */
   public static final double M_SQRT1_2 = 1 / sqrt(2);
 
   public static final double M_SQRT2 = sqrt(2);
+  public static final double M_SQRT3 = sqrt(3);
   public static final double M_E = E;
 
-  /** The smallest floating-point value {@code x} such that {@code (1 + x != 1)}. */
-  public static final double DBL_EPSILON;
+  /**
+   * The smallest floating-point value {@code x} such that {@code (1 + x != 1)}, with a value of
+   * 2.220446049250313E-16. The C++ value is the same, as you'd expect.
+   */
+  public static final double DBL_EPSILON = 2.220446049250313E-16;
+
+  /**
+   * DBL_ERROR is the maximum rounding error for arithmetic operations. Suppose the "true" result of
+   * a calculation is some real number R. Suppose that there is no precise floating point
+   * representation. Then there are two consecutive floating point number f1 and f2 such that
+   * {@code f1 < R < f2}. Since {@code |f2 - f1| < DBL_EPSILON}, we see that the shortest distance
+   * from R to either f1 or f2 must be less than or equal to {@code DBL_EPSILON / 2}. As such,
+   * {@code DBL_ERROR = DBL_EPSILON / 2}.
+   */
+  public static final double DBL_ERROR = DBL_EPSILON / 2;
 
   /**
    * ROBUST_CROSS_PROD_ERROR is an upper bound on the angle between the vector returned by
    * robustCrossProd(a, b) and the true cross product of "a" and "b".
    *
-   * <p>TODO(user): The Java implementation of robustCrossProd is still not as robust as C++,
-   * and has a higher error value. The value here is not based on analysis, it is merely sufficient
-   * for unit tests that use this value to pass for now. When robustCrossProd is truly robust, then
-   * the value will be S1Angle.radians(3 * DBL_EPSILON) instead of S1Angle.radians(4 * DBL_EPSILON),
-   * and the following statement will be true:
-   *
-   * <p>Note that cases where "a" and "b" are exactly proportional but not equal (e.g. a = -b or
-   * a = (1 + epsilon) * b) are handled using symbolic perturbations in order to ensure that the
-   * result is non-zero and consistent with S2.sign().
+   * <p>Note that cases where "a" and "b" are exactly proportional but not equal (e.g. a = -b or a =
+   * (1 + epsilon) * b) are handled using symbolic perturbations in order to ensure that the result
+   * is non-zero and consistent with S2.sign().
    */
-  public static final S1Angle ROBUST_CROSS_PROD_ERROR;
+  public static final S1Angle ROBUST_CROSS_PROD_ERROR = S1Angle.radians(8 * DBL_ERROR);
 
-  static {
-    double machEps = 1.0d;
-    do {
-      machEps /= 2.0f;
-    } while ((1.0 + (machEps / 2.0)) != 1.0);
-    DBL_EPSILON = machEps;
-    ROBUST_CROSS_PROD_ERROR = S1Angle.radians(4 * DBL_EPSILON);
-  }
+  public static final S1Angle EXACT_CROSS_PROD_ERROR = S1Angle.radians(DBL_ERROR);
 
-  // This point is about 66km from the north pole towards the East Siberian Sea. See the unit test
-  // for more details. It is written here using constant components to avoid computational errors
-  // from producting a different value than other implementations of S2.
+  /**
+   * MIN_NORM is the lower bound on the absolute error of the norm of cross product. If we compute
+   * a cross product with a norm below MIN_NORM, then it's possible we have flipped signs and need
+   * to fall back to more methods with more precision like calculating with Reals or BigDecimal.
+   */
+  public static final double MIN_NORM =
+      (32 * M_SQRT3 * DBL_ERROR)
+          / (ROBUST_CROSS_PROD_ERROR.radians() / DBL_ERROR - (1 + 2 * M_SQRT3));
+
+  // This point is about 66km from the north pole towards the East Siberian Sea, at lat/lng
+  // approximately (89.4081206, 165.4655449). See the unit test for more details. It is written here
+  // using constant components to ensure the value is identical to other implementations of S2.
   // Warning: Not the same as S2Point.ORIGIN.
   @SuppressWarnings("FloatingPointLiteralPrecision") // Deliberate, same as other implementations.
   private static final S2Point ORIGIN =
@@ -166,6 +174,30 @@ public final strictfp class S2 {
     return IJ_TO_POS[orientation][ijIndex];
   }
 
+  /**
+   * True if some assertions are temporarily disabled to allow deliberate construction of invalid S2
+   * objects.
+   *
+   * <p>Normally, when Java assertions are enabled, as they typically are when running unit tests,
+   * creating S2 objects with invalid input parameters will cause AssertionErrors to be thrown. That
+   * is usually the desired behavior for unit testing. However, it is necessary to write unit tests
+   * that check code behavior when invalid S2 objects are created. Therefore, we need to be able to
+   * temporarily disable these assertions.
+   *
+   * <p>The common case for this is directly in unit tests. For instance, in S2PolygonTest, invalid
+   * polygons are created in order to test {@link S2Polygon#findValidationError(S2Error)}.
+   *
+   * <p>Unit tests that deliberately construct invalid S2 objects should use the public test-only
+   * methods: {@link GeometryTestCase#unsafeCreate(Callable)} and {@link
+   * GeometryTestCase#unsafeInitialize(Runnable)}, which set skipAssertions for the duration of
+   * the provided Runnable or Callable.
+   *
+   * <p>Assertions within the S2 code that must be disabled to allow invalid S2 objects to be
+   * constructed should be written like: {@code assert skipAssertions || isUnitLength(a); }
+   */
+  static boolean skipAssertions = false;
+
+
   /** Defines an area or a length cell metric. Immutable after construction. */
   @Immutable
   public static final class Metric {
@@ -205,9 +237,9 @@ public final strictfp class S2 {
 
     /**
      * Return the minimum level such that the metric is at most the given value, or MAX_LEVEL if
-     * there is no such level. For example, PROJ.maxDiag.getMinLevel(0.1) returns the minimum
-     * level such that all cell diagonal lengths are 0.1 or smaller. The return value is always a
-     * valid level.
+     * there is no such level. For example, PROJ.maxDiag.getMinLevel(0.1) returns the minimum level
+     * such that all cell diagonal lengths are 0.1 or smaller. The return value is always a valid
+     * level.
      */
     public int getMinLevel(double value) {
       if (value <= 0) {
@@ -248,7 +280,7 @@ public final strictfp class S2 {
    * should *not* be a point that is commonly used in edge tests in order to avoid triggering code
    * to handle degenerate cases. (This rules out the north and south poles.)
    *
-   * <p> Warning: This is completely unrelated to S2Point.ORIGIN.
+   * <p>Warning: This is completely unrelated to S2Point.ORIGIN.
    */
   public static S2Point origin() {
     return ORIGIN;
@@ -267,42 +299,6 @@ public final strictfp class S2 {
     return abs(p.norm2() - 1) <= 5 * DBL_EPSILON; // About 1.11e-15
   }
 
-  /**
-   * Return a vector "c" that is orthogonal to the given unit-length vectors "a" and "b". This
-   * function is similar to a.CrossProd(b) except that it does a better job of ensuring
-   * orthogonality when "a" is nearly parallel to "b", and it returns a non-zero result even when a
-   * == b or a == -b.
-   *
-   * <p>It satisfies the following properties (RCP == robustCrossProd):
-   *
-   * <ol>
-   *   <li>RCP(a,b) != 0 for all a, b
-   *   <li>RCP(b,a) == -RCP(a,b) unless a == b or a == -b
-   *   <li>RCP(-a,b) == -RCP(a,b) unless a == b or a == -b
-   *   <li>RCP(a,-b) == -RCP(a,b) unless a == b or a == -b
-   * </ol>
-   */
-  public static S2Point robustCrossProd(S2Point a, S2Point b) {
-    // The direction of a.crossProd(b) becomes unstable as (a + b) or (a - b) approaches zero. This
-    // leads to situations where a.crossProd(b) is not very orthogonal to "a" and/or "b". We could
-    // fix this using Gram-Schmidt, but we also want b.robustCrossProd(a) == -a.robustCrossProd(b).
-    //
-    // The easiest fix is to just compute the cross product of (b+a) and (b-a). Mathematically, this
-    // cross product is exactly twice the cross product of "a" and "b", but it has the numerical
-    // advantage that (b+a) and (b-a) are always perpendicular (since "a" and "b" are unit length).
-    // This yields a result that is nearly orthogonal to both "a" and "b" even if these two values
-    // differ only in the lowest bit of one component.
-    // assert (isUnitLength(a) && isUnitLength(b));
-    S2Point x = b.add(a).crossProd(b.sub(a));
-    if (!x.equalsPoint(S2Point.ORIGIN)) {
-      return x;
-    }
-
-    // The only result that makes sense mathematically is to return zero, but we find it more
-    // convenient to return an arbitrary orthogonal vector.
-    return ortho(a);
-  }
-
   private static final S2Point[] ORTHO_BASES = {
     new S2Point(1, 0.0053, 0.00457), new S2Point(0.012, 1, 0.00457), new S2Point(0.012, 0.0053, 1)
   };
@@ -317,6 +313,15 @@ public final strictfp class S2 {
       k = 2;
     }
     return a.crossProd(ORTHO_BASES[k]).normalize();
+  }
+
+  /**
+   * Returns a unit-length vector used as the reference direction for deciding whether a polygon
+   * with semi-open boundaries contains the given vertex "a" (see S2ContainsVertexQuery). The result
+   * is unit length and is guaranteed to be different from the given point "a".
+   */
+  public static S2Point refDir(S2Point a) {
+    return ortho(a);
   }
 
   /**
@@ -404,9 +409,9 @@ public final strictfp class S2 {
     // This is equivalent to the usual Girard's formula but is slightly more accurate, faster to
     // compute, and handles a == b == c without a special case. RobustCrossProd() is necessary to
     // get good accuracy when two of the input points are very close together.
-    S2Point ab = robustCrossProd(a, b);
-    S2Point bc = robustCrossProd(b, c);
-    S2Point ac = robustCrossProd(a, c);
+    S2Point ab = S2RobustCrossProd.robustCrossProd(a, b);
+    S2Point bc = S2RobustCrossProd.robustCrossProd(b, c);
+    S2Point ac = S2RobustCrossProd.robustCrossProd(a, c);
     return max(0.0, ab.angle(ac) - ab.angle(bc) + bc.angle(ac));
   }
 
@@ -446,10 +451,10 @@ public final strictfp class S2 {
   // of this triangle.
 
   /**
-   * Return the centroid of the planar triangle ABC. This can be normalized to unit length to
-   * obtain the "surface centroid" of the corresponding spherical triangle, i.e. the intersection
-   * of the three medians. However, note that for large spherical triangles the surface centroid
-   * may be nowhere near the intuitive "center" (see example above).
+   * Return the centroid of the planar triangle ABC. This can be normalized to unit length to obtain
+   * the "surface centroid" of the corresponding spherical triangle, i.e. the intersection of the
+   * three medians. However, note that for large spherical triangles the surface centroid may be
+   * nowhere near the intuitive "center" (see example above).
    */
   public static S2Point planarCentroid(S2Point a, S2Point b, S2Point c) {
     return new S2Point((a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0, (a.z + b.z + c.z) / 3.0);
@@ -574,7 +579,7 @@ public final strictfp class S2 {
   public static double angle(S2Point a, S2Point b, S2Point c) {
     // robustCrossProd() is necessary to get good accuracy when two of the input points are very
     // close together.
-    return robustCrossProd(a, b).angle(robustCrossProd(c, b));
+    return S2RobustCrossProd.robustCrossProd(a, b).angle(S2RobustCrossProd.robustCrossProd(c, b));
   }
 
   /**
@@ -594,7 +599,8 @@ public final strictfp class S2 {
     // Unfortunately we can't save robustCrossProd(a, b) and pass it as the optional 4th argument to
     // S2Predicates.sign(), because it requires a.crossProd(b) exactly (the robust version differs
     // in magnitude).
-    double angle = robustCrossProd(a, b).angle(robustCrossProd(b, c));
+    double angle =
+        S2RobustCrossProd.robustCrossProd(a, b).angle(S2RobustCrossProd.robustCrossProd(b, c));
 
     // Don't return S2Predicates.sign() * angle because it is legal to have (a == c).
     return (S2Predicates.sign(a, b, c) > 0) ? angle : -angle;
@@ -663,8 +669,8 @@ public final strictfp class S2 {
 
   /**
    * Given an orthonormal basis "frame" of column vectors and a point "p", returns the coordinates
-   * of "p" with respect to the basis "frame". The resulting point "q" satisfies the identity
-   * {@code frame * q == p}.
+   * of "p" with respect to the basis "frame". The resulting point "q" satisfies the identity {@code
+   * frame * q == p}.
    */
   static S2Point toFrame(Matrix frame, S2Point p) {
     // The inverse of an orthonormal matrix is its transpose.
@@ -679,14 +685,6 @@ public final strictfp class S2 {
   static S2Point fromFrame(Matrix frame, S2Point q) {
     return frame.mult(Matrix.fromCols(q)).getCol(0);
   }
-
-  /** A serializable function from type A to type B. */
-  // TODO(eengle): Make this extend java.util.function.Function & Serializable, once Android can.
-  @JsType
-  public interface SerializableFunction<A, B> extends Serializable {
-    B apply(A input);
-  }
-
   /**
    * Return true if two points are within the given distance in radians of each other. This is
    * mainly useful for testing.
@@ -708,8 +706,8 @@ public final strictfp class S2 {
   }
 
   /**
-   * Return true if the given values 'a' and 'b' are within the given 'maxError' of each other.
-   * This is mainly useful for testing.
+   * Return true if the given values 'a' and 'b' are within the given 'maxError' of each other. This
+   * is mainly useful for testing.
    */
   public static boolean approxEquals(double a, double b, double maxError) {
     return abs(a - b) <= maxError;

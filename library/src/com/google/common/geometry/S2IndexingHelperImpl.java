@@ -149,8 +149,8 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
     }
 
     /**
-     * Sets the minimum level to be used (the one closest to the root of the hierarchy). See
-     * {@link S2RegionCoverer#setMinLevel(int)}.
+     * Sets the minimum level to be used (the one closest to the root of the hierarchy). See {@link
+     * S2RegionCoverer.Builder#setMinLevel(int)}.
      *
      * @param level The minimum level
      * @return This builder
@@ -163,7 +163,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     /**
      * Sets the maximum level to be used (the one closest to the leaves of the hierarchy). See
-     * {@link S2RegionCoverer#setMaxLevel(int)}.
+     * {@link S2RegionCoverer.Builder#setMaxLevel(int)}.
      *
      * @param level The minimum level
      * @return This builder
@@ -176,7 +176,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     /**
      * Sets the spacing of the levels in use: only levels an integer multiple of this above the
-     * minimum will be used. See {@link S2RegionCoverer#setLevelMod(int)}.
+     * minimum will be used. See {@link S2RegionCoverer.Builder#setLevelMod(int)}.
      *
      * @param spacing The level spacing
      * @return This builder
@@ -191,7 +191,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
      * Sets a limit on the number of cells to be used in a covering. This is a soft limit: it may be
      * exceeded if it is not possible to cover the region in this number of cells, or if it would
      * only be possible to use cells larger than the minimum level (i.e. {@link #setMinLevel} takes
-     * precedence over {@link #setMaxCells}). See {@link S2RegionCoverer#setMaxCells(int)}.
+     * precedence over {@link #setMaxCells}). See {@link S2RegionCoverer.Builder#setMaxCells(int)}.
      *
      * @param limit The limit on the number of cells
      * @return This builder
@@ -248,7 +248,9 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
     }
   }
 
-  /** @return A new {@link Builder} with default values */
+  /**
+   * @return A new {@link Builder} with default values
+   */
   public static Builder builder() {
     return new Builder();
   }
@@ -482,13 +484,11 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
   private S2CellUnion regionListToCellUnion(List<S2Region> regions) {
     Preconditions.checkArgument(!regions.isEmpty());
-    ArrayList<S2CellId> cellIds =
-        Lists.newArrayList(
-            Iterables.concat(
-                Lists.transform(regions, region -> regionToCellUnion(region).cellIds())));
-    S2CellUnion cellUnion = new S2CellUnion();
-    cellUnion.initFromCellIds(cellIds);
-    return cellUnion;
+    return new S2CellUnion()
+        .initFromCellIds(
+            Lists.newArrayList(
+                Iterables.concat(
+                    Lists.transform(regions, region -> regionToCellUnion(region).cellIds()))));
   }
 
   private List<S2CellId> getDenormalizedCellIds(S2CellUnion cellUnion) {

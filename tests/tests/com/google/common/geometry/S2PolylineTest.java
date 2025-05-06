@@ -17,22 +17,31 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
-import static com.google.common.geometry.TestDataGenerator.parseVertices;
-import static com.google.common.geometry.TestDataGenerator.snapPointsToLevel;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
+import static com.google.common.geometry.S2TextFormat.parseVertices;
+import static com.google.common.geometry.S2TextFormat.snapPointsToLevel;
 import static java.lang.Math.abs;
 import static java.lang.Math.cos;
 import static java.lang.Math.pow;
 import static java.lang.Math.sin;
 import static java.lang.Math.tan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link S2Polyline}.
@@ -40,19 +49,16 @@ import java.util.List;
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp class S2PolylineTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2PolylineTest extends GeometryTestCase {
   private static final double EPSILON = 2e-14d;
 
-  static final S2Polyline LINE = TestDataGenerator.makePolyline("1:1, 2:2, 3:3");
-  static final S2Polyline SNAPPED_LINE = new S2Polyline(ImmutableList.of(
+  private static final S2Polyline LINE = makePolyline("1:1, 2:2, 3:3");
+  private static final S2Polyline SNAPPED_LINE = new S2Polyline(ImmutableList.of(
       FACE_CELLS[0].toPoint(),
       FACE_CELLS[2].toPoint()));
 
-  @Override
-  public void setUp() {
-    super.setUp();
-  }
-
+  @Test
   public void testBasic() {
     List<S2Point> vertices = Lists.newArrayList();
     S2Polyline empty = new S2Polyline(vertices);
@@ -61,6 +67,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(empty, reversedEmpty);
   }
 
+  @Test
   public void testGetLengthCentroid() {
     // Construct random great circles and divide them randomly into segments. Then make sure that
     // the length and centroid are correct. Note that because of the way the centroid is computed,
@@ -88,6 +95,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testMayIntersect() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, -1.1, 0.8).normalize());
@@ -99,6 +107,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInterpolate() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, 0, 0));
@@ -113,11 +122,66 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
             line.interpolate(0.1), new S2Point(1, tan(0.2 * S2.M_PI / 2), 0).normalize()));
     assertTrue(S2.approxEquals(line.interpolate(0.25), new S2Point(1, 1, 0).normalize()));
 
-    assertEquals(line.interpolate(0.5), vertices.get(1));
-    assertEquals(line.interpolate(0.75), vertices.get(2));
-    assertEquals(line.interpolate(1.1), vertices.get(3));
+    assertApproxEquals(line.interpolate(0.5), vertices.get(1), 1e-15);
+    assertApproxEquals(line.interpolate(0.75), vertices.get(2), 1e-15);
+    assertApproxEquals(line.interpolate(1.1), vertices.get(3), 1e-15);
   }
 
+  @Test
+  public void testInterpolateIsUnitLength() {
+    S2Error error = new S2Error();
+    List<S2Point> vertices = Lists.newArrayList();
+    for (int trial = 0; trial < 50; ++trial) {
+      S2Cap cap = data.getRandomCap(0.2, 0.3);
+      for (int i = 0; i < 50; ++i) {
+        // samplePoint returns a normalized point.
+        vertices.add(data.samplePoint(cap));
+      }
+
+      // Construct a polyline and check that it is valid.
+      S2Polyline line = new S2Polyline(vertices);
+      boolean invalid = line.findValidationError(error);
+      assertFalse(error.toString(), invalid);
+
+      // Interpolate over the polyline, starting before 0.0 and ending after 1.0.
+      // Each interpolated point must be unit length.
+      double fraction = -0.01d;
+      while (fraction < 1.01d) {
+        S2Point interpolatedPoint = line.interpolate(fraction);
+        assertTrue(interpolatedPoint + " is not unit length.", S2.isUnitLength(interpolatedPoint));
+        fraction += 0.01;
+      }
+    }
+  }
+
+  @Test
+  public void testDeduplicatePoints() {
+    List<S2Point> vertices = new ArrayList<>();
+
+    // Empty - does nothing
+    S2Polyline.deduplicatePoints(vertices);
+    assertTrue(vertices.isEmpty());
+
+    // Single point - does nothing
+    vertices.add(new S2Point(1, 0, 0));
+    S2Polyline.deduplicatePoints(vertices);
+    assertEquals(1, vertices.size());
+
+    // Two duplicate points - removes second point
+    vertices.add(new S2Point(1, 0, 0));
+    assertEquals(2, vertices.size());
+    S2Polyline.deduplicatePoints(vertices);
+    assertEquals(1, vertices.size());
+
+    // Three duplicate points - removes second and third points
+    vertices.add(new S2Point(1, 0, 0));
+    vertices.add(new S2Point(1, 0, 0));
+    assertEquals(3, vertices.size());
+    S2Polyline.deduplicatePoints(vertices);
+    assertEquals(1, vertices.size());
+  }
+
+  @Test
   public void testUninterpolate() {
     S2Point pointA = new S2Point(1, 0, 0);
     S2Point pointB = new S2Point(0, 1, 0);
@@ -151,8 +215,14 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(
         (0.25 - EPSILON < fraction && fraction < 0.25 + EPSILON)
             || (0.75 - EPSILON < fraction && fraction < 0.75 + EPSILON));
+
+    // Test that uninterpolating a polyline with a single vertex always projects to the first vertex
+    line = new S2Polyline(ImmutableList.of(pointA));
+    assertEquals(line.uninterpolate(pointA), 0d, EPSILON);
+    assertEquals(line.uninterpolate(pointB), 0d, EPSILON);
   }
 
+  @Test
   public void testEqualsAndHashCode() {
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, 0, 0));
@@ -175,6 +245,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkEqualsAndHashCodeMethods(line1, "", false);
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     S2Polyline polyline = makePolyline("0:0, 0:10, 10:20, 20:30");
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -182,6 +253,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(polyline, S2Polyline.decode(new ByteArrayInputStream(bos.toByteArray())));
   }
 
+  @Test
   public void testEncodeDecodeCompressed() throws IOException {
     List<S2Point> vertices = Lists.newArrayList();
     parseVertices("0:0, 0:10, 10:20, 20:30, 30:50, 40:70", vertices);
@@ -194,6 +266,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(polyline, S2Polyline.decode(new ByteArrayInputStream(compact.toByteArray())));
   }
 
+  @Test
   public void testDecodeLevelTooHigh() throws Exception {
     List<S2Point> vertices = Lists.newArrayList();
     parseVertices("0:0, 0:10, 10:20, 20:30, 30:50, 40:70", vertices);
@@ -216,14 +289,17 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCoderFast() {
     assertEquals(LINE, roundtrip(S2Polyline.FAST_CODER, LINE));
   }
 
+  @Test
   public void testCoderCompact() {
     assertEquals(SNAPPED_LINE, roundtrip(S2Polyline.COMPACT_CODER, SNAPPED_LINE));
   }
 
+  @Test
   public void testGetSnapLevel() {
     List<S2Point> vertices = Lists.newArrayList();
     parseVertices("0:10, 10:20, 20:30", vertices);
@@ -249,6 +325,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(10, polyline.getBestSnapLevel());
   }
 
+  @Test
   public void testFromSnapped() {
     S2Polyline original = makePolyline("10:10, 10:20, 10:30, 10:15, 10:40");
     S2Polyline snapped = S2Polyline.fromSnapped(original, S2CellId.MAX_LEVEL);
@@ -263,6 +340,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(original.numVertices() > S2Polyline.fromSnapped(original, 2).numVertices());
   }
 
+  @Test
   public void testGetNearestEdgeIndexAndProjectToEdge() {
     List<S2Point> latLngs = Lists.newArrayList();
     latLngs.add(S2LatLng.fromDegrees(0, 0).toPoint());
@@ -310,6 +388,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(2, edgeIndex);
   }
 
+  @Test
   public void testProject() {
     S2Point pointA = new S2Point(1, 0, 0);
     S2Point pointB = new S2Point(0, 1, 0);
@@ -345,18 +424,21 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(degenerateLine.project(pointB).equals(pointA));
   }
 
+  @Test
   public void testIntersectsEmptyPolyline() {
     S2Polyline line1 = makePolyline("1:1, 4:4");
     S2Polyline emptyPolyline = new S2Polyline(Lists.<S2Point>newArrayList());
     assertFalse(emptyPolyline.intersects(line1));
   }
 
+  @Test
   public void testIntersectsOnePointPolyline() {
     S2Polyline line1 = makePolyline("1:1, 4:4");
     S2Polyline line2 = makePolyline("1:1");
     assertFalse(line1.intersects(line2));
   }
 
+  @Test
   public void testIntersects() {
     S2Polyline line1 = makePolyline("1:1, 4:4");
     S2Polyline smallCrossing = makePolyline("1:2, 2:1");
@@ -367,6 +449,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(line1.intersects(bigCrossing));
   }
 
+  @Test
   public void testIntersectsAtVertex() {
     S2Polyline line1 = makePolyline("1:1, 4:4, 4:6");
     S2Polyline line2 = makePolyline("1:1, 1:2");
@@ -375,6 +458,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(line1.intersects(line3));
   }
 
+  @Test
   public void testIntersectsVertexOnEdge() {
     S2Polyline horizontalLeftToRight = makePolyline("0:1, 0:3");
     S2Polyline verticalBottomToTop = makePolyline("-1:2, 0:2, 1:2");
@@ -386,6 +470,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(horizontalRightToLeft.intersects(verticalTopToBottom));
   }
 
+  @Test
   public void testSubsampleVerticesTrivialInputs() {
     // No vertices.
     checkSubsample("", 1.0);
@@ -404,10 +489,11 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkSubsample("0:1, 0:2, 0:3, 0:4, 0:5", 1.0, 0, 4);
 
     // And finally, verify that we still do something reasonable if the client passes in an invalid
-    // polyline with two or more adjacent vertices.
-    checkSubsample("0:1, 0:1, 0:1, 0:2", 0.0, 0, 3);
+    // polyline with two or more adjacent vertices. This requires disabling internal assertions.
+    uncheckedInitialize(() -> checkSubsample("0:1, 0:1, 0:1, 0:2", 0.0, 0, 3));
   }
 
+  @Test
   public void testSubsampleVerticesSimpleExample() {
     String coords = "0:0, 0:1, -1:2, 0:3, 0:4, 1:4, 2:4.5, 3:4, 3.5:4, 4:4";
     checkSubsample(coords, 3.0, 0, 9);
@@ -417,6 +503,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     checkSubsample(coords, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
   }
 
+  @Test
   public void testSubsampleVerticesGuarantees() {
     // Check that duplicate vertices are never generated.
     checkSubsample("10:10, 12:12, 10:10", 5.0, 0);
@@ -445,6 +532,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testValid() {
     // A simple normalized line must be valid.
     List<S2Point> vertices = Lists.newArrayList();
@@ -454,12 +542,13 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertTrue(line.isValid());
   }
 
+  @Test
   public void testInvalid() {
     // A non-normalized line must be invalid.
     List<S2Point> vertices = Lists.newArrayList();
     vertices.add(new S2Point(1, 0, 0));
     vertices.add(new S2Point(0, 2, 0));
-    S2Polyline line = new S2Polyline(vertices);
+    S2Polyline line = uncheckedCreate(() -> new S2Polyline(vertices));
     assertFalse(line.isValid());
 
     // Lines with duplicate points must be invalid.
@@ -467,22 +556,24 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     vertices2.add(new S2Point(1, 0, 0));
     vertices2.add(new S2Point(0, 1, 0));
     vertices2.add(new S2Point(0, 1, 0));
-    S2Polyline line2 = new S2Polyline(vertices2);
+    S2Polyline line2 = uncheckedCreate(() -> new S2Polyline(vertices2));
     assertFalse(line2.isValid());
   }
 
+  @Test
   public void testNumEdges() {
     // Empty polyline has zero edges
     assertEquals(0, makePolyline("").numEdges());
 
-    // Single vertex polyline has zero edges
-    assertEquals(0, makePolyline("0:0").numEdges());
+    // Single vertex polyline has one degenerate edge
+    assertEquals(1, makePolyline("0:0").numEdges());
 
     // Multiple vertex polylines have non-zero edges
     assertEquals(1, makePolyline("0:0, 1:1").numEdges());
     assertEquals(2, makePolyline("0:0, 1:1, 2:2").numEdges());
   }
 
+  @Test
   public void testEmptyShape() {
     S2Shape shape = makePolyline("");
     assertTrue(shape.isEmpty());
@@ -493,16 +584,24 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(1, shape.dimension());
   }
 
+  // Single vertex shapes are a special case, implemented with S2ShapeUtil.DegenerateEdgeShape,
+  // which presents the S2Polyline as an S2Shape with a single degenerate edge.
+  @Test
   public void testSingleVertexShape() {
-    S2Shape shape = makePolyline("0:0");
-    assertTrue(shape.isEmpty());
+    S2Shape shape = makePolyline("12:34");
+    assertFalse(shape.isEmpty());
     assertFalse(shape.isFull());
     assertFalse(shape.hasInterior());
-    assertEquals(0, shape.numEdges());
-    assertEquals(0, shape.numChains());
+    assertEquals(1, shape.numEdges());
+    assertEquals(1, shape.numChains());
     assertEquals(1, shape.dimension());
+    checkFirstNEdges(shape, "12:34|12:34");
+    checkFirstNChainStarts(shape, 0);
+    checkFirstNChainLengths(shape, 1);
+    checkFirstNChainEdges(shape, 0, "12:34|12:34");
   }
 
+  @Test
   public void testDoubleVertexShape() {
     S2Shape shape = makePolyline("0:0, 1:1");
     assertFalse(shape.isEmpty());
@@ -517,6 +616,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(1, shape.dimension());
   }
 
+  @Test
   public void testTripleVertexShape() {
     S2Shape shape = makePolyline("0:0, 1:1, 2:2");
     assertFalse(shape.hasInterior());
@@ -529,6 +629,7 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     assertEquals(1, shape.dimension());
   }
 
+  @Test
   public void testS2ShapeInterface() {
     S1Angle radius = S1Angle.radians(10);
     int numVertices = 40;
@@ -551,12 +652,14 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testReverse() {
     S2Polyline line = makePolyline("0:0, 1:1, 2:2").reversed();
     assertEquals(line, makePolyline("2:2, 1:1, 0:0"));
   }
 
   /** Verifies that contains() returns false for all cells. */
+  @Test
   public void testContains() {
     S2Polyline line = makePolyline("0:0, 5:5, 10:5");
     // Check a point nowhere near the line.
@@ -603,5 +706,18 @@ public strictfp class S2PolylineTest extends GeometryTestCase {
       String hashMessage = "hashCode() values for equal objects should be the same";
       assertTrue(hashMessage, lhs.hashCode() == rhs.hashCode());
     }
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2PolylineSerialization() {
+    // This is an invalid polyline, with vertices that are not unit length, but we want to make sure
+    // that it serializes and deserializes correctly anyway, so internal assertions are disabled.
+    List<S2Point> vertices = Lists.newArrayList();
+    vertices.add(new S2Point(0, 0, 0));
+    vertices.add(new S2Point(0, 0.1, 0));
+    vertices.add(new S2Point(0.5, 1e6, 7));
+    vertices.add(new S2Point(8, 3, 5));
+    doSerializationTest(uncheckedCreate(() -> new S2Polyline(vertices)));
   }
 }

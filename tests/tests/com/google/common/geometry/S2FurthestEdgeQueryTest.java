@@ -16,12 +16,15 @@
 
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
 import static com.google.common.geometry.S2TextFormat.makeIndexOrDie;
 import static com.google.common.geometry.S2TextFormat.makePointOrDie;
 import static com.google.common.geometry.S2TextFormat.parsePointsOrDie;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -33,11 +36,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for S2FurthestEdgeQuery and the underlying S2BestEdgesQueryBase which supplies the
  * interesting parts of the implementation.
  */
+@RunWith(JUnit4.class)
 public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   /**
    * For the given S2FurthestEdgeQuery.Target and S2ShapeIndex, visits and returns up to maxShapes
@@ -51,8 +58,8 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     final Set<S2Shape> visitedShapes = new HashSet<>();
     furthestEdgeQuery.visitAntipodalShapes(
         target,
-        (shape) -> {
-          visitedShapes.add(shape);
+        shapeId -> {
+          visitedShapes.add(index.getShapes().get(shapeId));
           return visitedShapes.size() < maxShapes;
         });
 
@@ -60,6 +67,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     return visitedShapes;
   }
 
+  @Test
   public void testNoEdges() {
     S2ShapeIndex index = makeIndexOrDie("# #");
     Query query = S2FurthestEdgeQuery.builder().build(index);
@@ -69,6 +77,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertFalse(result.isPresent());
   }
 
+  @Test
   public void testOptionsNotModified() {
     // Tests that findFurthestEdge(), getDistance(), and isDistanceGreater() do not modify
     // query.options(), even though all of these methods have their own specific options
@@ -101,6 +110,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   }
 
   /** Verifies that visitAntipodalShapes visits the correct shapes for a point target. */
+  @Test
   public void testVisitAntipodalShapesForPointTarget() {
     // Builds an index containing 1 point, 1 edge, and 3 polygons, each with a single triangular
     // loop. Only shapes 2 and 4 (the first and third polygons) are at maximum distance to the
@@ -129,6 +139,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   }
 
   /** Verifies that visitAntipodalShapes visits the correct shapes for an edge target. */
+  @Test
   public void testVisitAntipodalShapesForEdgeTarget() {
     // Builds an index containing 1 point, 1 edge, and 3 polygons, each with a single triangular
     // loop. Only shapes 2 and 4 (the first and third polygons) should be antipodal to the target.
@@ -155,6 +166,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   }
 
   /** Verifies that visitAntipodalShapes visits the correct shapes for cell target. */
+  @Test
   public void testVisitAntipodalShapesForCellTarget() {
     // Builds an index containing 1 point, 1 edge, and 3 polygons, each with a single triangular
     // loop. Only shapes 2 and 4 (the first and third polygons) should contain the very small (leaf)
@@ -196,6 +208,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     return S2EdgeUtil.updateMaxDistance(x, y0, y1, S1ChordAngle.ZERO);
   }
 
+  @Test
   public void testDistanceEqualToLimit() {
     // Tests the behavior of isDistanceGreater, isDistanceGreaterOrEqual, and
     // isConservativeDistanceGreaterOrEqual (and the corresponding Options) when the distance to the
@@ -224,6 +237,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   }
 
   @SuppressWarnings("FloatingPointLiteralPrecision")
+  @Test
   public void testTrueDistanceGreaterThanS1ChordAngleDistance() {
     // Tests that isConservativeDistanceGreaterOrEqual returns points where the true distance is
     // slightly greater than the one computed by S1ChordAngle.
@@ -248,6 +262,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertTrue(query.isConservativeDistanceGreaterOrEqual(target1, limit));
   }
 
+  @Test
   public void testAntipodalPointInsideIndexedPolygon() {
     // Tests a target point antipodal to the interior of an indexed polygon.
     // (The index also includes a polyline loop with no interior.)
@@ -263,7 +278,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     List<Result<S1ChordAngle>> results = query.findFurthestEdges(target);
     assertGreaterThan(results.size(), 0);
     assertEquals(S1ChordAngle.STRAIGHT, results.get(0).distance());
-    assertEquals(index.getShapes().get(1), results.get(0).shape());
+    assertEquals(1, results.get(0).shapeId());
     assertEquals(-1, results.get(0).edgeId());
 
     // Next check that with includeInteriors set to false, the distance is less than 180 for the
@@ -273,11 +288,12 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertGreaterThan(results.size(), 0);
     assertLessOrEqual(results.get(0).distance(), S1ChordAngle.STRAIGHT);
     // The same polygon shape, with id 1.
-    assertEquals(index.getShapes().get(1), results.get(0).shape());
+    assertEquals(1, results.get(0).shapeId());
     // Found a specific edge, so id should be positive.
     assertGreaterThan(results.get(0).edgeId(), 0);
   }
 
+  @Test
   public void testAntipodalPointOutsideIndexedPolygon() {
     // Tests a target point antipodal to the interior of a polyline loop with no interior. The index
     // also includes a polygon almost antipodal to the target, but with all edges closer than the
@@ -294,6 +310,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertEquals(0, results.size());
   }
 
+  @Test
   public void testTargetPolygonContainingIndexedPoints() {
     // Two points are contained within a target polyline loop (no interior) and two points are
     // contained within a target polygon.
@@ -308,13 +325,14 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     // All points should be returned since we did not specify maxResults.
     assertEquals(4, results1.size());
     assertGreaterThan(results1.get(0).distance(), S1ChordAngle.ZERO);
-    assertEquals(index.getShapes().get(0), results1.get(0).shape());
+    assertEquals(0, results1.get(0).shapeId());
     assertEquals(0, results1.get(0).edgeId()); // 2:2 (to 5:15)
     assertGreaterThan(results1.get(1).distance(), S1ChordAngle.ZERO);
-    assertEquals(index.getShapes().get(0), results1.get(1).shape());
+    assertEquals(0, results1.get(1).shapeId());
     assertEquals(3, results1.get(1).edgeId()); // 3:12 (to 0:0)
   }
 
+  @Test
   public void testAntipodalPolygonContainingIndexedPoints() {
     // Two antipodal points are contained within a polyline loop (no interior)
     // and two antipodal points are contained within a polygon.
@@ -341,7 +359,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     boolean foundShape0Edge2 = false;
     boolean foundShape0Edge3 = false;
     for (Result<S1ChordAngle> result : results) {
-      assertEquals(index.getShapes().get(0), result.shape());
+      assertEquals(0, result.shapeId());
       assertEquals(S1ChordAngle.STRAIGHT, result.distance());
       if (result.edgeId() == 2) { // 1:11
         assertFalse(foundShape0Edge2);
@@ -356,6 +374,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertTrue(foundShape0Edge3);
   }
 
+  @Test
   public void testEmptyPolygonTarget() {
     // Verifies that distances are measured correctly to empty polygon targets.
     S2ShapeIndex emptyPolygonIndex = makeIndexOrDie("# # empty");
@@ -376,6 +395,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     assertEquals(S1ChordAngle.NEGATIVE, fullIndexQuery.getDistance(emptyPolygonTarget));
   }
 
+  @Test
   public void testFullLaxPolygonTarget() {
     // Verifies that distances are measured correctly to full LaxPolygon targets.
     S2ShapeIndex emptyPolygonIndex = makeIndexOrDie("# # empty");
@@ -415,10 +435,8 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
     if (data.oneIn(2)) {
       edges.addAll(query.findFurthestEdges(target));
     } else {
-      query.findFurthestEdges(
-          target,
-          (S1ChordAngle distance, S2Shape shape, int edgeId) ->
-              edges.add(new Result<>(distance, shape, edgeId)));
+      query.findFurthestEdges(target,
+          (distance, shapeId, edgeId) -> edges.add(new Result<>(distance, shapeId, edgeId)));
     }
 
     assertLessOrEqual(edges.size(), query.options().maxResults());
@@ -516,7 +534,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
 
     // Get the indexed edge that's farthest from the target.
     S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
-    result.shape().getEdge(result.edgeId(), edge);
+    index.getShapes().get(result.shapeId()).getEdge(result.edgeId(), edge);
 
     assertEquals("Furthest Indexed Edge from target is " + edge.toDegreesString(),
         expectedDistanceRadians, result.distance().radians(), 1e-15);
@@ -537,6 +555,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
    * FurthestEdgeQuery. This demonstrates that for simple edge-to-edge queries, the maximum distance
    * between the index and the target is the maximum distance between the edges.
    */
+  @Test
   public void testFurthestEdgeDistanceEdgePairs() {
     // Some test points.
     S2Point center = ll(12, 12);
@@ -567,6 +586,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   }
 
   /** Tests simple cases of maximum distance from an edge to a polygon. */
+  @Test
   public void testFurthestEdgeDistanceEdgeToPolygon() {
     S2Point center = ll(12, 12);
     // Four points around the center
@@ -688,7 +708,7 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
         testFindFurthestEdges(index, target, builder);
       } else if (targetType == 2) {
         // Find the edges furthest from a given cell.
-        int minLevel = PROJ.maxDiag.getMinLevel(queryRadius.radians());
+        int minLevel = MAX_DIAG.getMinLevel(queryRadius.radians());
         int level = minLevel + data.uniform(S2CellId.MAX_LEVEL - minLevel + 1);
         S2Point a = data.samplePoint(queryCap);
         S2CellId targetId = S2CellId.fromPoint(a).parent(level);
@@ -713,16 +733,19 @@ public final class S2FurthestEdgeQueryTest extends GeometryTestCase {
   static int kNumEdges = 100;
   static int kNumQueries = 200;
 
+  @Test
   public void testCircleEdges() {
     testWithShapeFactory(
         data.new RegularLoopShapeFactory(), kNumIndexes, kNumEdges, kNumQueries);
   }
 
+  @Test
   public void testFractalEdges() {
     testWithShapeFactory(
         data.new FractalLoopShapeFactory(), kNumIndexes, kNumEdges, kNumQueries);
   }
 
+  @Test
   public void testPointCloudEdges() {
     testWithShapeFactory(
         data.new PointCloudShapeFactory(), kNumIndexes, kNumEdges, kNumQueries);

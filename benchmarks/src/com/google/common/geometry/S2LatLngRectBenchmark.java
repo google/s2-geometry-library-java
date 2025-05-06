@@ -22,7 +22,6 @@ import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2LatLngRect;
 import com.google.common.geometry.S2Point;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -58,7 +57,7 @@ public class S2LatLngRectBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       latlngs = new S2LatLng[ARRAY_SIZE];
       points = new S2Point[ARRAY_SIZE];

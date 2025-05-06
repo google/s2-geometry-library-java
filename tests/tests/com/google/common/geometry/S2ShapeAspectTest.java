@@ -15,7 +15,9 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -26,8 +28,12 @@ import com.google.common.geometry.S2ShapeAspect.ChainAspect.Simple;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Exercises all mixes of the S2ShapeAspects components. */
+@RunWith(JUnit4.class)
 public class S2ShapeAspectTest extends GeometryTestCase {
   private static S2Point A = makePoint("0:0");
   private static S2Point B = makePoint("0:1");
@@ -36,6 +42,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
 
   // Open, Simple, Array and Packed
 
+  @Test
   public void testOpenSimpleEmpty() {
     S2Point[][] chains = {{}};
     S2Point[][] edges = {};
@@ -43,6 +50,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new LineSimplePacked(chains[0]));
   }
 
+  @Test
   public void testOpenSimpleSingleton() {
     S2Point[][] chains = {{A}};
     S2Point[][] edges = {};
@@ -50,6 +58,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new LineSimplePacked(chains[0]));
   }
 
+  @Test
   public void testOpenSimpleTriangle() {
     S2Point[][] chains = {{A, B, C}};
     S2Point[][] edges = {{A, B}, {B, C}};
@@ -71,6 +80,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
 
   // Closed, Simple, Array and Packed
 
+  @Test
   public void testClosedSimpleEmpty() {
     S2Point[][] chains = {{}};
     S2Point[][] edges = {};
@@ -78,6 +88,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingSimplePacked(chains[0]));
   }
 
+  @Test
   public void testClosedSimpleSingleton() {
     S2Point[][] chains = {{A}};
     S2Point[][] edges = {{A, A}};
@@ -85,6 +96,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingSimplePacked(chains[0]));
   }
 
+  @Test
   public void testClosedSimpleTriangle() {
     S2Point[][] chains = {{A, B, C}};
     S2Point[][] edges = {{A, B}, {B, C}, {C, A}};
@@ -106,6 +118,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
 
   // Open, Multi, Array and Packed
 
+  @Test
   public void testOpenMultiEmpty() {
     S2Point[][] chains = {};
     S2Point[][] edges = {};
@@ -113,6 +126,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new LineMultiPacked(chains));
   }
 
+  @Test
   public void testOpenMultiEmptyChain() {
     // JUnit's assertThrows would be nice, but it isn't supported on GWT.
     try {
@@ -129,6 +143,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testOpenMultiOneChain() {
     S2Point[][] chains = {{A, B, C}};
     S2Point[][] edges = {{A, B}, {B, C}};
@@ -136,6 +151,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new LineMultiPacked(chains));
   }
 
+  @Test
   public void testOpenMultiTwoChains() {
     S2Point[][] chains = {{A, B, C}, {D, C}};
     S2Point[][] edges = {{A, B}, {B, C}, {D, C}};
@@ -143,6 +159,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new LineMultiPacked(chains));
   }
 
+  @Test
   public void testOpenMultiPartialChain() {
     // Note that while we don't allow empty chains, degenerate chains have no edges.
     S2Point[][] chains = {{D}, {A, B, C}, {D}, {D, C}, {D}};
@@ -165,6 +182,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
 
   // Closed, Multi, Array and Packed
 
+  @Test
   public void testClosedMultiEmpty() {
     S2Point[][] chains = {};
     S2Point[][] edges = {};
@@ -172,6 +190,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingMultiPacked(chains));
   }
 
+  @Test
   public void testClosedMultiEmptyChain() {
     S2Point[][] chains = {{}};
     S2Point[][] edges = {};
@@ -179,6 +198,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingMultiPacked(chains));
   }
 
+  @Test
   public void testClosedMultiOneChain() {
     S2Point[][] chains = {{A, B, C}};
     S2Point[][] edges = {{A, B}, {B, C}, {C, A}};
@@ -186,6 +206,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingMultiPacked(chains));
   }
 
+  @Test
   public void testClosedMultiTwoChainsWithEmpties() {
     S2Point[][] chains = {{}, {A, B, C}, {}, {D, C}, {}};
     S2Point[][] edges = {{A, B}, {B, C}, {C, A}, {D, C}, {C, D}};
@@ -193,6 +214,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     check(chains, edges, new RingMultiPacked(chains));
   }
 
+  @Test
   public void testClosedMultiPartialChain() {
     S2Point[][] chains = {{D}, {A, B, C}, {D}, {D, C}, {D}};
     S2Point[][] edges = {{D, D}, {A, B}, {B, C}, {C, A}, {D, D}, {D, C}, {C, D}, {D, D}};
@@ -206,9 +228,8 @@ public class S2ShapeAspectTest extends GeometryTestCase {
     }
   }
 
-  public void testClosedMultiPacked() {
-
-  }
+  @Test
+  public void testClosedMultiPacked() {}
 
   private static class RingMultiPacked extends Multi.Packed implements Ring {
     RingMultiPacked(S2Point[][] chains) {
@@ -218,6 +239,7 @@ public class S2ShapeAspectTest extends GeometryTestCase {
 
   // Snapped
 
+  @Test
   public void testSnapped() {
     // Do a sanity test of the [open,closed]x[simple,multi] mixes, having snapped ABC to abc.
     S2CellId ia = S2CellId.fromPoint(A);

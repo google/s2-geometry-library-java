@@ -16,17 +16,23 @@
 package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
+import com.google.errorprone.annotations.InlineMe;
 import java.util.AbstractList;
 import java.util.List;
+import java.util.Objects;
 import jsinterop.annotations.JsConstructor;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 
 /**
- * S2Shape is an abstract base class that defines a shape. Typically it wraps some other geometric
- * object in order to provide access to its edges without duplicating the edge data.
+ * S2Shape is an abstract base class that defines a shape as a collection of edges, which are
+ * organized in chains.
+ *
+ * <p>Typically it wraps some other geometric object in order to provide access to its edges without
+ * duplicating the edge data.
  */
 @JsType
+@SuppressWarnings("Assertion")
 public interface S2Shape {
   /**
    * Returns the number of edges in this shape. 0-dimensional shapes contain points, as one
@@ -37,8 +43,8 @@ public interface S2Shape {
   int numEdges();
 
   /**
-   * Returns the edge for the given edgeId in {@code result}. Points are represented as
-   * degenerate edges, with equal endpoints, but not all degenerate edges are points.
+   * Returns the edge for the given edgeId in {@code result}. Points are represented as degenerate
+   * edges, with equal endpoints, but not all degenerate edges are points.
    *
    * @param edgeId which edge to set into {@code result}, from 0 to {@link #numEdges()} - 1
    */
@@ -65,32 +71,48 @@ public interface S2Shape {
    */
   @JsType
   final class MutableEdge {
-    /**
-     * Endpoints of this edge last set by passing this instance to {@link S2Shape#getEdge(int,
-     * MutableEdge)}.
-     */
-    S2Point a;
+    /** The start point of this edge. */
+    public S2Point a = null;
 
-    S2Point b;
+    /** The end point of this edge. */
+    public S2Point b = null;
 
-    /**
-     * Returns the leading point of the last edge retrieved via {@link S2Shape#getEdge(int,
-     * MutableEdge)}, or null if no edge has been retrieved.
-     */
+    /** Creates a new MutableEdge with the given endpoints. */
+    public static MutableEdge of(S2Point a, S2Point b) {
+      MutableEdge e = new MutableEdge();
+      e.a = a;
+      e.b = b;
+      return e;
+    }
+
+    /** Returns the current start point of this edge, or null if it has not been set. */
     public S2Point getStart() {
       return a;
     }
 
-    /**
-     * Returns the trailing point of the last edge retrieved via {@link S2Shape#getEdge(int,
-     * MutableEdge)}, or null if no edge has been retrieved.
-     */
+    /** Returns the current end point of this edge, or null if it has not been set. */
     public S2Point getEnd() {
       return b;
     }
 
-    /** Returns true iff 'point' is either endpoint of this edge. */
+    /** Returns true if this MutableEdge is actually a point, i.e. the endpoints are equal. */
+    public boolean isDegenerate() {
+      return a.equalsPoint(b);
+    }
+
+    /**
+     * Returns true iff 'point' is either endpoint of this edge.
+     *
+     * @deprecated use hasEndpoint.
+     */
+    @Deprecated
+    @InlineMe(replacement = "this.hasEndpoint(point)")
     public boolean isEndpoint(S2Point point) {
+      return hasEndpoint(point);
+    }
+
+    /** Returns true iff this edge has the given 'point' as either endpoint. */
+    public boolean hasEndpoint(S2Point point) {
       return a.equalsPoint(point) || b.equalsPoint(point);
     }
 
@@ -102,10 +124,12 @@ public interface S2Shape {
       return a.equalsPoint(other.a) && b.equalsPoint(other.b);
     }
 
-    /**
-     * Called by implementations of {@link S2Shape#getEdge(int, MutableEdge)} to update the
-     * endpoints of this mutable edge to the given values.
-     */
+    /** Returns true if this MutableEdge currently has the reversed endpoints as 'other'. */
+    public boolean isSiblingOf(MutableEdge other) {
+      return a.equalsPoint(other.b) && b.equalsPoint(other.a);
+    }
+
+    /** Updates the endpoints of this mutable edge to the given values. */
     public void set(S2Point start, S2Point end) {
       this.a = start;
       this.b = end;
@@ -119,7 +143,9 @@ public interface S2Shape {
     }
 
     public String toDegreesString() {
-      return a.toDegreesString() + "-" + b.toDegreesString();
+      return (a == null ? "null" : a.toDegreesString())
+          + "-"
+          + (b == null ? "null" : b.toDegreesString());
     }
 
     @Override
@@ -218,6 +244,101 @@ public interface S2Shape {
   S2Point getChainVertex(int chainId, int edgeOffset);
 
   /**
+   * Returns the edge id of the next edge in a chain. Wraps around at the start/end of any closed
+   * chains.
+   *
+   * <p>This is intended for one-off lookups, as it has to look up the chain for the edge every
+   * time. If you want many lookups or to iterate the edges of a chain, then it's better to do that
+   * directly.
+   *
+   * <p>Return -1 when the end of an open chain is reached. Polygon and closed polyline chains wrap
+   * around to the beginning and thus never return -1, while points always do.
+   */
+  default int nextEdgeWrap(int edgeId) {
+    assert edgeId >= 0;
+    assert edgeId < numEdges();
+
+    ChainPosition chainPos = new ChainPosition();
+    getChainPosition(edgeId, chainPos);
+    int chainLength = getChainLength(chainPos.chainId);
+
+    // Polygon chains wrap around, point and polylines don't.
+    int offset = chainPos.offset;
+    switch (dimension()) {
+      case 2:
+        // Polygon chains always wrap around.
+        offset = (offset + 1) % chainLength;
+        break;
+      case 1:
+        // If we're at the end of a polyline, wrap around if it's closed.
+        offset++;
+        if (offset == chainLength) {
+          S2Point curr = getChainVertex(chainPos.chainId, chainLength);
+          S2Point next = getChainVertex(chainPos.chainId, 0);
+          if (curr.equalsPoint(next)) {
+            offset = 0;
+          } else {
+            return -1;
+          }
+        }
+        break;
+      default:
+        // Points are one per chain.
+        return -1;
+    }
+
+    return getChainStart(chainPos.chainId) + offset;
+  }
+
+  /**
+   * Returns the edge id of previous edge in a chain. Wraps around at the start/end of any closed
+   * chains/
+   *
+   * <p>This is intended for one-off lookups, as it has to look up the chain for the edge every
+   * time. If you want many lookups or to iterate the edges of a chain, then it's better to do that
+   * directly.
+   *
+   * <p>Return -1 when the start of an open chain is reached. Polygon and closed polyline chains
+   * wrap around to the end and thus never return -1, while points always do.
+   */
+  default int prevEdgeWrap(int edgeId) {
+    assert edgeId >= 0;
+    assert edgeId < numEdges();
+
+    ChainPosition chainPos = new ChainPosition();
+    getChainPosition(edgeId, chainPos);
+    int chainLength = getChainLength(chainPos.chainId);
+
+    int offset = chainPos.offset;
+    switch (dimension()) {
+      case 2:
+        // Polygons always wrap around.
+        --offset;
+        if (offset < 0) {
+          offset += chainLength;
+        }
+        break;
+      case 1:
+        --offset;
+        if (offset < 0) {
+          S2Point curr = getChainVertex(chainPos.chainId, 0);
+          S2Point prev = getChainVertex(chainPos.chainId, chainLength);
+          if (prev.equalsPoint(curr)) {
+            offset += chainLength;
+          } else {
+            return -1;
+          }
+        }
+        break;
+      default:
+        // Points are one per chain.
+        return -1;
+    }
+
+    return getChainStart(chainPos.chainId) + offset;
+  }
+
+  /**
    * Returns a view of the vertices in the given chain. Note {@link S2Shape#dimension 2D} shapes
    * omit the last vertex, as it's a duplicate of the first.
    */
@@ -295,13 +416,19 @@ public interface S2Shape {
 
   /** A point with a known containment relationship. */
   @JsType
-  abstract class ReferencePoint extends S2Point {
+  abstract class ReferencePoint {
     private static final ReferencePoint ORIGIN_INSIDE = create(S2.origin(), true);
     private static final ReferencePoint ORIGIN_OUTSIDE = create(S2.origin(), false);
+    private final S2Point point;
 
     @JsConstructor
     private ReferencePoint(S2Point p) {
-      super(p.x, p.y, p.z);
+      this.point = p;
+    }
+
+    /** Returns the point referenced to. */
+    public S2Point point() {
+      return point;
     }
 
     /** Returns true if this point is contained by the reference shape. */
@@ -335,11 +462,23 @@ public interface S2Shape {
       }
     }
 
+    /** Returns true if this ReferencePoint's point is equal to the given point. */
+    public boolean equalsPoint(S2Point p) {
+      return point.equalsPoint(p);
+    }
+
     @Override
     public boolean equals(Object o) {
-      return o instanceof ReferencePoint
-          && super.equals(o)
-          && contained() == ((ReferencePoint) o).contained();
+      if (!(o instanceof ReferencePoint)) {
+        return false;
+      }
+      ReferencePoint that = (ReferencePoint) o;
+      return this.point.equalsPoint(that.point) && this.contained() == that.contained();
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(point, contained());
     }
   }
 }

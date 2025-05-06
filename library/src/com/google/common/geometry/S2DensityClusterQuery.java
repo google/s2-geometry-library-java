@@ -15,398 +15,296 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.collect.ImmutableList.of;
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.Streams.stream;
+import static com.google.common.geometry.S2CellId.MAX_LEVEL;
+import static com.google.common.geometry.S2CellId.begin;
+import static java.lang.Math.ceil;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.geometry.S2DensityTree.Cell;
-import com.google.common.geometry.S2DensityTree.DecodedPath;
-import com.google.common.geometry.S2DensityTree.TreeEncoder;
-import java.util.ArrayList;
-import java.util.List;
+import com.google.common.collect.ImmutableList;
+import com.google.common.geometry.S2DensityTree.CellVisitor.Action;
+import java.util.Iterator;
+import java.util.stream.Stream;
 
 /**
- * A query that computes clusters from density that are within 40% of the target cluster size, and
- * within 20% of each of the upper and lower target cluster boundaries. The clusters computed are
- * as detailed as the provided S2DensityTree, and even more detailed (via interpolation) if needed
- * to achieve the target cluster sizes. As such, the clusters may be large, generally containing
- * (in aggregate) as many S2CellIds as the provided S2DensityTree has leaf nodes. However, the
- * clusters (S2CellUnions) are normalized, so groups of 4 child cells will be replaced by their
- * parent cell.
+ * A query that computes clusters from density that are each {@link #S2DensityClusterQuery(long)
+ * near} a target cluster weight, or {@link #S2DensityClusterQuery(long, long) within a range} of
+ * acceptable cluster weights. The clusters may be computed in several ways:
  *
- * <p>The clusters are built from leaf nodes of the density tree, so only the parts of the Hilbert
- * curve range that actually have weight in the S2DensityTree are covered by clusters.
+ * <ul>
+ *   <li>{@link #clusters}: Returns a {@link Cluster} for each cluster, which provides the cluster
+ *       {@link Cluster#weight weight} and S2CellId range, from inclusive {@link Cluster#begin} to
+ *       exclusive {@link Cluster#end}). A {@link Cluster#covering} method provides easy access to
+ *       the range as a covering suitable for e.g. {@link S2CellIndex}.
+ *   <li>{@link #coverings}: A convenience method that returns the {@link Cluster#covering
+ *       coverings} of each cluster when the weight and range aren't directly needed. The union of
+ *       these coverings spans the world, so consider:
+ *   <li>{@link #tightCoverings}: A convenience method that returns the {@link Cluster#covering
+ *       coverings} of each cluster intersected with the leaves of the density tree. This is the
+ *       tightest covering of each cluster that can be produced from the density tree, but it can be
+ *       far more complex than desirable, requiring as many cells across all clusters as the density
+ *       tree has leaf cells. To set a tradeoff between tightness and complexity, consider:
+ *   <li>{@link #approximateCoverings}: A convenience method that returns the tight coverings of
+ *       each cluster re-covered with a coverer, which defaults to {@link #DEFAULT_COVERER} to
+ *       produce 256-cell coverings of each cluster. This essentially re-covers the tight coverings,
+ *       but faster and with much less RAM than would be needed to generate the tight coverings only
+ *       to approximate them. However, these coverings may overlap each other slightly, and since
+ *       it's difficult to configure a coverer to generate non-overlapping coverings, consider:
+ *   <li>{@link #clusterRegions}: A convenience method that returns the clusters as a region, which
+ *       can be used to test whether any cell intersects the cluster without having to generate a
+ *       covering for it. Regions are tight like {@link #tightCoverings}, lightweight like {@link
+ *       #approximateCoverings}, but do not intersect each other (no S2Cell is contained by more
+ *       than one of the resulting regions).
+ * </ul>
  *
- * <p>If and when the density tree does not have enough detail to build clusters sufficiently close
- * to the target weight, interpolation within S2Cells in [rangeMin() ... rangeMax()] of density tree
- * leaf nodes is used to divide weight between clusters.
+ * <p>In each case above, if the provided density tree has leaves that are larger than the maximum
+ * cluster weight, this class will linearly interpolate clusters within the density tree leaf as
+ * though the density is linearly distributed throughout the Hilbert range of the density leaf cell.
+ * Thus it isn't necessary to ensure all leaf cells are smaller than the desired cluster weight, but
+ * rather to ensure the density tree is detailed enough that the distribution has become roughly
+ * linear in the leaf cells (this is not always possible since geospatial datasets are so skewed,
+ * but each additional level of density tree cells significantly resolves the skew, so the
+ * distribution becomes linear more quickly than might be expected).
  */
 public class S2DensityClusterQuery {
-  // The desired weight of each cluster.
-  private final long clusterSize;
-  // While searching for a cluster boundary, the sum of nodes included so far.
-  private long sum;
-  // How much tolerance we have for cluster boundaries vs. the target.
-  private long tolerance;
+  /** A good default coverer for complex clusters. */
+  public static final S2RegionCoverer DEFAULT_COVERER =
+      S2RegionCoverer.builder().setMaxCells(256).build();
 
-  /** The face cell ids in decreasing order. */
-  private static final S2CellId[] REVERSE_FACE_CELLS = new S2CellId[6];
-  static {
-    for (int face = 0; face < 6; face++) {
-      REVERSE_FACE_CELLS[5 - face] = S2CellId.fromFace(face);
-    }
+  private final long minClusterWeight;
+  private final long maxClusterWeight;
+
+  /** Creates a new clusterer with clusters +/- 20% of the given desired cluster weight. */
+  public S2DensityClusterQuery(long desiredClusterWeight) {
+    this(max(1, desiredClusterWeight * 8 / 10), max(1, desiredClusterWeight * 12 / 10));
   }
 
   /**
-   * Creates a clusterer for a given clusterSize in the same unit of weight used to compute density.
-   */
-  public S2DensityClusterQuery(long clusterSize) {
-    this.clusterSize = clusterSize;
-    this.tolerance = Math.round(0.2 * clusterSize);
-  }
-
-  /**
-   * Density trees map cells to weights that intersect that cell, but larger features may intersect
-   * many density cells, so the deeper into the tree we look, the more a feature will contribute
-   * undetected duplicates of its weight many times.
+   * Creates a new clusterer with finer control than {@link #S2DensityClusterQuery(long)}.
    *
-   * <p>So, first we build a normalized version of the tree where every node's weight is scaled by
-   * (its parent's weight / the sum of weights of the node and its siblings). This makes the weight
-   * of a parent equal to the sum of its children.
+   * @param minClusterWeight the smallest desired cluster weight; aim for 80% of maxClusterWeight
+   * @param maxClusterWeight the largest desired cluster weight; aim for 125% of minClusterWeight
    */
-  @VisibleForTesting
-  static S2DensityTree normalizedTree(S2DensityTree tree) {
-    DecodedPath path = new DecodedPath(tree);
-    TreeEncoder encoder = new TreeEncoder();
-    // Visit cells in depth-first order.
-    tree.visitAll((cell, weight) -> {
-      if (!cell.isFace()) {
-        S2CellId parent = cell.parent();
-        long parentWeight = path.weight(parent);
-        long siblingWeight = 0;
-        for (int i = 0; i < 4; i++) {
-          siblingWeight += path.weight(parent.child(i));
-        }
-        weight = Math.round(1.0 * parentWeight * weight / siblingWeight);
-      }
-      encoder.put(cell, weight);
-    });
-    return encoder.build();
+  public S2DensityClusterQuery(long minClusterWeight, long maxClusterWeight) {
+    Preconditions.checkArgument(minClusterWeight > 0);
+    Preconditions.checkArgument(minClusterWeight <= maxClusterWeight);
+    this.minClusterWeight = minClusterWeight;
+    this.maxClusterWeight = maxClusterWeight;
+  }
+
+  /** Returns the min weight of resulting clusters. */
+  public long minClusterWeight() {
+    return minClusterWeight;
+  }
+
+  /** Returns the max weight of resulting clusters. */
+  public long maxClusterWeight() {
+    return maxClusterWeight;
   }
 
   /**
-   * Returns the leftmost leaf node's id from the part of the density tree that intersects 'ids'.
-   * The given 'ids' must be in increasing order. Returns sentinel() if the intersection of the
-   * tree with 'ids' is empty.
+   * Returns coverings of {@link #clusters} built from 'density'. This simply collects the {@link
+   * Cluster#covering coverings} without any further processing.
    */
-  private static S2CellId firstLeafInTree(DecodedPath path, S2CellId... ids) {
-    for (S2CellId id : ids) {
-      Cell node = path.cell(id);
-      if (node.isEmpty()) {
-        continue;
-      }
-      if (!node.hasChildren()) {
-        return id;
-      }
-      return firstLeafInTree(path, id.child(0), id.child(1), id.child(2), id.child(3));
-    }
-    return S2CellId.sentinel();
-  }
-
-  /** Returns the leftmost leaf node's cell id, or sentinel() if the tree is empty. */
-  @VisibleForTesting
-  static S2CellId firstLeafInTree(DecodedPath path) {
-    return firstLeafInTree(path, S2CellId.FACE_CELLS);
+  public ImmutableList<S2CellUnion> coverings(S2DensityTree density) {
+    return stream(clusters(density)).map(Cluster::covering).collect(toImmutableList());
   }
 
   /**
-   * Returns the rightmost leaf node's id from the part of the density tree that intersects 'ids'.
-   * The given 'ids' must be in decreasing order. Returns sentinel() if the intersection of the tree
-   * with 'ids' is empty.
+   * Returns the {@link Cluster#intersection} of each cluster covering with the {@link
+   * S2DensityTree#getLeaves leaves} of 'density', which provides the tightest covering that can be
+   * produced for each cluster. This results in the fewest false positives in an {@link S2CellIndex}
+   * or similar lookup system, but these coverings are usually far larger than desirable and can (in
+   * aggregate) have as many cells as the density tree has leaves.
    */
-  private static S2CellId lastLeafInTree(DecodedPath path, S2CellId... ids) {
-    for (S2CellId id : ids) {
-      Cell node = path.cell(id);
-      if (node.isEmpty()) {
-        continue;
-      }
-      if (!node.hasChildren()) {
-        return id;
-      }
-      return lastLeafInTree(path, id.child(3), id.child(2), id.child(1), id.child(0));
-    }
-    return S2CellId.sentinel();
-  }
-
-  /** Returns the rightmost leaf node's cell id, or sentinel() if the tree is empty. */
-  @VisibleForTesting
-  static S2CellId lastLeafInTree(DecodedPath path) {
-    return lastLeafInTree(path, REVERSE_FACE_CELLS);
+  public ImmutableList<S2CellUnion> tightCoverings(S2DensityTree density) {
+    S2CellUnion leaves = density.getLeaves();
+    leaves.normalize();
+    return stream(clusters(density)).map(c -> c.intersection(leaves)).collect(toImmutableList());
   }
 
   /**
-   * Returns the leftmost leaf cell that is entirely right of 'prev', in the part of the density
-   * tree that intersects 'ids'. Returns sentinel() if no part of the density tree under 'ids' is
-   * right of 'prev'.
-   *
-   * <p>The given 'ids' must be in increasing order.
+   * As {@link #approximateCoverings(S2RegionCoverer, S2DensityTree)} with {@link #DEFAULT_COVERER}
+   * as the coverer.
    */
-  private static S2CellId nextLeafInTree(DecodedPath path, S2CellId prev, S2CellId... ids) {
-    for (S2CellId id : ids) {
-      if (id.rangeMax().lessThan(prev.rangeMin())) {
-        continue;  // id and its descendants are all completely left of 'prev'.
-      }
-      // id is at least partly right of 'prev', so id or some descendant of id might be the first
-      // leaf right of 'prev'.
-      Cell node = path.cell(id);
-      if (node.isEmpty()) {
-        continue;
-      }
-      if (node.hasChildren()) {
-        // TODO(torrey): Search the tree directly, looking at node.children instead of intersecting
-        // the S2CellId hierarchy with the density tree as this implementation does.
-        // One of id's descendants may be right of 'prev', otherwise we need to try the next id.
-        S2CellId n = nextLeafInTree(path, prev, id.child(0), id.child(1), id.child(2), id.child(3));
-        if (n.isValid()) {
-          return n;
-        }
-      } else {
-        // This is a leaf node.
-        if (id.rangeMin().greaterThan(prev.rangeMax())) {
-          // This leaf node is entirely right of 'prev'. It is the leftmost.
-          return id;
-        }
-      }
-    }
-    // All ids were tested and none had a leaf node descendent right of 'prev'.
-    return S2CellId.sentinel();
+  public ImmutableList<S2CellUnion> approximateCoverings(S2DensityTree density) {
+    return approximateCoverings(DEFAULT_COVERER, density);
   }
 
   /**
-   * Returns the leftmost leaf cell in the density tree that is right of 'prev', or sentinel() if
-   * there is none.
+   * Returns the coverings from 'coverer' for the {@link S2RegionIntersection} between each {@link
+   * Cluster#covering cluster covering} and the {@link S2DensityTree#getLeaves leaves} of 'density'.
+   * This results in coverings that are equivalent to re-covering {@link #tightCoverings} to make
+   * them simpler, but is far more efficient. The resulting coverings are approximate and so may
+   * overlap each other, but avoid being either too complex or disjoint from the density tree up to
+   * the level the coverer is able to produce. Clusters with around a million features are usually
+   * pretty well described with a covering of 256 cells.
    */
-  @VisibleForTesting
-  static S2CellId nextLeafInTree(DecodedPath path, S2CellId prev) {
-    return nextLeafInTree(path, prev, S2CellId.FACE_CELLS);
-  }
-
-  /** Recursively add all the leaves in the density tree under 'ids' to 'cellUnion'. */
-  @VisibleForTesting
-  static void collectLeavesInTree(
-      DecodedPath path, S2CellUnion cellUnion, S2CellId... ids) {
-    for (S2CellId id : ids) {
-      Cell node = path.cell(id);
-      if (node.isEmpty()) {
-        continue;
-      }
-      if (node.hasChildren()) {
-        collectLeavesInTree(path, cellUnion, id.child(0), id.child(1), id.child(2), id.child(3));
-      } else {
-        cellUnion.cellIds().add(id);
-      }
-    }
+  public ImmutableList<S2CellUnion> approximateCoverings(
+      S2RegionCoverer coverer, S2DensityTree density) {
+    return regions(density).map(coverer::getCovering).collect(toImmutableList());
   }
 
   /**
-   * Returns the clusters for the given tree.
-   *
-   * <p>Clusters are a collection of disjoint S2CellUnions that together cover the density tree's
-   * spatial extent, i.e. every node of the density tree is contained by one of the S2CellUnions.
-   * This method attempts to build clusters that each have weight approximately equal to
-   * 'clusterSize'.
+   * Returns the clusters from 'density' as regions that intersect the range of each cluster and the
+   * leaves of 'density'. The resulting regions can be {@link S2RegionCoverer#getCovering covered}
+   * to produce coverings like {@link #approximateCoverings}, but it's usually more useful to work
+   * with cluster boundaries as regions because they can be tested at any cell level.
    */
-  public List<S2CellUnion> clusters(S2DensityTree tree) {
-    DecodedPath path = new DecodedPath(normalizedTree(tree));
+  public ImmutableList<S2Region> clusterRegions(S2DensityTree density) {
+    return regions(density).collect(toImmutableList());
+  }
 
-    // Normalizing weights removes much of the redundancy in the tree, but some remains concentrated
-    // in the higher cell levels. So knowing that cluster N should roughly cover the byte range
-    // [N*clusterSize, (N+1)*clusterSize), we find cluster boundaries by searching for a density
-    // node at a multiple of the clusterSize, stopping as early in the tree as possible so that we
-    // don't encounter too many duplicates of a feature's weight.
-    List<S2CellUnion> clusters = new ArrayList<>();
-
-    // As clusters are formed, 'first' is updated to always be the leftmost cell id in the current
-    // cluster. It is possible that 'first' is not a node in the tree: it may be interpolated within
-    // the range of a leaf node of a tree. 'first' begins as the leftmost leaf of the density tree.
-    S2CellId first = firstLeafInTree(path);
-
-    // The running total of weight of the tree included in all clusters so far.
-    sum = 0;
-    // The target weight for the cluster currently being formed, as a sum from the beginning of the
-    // tree including all previous clusters.
-    long target = clusterSize;
-
-    do {
-      // TODO(eengle): Simplify this class with use of S2DensityTree.asRegion.
-      // Create and grow another cluster, obtaining the start of the next cluster.
-      S2CellUnion cluster = new S2CellUnion();
-      first = growCluster(cluster, target, path, first, S2CellId.FACE_CELLS);
-      cluster.normalize();
-      clusters.add(cluster);
-      target += clusterSize;
-    } while (first.lessThan(S2CellId.sentinel()));
-
-    return clusters;
+  /** Returns a stream of regions that intersect the density tree leaves and the cluster. */
+  private Stream<S2Region> regions(S2DensityTree density) {
+    S2Region region = density.asRegion();
+    return stream(clusters(density)).map(c -> new S2RegionIntersection(of(c.covering(), region)));
   }
 
   /**
-   * Adds cells to the given 'cluster' from the part of the tree intersecting 'ids' and beginning
-   * with 'start' or a descendent of 'start'.
-   *
-   * Returns a S2CellId 'next', which will be the first cell of the next cluster, or
-   * {@link S2CellId#sentinel()} if the cluster was grown to the end of the density tree under
-   * 'ids'. In a recursive call, sentinel() indicates that the search should continue at the next
-   * level up, but at the top level, sentinel() indicates that this was the last cluster.
-   *
-   * <p>If the current cluster ends with a node in the tree and it is not the last leaf in the tree,
-   * 'next' will be the leftmost node in the tree that is right of the end of the cluster. If the
-   * current cluster ends at a cell interpolated within the rangeMin() ... rangeMax() of a cell in
-   * the tree, 'next' will be the next() cell in that range.
-   *
-   * <p>The given ids must be in increasing order.
+   * Returns {@link Cluster clusters} computed from 'density'. The resulting clusters collectively
+   * cover the density tree's spatial extent, i.e. every node of the density tree is contained by
+   * one of the S2CellUnions. The resulting clusters will not overlap each other. This method builds
+   * clusters that each have weight approximately equal to the desired cluster weight.
    */
-  public S2CellId growCluster(
-      S2CellUnion cluster, long target, DecodedPath path, S2CellId start, S2CellId... ids) {
-    // Add the weight of each 'id' from 'start' to 'sum' until (target +/- tolerance) is reached.
-    for (S2CellId id : ids) {
-      // If 'id' ends before start, it was included in previous clusters or doesn't intersect.
-      if (id.rangeMax().lessThan(start.rangeMin())) {
-        continue;
-      }
+  public Iterable<Cluster> clusters(S2DensityTree density) {
+    S2DensityTree tree = density.normalize();
+    return () ->
+        new Iterator<>() {
+          Cluster c = S2DensityClusterQuery.this.next(tree, begin(MAX_LEVEL));
 
-      // If 'id' isn't in the tree, it has no weight, skip it.
-      Cell node = path.cell(id);
-      if (node.isEmpty()) {
-        continue;
-      }
-
-      // At this point, part or all of the S2CellId range covered by 'id' will be part of the
-      // cluster. If 'id' is not a parent of 'start', the entire node for 'id' is a candidate to be
-      // included. Otherwise, we must descend into the tree under 'id', as the previous cluster did.
-      if (id.equals(start) || !id.contains(start)) {
-        // Consider adding the entire 'node'.
-        if (node.weight() + sum <= target - tolerance) {
-          // Including 'node' and its children (if any) will still be well under the desired target.
-          // Add it and keep going to the next id.
-          // Rather than adding 'id' itself, which could include chunks of Hilbert curve space that
-          // have no weight in the tree, we collect the leaves in the tree under node.
-          collectLeavesInTree(path, cluster, id);
-          sum += node.weight();
-          continue;
-        } else if (node.weight() + sum <= target + tolerance) {
-          // Including node, or the descendants of node (if any) gets us to within tolerance of the
-          // target, which is close enough.
-          sum += node.weight();
-          collectLeavesInTree(path, cluster, id);
-          // The next cluster, if any, will start at the next leaf after id, if there is one.
-          return nextLeafInTree(path, id);
-        }
-        // Including 'node' would produce a total weight more than 120% of the target.
-      }
-
-      // The node at 'id' must be subdivided, either because it is too heavy, or because the last
-      // cluster ended part way through the descendants of 'id'.
-      if (node.hasChildren()) {
-        // Recursively explore the children of 'node' to grow the cluster.
-        S2CellId next = growCluster(
-            cluster, target, path, start, id.child(0), id.child(1), id.child(2), id.child(3));
-        if (!next.equals(S2CellId.sentinel())) {
-          // The target weight was reached somewhere before the last descendant of 'id', we're done.
-          return next;
-        }
-        // sentinel() indicates that the cluster has grown to the end of the tree under 'id'.
-        // There are two cases:
-        if (sum < target - tolerance) {
-          // Case 1: We haven't reached the target weight yet. Keep going with the next id.
-          continue;
-        } else {
-          // Case 2: The target weight was reached simultaneously with adding the last leaf under
-          // 'id'. So the next cluster, if any, starts at the next leaf after 'id'.
-          return nextLeafInTree(path, id);
-        }
-
-      } else {
-        // The node must be subdivided but has no children. We will interpolate in the Hilbert curve
-        // range of 'id', assuming the node weight is uniformly distributed across that range.
-        long rangeMin = id.rangeMin().id();
-        long rangeMax = id.rangeMax().id();
-        long rangeSize = rangeMax - rangeMin;
-
-        // TODO(torrey): document how this interpolation works with signed longs, as it's confusing.
-
-        // TODO(torrey): Rather than going all the way down to level 30 leaf cells, consider how
-        // much weight is needed to add to 'sum' to get to 'target', and the total weight available
-        // in 'node'. Divide just finely enough to get to 'target' within 'tolerance'. Going down
-        // four levels gives gives increments of (weight/128) which would likely be enough.
-
-        // Case 1. This node has not been subdivided yet. 'start' equals id, or is not contained by
-        // it. Begin subdividing the range, taking a chunk of the target size.
-        if (id.equals(start) || !id.contains(start)) {
-          // The next cluster will continue in this interpolated range.
-          return addSubrangeToCluster(cluster, target, rangeMin, node.weight(), rangeSize);
-        }
-
-        // Case 2. This node was subdivided already and part of it was in the last cluster. We're
-        // continuing from 'start', which is a leaf cell in (rangeMin .. rangeMax). We will take
-        // another chunk of the range, beginning with 'start'.
-        Preconditions.checkState(id.contains(start) && start.isLeaf());
-
-        // How much of this nodes' weight is left?
-        long rangeRemains = rangeMax - start.prev().id();
-        double remainingWeight = 1.0 * node.weight() * rangeRemains / rangeSize;
-
-        if (sum + remainingWeight > target + tolerance) {
-          // There's too much weight remaining for this cluster. Take another chunk of the range,
-          // and continue the range with the next cluster.
-          return addSubrangeToCluster(cluster, target, start.id(), node.weight(), rangeSize);
-        } else {
-          // Add all the remaining part of the range to the current cluster.
-          sum += (long) remainingWeight;
-
-          S2CellUnion range = new S2CellUnion();
-          range.initFromMinMax(start, new S2CellId(rangeMax));
-          cluster.cellIds().addAll(range.cellIds());
-
-          if (sum >= target - tolerance) {
-            // That was enough weight for this cluster. The next cluster starts at the next leaf.
-            return nextLeafInTree(path, new S2CellId(rangeMax));
+          @Override
+          public boolean hasNext() {
+            return c.weight > 0;
           }
-          // Otherwise, there was not enough weight left in the node of this id. Keep going with
-          // the next id.
-        }
-      }
-    }
 
-    // We ran out of density tree intersecting 'ids' before reaching the target weight. Keep going
-    // at the next level up, if there is a next level up.
-    return S2CellId.sentinel();
+          @Override
+          public Cluster next() {
+            Cluster result = c;
+            c = S2DensityClusterQuery.this.next(tree, c.end);
+            return result;
+          }
+        };
   }
 
-  // Adds cells from the leaf cell range from baseId to targetId to the cluster, adjusting targetId
-  // if needed. Returns the next leaf cell in the range.
-  private S2CellId addSubrangeToCluster(
-      S2CellUnion cluster, long target, long baseId, long nodeWeight, long rangeSize) {
-    double targetFraction = (1.0 * target - sum) / nodeWeight;
-    // TODO(torrey): If I don't use leaf cells, I should be more accurate here.
-    sum += (long) (targetFraction * nodeWeight);
-    Preconditions.checkState(target - tolerance <= sum && sum <= target + tolerance);
+  /** Returns the next cluster beginning from 'start'. */
+  private Cluster next(S2DensityTree tree, S2CellId start) {
+    Cluster cluster = new Cluster(start);
+    tree.visitCells(
+        (cell, node) -> {
+          if (cell.rangeMax().lessThan(cluster.begin)) {
+            // Current node is entirely before this cluster starts, so move forward.
+            return Action.SKIP_CELL;
+          }
+          CellInterpolator range = new CellInterpolator(cell);
+          double ratio =
+              node.hasChildren() ? 0 : max(0, min(1, range.uninterpolate(cluster.begin)));
+          long sum = cluster.weight + (long) ceil((1 - ratio) * node.weight());
+          if (sum < minClusterWeight) {
+            // Current node is too small to finish the current cluster, so move forward.
+            cluster.weight = sum;
+            return Action.SKIP_CELL;
+          }
+          if (sum <= maxClusterWeight) {
+            // Current node is large enough to finish the current cluster, so stop.
+            cluster.weight = sum;
+            cluster.end = cell.rangeMax().next();
+            return Action.STOP;
+          }
+          if (node.hasChildren()) {
+            // Current node is too large but has children, so explore the children.
+            return Action.ENTER_CELL;
+          }
+          // Current node is too large and has no children, so prorate the Hilbert range.
+          long missingWeight = (minClusterWeight + maxClusterWeight + 1) / 2 - cluster.weight;
+          cluster.weight += missingWeight;
+          ratio += 1.0 * missingWeight / node.weight();
+          cluster.end = range.interpolate(ratio).rangeMin();
+          return Action.STOP;
+        });
+    return cluster;
+  }
 
-    long targetId = (long) Math.floor(baseId + targetFraction * rangeSize);
-    S2CellId interpolated = new S2CellId(targetId);
+  /** An interpolator of cells. */
+  @VisibleForTesting
+  static class CellInterpolator {
+    private final S2CellId parent;
+    private final int level;
+    private final long begin;
+    private final long length;
 
-    // Leaf cell ids are two units apart, so 'interpolated' has only a 50% chance of being a
-    // leaf. If it isn't a valid leaf, the preceding long value will be.
-    if (!(interpolated.isValid() && interpolated.isLeaf())) {
-      interpolated = new S2CellId(targetId - 1);
-      Preconditions.checkState(interpolated.isValid());
-      Preconditions.checkState(interpolated.isLeaf());
+    CellInterpolator(S2CellId parent) {
+      // A cell's Hilbert range can be larger than 2^52 at level 30, which floating point math can't
+      // handle without underflow. So choose a cell level up to 26 levels deeper, so the range can
+      // be no larger than 2^(26*2) bits.
+      this.parent = parent;
+      this.level = min(MAX_LEVEL, parent.level() + 26);
+      this.begin = parent.childBegin(level).distanceFromBegin();
+      this.length = parent.childEnd(level).distanceFromBegin() - begin;
     }
 
-    // Add a minimal set of S2CellIds covering [rangeMin .. interpolated] to the cluster.
-    S2CellUnion range = new S2CellUnion();
-    range.initFromMinMax(new S2CellId(baseId), interpolated);
-    cluster.cellIds().addAll(range.cellIds());
+    /** Returns a cell that is 'ratio' percent of the way along the Hilbert range of 'parent'. */
+    public S2CellId interpolate(double ratio) {
+      long steps = (long) ceil(ratio * length);
+      return parent.childBegin(level).advance(steps);
+    }
 
-    // The next cluster starts on the leaf cell id after 'interpolated'.
-    return interpolated.next();
+    /** Returns fraction along 'parent' that 'child' begins. */
+    public double uninterpolate(S2CellId child) {
+      Preconditions.checkArgument(child.level() >= parent.level());
+      S2CellId adjusted = level <= child.level() ? child.parent(level) : child.childBegin(level);
+      return 1.0 * (adjusted.distanceFromBegin() - begin) / length;
+    }
+  }
+
+  /** A cluster is a cell range and an expected weight based on the density it was computed from. */
+  public static final class Cluster {
+    /** The cluster boundary as an S2CellId Hilbert range. */
+    private S2CellId begin;
+
+    private S2CellId end = S2CellId.end(MAX_LEVEL);
+
+    /** The cluster weight. */
+    private long weight;
+
+    /** Initialize a cluster with weight 0, from 'begin' to end of the Hilbert range. */
+    private Cluster(S2CellId begin) {
+      Preconditions.checkArgument(begin.level() == MAX_LEVEL);
+      this.begin = begin;
+    }
+
+    /** Returns the level 30 {@link S2CellId#begin beginning} of this cluster range. */
+    public S2CellId begin() {
+      return begin;
+    }
+
+    /** Returns the level 30 {@link S2CellId#end end} of this cluster range. */
+    public S2CellId end() {
+      return end;
+    }
+
+    /** Returns the covering of this cluster. */
+    public S2CellUnion covering() {
+      S2CellUnion covering = new S2CellUnion();
+      covering.initFromBeginEnd(begin, end);
+      return covering;
+    }
+
+    /** Returns the intersection of this cluster's range with the given covering. */
+    public S2CellUnion intersection(S2CellUnion covering) {
+      S2CellUnion intersection = new S2CellUnion();
+      intersection.getIntersection(covering, covering());
+      return intersection;
+    }
+
+    /** Returns the weight of this cluster. */
+    public long weight() {
+      return weight;
+    }
   }
 }

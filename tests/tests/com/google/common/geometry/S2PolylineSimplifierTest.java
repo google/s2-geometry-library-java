@@ -16,10 +16,17 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.DBL_EPSILON;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link S2PolylineSimplifier}. */
+@RunWith(JUnit4.class)
 public final class S2PolylineSimplifierTest extends GeometryTestCase {
 
   /**
@@ -64,6 +71,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Check that Init() can be called more than once. */
+  @Test
   public void testReuse() {
     S2PolylineSimplifier s = new S2PolylineSimplifier();
     S1ChordAngle radius = S1ChordAngle.fromDegrees(10);
@@ -79,6 +87,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Tests simplification with no constraints. */
+  @Test
   public void testNoConstraints() {
     // No constraints, dst == src.
     checkSimplify("0:1", "0:1", "", "", ImmutableList.of(), 0, true);
@@ -91,6 +100,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Tests simplification of lines from 0:0 to 0:2 with a single target in various cases. */
+  @Test
   public void testTargetOnePoint() {
     // Three points on a straight line where the target is exactly between the source and
     // destination. In theory zero tolerance for the radius should work, but in practice there are
@@ -108,6 +118,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Tests simplification of lines from 0:0 to 0:2 with a single "avoid" point in various cases. */
+  @Test
   public void testAvoidOnePoint() {
     // Three points on a straight line, attempting to avoid the middle point.
     checkSimplify("0:0", "0:2", "", "0:1", ImmutableList.of(true), 1e-10, false);
@@ -132,6 +143,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
    * directions is not represented a single interval. (The output edge can proceed through any gap
    * between the discs as long as the "discOnLeft" criteria are satisfied.)
    */
+  @Test
   public void testAvoidSeveralPoints() {
     // This test involves 3 very small discs spaced 120 degrees apart around the source vertex,
     // where "discOnLeft" is true for all discs. This means that each disc blocks the 90 degrees of
@@ -159,6 +171,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Tests constraints on both targeting and avoiding discs. */
+  @Test
   public void testTargetAndAvoid() {
     // Target several points that are separated from the proposed edge by about 0.7 degrees, and
     // avoid several points that are separated from the proposed edge by about 1.4 degrees.
@@ -193,6 +206,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
   }
 
   /** Tests that targeting and avoiding discs has high enough precision. */
+  @Test
   public void testPrecision() {
     // This is a rough upper bound on both the error in constructing the disc locations (i.e.,
     // S2.getPointOnLine, etc.), and also on the padding that S2PolylineSimplifier
@@ -213,7 +227,7 @@ public final class S2PolylineSimplifierTest extends GeometryTestCase {
       S2Point dst =
           S2EdgeUtil.getPointOnLine(
               src, data.getRandomPoint(), S1Angle.radians(data.uniform(0, 1)));
-      S2Point n = S2.robustCrossProd(src, dst).normalize();
+      S2Point n = S2RobustCrossProd.robustCrossProd(src, dst).normalize();
 
       // If badDisc >= 0, then we make targeting fail for that disc.
       final int kNumDiscs = 5;

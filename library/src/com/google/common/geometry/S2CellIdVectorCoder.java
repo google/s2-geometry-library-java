@@ -36,16 +36,18 @@ class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
    * Encodes the given list of S2CellId values into the provided OutputStream.
    *
    * <p>The encoding format is as follows:
+   *
    * <ul>
-   * <li> byte 0, bits 0-2: baseBytes
-   * <li> byte 0, bits 3-7: shift
-   * <li> byte 1: extended shift (only written for odd shift {@code >= 5})
-   * <li> 0-7 bytes: base
-   * <li> values.size() bytes: encoded uint64s of deltas, encoded by
-   *      {@link UintVectorCoder.UINT64#encode(Longs, OutputStream)}.
+   *   <li>byte 0, bits 0-2: baseBytes
+   *   <li>byte 0, bits 3-7: shift
+   *   <li>byte 1: extended shift (only written for odd shift {@code >= 5})
+   *   <li>0-7 bytes: base
+   *   <li>values.size() bytes: encoded uint64s of deltas, encoded by {@link
+   *       UintVectorCoder.UINT64#encode(Longs, OutputStream)}.
    * </ul>
-   * Where {@code base} is the baseBytes most-significant bytes of the minimum S2CellId. It is
-   * 0-7 bytes, and is always shifted so its bytes are the most-significant bytes of a uint64
+   *
+   * Where {@code base} is the baseBytes most-significant bytes of the minimum S2CellId. It is 0-7
+   * bytes, and is always shifted so its bytes are the most-significant bytes of a uint64
    * (little-endian).
    *
    * <p>{@code shift} is in the range 0-56. shift is odd only if all S2CellIds are at the same
@@ -173,9 +175,7 @@ class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
     }
   }
 
-  /**
-   * As above, but may also throw IndexOutOfBoundsException if the input data is too short.
-   */
+  /** As above, but may also throw IndexOutOfBoundsException if the input data is too short. */
   private S2CellIdVector decodeInternal(Bytes data, Cursor cursor) throws IOException {
     // Invert the encoding of (shiftCode, baseBytes).
     int shiftCodeBaseBytes = data.get(cursor.position++) & 0xff;

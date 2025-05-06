@@ -16,15 +16,23 @@
 
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Preconditions;
 import java.util.ArrayList;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
+/** Unit tests for {@link S2ConvexHullQuery}. */
+@RunWith(JUnit4.class)
+public final class S2ConvexHullQueryTest extends GeometryTestCase {
+  @Test
   public void testNoPoints() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     assertTrue(query.getConvexHull().isEmpty());
@@ -39,6 +47,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     return false;
   }
 
+  @Test
   public void testOnePoint() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     S2Point p = new S2Point(0, 0, 1);
@@ -54,6 +63,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(result2.equals(result));
   }
 
+  @Test
   public void testTwoPoints() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     S2Point p = new S2Point(0, 0, 1);
@@ -73,6 +83,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(result2.equals(result));
   }
 
+  @Test
   public void testTwoAntipodalPoints() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     query.addPoint(S2Point.Z_POS);
@@ -81,12 +92,14 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(result.isFull());
   }
 
+  @Test
   public void testEmptyLoop() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     query.addLoop(S2Loop.empty());
     assertTrue(query.getConvexHull().isEmpty());
   }
 
+  @Test
   public void testFullLoop() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     S2Loop full = S2Loop.full();
@@ -94,6 +107,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(query.getConvexHull().isFull());
   }
 
+  @Test
   public void testEmptyPolygon() {
     S2ConvexHullQuery query = new S2ConvexHullQuery();
     S2Polygon empty = new S2Polygon(new ArrayList<S2Loop>());
@@ -101,6 +115,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(query.getConvexHull().isEmpty());
   }
 
+  @Test
   public void testNonConvexPoints() {
     // Generate a point set such that the only convex region containing them is the entire sphere.
     // In other words, you can generate any point on the sphere by repeatedly linearly interpolating
@@ -112,6 +127,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     assertTrue(query.getConvexHull().isFull());
   }
 
+  @Test
   public void testSimplePolyline() {
     // A polyline is handled identically to a point set, so there is no need for special testing
     // other than code coverage.
@@ -139,6 +155,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLoopsAroundNorthPole() {
     // Test loops of various sizes around the north pole.
     checkNorthPoleLoop(S1Angle.degrees(1), 3);
@@ -152,6 +169,7 @@ public final strictfp class S2ConvexHullQueryTest extends GeometryTestCase {
     checkNorthPoleLoop(S1Angle.degrees(89), 1000);
   }
 
+  @Test
   public void testPointsInsideHull() {
     // Repeatedly build the convex hull of a set of points, then add more points inside that loop
     // and build the convex hull again. The result should always be the same.

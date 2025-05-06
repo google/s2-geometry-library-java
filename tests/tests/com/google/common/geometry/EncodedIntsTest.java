@@ -19,15 +19,21 @@ import static com.google.common.geometry.EncodedInts.decodeZigZag32;
 import static com.google.common.geometry.EncodedInts.decodeZigZag64;
 import static com.google.common.geometry.EncodedInts.encodeZigZag32;
 import static com.google.common.geometry.EncodedInts.encodeZigZag64;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for the {@link EncodedInts} class. */
-public class EncodedIntsTest extends TestCase {
+@RunWith(JUnit4.class)
+public class EncodedIntsTest {
+  @Test
   public void testVarInts() throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     long[] values = {Long.MIN_VALUE, -217, -1, 0, 1, 255, Long.MAX_VALUE};
@@ -44,6 +50,7 @@ public class EncodedIntsTest extends TestCase {
     assertTrue("Expected to reach EOF", in.read() < 0);
   }
 
+  @Test
   public void testEncodeZigZag32() {
     assertEquals(0, encodeZigZag32(0));
     assertEquals(1, encodeZigZag32(-1));
@@ -63,6 +70,7 @@ public class EncodedIntsTest extends TestCase {
     assertEquals(-3612, encodeZigZag32(decodeZigZag32(-3612)));
   }
 
+  @Test
   public void testEncodeZigZag64() {
     assertEquals(0, encodeZigZag64(0));
     assertEquals(1, encodeZigZag64(-1));
@@ -87,6 +95,7 @@ public class EncodedIntsTest extends TestCase {
     assertEquals(-75123905439571256L, encodeZigZag64(decodeZigZag64(-75123905439571256L)));
   }
 
+  @Test
   public void testDecodeZigZag32() {
     assertEquals(0, decodeZigZag32(0));
     assertEquals(-1, decodeZigZag32(1));
@@ -98,6 +107,7 @@ public class EncodedIntsTest extends TestCase {
     assertEquals(0x80000000, decodeZigZag32(0xFFFFFFFF));
   }
 
+  @Test
   public void testDecodeZigZag64() {
     assertEquals(0, decodeZigZag64(0));
     assertEquals(-1, decodeZigZag64(1));
@@ -111,6 +121,7 @@ public class EncodedIntsTest extends TestCase {
     assertEquals(0x8000000000000000L, decodeZigZag64(0xFFFFFFFFFFFFFFFFL));
   }
 
+  @Test
   public void testInterleaveBits() {
     checkBits(0xC000000000000000L, 0x80000000, 0x80000000);
     checkBits(0xEAAAAAAA2AAAAA88L, 0x80000000, 0xFFFF7FFA);
@@ -170,6 +181,7 @@ public class EncodedIntsTest extends TestCase {
     assertEquals(v2, EncodedInts.deinterleaveBits2(bits));
   }
 
+  @Test
   public void testInterleaveBitPairs() {
     checkBitPairs(0xA000000000000000L, 0x80000000, 0x80000000);
     checkBitPairs(0xECCCCCCC4CCCCC88L, 0x80000000, 0xFFFF7FFA);

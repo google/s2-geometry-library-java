@@ -15,8 +15,16 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.geometry.R1Interval.Endpoint;
 import com.google.common.geometry.R2Rect.Axis;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Verifies R2Rect. Most of the R2Rect methods have trivial implementations in terms of the
@@ -24,6 +32,7 @@ import com.google.common.geometry.R2Rect.Axis;
  *
  * <p>Package private because the underlying class is.
  */
+@RunWith(JUnit4.class)
 public class R2RectTest extends GeometryTestCase {
   /**
    * Tests all of the interval operations on the given pair of rectangles.
@@ -62,12 +71,14 @@ public class R2RectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testEmptyRectangles() {
     R2Rect empty = R2Rect.empty();
     assertTrue(empty.isValid());
     assertTrue(empty.isEmpty());
   }
 
+  @Test
   public void testConstructorsAndAccessors() {
     R2Rect r = new R2Rect(new R2Vector(0.1, 0), new R2Vector(0.25, 1));
     assertExactly(0.1, r.x().lo());
@@ -96,6 +107,7 @@ public class R2RectTest extends GeometryTestCase {
     assertTrue(r2.isEmpty());
   }
 
+  @Test
   public void testFromCenterSize() {
     assertTrue(
         R2Rect.fromCenterSize(new R2Vector(0.3, 0.5), new R2Vector(0.2, 0.4))
@@ -105,6 +117,7 @@ public class R2RectTest extends GeometryTestCase {
             .approxEquals(new R2Rect(new R2Vector(1, -0.9), new R2Vector(1, 1.1))));
   }
 
+  @Test
   public void testFromPoint() {
     R2Rect d1 = new R2Rect(new R2Vector(0.1, 0), new R2Vector(0.25, 1));
     assertEquals(new R2Rect(d1.lo(), d1.lo()), R2Rect.fromPoint(d1.lo()));
@@ -116,6 +129,7 @@ public class R2RectTest extends GeometryTestCase {
         R2Rect.fromPointPair(new R2Vector(0.83, 0), new R2Vector(0.12, 0.5)));
   }
 
+  @Test
   public void testSimplePredicates() {
     R2Vector sw1 = new R2Vector(0, 0.25);
     R2Vector ne1 = new R2Vector(0.5, 0.75);
@@ -144,6 +158,7 @@ public class R2RectTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIntervalOperations() {
     R2Rect empty = R2Rect.empty();
     R2Vector sw1 = new R2Vector(0, 0.25);
@@ -200,6 +215,7 @@ public class R2RectTest extends GeometryTestCase {
         empty);
   }
 
+  @Test
   public void testAddPoint() {
     R2Vector sw1 = new R2Vector(0, 0.25);
     R2Vector ne1 = new R2Vector(0.5, 0.75);
@@ -212,6 +228,7 @@ public class R2RectTest extends GeometryTestCase {
     assertEquals(r1, r2);
   }
 
+  @Test
   public void testClampPoint() {
     R2Rect r1 = new R2Rect(new R1Interval(0, 0.5), new R1Interval(0.25, 0.75));
     assertEquals(new R2Vector(0, 0.25), r1.clampPoint(new R2Vector(-0.01, 0.24)));
@@ -225,6 +242,7 @@ public class R2RectTest extends GeometryTestCase {
     assertEquals(new R2Vector(0.33, 0.37), r1.clampPoint(new R2Vector(0.33, 0.37)));
   }
 
+  @Test
   public void testexpanded() {
     assertTrue(R2Rect.empty().expanded(new R2Vector(0.1, 0.3)).isEmpty());
     assertTrue(R2Rect.empty().expanded(new R2Vector(-0.1, -0.3)).isEmpty());
@@ -248,5 +266,11 @@ public class R2RectTest extends GeometryTestCase {
         new R2Rect(new R2Vector(0.2, 0.4), new R2Vector(0.3, 0.7))
             .expanded(0.1)
             .approxEquals(new R2Rect(new R2Vector(0.1, 0.3), new R2Vector(0.4, 0.8))));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testR2RectSerialization() {
+    doSerializationTest(new R2Rect(new R1Interval(0, 0.1), new R1Interval(1.1, 1.2)));
   }
 }

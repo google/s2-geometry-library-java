@@ -17,9 +17,9 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.parseVertices;
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.parseVertices;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.acos;
@@ -29,8 +29,13 @@ import static java.lang.Math.min;
 import static java.lang.Math.sin;
 import static java.lang.Math.tan;
 import static java.lang.Math.toDegrees;
-import static junit.framework.TestCase.assertNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -45,6 +50,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link S2Loop}.
@@ -52,8 +60,10 @@ import java.util.Set;
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp class S2LoopTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2LoopTest extends GeometryTestCase {
 
+  /** A collection of loops for testing. Some of these are invalid. */
   private enum TestLoops {
     // A stripe that slightly over-wraps the equator.
     CANDY_CANE(makeLoop("-20:150, -20:-70, 0:70, 10:-150, 10:70, -10:-70")),
@@ -71,8 +81,6 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     LINE_TRIANGLE(makeLoop("0:1, 0:2, 0:3")),
 
     // A nearly-degenerate CCW chevron near the equator with very long sides (about 80 degrees).
-    // Note that the precision is less than the C++ equivalent due to Java strictfp precision
-    // issues, but it is precise enough to still have incredibly small area.
     SKINNY_CHEVRON(makeLoop("0:0, -1e-80:80, 0:1e-80, 1e-80:80")),
 
     // The northern hemisphere, defined using two pairs of antipodal points.
@@ -143,10 +151,10 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     A_MINUS_B(makeLoop("0:178, -1:180, 0:179, 1:-180")),
 
     // B minus A (concave)
-    B_MINUS_A(makeLoop("0:-179, -1:180, 0:-178, 1:-180")),
+    B_MINUS_A(makeInvalidLoop("0:-179, -1:180, 0:-178, 1:-180")),
 
     // A self-crossing loop with a duplicated vertex
-    BOWTIE(makeLoop("0:0, 2:0, 1:1, 0:2, 2:2, 1:1")),
+    BOWTIE(makeInvalidLoop("0:0, 2:0, 1:1, 0:2, 2:2, 1:1")),
 
     SOUTH_HEMI(invert(NORTH_HEMI.loop)),
     EAST_HEMI(invert(WEST_HEMI.loop)),
@@ -177,6 +185,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(a.contains(b));
   }
 
+  @Test
   public void testIsEmptyOrIsFull() {
     assertTrue(S2Loop.empty().isEmpty());
     assertFalse(S2Loop.empty().isFull());
@@ -188,6 +197,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertFalse(TestLoops.CANDY_CANE.loop.isFull());
   }
 
+  @Test
   public void testBounds() {
     assertTrue(S2Loop.empty().getRectBound().isEmpty());
     assertTrue(S2Loop.full().getRectBound().isFull());
@@ -220,6 +230,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
         TestLoops.SOUTH_HEMI.loop.getRectBound().lat(), new R1Interval(-M_PI_2, 0), latError);
   }
 
+  @Test
   public void testFastConstructor() {
     List<S2Point> vertices = Lists.newArrayList();
     S2LatLngRect bound = parseVertices("-80:120, -80:0, -80:-120", vertices);
@@ -228,14 +239,15 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(0, loop.depth());
   }
 
+  @Test
   public void testAreaCentroid() {
     assertExactly(0.0, S2Loop.empty().getArea());
     assertExactly(4 * PI, S2Loop.full().getArea());
     assertNull(S2Loop.empty().getCentroid());
     assertNull(S2Loop.full().getCentroid());
 
-    assertDoubleEquals(TestLoops.NORTH_HEMI.loop.getArea(), 2 * PI);
-    assertDoubleEquals(TestLoops.EAST_HEMI.loop.getArea(), 2 * PI);
+    assertAlmostEquals(TestLoops.NORTH_HEMI.loop.getArea(), 2 * PI);
+    assertAlmostEquals(TestLoops.EAST_HEMI.loop.getArea(), 2 * PI);
 
     // Construct spherical caps of random height, and approximate their boundary with closely
     // spaced vertices. Then check that the area and centroid are correct.
@@ -290,6 +302,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testAreaConsistentWithTurningAngle() {
     // Check that the area computed using getArea() is consistent with the turning angle of the loop
     // computed using getTurnAngle(). According to the Gauss-Bonnet theorem, the area of the loop
@@ -308,6 +321,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetAreaConsistentWithRobustCCW() {
     // Test that getArea() returns an area near 0 for degenerate loops that contain almost no
     // points, and an area near 4*Pi for degenerate loops that contain almost all points.
@@ -316,16 +330,16 @@ public strictfp class S2LoopTest extends GeometryTestCase {
       int numVertices = 3 + data.random(maxVertices - 3 + 1);
       // Repeatedly choose N vertices that are exactly on the equator until we find some that form a
       // valid loop.
-      S2Loop loop;
+      List<S2Point> vertices = new ArrayList<>();
       do {
-        List<S2Point> vertices = new ArrayList<>();
+        vertices.clear();
         for (int j = 0; j < numVertices; j++) {
           // We limit longitude to the range [0, 90] to ensure that the loop is degenerate (as
           // opposed to following the entire equator).
           vertices.add(S2LatLng.fromRadians(0, data.uniform(0, M_PI_2)).toPoint());
         }
-        loop = new S2Loop(vertices);
-      } while (!loop.isValid());
+      } while (!S2Loop.isValid(vertices));
+      S2Loop loop = new S2Loop(vertices);
       boolean ccw = loop.isNormalized();
       // TODO(user): The error bound below is much larger than it should be. Need to improve
       // the error minimization analysis in S2.area().
@@ -334,6 +348,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetAreaAccuracy() {
     // TODO(user): Test that GetArea() has an accuracy significantly better than 1e-15 on
     // loops whose area is small.
@@ -347,6 +362,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     return new S2Loop(vertices);
   }
 
+  @Test
   public void testContains() {
     // Check the full and empty loops have the correct containment relationship with the special
     // "vertex" that defines them.
@@ -400,6 +416,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testContainsMatchesRobustCrossing() {
     // This test demonstrates a former incompatibility between robustCrossing() and
     // contains(S2Point).  It constructs an S2Cell-based loop L and an edge E from Origin to a0 that
@@ -659,6 +676,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLoopRelations() {
     // Check full and empty relationships with normal loops and each other.
     checkRelation(S2Loop.full(), S2Loop.full(), CONTAINS | CONTAINED | COVERS, true);
@@ -752,10 +770,43 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     checkRelation(TestLoops.B_MINUS_A.loop, TestLoops.B_MINUS_A.loop, CONTAINS | CONTAINED, true);
   }
 
+  @Test
+  @SuppressWarnings("FloatingPointLiteralPrecision") // to be identical to other S2 implementations
+  public void testContainsRegression() {
+    S2Loop containingLoop =
+        new S2Loop(
+            ImmutableList.of(
+                S2LatLng.fromDegrees(-38.0, -135.0).toPoint(),
+                S2LatLng.fromDegrees(-38.0, 149.0).toPoint(),
+                S2LatLng.fromDegrees(77.0, 149.0).toPoint(),
+                S2LatLng.fromDegrees(77.0, -135.0).toPoint()));
+
+    S2Loop innerTile =
+        new S2Loop(
+            ImmutableList.of(
+                S2LatLng.fromDegrees(37.99616267972809, 13.007812500000002).toPoint(),
+                S2LatLng.fromDegrees(37.99616267972809, 13.359375000000002).toPoint(),
+                S2LatLng.fromDegrees(38.272819658516866, 13.359375000000002).toPoint(),
+                S2LatLng.fromDegrees(38.272819658516866, 13.007812500000002).toPoint()));
+
+    // +0.2 lat +0.2 lon from innerTile
+    S2Loop extendedTile =
+        new S2Loop(
+            ImmutableList.of(
+                S2LatLng.fromDegrees(37.99616267972809, 13.007812500000002).toPoint(),
+                S2LatLng.fromDegrees(37.99616267972809, 13.559375000000002).toPoint(),
+                S2LatLng.fromDegrees(38.472819658516866, 13.559375000000002).toPoint(),
+                S2LatLng.fromDegrees(38.472819658516866, 13.007812500000002).toPoint()));
+
+    checkRelation(containingLoop, innerTile, CONTAINS, false);
+    checkRelation(containingLoop, extendedTile, CONTAINS, false);
+  }
+
   /**
    * Make sure the relations are correct if the loop crossing happens on two ends of a shared
    * boundary segment.
    */
+  @Test
   public void testLoopRelationsWhenSameExceptPiecesStickingOutAndIn() {
     checkRelation(TestLoops.LOOP_A.loop, TestLoops.LOOP_C.loop, 0, true);
     checkRelation(TestLoops.LOOP_C.loop, TestLoops.LOOP_A.loop, 0, true);
@@ -774,6 +825,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     checkRelation(TestLoops.LOOP_H.loop, TestLoops.LOOP_I.loop, CONTAINS, true);
   }
 
+  @Test
   public void testLoopRelations2() {
     // Construct polygons consisting of a sequence of adjacent cell ids at some fixed level.
     // Comparing two polygons at the same level ensures that there are no T-vertices.
@@ -807,6 +859,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
    * edgeBound} was being used, instead of copies of {@code edgeBound}. This test fails at iteration
    * 21, where {@code numVertices} = 512, if the error is reintroduced.
    */
+  @Test
   public void testCompareBoundaryCrossingTestLoops() {
     for (int numVertices = 8; numVertices <= 512; numVertices *= 8) {
       for (int i = 0; i < 100; ++i) {
@@ -814,11 +867,13 @@ public strictfp class S2LoopTest extends GeometryTestCase {
             data.getRandomPoint(), data.getRandomPoint());
         S2Loop a = loops.get(0);
         S2Loop b = loops.get(1);
-        assertEquals(0, a.compareBoundary(b));
+        assertEquals(
+            "Iteration " + i + " with numVertices=" + numVertices, 0, a.compareBoundary(b));
       }
     }
   }
 
+  @Test
   public void testBoundsForLoopContainment() {
     // To reliably test whether one loop contains another, the bounds of the outer loop are expanded
     // slightly.  This test constructs examples where this expansion is necessary and verifies that
@@ -857,6 +912,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(expected, b.boundaryNear(a, maxError));
   }
 
+  @Test
   public void testBoundaryNear() {
     double degree = S1Angle.degrees(1).radians();
 
@@ -886,7 +942,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(a.isEmpty(), b.isEmpty());
     assertEquals(a.isFull(), b.isFull());
     assertEquals(a.isNormalized(), b.isNormalized());
-    assertEquals(a.contains(S2Point.ORIGIN), b.contains(S2Point.ORIGIN));
+    assertEquals(a.contains(S2.origin()), b.contains(S2.origin()));
     assertEquals(a.getRectBound(), b.getRectBound());
   }
 
@@ -911,6 +967,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     checkIdentical(loop, decodedLoop);
   }
 
+  @Test
   public void testEncodeDecodeCompressed() throws IOException {
     // Empty loop.
     encodeDecodeCompressed(S2Loop.empty(), S2CellId.MAX_LEVEL);
@@ -929,6 +986,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     encodeDecodeCompressed(snappedLoopAClone, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testFourVertexCompressedLoopSize() throws IOException {
     byte[] encoded = encodeCompressed(TestLoops.SNAPPED_LOOP_A.loop, S2CellId.MAX_LEVEL);
 
@@ -968,6 +1026,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     checkEmptyFullLatLng(loop);
   }
 
+  @Test
   public void testEmptyFullLossyConversions() {
     // Verify that the empty and full loops can be encoded lossily.
     checkEmptyFullConversions(S2Loop.empty());
@@ -975,6 +1034,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   /** Tests that nearly colinear points pass S2Loop.isValid() */
+  @Test
   public void testRoundingError() {
     S2Point a = new S2Point(-0.9190364081111774, 0.17231932652084575, 0.35451111445694833);
     S2Point b = new S2Point(-0.92130667053206, 0.17274500072476123, 0.3483578383756171);
@@ -985,6 +1045,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   /** Tests {@link S2Loop#isValid()}. */
+  @Test
   public void testIsValid() {
     assertTrue(TestLoops.LOOP_A.loop.isValid());
     assertTrue(TestLoops.LOOP_B.loop.isValid());
@@ -992,6 +1053,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   }
 
   /** Tests {@link S2Loop#compareTo(S2Loop)}. */
+  @Test
   public void testComparisons() {
     S2Loop abc = makeLoop("0:1, 0:2, 1:2");
     S2Loop abcd = makeLoop("0:1, 0:2, 1:2, 1:1");
@@ -1012,6 +1074,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(wxyz.compareTo(abcd) < 0);
   }
 
+  @Test
   public void testGetDistance() {
     // Error margin since we're doing numerical computations
     double epsilon = 1e-15;
@@ -1062,6 +1125,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testTurningAngle() {
     assertEquals(2 * PI, S2Loop.empty().getTurningAngle(), 0.0);
     assertEquals(-2 * PI, S2Loop.full().getTurningAngle(), 0.0);
@@ -1128,11 +1192,13 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertFalse(flip.contains(p));
   }
 
+  @Test
   public void testNormalizedCompatibleWithContains() {
     checkNormalizeAndContains(TestLoops.LINE_TRIANGLE.loop);
     checkNormalizeAndContains(TestLoops.SKINNY_CHEVRON.loop);
   }
 
+  @Test
   public void testIsOriginInside() {
     assertEquals(
         TestLoops.EAST_HEMI.loop.contains(S2.origin()), TestLoops.EAST_HEMI.loop.isOriginInside());
@@ -1143,6 +1209,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
   // Some literals here cannot be precisely represented as doubles, but they're the same as the
   // literals used in the C++ tests.
   @SuppressWarnings("FloatingPointLiteralPrecision")
+  @Test
   public void testMakeRegularLoop() {
     S2Point center = S2LatLng.fromDegrees(80, 135).toPoint();
     S1Angle radius = S1Angle.degrees(20);
@@ -1155,26 +1222,26 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     S2Point p3 = loop.vertex(3);
 
     // Make sure that the radius is correct.
-    assertDoubleEquals(20.0, toDegrees(center.angle(p0)));
-    assertDoubleEquals(20.0, toDegrees(center.angle(p1)));
-    assertDoubleEquals(20.0, toDegrees(center.angle(p2)));
-    assertDoubleEquals(20.0, toDegrees(center.angle(p3)));
+    assertAlmostEquals(20.0, toDegrees(center.angle(p0)));
+    assertAlmostEquals(20.0, toDegrees(center.angle(p1)));
+    assertAlmostEquals(20.0, toDegrees(center.angle(p2)));
+    assertAlmostEquals(20.0, toDegrees(center.angle(p3)));
 
     // Make sure that all the angles of the polygon are the same.
-    assertDoubleEquals(M_PI_2, p1.sub(p0).angle(p3.sub(p0)));
-    assertDoubleEquals(M_PI_2, p2.sub(p1).angle(p0.sub(p1)));
-    assertDoubleEquals(M_PI_2, p3.sub(p2).angle(p1.sub(p2)));
-    assertDoubleEquals(M_PI_2, p0.sub(p3).angle(p2.sub(p3)));
+    assertAlmostEquals(M_PI_2, p1.sub(p0).angle(p3.sub(p0)));
+    assertAlmostEquals(M_PI_2, p2.sub(p1).angle(p0.sub(p1)));
+    assertAlmostEquals(M_PI_2, p3.sub(p2).angle(p1.sub(p2)));
+    assertAlmostEquals(M_PI_2, p0.sub(p3).angle(p2.sub(p3)));
 
     // Make sure that all the edges of the polygon have the same length.
-    assertDoubleEquals(27.990890717782829, toDegrees(p0.angle(p1)));
-    assertDoubleEquals(27.990890717782829, toDegrees(p1.angle(p2)));
-    assertDoubleEquals(27.990890717782829, toDegrees(p2.angle(p3)));
-    assertDoubleEquals(27.990890717782829, toDegrees(p3.angle(p0)));
+    assertAlmostEquals(27.990890717782829, toDegrees(p0.angle(p1)));
+    assertAlmostEquals(27.990890717782829, toDegrees(p1.angle(p2)));
+    assertAlmostEquals(27.990890717782829, toDegrees(p2.angle(p3)));
+    assertAlmostEquals(27.990890717782829, toDegrees(p3.angle(p0)));
 
     // Check actual coordinates. This may change if we switch the algorithm intentionally. These
     // values are exactly the same as the C++ versions, but with slight tolerances in a couple of
-    // places where we lose precision at different points due to using strictfp.
+    // places. TODO(torrey): Investigate why not identical to C++ now?
     assertExactly(62.162880741097204, new S2LatLng(p0).lat().degrees());
     assertExactly(103.11051028343408, new S2LatLng(p0).lng().degrees());
     assertExactly(61.955157772928345, new S2LatLng(p1).lat().degrees());
@@ -1185,6 +1252,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertExactly(26.392175948257943, new S2LatLng(p3).lng().degrees());
   }
 
+  @Test
   public void testSimplify() {
     // Ensure a redundant point in the middle is not discarded when outside the tolerance.
     S2Loop loop = makeLoop("0:0, 1e-10:5, 0:10, 5:5");
@@ -1204,6 +1272,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
             }));
   }
 
+  @Test
   public void testEncodeDecode() throws Exception {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     S2Loop loop = makeLoop("1:2, 3:4, 5:6");
@@ -1217,6 +1286,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(loop.getRectBound(), decodedLoop.getRectBound());
   }
 
+  @Test
   public void testDecodeEmptyLoopLossless() throws IOException {
     String encodedBytesHexString =
         "010100000000000000000000000000000000000000000000000000F03F0000000000010000"
@@ -1227,6 +1297,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(S2Loop.decode(decoder).isEmpty());
   }
 
+  @Test
   public void testDecodeFullLoopLossless() throws IOException {
     String encodedBytesHexString =
         "010100000000000000000000000000000000000000000000000000F0BF010000000001182D"
@@ -1237,6 +1308,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertTrue(S2Loop.decode(decoder).isFull());
   }
 
+  @Test
   public void testDecodeWellknownLoopLossless() throws IOException {
     String encodedBytesHexString =
         "0108000000D44A8442C3F9EF3F7EDA2AB341DC913F27DCF7C958DEA1BFB4825F3C81FDEF3F"
@@ -1252,6 +1324,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(makeLoop("-2:1, -1:1, 1:1, 2:1, 2:-1, 1:-1, -1:-1, -2:-1"), result);
   }
 
+  @Test
   public void testEmptyShape() {
     S2Shape shape = S2Loop.empty();
     assertTrue(shape.hasInterior());
@@ -1261,6 +1334,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
   public void testFullShape() {
     S2Shape shape = S2Loop.full();
     assertTrue(shape.hasInterior());
@@ -1272,6 +1346,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
   public void testThreeEdgeShape() {
     assertTrue(TestLoops.SMALL_NE_CW.loop.hasInterior());
     assertTrue(TestLoops.SMALL_NE_CW.loop.containsOrigin());
@@ -1284,6 +1359,7 @@ public strictfp class S2LoopTest extends GeometryTestCase {
     assertEquals(2, TestLoops.SMALL_NE_CW.loop.dimension());
   }
 
+  @Test
   public void testFourEdgeShape() {
     assertTrue(TestLoops.EAST_HEMI.loop.hasInterior());
     assertTrue(TestLoops.EAST_HEMI.loop.containsOrigin());
@@ -1362,5 +1438,18 @@ public strictfp class S2LoopTest extends GeometryTestCase {
           S2Predicates.sign(a, o, c),
           S2EdgeUtil.edgeOrVertexCrossing(c, o, b, a));
     }
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2LoopSerialization() {
+    S2Loop loop =
+        new S2Loop(
+            ImmutableList.of(
+                new S2Point(0.1, 0.2, 0.3).normalize(),
+                new S2Point(0.5, 0, 0).normalize(),
+                new S2Point(4, 4, 4).normalize(),
+                new S2Point(6, 7, 8).normalize()));
+    doSerializationTest(loop);
   }
 }

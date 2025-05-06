@@ -27,7 +27,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An encoder/decoder of tagged {@link S2Shape}s. Note it is the various implementations of S2Shape
@@ -56,13 +56,14 @@ public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
           S2Point.Shape.singleton(S2Point.ORIGIN).getClass(),
           S2Point.Shape.fromList(ImmutableList.of(S2Point.ORIGIN, S2Point.ORIGIN)).getClass());
   private static final ImmutableList<Class<? extends S2LaxPolylineShape>>
-      LAX_POLYLINE_SHAPE_CLASSES = ImmutableList.of(
-          S2LaxPolylineShape.SimpleArray.class,
-          S2LaxPolylineShape.SimpleList.class,
-          S2LaxPolylineShape.SimplePacked.class,
-          S2LaxPolylineShape.SimpleSnapped.class);
-  private static final ImmutableList<Class<? extends S2LaxPolygonShape>>
-      LAX_POLYGON_SHAPE_CLASSES = ImmutableList.of(
+      LAX_POLYLINE_SHAPE_CLASSES =
+          ImmutableList.of(
+              S2LaxPolylineShape.SimpleArray.class,
+              S2LaxPolylineShape.SimpleList.class,
+              S2LaxPolylineShape.SimplePacked.class,
+              S2LaxPolylineShape.SimpleSnapped.class);
+  private static final ImmutableList<Class<? extends S2LaxPolygonShape>> LAX_POLYGON_SHAPE_CLASSES =
+      ImmutableList.of(
           S2LaxPolygonShape.SimpleArray.class,
           S2LaxPolygonShape.SimpleList.class,
           S2LaxPolygonShape.SimplePacked.class,
@@ -76,25 +77,27 @@ public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
    * An instance of a {@code S2TaggedShapeCoder} which encodes/decodes {@link S2Shape}s in the FAST
    * encoding format. The FAST format is optimized for fast encoding/decoding.
    */
-  public static final S2TaggedShapeCoder FAST = new Builder(true)
-      .add(POLYGON_SHAPE_CLASSES, S2Polygon.Shape.FAST_CODER, POLYGON_TYPE_TAG)
-      .add(S2Polyline.class, S2Polyline.FAST_CODER, POLYLINE_TYPE_TAG)
-      .add(POINT_SHAPE_CLASSES, S2Point.Shape.Coder.FAST, POINT_TYPE_TAG)
-      .add(LAX_POLYLINE_SHAPE_CLASSES, S2LaxPolylineShape.FAST_CODER, LAX_POLYLINE_TYPE_TAG)
-      .add(LAX_POLYGON_SHAPE_CLASSES, S2LaxPolygonShape.FAST_CODER, LAX_POLYGON_TYPE_TAG)
-      .build();
+  public static final S2TaggedShapeCoder FAST =
+      new Builder(true)
+          .add(POLYGON_SHAPE_CLASSES, S2Polygon.Shape.FAST_CODER, POLYGON_TYPE_TAG)
+          .add(S2Polyline.class, S2Polyline.FAST_CODER, POLYLINE_TYPE_TAG)
+          .add(POINT_SHAPE_CLASSES, S2Point.Shape.Coder.FAST, POINT_TYPE_TAG)
+          .add(LAX_POLYLINE_SHAPE_CLASSES, S2LaxPolylineShape.FAST_CODER, LAX_POLYLINE_TYPE_TAG)
+          .add(LAX_POLYGON_SHAPE_CLASSES, S2LaxPolygonShape.FAST_CODER, LAX_POLYGON_TYPE_TAG)
+          .build();
 
   /**
    * An instance of a {@code S2TaggedShapeCoder} which encodes/decodes {@link S2Shape}s in the
    * COMPACT encoding format. The COMPACT format is optimized for disk usage and memory footprint.
    */
-  public static final S2TaggedShapeCoder COMPACT = new Builder(true)
-      .add(POLYGON_SHAPE_CLASSES, S2Polygon.Shape.COMPACT_CODER, POLYGON_TYPE_TAG)
-      .add(S2Polyline.class, S2Polyline.COMPACT_CODER, POLYLINE_TYPE_TAG)
-      .add(POINT_SHAPE_CLASSES, S2Point.Shape.Coder.COMPACT, POINT_TYPE_TAG)
-      .add(LAX_POLYLINE_SHAPE_CLASSES, S2LaxPolylineShape.COMPACT_CODER, LAX_POLYLINE_TYPE_TAG)
-      .add(LAX_POLYGON_SHAPE_CLASSES, S2LaxPolygonShape.COMPACT_CODER, LAX_POLYGON_TYPE_TAG)
-      .build();
+  public static final S2TaggedShapeCoder COMPACT =
+      new Builder(true)
+          .add(POLYGON_SHAPE_CLASSES, S2Polygon.Shape.COMPACT_CODER, POLYGON_TYPE_TAG)
+          .add(S2Polyline.class, S2Polyline.COMPACT_CODER, POLYLINE_TYPE_TAG)
+          .add(POINT_SHAPE_CLASSES, S2Point.Shape.Coder.COMPACT, POINT_TYPE_TAG)
+          .add(LAX_POLYLINE_SHAPE_CLASSES, S2LaxPolylineShape.COMPACT_CODER, LAX_POLYLINE_TYPE_TAG)
+          .add(LAX_POLYGON_SHAPE_CLASSES, S2LaxPolygonShape.COMPACT_CODER, LAX_POLYGON_TYPE_TAG)
+          .build();
 
   private final IdentityHashMap<Class<? extends S2Shape>, Integer> classToTypeTag;
   private final Map<Integer, S2Coder<? extends S2Shape>> typeTagToCoder;
@@ -121,8 +124,7 @@ public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
   }
 
   @Override
-  @Nullable
-  public S2Shape decode(Bytes data, Cursor cursor) throws IOException {
+  public @Nullable S2Shape decode(Bytes data, Cursor cursor) throws IOException {
     if (cursor.remaining() == 0) {
       // A null shape is encoded as 0 bytes.
       return null;

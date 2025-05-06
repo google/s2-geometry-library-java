@@ -44,12 +44,6 @@
     </dependency>
 
     <dependency>
-      <groupId>com.google.geometry</groupId>
-      <artifactId>s2-geometry-testdatagenerator</artifactId>
-      <version>${project.parent.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>org.openjdk.jmh</groupId>
       <artifactId>jmh-core</artifactId>
       <version>${jmh.version}</version>

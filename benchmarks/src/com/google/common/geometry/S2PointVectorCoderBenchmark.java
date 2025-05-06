@@ -50,13 +50,16 @@ public class S2PointVectorCoderBenchmark {
    * An enum for which implementation of S2PointVectorCoder we are benchmarking.
    */
   public enum CoderType {
-    FAST(S2PointVectorCoder.FAST),
-    COMPACT(S2PointVectorCoder.COMPACT);
+    FAST,
+    COMPACT;
 
-    CoderType(S2PointVectorCoder coder) {
-      this.coder = coder;
+    public S2PointVectorCoder getCoder() {
+      if (this == FAST) {
+        return S2PointVectorCoder.FAST;
+      } else {
+        return S2PointVectorCoder.COMPACT;
+      }
     }
-    public final S2PointVectorCoder coder;
   };
 
   /**
@@ -92,9 +95,9 @@ public class S2PointVectorCoderBenchmark {
       S2Polygon polygon = new S2Polygon();
       polygon.initToSnapped(new S2Polygon(loop), S2CellId.MAX_LEVEL);
       ByteArrayOutputStream bytesOutput = new ByteArrayOutputStream();
-      coderType.coder.encode(polygon.loop(0).vertices(), bytesOutput);
+      coderType.getCoder().encode(polygon.loop(0).vertices(), bytesOutput);
       Bytes bytes = Bytes.fromByteArray(bytesOutput.toByteArray());
-      vector = coderType.coder.decode(bytes, bytes.cursor());
+      vector = coderType.getCoder().decode(bytes, bytes.cursor());
     }
 
     @Benchmark

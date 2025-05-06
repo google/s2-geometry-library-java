@@ -24,11 +24,20 @@ import static java.lang.Math.atan;
 import static java.lang.Math.cos;
 import static java.lang.Math.sin;
 import static java.lang.Math.tan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for {@link S1ChordAngle}. */
-public strictfp class S1ChordAngleTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S1ChordAngleTest extends GeometryTestCase {
 
+  @Test
   public void testTwoPointConstructor() {
     for (int iter = 0; iter < 100; ++iter) {
       Matrix frame = data.getRandomFrame();
@@ -37,42 +46,49 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
       S2Point z = frame.getCol(2);
       assertEquals(S1Angle.ZERO, new S1ChordAngle(z, z).toAngle());
       assertDoubleNear(PI, new S1ChordAngle(z.neg(), z).toAngle().radians(), 1e-7);
-      assertDoubleEquals(PI / 2, new S1ChordAngle(x, z).toAngle().radians());
+      assertAlmostEquals(PI / 2, new S1ChordAngle(x, z).toAngle().radians());
       S2Point w = y.add(z).normalize();
-      assertDoubleEquals(PI / 4, new S1ChordAngle(w, z).toAngle().radians());
+      assertAlmostEquals(PI / 4, new S1ChordAngle(w, z).toAngle().radians());
     }
   }
 
+  @Test
   public void testFromLength2() {
     assertExactly(0.0, S1ChordAngle.fromLength2(0).degrees());
-    assertDoubleEquals(60.0, S1ChordAngle.fromLength2(1).degrees());
-    assertDoubleEquals(90.0, S1ChordAngle.fromLength2(2).degrees());
+    assertAlmostEquals(60.0, S1ChordAngle.fromLength2(1).degrees());
+    assertAlmostEquals(90.0, S1ChordAngle.fromLength2(2).degrees());
     assertExactly(180.0, S1ChordAngle.fromLength2(4).degrees());
     assertExactly(180.0, S1ChordAngle.fromLength2(5).degrees());
   }
 
+  @Test
   public void testZero() {
     assertEquals(S1Angle.ZERO, S1ChordAngle.ZERO.toAngle());
   }
 
+  @Test
   public void testStraight() {
     assertEquals(S1Angle.degrees(180), S1ChordAngle.STRAIGHT.toAngle());
   }
 
+  @Test
   public void testRight() {
     assertEquals(90.0, S1ChordAngle.RIGHT.degrees(), Platform.ulp(90D));
   }
 
+  @Test
   public void testInfinity() {
     assertTrue(S1ChordAngle.STRAIGHT.compareTo(S1ChordAngle.INFINITY) < 0);
     assertEquals(S1Angle.INFINITY, S1ChordAngle.INFINITY.toAngle());
   }
 
+  @Test
   public void testNegative() {
     assertTrue(S1ChordAngle.NEGATIVE.compareTo(S1ChordAngle.ZERO) < 0);
     assertTrue(S1ChordAngle.NEGATIVE.toAngle().compareTo(S1Angle.ZERO) < 0);
   }
 
+  @Test
   public void testEquals() {
     S1ChordAngle[] angles = {
       S1ChordAngle.NEGATIVE, S1ChordAngle.ZERO, S1ChordAngle.STRAIGHT, S1ChordAngle.INFINITY
@@ -84,6 +100,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testPredicates() {
     assertTrue(S1ChordAngle.ZERO.isZero());
     assertFalse(S1ChordAngle.ZERO.isNegative());
@@ -95,6 +112,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertTrue(S1ChordAngle.INFINITY.isSpecial());
   }
 
+  @Test
   public void testToFromS1Angle() {
     assertExactly(0.0, S1ChordAngle.fromS1Angle(S1Angle.ZERO).toAngle().radians());
     assertExactly(4.0, S1ChordAngle.fromS1Angle(S1Angle.radians(Math.PI)).getLength2());
@@ -104,9 +122,10 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
         S1Angle.INFINITY,
         S1ChordAngle.fromS1Angle(S1Angle.radians(Double.POSITIVE_INFINITY)).toAngle());
     assertTrue(S1ChordAngle.fromS1Angle(S1Angle.radians(-1)).toAngle().radians() < 0.0);
-    assertDoubleEquals(1.0, S1ChordAngle.fromS1Angle(S1Angle.radians(1.0)).toAngle().radians());
+    assertAlmostEquals(1.0, S1ChordAngle.fromS1Angle(S1Angle.radians(1.0)).toAngle().radians());
   }
 
+  @Test
   public void testSuccessor() {
     assertEquals(S1ChordAngle.ZERO, S1ChordAngle.NEGATIVE.successor());
     assertEquals(S1ChordAngle.INFINITY, S1ChordAngle.STRAIGHT.successor());
@@ -118,6 +137,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testPredecessor() {
     assertEquals(S1ChordAngle.STRAIGHT, S1ChordAngle.INFINITY.predecessor());
     assertEquals(S1ChordAngle.NEGATIVE, S1ChordAngle.ZERO.predecessor());
@@ -129,6 +149,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testArithmetic() {
     S1ChordAngle zero = S1ChordAngle.ZERO;
     S1ChordAngle degree30 = S1ChordAngle.fromS1Angle(S1Angle.degrees(30));
@@ -142,13 +163,13 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertExactly(0.0, sub(degree180, degree180).degrees());
     assertExactly(0.0, sub(zero, degree60).degrees());
     assertExactly(0.0, sub(degree30, degree90).degrees());
-    assertDoubleEquals(60.0, add(degree60, zero).degrees());
-    assertDoubleEquals(60.0, sub(degree60, zero).degrees());
-    assertDoubleEquals(60.0, add(zero, degree60).degrees());
-    assertDoubleEquals(90.0, add(degree30, degree60).degrees());
-    assertDoubleEquals(90.0, add(degree60, degree30).degrees());
-    assertDoubleEquals(60.0, sub(degree90, degree30).degrees());
-    assertDoubleEquals(30.0, sub(degree90, degree60).degrees());
+    assertAlmostEquals(60.0, add(degree60, zero).degrees());
+    assertAlmostEquals(60.0, sub(degree60, zero).degrees());
+    assertAlmostEquals(60.0, add(zero, degree60).degrees());
+    assertAlmostEquals(90.0, add(degree30, degree60).degrees());
+    assertAlmostEquals(90.0, add(degree60, degree30).degrees());
+    assertAlmostEquals(60.0, sub(degree90, degree30).degrees());
+    assertAlmostEquals(30.0, sub(degree90, degree60).degrees());
     assertExactly(180.0, add(degree180, zero).degrees());
     assertExactly(180.0, sub(degree180, zero).degrees());
     assertExactly(180.0, add(degree90, degree90).degrees());
@@ -161,6 +182,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
   // Verifies that S1ChordAngle is capable of adding and subtracting angles extremely accurately up
   // to Pi/2 radians. (Accuracy continues to be good well beyond this value but degrades as angles
   // approach Pi.)
+  @Test
   public void testArithmeticPrecision() {
     S1ChordAngle kEps = S1ChordAngle.fromRadians(1e-15);
     S1ChordAngle k90 = S1ChordAngle.RIGHT;
@@ -176,6 +198,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertDoubleNear(add(k90MinusEps, kEps).radians(), M_PI_2, kMaxError);
   }
 
+  @Test
   public void testTrigonometry() {
     final int iters = 20;
     for (int iter = 0; iter <= iters; ++iter) {
@@ -199,6 +222,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertExactly(-0.0, S1ChordAngle.tan(angle180));
   }
 
+  @Test
   public void testPlusError() {
     assertEquals(S1ChordAngle.NEGATIVE, S1ChordAngle.NEGATIVE.plusError(5));
     assertEquals(S1ChordAngle.INFINITY, S1ChordAngle.INFINITY.plusError(-5));
@@ -212,6 +236,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
    * Verifies that the error bound returned by {@link S1ChordAngle#getS2PointConstructorMaxError} is
    * large enough.
    */
+  @Test
   public void testGetS2PointConstructorMaxError() {
     for (int iter = 0; iter < 10000; ++iter) {
       data.setSeed(iter);
@@ -220,7 +245,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
       if (data.oneIn(10)) {
         // Occasionally test a point pair that is nearly identical or antipodal.
         S1Angle r = S1Angle.radians(1e-15 * data.nextDouble());
-        y = S2EdgeUtil.interpolateAtDistance(r, x, y);
+        y = S2EdgeUtil.getPointOnLine(x, y, r);
         if (data.oneIn(2)) {
           y = y.neg();
         }
@@ -233,6 +258,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testHashCodeZero() {
     // Check that hashCode() and equals(...) work consistently for the ±0 edge case.
     S1ChordAngle positive0 = S1ChordAngle.fromLength2(0);
@@ -242,6 +268,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertEquals(positive0.hashCode(), negative0.hashCode());
   }
 
+  @Test
   public void testHashCodeDifferent() {
     S1ChordAngle zero = S1ChordAngle.fromLength2(0);
     S1ChordAngle nonZero = S1ChordAngle.fromLength2(1);
@@ -251,6 +278,7 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
     assertTrue(zero.hashCode() != nonZero.hashCode());
   }
 
+  @Test
   public void testS1AngleConsistency() {
     // This test checks that the error bounds in the S1ChordAngle constructors are consistent with
     // the maximum error in S1Angle(x, y).
@@ -267,5 +295,11 @@ public strictfp class S1ChordAngleTest extends GeometryTestCase {
       assertTrue(dist1.compareTo(dist2.plusError(maxError)) <= 0);
       assertTrue(dist1.compareTo(dist2.plusError(-maxError)) >= 0);
     }
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS1ChordAngleSerialization() {
+    doSerializationTest(S1ChordAngle.fromLength2(0.021));
   }
 }

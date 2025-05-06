@@ -15,13 +15,16 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2CellId.isFace;
+import static com.google.common.geometry.S2CellId.parentAsLong;
+import static com.google.common.geometry.S2CellId.rangeMaxAsLong;
+import static com.google.common.geometry.S2CellId.rangeMinAsLong;
+import static com.google.common.geometry.S2CellId.unsignedLongLessThan;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -30,6 +33,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -53,36 +58,53 @@ import jsinterop.annotations.JsType;
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
+@SuppressWarnings("Assertion")
+public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
   private static final long serialVersionUID = 1L;
 
   private static final byte LOSSLESS_ENCODING_VERSION = 1;
 
   /** An {@link S2Coder} of cell unions that uses {@link #encode} and {@link #decode}. */
-  public static final S2Coder<S2CellUnion> FAST_CODER = new S2Coder<S2CellUnion>() {
-    @JsIgnore // OutputStream is not available to J2CL.
-    @Override public void encode(S2CellUnion value, OutputStream output) throws IOException {
-      value.encode(output);
-    }
+  public static final S2Coder<S2CellUnion> FAST_CODER =
+      new S2Coder<S2CellUnion>() {
+        @JsIgnore // OutputStream is not available to J2CL.
+        @Override
+        public void encode(S2CellUnion value, OutputStream output) throws IOException {
+          value.encode(output);
+        }
 
-    @Override public S2CellUnion decode(Bytes data, Cursor cursor) throws IOException {
-      return S2CellUnion.decode(data.toInputStream(cursor));
-    }
+        @Override
+        public S2CellUnion decode(Bytes data, Cursor cursor) throws IOException {
+          return S2CellUnion.decode(data.toInputStream(cursor));
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   /** A compact coder that compresses the given cells by around 4-5x in many cases. */
-  public static final S2Coder<S2CellUnion> COMPACT_CODER = S2CellIdVectorCoder.INSTANCE.delegating(
-      cells -> cells.cellIds, S2CellUnion::copyFrom);
+  public static final S2Coder<S2CellUnion> COMPACT_CODER =
+      S2CellIdVectorCoder.INSTANCE.delegating(cells -> cells.cellIds, S2CellUnion::copyFrom);
 
   /** The CellIds that form the Union */
   private ArrayList<S2CellId> cellIds = new ArrayList<>();
 
   @JsConstructor
   public S2CellUnion() {}
+
+  /** Clears the union contents, leaving it empty. */
+  public void clear() {
+    cellIds.clear();
+  }
+
+  /** Creates a new cell union as as copy of the given cell union 'other'. */
+  public static S2CellUnion copyFrom(S2CellUnion other) {
+    S2CellUnion copy = new S2CellUnion();
+    copy.initRawCellIds(new ArrayList<>(other.cellIds));
+    return copy;
+  }
 
   /** Creates a new cell union from a copy of the given cells. */
   @JsIgnore // J2CL warning "Iterable<S2CellId> ... is not usable by JavaScript" but not clear why.
@@ -94,56 +116,89 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     return result;
   }
 
+  /** Constructs a cell union for the whole sphere. */
+  public static S2CellUnion wholeSphere() {
+    return S2CellUnion.copyFrom(Arrays.asList(S2CellId.FACE_CELLS));
+  }
+
   /**
-   * Populates a cell union with the given S2CellIds, and then calls normalize(). This directly uses
-   * the input list, without copying it.
+   * Populates this cell union with the given S2CellIds, and then calls normalize(). This directly
+   * uses the input list, without copying it.
    */
-  public void initFromCellIds(ArrayList<S2CellId> cellIds) {
+  @CanIgnoreReturnValue
+  public S2CellUnion initFromCellIds(ArrayList<S2CellId> cellIds) {
     initRawCellIds(cellIds);
     normalize();
+    return this;
   }
 
-  /** Populates a cell union with the given 64-bit cell ids, and then calls normalize(). */
-  public void initFromIds(List<Long> cellIds) {
+  /** Populates this cell union with the given 64-bit cell ids, and then calls normalize(). */
+  @CanIgnoreReturnValue
+  public S2CellUnion initFromIds(List<Long> cellIds) {
     initRawIds(cellIds);
     normalize();
+    return this;
   }
 
   /**
-   * Populates a cell union with the given S2CellIds. The input list is copied, and then cleared.
+   * Populates this cell union with the given S2CellIds. The input list is copied, and then cleared.
    */
-  public void initSwap(List<S2CellId> cellIds) {
+  @CanIgnoreReturnValue
+  public S2CellUnion initSwap(List<S2CellId> cellIds) {
     initRawSwap(cellIds);
     normalize();
+    return this;
   }
 
   /**
-   * Populates a cell union with the given S2CellIds. This does not call normalize, see {@link
+   * Populates this cell union with the given S2CellIds. This does not call normalize, see {@link
    * #initRawSwap} for details. This directly uses the input list, without copying it.
    */
-  public void initRawCellIds(ArrayList<S2CellId> cellIds) {
+  @CanIgnoreReturnValue
+  public S2CellUnion initRawCellIds(ArrayList<S2CellId> cellIds) {
     this.cellIds = cellIds;
+    return this;
+  }
+
+  /** Populates this cell union with the single given 64 bit cell id, which must be valid. */
+  @CanIgnoreReturnValue
+  public S2CellUnion initFromId(long cellId) {
+    assert S2CellId.isValid(cellId);
+    cellIds.clear();
+    cellIds.add(new S2CellId(cellId));
+    return this;
+  }
+
+  /** Populates this cell union with the single given S2CellId, which must be valid. */
+  @CanIgnoreReturnValue
+  public S2CellUnion initFromCellId(S2CellId cellId) {
+    assert cellId.isValid();
+    cellIds.clear();
+    cellIds.add(cellId);
+    return this;
   }
 
   /**
-   * Populates a cell union with the given 64 bit cell ids. This does not call normalize, see {@link
-   * #initRawSwap} for details. The input list is copied.
+   * Populates this cell union with the given 64 bit cell ids. This does not call normalize, see
+   * {@link #initRawSwap} for details. The input list is copied.
    */
   // TODO(user): Make a constructed S2CellUnion immutable, and port other init methods from
   // C++.
-  public void initRawIds(List<Long> cellIds) {
+  @CanIgnoreReturnValue
+  public S2CellUnion initRawIds(List<Long> cellIds) {
     int size = cellIds.size();
-    this.cellIds = new ArrayList<S2CellId>(size);
+    this.cellIds = new ArrayList<>(size);
     for (Long id : cellIds) {
       this.cellIds.add(new S2CellId(id));
     }
+    return this;
   }
 
   /**
    * Like the initFrom*() constructors, but does not call normalize(). The cell union *must* be
-   * normalized before doing any calculations with it, so it is the caller's responsibility to
-   * make sure that the input is normalized. This method is useful when converting cell unions to
-   * another representation and back.
+   * normalized before doing any calculations with it, so it is the caller's responsibility to make
+   * sure that the input is normalized. This method is useful when converting cell unions to another
+   * representation and back.
    *
    * <p>The input list is copied, and then cleared.
    */
@@ -160,10 +215,10 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    * <p>Requires that {@code minId.isLeaf(), maxId.isLeaf()}, and {@code minId <= maxId}.
    */
   public void initFromMinMax(S2CellId minId, S2CellId maxId) {
-    // assert minId.isLeaf();
-    // assert maxId.isLeaf();
-    // assert minId.compareTo(maxId) <= 0;
-    // assert minId.isValid() && maxId.isValid();
+    assert minId.isLeaf();
+    assert maxId.isLeaf();
+    assert minId.compareTo(maxId) <= 0;
+    assert minId.isValid() && maxId.isValid();
     initFromBeginEnd(minId, maxId.next());
   }
 
@@ -175,28 +230,30 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    * <p>Requires that {@code begin.isLeaf(), end.isLeaf()}, and {@code begin <= end}.
    */
   public void initFromBeginEnd(S2CellId begin, S2CellId end) {
-    // assert (begin.isLeaf());
-    // assert (end.isLeaf());
-    // assert (begin.compareTo(end) <= 0);
+    assert begin.isLeaf();
+    assert end.isLeaf();
+    assert begin.compareTo(end) <= 0;
 
     // We repeatedly add the largest cell we can, in sorted order.
     cellIds.clear();
     for (S2CellId nextBegin = begin; nextBegin.compareTo(end) < 0; ) {
-      // assert(nextBegin.isLeaf());
+      assert nextBegin.isLeaf();
 
-      // Find the largest cell that starts at "nextBegin" and ends before "end".
-      S2CellId nextId = nextBegin;
-      while (!nextId.isFace()
-          && nextId.parent().rangeMin().equals(nextBegin)
-          && nextId.parent().rangeMax().compareTo(end) < 0) {
-        nextId = nextId.parent();
+      // Find the largest cell that starts at "nextBegin" and ends before "end". This loop uses
+      // longs rather than S2CellIds to avoid many allocations of S2CellId objects.
+      long nextId = nextBegin.id();
+      while (!isFace(nextId)
+          && rangeMinAsLong(parentAsLong(nextId)) == nextBegin.id()
+          && unsignedLongLessThan(rangeMaxAsLong(parentAsLong(nextId)), end.id())) {
+        nextId = parentAsLong(nextId);
       }
-      cellIds.add(nextId);
-      nextBegin = nextId.rangeMax().next();
+      S2CellId nextCellId = new S2CellId(nextId);
+      cellIds.add(nextCellId);
+      nextBegin = nextCellId.rangeMax().next();
     }
 
     // The output should already be sorted and normalized.
-    // assert(!normalize());
+    assert !normalize();
   }
 
   public int size() {
@@ -208,7 +265,16 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     return cellIds.get(i);
   }
 
-  /** Enable iteration over the union's cells. */
+  /**
+   * Provides an S2Iterator over this union's cells. The cell union must be normalized, or results
+   * will be undefined.
+   */
+  public S2Iterator<S2CellId> s2Iterator() {
+    assert isNormalized();
+    return S2Iterator.fromList(cellIds);
+  }
+
+  /** Enable iteration over the union's cells. See also {@link #s2Iterator()}. */
   @Override
   @JsIgnore
   public Iterator<S2CellId> iterator() {
@@ -240,7 +306,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
 
   /**
    * Returns true if the cell union is normalized, meaning that it {@link #isValid()} is true and
-   * that no four cells have a common parent.
+   * that no four cells at the same level have a common parent.
    *
    * <p>Certain operations such as {@link #contains(S2CellUnion)} may return a different result if
    * the cell union is not normalized.
@@ -261,7 +327,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
   }
 
   /**
-   * Returns true if the given four cells have a common parent.
+   * Returns true if the given four cells are at the same level and have a common parent.
    *
    * <p>Requires the four cells are distinct.
    */
@@ -285,19 +351,46 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
   }
 
   /**
+   * Returns a list of the cell ids in this cell union after replacing any cells whose level is less
+   * than "minLevel" with their children, until the required minLevel is reached. The provided
+   * minLevel must be in the range [0, S2CellId.MAX_LEVEL].
+   */
+  public List<S2CellId> denormalized(int minLevel) {
+    ArrayList<S2CellId> output = new ArrayList<>();
+    denormalize(minLevel, 1, output);
+    return output;
+  }
+
+  /**
    * Replaces "output" with an expanded version of the cell union where any cells whose level is
-   * less than "minLevel" or where (level - minLevel) is not a multiple of "levelMod" are
-   * replaced by their children, until either both of these conditions are satisfied or the maximum
-   * level is reached.
+   * less than "minLevel" are replaced by their children, until the required minLevel is reached.
+   *
+   * <p>The provided minLevel must be in the range [0, S2CellId.MAX_LEVEL].
+   */
+  @JsIgnore
+  public void denormalize(int minLevel, ArrayList<S2CellId> output) {
+    denormalize(minLevel, 1, output);
+  }
+
+  /**
+   * Replaces "output" with an expanded version of the cell union where any cells whose level is
+   * less than "minLevel" or where (level - minLevel) is not a multiple of "levelMod" are replaced
+   * by their children, until either both of these conditions are satisfied or the maximum level is
+   * reached.
    *
    * <p>This method allows a covering generated by S2RegionCoverer using minLevel() or levelMod()
    * constraints to be stored as a normalized cell union (which allows various geometric
    * computations to be done) and then converted back to the original list of cell ids that
    * satisfies the desired constraints.
+   *
+   * <p>The provided minLevel must be in the range [0, S2CellId.MAX_LEVEL]. The provided levelMod
+   * must be in the range [1, 3].
    */
   public void denormalize(int minLevel, int levelMod, ArrayList<S2CellId> output) {
-    // assert (minLevel >= 0 && minLevel <= S2CellId.MAX_LEVEL);
-    // assert (levelMod >= 1 && levelMod <= 3);
+    assert minLevel >= 0;
+    assert minLevel <= S2CellId.MAX_LEVEL;
+    assert levelMod >= 1;
+    assert levelMod <= 3;
 
     output.clear();
     output.ensureCapacity(size());
@@ -409,9 +502,14 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     return result;
   }
 
-  /** Sets this cell union to the union of {@code x} and {@code y}. */
+  /**
+   * Sets this cell union to the union of {@code x} and {@code y}, which both must be different cell
+   * unions than this one.
+   */
+  @SuppressWarnings("ReferenceEquality") // Precondition check is checking reference equality.
   public void getUnion(S2CellUnion x, S2CellUnion y) {
-    // assert (x != this && y != this);
+    Preconditions.checkArgument(x != this);
+    Preconditions.checkArgument(y != this);
     cellIds.clear();
     cellIds.ensureCapacity(x.size() + y.size());
     cellIds.addAll(x.cellIds);
@@ -423,10 +521,11 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    * Specialized version of getIntersection() that gets the intersection of a cell union with the
    * given cell id. This can be useful for "splitting" a cell union into chunks.
    *
-   * <p><b>Note:</b> {@code x} and {@code y} must be normalized.
+   * <p><b>Note:</b> {@code x} must be normalized, and must be a different cell union than this one.
    */
+  @SuppressWarnings("ReferenceEquality") // Precondition check is checking reference equality.
   public void getIntersection(S2CellUnion x, S2CellId id) {
-    // assert (x != this);
+    Preconditions.checkArgument(x != this);
     cellIds.clear();
     if (x.contains(id)) {
       cellIds.add(id);
@@ -443,7 +542,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
         cellIds.add(x.cellIds.get(pos++));
       }
     }
-    // assert isNormalized() || !x.isNormalized();
+    assert isNormalized() || !x.isNormalized();
   }
 
   /** Returns the intersection of two S2CellUnions. */
@@ -468,7 +567,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     Preconditions.checkArgument(x != this && y != this);
     getIntersection(x.cellIds, y.cellIds, cellIds);
     // The output is normalized as long as both inputs are normalized.
-    // assert isNormalized() || (!x.isNormalized() || !y.isNormalized());
+    assert isNormalized() || (!x.isNormalized() || !y.isNormalized());
   }
 
   /**
@@ -481,7 +580,8 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    */
   @JsIgnore
   public static void getIntersection(List<S2CellId> x, List<S2CellId> y, List<S2CellId> results) {
-    // assert (x != results && y != results);
+    assert x != results;
+    assert y != results;
 
     // This is a fairly efficient calculation that uses binary search to skip over sections of both
     // input vectors. It takes constant time if all the cells of "x" come before or after all the
@@ -531,7 +631,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
     }
   }
 
-  /** Initiaizes this cell union to the difference of the two given cell unions. */
+  /** Initializes this cell union to the difference of the two given cell unions. */
   public void getDifference(S2CellUnion x, S2CellUnion y) {
     // TODO(user): this is approximately O(N*log(N)), but could probably use similar
     // techniques as getIntersection() to be more efficient.
@@ -540,7 +640,7 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
       getDifferenceInternal(id, y);
     }
     // The output is normalized as long as the first argument is normalized.
-    // assert isNormalized() || !x.isNormalized();
+    assert isNormalized() || !x.isNormalized();
   }
 
   private void getDifferenceInternal(S2CellId cell, S2CellUnion y) {
@@ -635,22 +735,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
       minLevel = min(minLevel, id.level());
     }
     // Find the maximum level such that all cells are at least "minRadius" wide.
-    int radiusLevel = PROJ.minWidth.getMaxLevel(minRadius.radians());
-    if (radiusLevel == 0 && minRadius.radians() > PROJ.minWidth.getValue(0)) {
+    int radiusLevel = S2Projections.MIN_WIDTH.getMaxLevel(minRadius.radians());
+    if (radiusLevel == 0 && minRadius.radians() > S2Projections.MIN_WIDTH.getValue(0)) {
       // The requested expansion is greater than the width of a face cell. The easiest way to handle
       // this is to expand twice.
       expand(0);
     }
     expand(min(minLevel + maxLevelDiff, radiusLevel));
-  }
-
-  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
-  // Object, so we can't mark it as such.
-  @SuppressWarnings("MissingOverride")
-  public S2CellUnion clone() {
-    S2CellUnion copy = new S2CellUnion();
-    copy.initRawCellIds(Lists.newArrayList(cellIds));
-    return copy;
   }
 
   @Override
@@ -688,6 +779,12 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
       builder.union(new S2Cell(id).getRectBound());
     }
     return builder.build();
+  }
+
+  @Override
+  public void getCellUnionBound(Collection<S2CellId> results) {
+    results.clear();
+    results.addAll(cellIds);
   }
 
   /** This is a fast operation (logarithmic in the size of the cell union). */
@@ -796,9 +893,6 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
    *
    * <p>This method *must* be called before doing any calculations on the cell union, such as
    * intersects() or contains().
-   *
-   * @return true if the normalize operation had any effect on the cell union, false if the union
-   *     was already normalized
    */
   @CanIgnoreReturnValue
   public boolean normalize() {
@@ -882,13 +976,13 @@ public strictfp class S2CellUnion implements S2Region, Iterable<S2CellId>, Seria
   }
 
   /**
-   * Decodes an S2CellUnion encoded with encode(). Returns true on success. Decodes all the cell
-   * ids immediately, i.e. is not lazy.
+   * Decodes an S2CellUnion encoded with encode(). Returns true on success. Decodes all the cell ids
+   * immediately, i.e. is not lazy.
    *
    * <p>Use this method if a number of S2 objects will be decoded from the same underlying stream.
    *
    * @throws IOException there is a problem reading from the underlying stream, the version number
-   * doesn't match, or the number of elements to read is not between 0 and 2^31-1.
+   *     doesn't match, or the number of elements to read is not between 0 and 2^31-1.
    */
   @JsIgnore
   public static S2CellUnion decode(InputStream input) throws IOException {

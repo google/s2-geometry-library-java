@@ -20,14 +20,16 @@ import static org.junit.Assert.assertEquals;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Comparator;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Contains test constants for the geometry package that require different values for the GWT client
- * and non-GWT-client versions.
+ * Contains test constants for the geometry package that require different values for the Java
+ * client and Javascript client versions.
  *
- * <p>This contains the non-GWT-client version.
+ * <p>This contains the Java client version.
  */
 class TestPlatform {
 
@@ -54,12 +56,12 @@ class TestPlatform {
   static <T> void testSerialization(T obj, @Nullable Comparator<T> comparator)
       throws IOException, ClassNotFoundException {
     ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-    java.io.ObjectOutputStream objectOutputStream = new java.io.ObjectOutputStream(byteStream);
+    ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteStream);
 
     objectOutputStream.writeObject(obj);
 
-    java.io.ObjectInputStream objectInputStream =
-        new java.io.ObjectInputStream(new ByteArrayInputStream(byteStream.toByteArray()));
+    ObjectInputStream objectInputStream =
+        new ObjectInputStream(new ByteArrayInputStream(byteStream.toByteArray()));
 
     T readObj = (T) objectInputStream.readObject();
 
@@ -68,5 +70,14 @@ class TestPlatform {
     } else {
       assertEquals(obj, readObj);
     }
+  }
+
+  /**
+   * Asserts that two doubles are identical, treating different NaN representations as not
+   * identical. Web cannot identify different NaN representations so super-sourced there with a
+   * fallback implementation.
+   */
+  static void assertIdentical(double expected, double actual) {
+    assertEquals(Double.doubleToRawLongBits(expected), Double.doubleToRawLongBits(expected));
   }
 }

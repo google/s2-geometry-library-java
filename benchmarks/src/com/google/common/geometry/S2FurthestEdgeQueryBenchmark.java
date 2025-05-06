@@ -17,7 +17,6 @@ package com.google.common.geometry.benchmarks;
 
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.S1ChordAngle;
-import com.google.common.geometry.S2BestEdgesQueryBase;
 import com.google.common.geometry.S2BestEdgesQueryBase.Result;
 import com.google.common.geometry.S2Cap;
 import com.google.common.geometry.S2FurthestEdgeQuery;
@@ -48,14 +47,6 @@ public class S2FurthestEdgeQueryBenchmark {
     public S2FurthestEdgeQuery<S1ChordAngle> query;
     public ArrayList<S2FurthestEdgeQuery.Target<S1ChordAngle>> targets;
 
-    @Override
-    public S2BestEdgesQueryBase<S1ChordAngle> query() {
-      return query;
-    }
-    @Override
-    public ArrayList<S2FurthestEdgeQuery.Target<S1ChordAngle>> targets() {
-      return targets;
-    }
   }
 
   public static class FurthestEdgeBenchmarkBaseState extends BestEdgesBenchmarkBaseState {

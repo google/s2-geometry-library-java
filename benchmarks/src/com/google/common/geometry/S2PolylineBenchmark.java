@@ -42,7 +42,7 @@ import org.openjdk.jmh.infra.BenchmarkParams;
 /**
  * Benchmarks for {@link S2Polyline}.
  *
- * <p>TODO(user): Complete benchmarks for S2Polyline. Only a few methods are benchmarked.
+ * <p>TODO(user): Improve benchmarks for S2Polyline. Only a few methods are benchmarked.
  */
 @CheckReturnValue
 public class S2PolylineBenchmark {

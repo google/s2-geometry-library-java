@@ -15,17 +15,27 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.S2CrossingEdgesQuery.CrossingType;
 import com.google.common.geometry.S2CrossingEdgesQuery.EdgePairVisitor;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/** Tests S2CrossingEdgesQuery. */
+/** Unit tests for {@link S2CrossingEdgesQuery}. */
+@RunWith(JUnit4.class)
 public class S2CrossingEdgesQueryTest extends GeometryTestCase {
 
   /** Check that an empty index has no crossing edge pairs. */
+  @Test
   public void testGetCrossingEdgePairsEmptyIndex() {
     S2ShapeIndex index = new S2ShapeIndex();
     checkGetCrossingEdgePairs(index, CrossingType.ALL, 0);
@@ -33,6 +43,7 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
   }
 
   /** Check that two empty indexes have no crossing edge pairs. */
+  @Test
   public void testGetCrossingEdgePairsEmptyIndexTwoIndexes() {
     S2ShapeIndex indexA = new S2ShapeIndex();
     S2ShapeIndex indexB = new S2ShapeIndex();
@@ -40,7 +51,31 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
     checkGetCrossingEdgePairs(indexA, indexB, CrossingType.INTERIOR, 0);
   }
 
+  /** Check a simple case of two edges crossing. */
+  @Test
+  public void testSimpleCrossingEdges() {
+    S2Point ptA = S2LatLng.fromDegrees(47.60251737595361, -122.33097562620836).toPoint();
+    S2Point ptB = S2LatLng.fromDegrees(47.620694810284405, -122.34864834734356).toPoint();
+
+    S2Point ptC = S2LatLng.fromDegrees(47.61594380237771, -122.35511824540413).toPoint();
+    S2Point ptD = S2LatLng.fromDegrees(47.62504514063697, -122.33528728789632).toPoint();
+
+    S2EdgeVectorShape edgeAB = new S2EdgeVectorShape();
+    edgeAB.add(ptA, ptB);
+    S2EdgeVectorShape edgeCD = new S2EdgeVectorShape();
+    edgeCD.add(ptC, ptD);
+
+    S2ShapeIndex indexAB = new S2ShapeIndex();
+    indexAB.add(edgeAB);
+    S2ShapeIndex indexCD = new S2ShapeIndex();
+    indexCD.add(edgeCD);
+
+    checkGetCrossingEdgePairs(indexAB, indexCD, CrossingType.ALL, 1);
+    checkGetCrossingEdgePairs(indexAB, indexCD, CrossingType.INTERIOR, 1);
+  }
+
   /** Test crossing edges in a grid of 11 vertical and 11 horizontal lines. */
+  @Test
   public void testGetCrossingEdgePairsEdgeGrid() {
     int kGridSize = 10; // grid is zero to kGridSize inclusive
     double epsilon = 1e-10;
@@ -72,6 +107,7 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
    * Test crossing edges between two indexes, using the same setup as the previous test but with
    * horizontal lines in one index and vertical lines in the other.
    */
+  @Test
   public void testGetCrossingEdgePairsEdgeGridTwoIndexes() {
     int kGridSize = 10; // grid is zero to kGridSize inclusive
     double epsilon = 1e-10;
@@ -97,48 +133,54 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
 
   /**
    * Gets the crossing edge pairs in the given index, using {@link
-   * S2VisitCrossingEdgePairs#visitCrossingEdgePairs()}.
+   * S2CrossingEdgesQuery#visitCrossingEdgePairs(S2ShapeIndex, EdgePairVisitor)}}.
    */
   private HashSet<ShapeEdgeIdPair> getCrossingEdgePairsOptimized(
       S2ShapeIndex index, CrossingType type) {
     HashSet<ShapeEdgeIdPair> edgePairs = new HashSet<>();
     S2CrossingEdgesQuery query = new S2CrossingEdgesQuery(type);
     query.visitCrossingEdgePairs(index,
-        new EdgePairVisitor() {
-          @Override
-          public boolean visit(
-              S2Shape shapeA, int edgeIdA, S2Point edgeASrc, S2Point edgeADst,
-              S2Shape shapeB, int edgeIdB, S2Point edgeBSrc, S2Point edgeBDst,
-              boolean isInterior) {
-            edgePairs.add(new ShapeEdgeIdPair(shapeA, edgeIdA, shapeB, edgeIdB));
-            return true; // Continue visiting.
-          }
-        });
-
+        (shapeIdA, edgeIdA, edgeASrc, edgeADst, shapeIdB,
+         edgeIdB, edgeBSrc, edgeBDst, isInterior) -> {
+      edgePairs.add(new ShapeEdgeIdPair(1, shapeIdA, edgeIdA, 1, shapeIdB, edgeIdB,
+          contained(query, edgeASrc, edgeADst, edgeBSrc, edgeBDst)));
+      return true; // Continue visiting.
+    });
     return edgePairs;
   }
 
   /**
    * Gets the crossing edge pairs between the two given shape indexes, using {@link
-   * S2VisitCrossingEdgePairs#visitCrossingEdgePairs()}.
+   * S2CrossingEdgesQuery#visitCrossingEdgePairs}.
    */
   private HashSet<ShapeEdgeIdPair> getCrossingEdgePairsOptimized(
       S2ShapeIndex indexA, S2ShapeIndex indexB, CrossingType type) {
     HashSet<ShapeEdgeIdPair> edgePairs = new HashSet<>();
     S2CrossingEdgesQuery query = new S2CrossingEdgesQuery(type);
     query.visitCrossingEdgePairs(indexA, indexB,
-        new EdgePairVisitor() {
-          @Override
-          public boolean visit(
-              S2Shape shapeA, int edgeIdA, S2Point edgeASrc, S2Point edgeADst,
-              S2Shape shapeB, int edgeIdB, S2Point edgeBSrc, S2Point edgeBDst,
-              boolean isInterior) {
-            edgePairs.add(new ShapeEdgeIdPair(shapeA, edgeIdA, shapeB, edgeIdB));
-            return true; // Continue visiting.
-          }
-        });
-
+        (shapeIdA, edgeIdA, edgeASrc, edgeADst,
+         shapeIdB, edgeIdB, edgeBSrc, edgeBDst,
+         isInterior) -> {
+      edgePairs.add(new ShapeEdgeIdPair(1, shapeIdA, edgeIdA, 2, shapeIdB, edgeIdB,
+          contained(query, edgeASrc, edgeADst, edgeBSrc, edgeBDst)));
+      return true; // Continue visiting.
+    });
     return edgePairs;
+  }
+
+  /** Returns whether the intersection between the given edges is contained by the current ID. */
+  private static boolean contained(
+      S2CrossingEdgesQuery query, S2Point a0, S2Point a1, S2Point b0, S2Point b1) {
+    S2Point x;
+    if (a0.equalsPoint(b0) || a0.equalsPoint(b1)) {
+      x = a0;
+    } else if (a1.equalsPoint(b0) || a1.equalsPoint(b1)) {
+      x = a1;
+    } else {
+      x = S2EdgeUtil.getIntersection(a0, a1, b0, b1);
+    }
+    // Note we use S2Cell.contains(S2Point) since it's slightly tolerant of points near cell edges.
+    return new S2Cell(query.currentId()).contains(x);
   }
 
   /** A simple container for a shape id and edge id. */
@@ -205,7 +247,7 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
             // Do Edge A and Edge B have a crossing of the type we care about?
             int crossing = S2EdgeUtil.robustCrossing(edgeA.a, edgeA.b, edgeB.a, edgeB.b);
             if (crossing >= minSign) {
-              edgePairs.add(new ShapeEdgeIdPair(shapeA, edgeIdA, shapeB, edgeIdB));
+              edgePairs.add(new ShapeEdgeIdPair(1, shapeIdA, edgeIdA, 1, shapeIdB, edgeIdB, true));
             }
           }
         }
@@ -243,7 +285,7 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
             // Do Edge A and Edge B have a crossing of the type we care about?
             int crossing = S2EdgeUtil.robustCrossing(edgeA.a, edgeA.b, edgeB.a, edgeB.b);
             if (crossing >= minSign) {
-              edgePairs.add(new ShapeEdgeIdPair(shapeA, edgeIdA, shapeB, edgeIdB));
+              edgePairs.add(new ShapeEdgeIdPair(1, shapeIdA, edgeIdA, 2, shapeIdB, edgeIdB, true));
             }
           }
         }
@@ -254,9 +296,9 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
 
   /**
    * Gets crossing edge pairs using both the brute force implementation above and the implementation
-   * in {@link S2VisitCrossingEdgePairs#visitCrossingEdgePairs()}. Compares the results to ensure
-   * they are the same, and checks that the number of crossings found was correct for both the brute
-   * force and visitCrossingEdgePairs implementations.
+   * in {@link S2CrossingEdgesQuery#visitCrossingEdgePairs}. Compares the results to ensure they are
+   * the same, and checks that the number of crossings found was correct for both the brute force
+   * and visitCrossingEdgePairs implementations.
    */
   private void checkGetCrossingEdgePairs(
       S2ShapeIndex index, CrossingType type, int expectedCrossingCount) {
@@ -267,7 +309,7 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
 
   /**
    * Gets crossing edge pairs between two shape indexes using both the brute force implementation
-   * and the implementation in {@link S2VisitCrossingEdgePairs#visitCrossingEdgePairs()}. Compares
+   * and the implementation in {@link S2CrossingEdgesQuery#visitCrossingEdgePairs}. Compares
    * the results to ensure they are the same, and checks that the number of crossings found was
    * correct for both the brute force and visitCrossingEdgePairs implementations.
    */
@@ -308,7 +350,6 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
         "Brute force crossing count was not equal to expectedCrossingCount.",
         expectedCrossingCount,
         bruteForcePairs.size());
-
     assertTrue(
         "visitCrossingPairs were not the same as brute force pairs; see details above. Expected "
             + bruteForcePairs.size()
@@ -316,47 +357,52 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
             + visitCrossingPairs.size()
             + " edge pairs.",
         equal);
+    String pairsString = visitCrossingPairs.toString();
+    visitCrossingPairs.stream()
+        .filter(p -> p.canonical)
+        .collect(Collectors.groupingBy(p -> p))
+        .values()
+        .forEach(p -> assertEquals("Canonical matches != 1: " + pairsString, 1, p.size()));
   }
 
   /**
-   * Stores a (S2Shape, edgeId) pair, and defines equality and hashcode so that the order of the two
-   * edges does not matter.
+   * Stores a (indexId, shapeId, edgeId) tuple.
    */
   private static class ShapeEdgeIdPair {
-    public final S2Shape shapeA;
+    public final int indexIdA;
+    public final int shapeIdA;
     public final int edgeIdA;
-    public final S2Shape shapeB;
+
+    public final int indexIdB;
+    public final int shapeIdB;
     public final int edgeIdB;
 
-    public ShapeEdgeIdPair(S2Shape shapeA, int edgeIdA, S2Shape shapeB, int edgeIdB) {
-      this.shapeA = shapeA;
-      this.edgeIdA = edgeIdA;
-      this.shapeB = shapeB;
-      this.edgeIdB = edgeIdB;
-    }
+    public final boolean canonical;
 
-    private String shapeEdgeToString(S2Shape shape, int edgeId) {
-      S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
-      shape.getEdge(edgeId, edge);
-      return edge.getStart().toDegreesString() + " - " + edge.getEnd().toDegreesString();
+    public ShapeEdgeIdPair(
+        int indexIdA, int shapeIdA, int edgeIdA,
+        int indexIdB, int shapeIdB, int edgeIdB,
+        boolean canonical) {
+      this.indexIdA = indexIdA;
+      this.shapeIdA = shapeIdA;
+      this.edgeIdA = edgeIdA;
+      this.indexIdB = indexIdB;
+      this.shapeIdB = shapeIdB;
+      this.edgeIdB = edgeIdB;
+      this.canonical = canonical;
     }
 
     @Override
     public String toString() {
-      return "EdgeId A="
-          + edgeIdA
-          + ", EdgeId B="
-          + edgeIdB
-          + ", Edge A=("
-          + shapeEdgeToString(shapeA, edgeIdA)
-          + "), Edge B=("
-          + shapeEdgeToString(shapeB, edgeIdB)
-          + ")\n";
+      return Platform.formatString(
+          "ShapeEdgeId A=(%d, %d, %d). ShapeEdgeId B=(%d, %d, %d)",
+          indexIdA, shapeIdA, edgeIdA,
+          indexIdB, shapeIdB, edgeIdB);
     }
 
     @Override
     public int hashCode() {
-      return (shapeA.hashCode() + shapeB.hashCode()) * 7 + (edgeIdA + edgeIdB);
+      return Objects.hash(indexIdA, shapeIdA, edgeIdA, indexIdB, shapeIdB, edgeIdB);
     }
 
     @Override
@@ -368,14 +414,12 @@ public class S2CrossingEdgesQueryTest extends GeometryTestCase {
         return false;
       }
       ShapeEdgeIdPair that = (ShapeEdgeIdPair) other;
-      return (this.shapeA == that.shapeA
-              && this.edgeIdA == that.edgeIdA
-              && this.shapeB == that.shapeB
-              && this.edgeIdB == that.edgeIdB)
-          || (this.shapeA == that.shapeB
-              && this.edgeIdA == that.edgeIdB
-              && this.shapeB == that.shapeA
-              && this.edgeIdB == that.edgeIdA);
+      return this.indexIdA == that.indexIdA
+          && this.indexIdB == that.indexIdB
+          && this.shapeIdA == that.shapeIdA
+          && this.edgeIdA == that.edgeIdA
+          && this.shapeIdB == that.shapeIdB
+          && this.edgeIdB == that.edgeIdB;
     }
   }
 }

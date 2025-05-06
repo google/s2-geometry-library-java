@@ -32,14 +32,13 @@ import java.util.List;
  * <p>To build an S2CellIndex, call add() for each (cellId, label) pair, and then call the build()
  * method. For example:
  *
- * <pre>{@code
+ * {@snippet :
  *  List<S2CellId> contents = ...;
  *  for (int i = 0; i < contents.size(); ++i) {
  *    index.add(contents.get(i), i);  // i is used as the label.
  *  }
  *  index.build();
  * }
- * </pre>
  *
  * <p>There is also a convenience method to add all the cells in a union, associated with one label.
  *
@@ -188,17 +187,18 @@ public class S2CellIndex {
      * is necessary to ensure that (1) larger cells are pushed on the stack before smaller cells,
      * and (2) cells are popped off the stack before any new cells are added.
      */
-    public static final Comparator<Delta> BY_START_CELL_NEG_LABEL = (a, b) -> {
-      int result = a.startId.compareTo(b.startId);
-      if (result != 0) {
-        return result;
-      }
-      result = -a.cellId.compareTo(b.cellId);
-      if (result != 0) {
-        return result;
-      }
-      return Integer.compare(a.label, b.label);
-    };
+    public static final Comparator<Delta> BY_START_CELL_NEG_LABEL =
+        (a, b) -> {
+          int result = a.startId.compareTo(b.startId);
+          if (result != 0) {
+            return result;
+          }
+          result = -a.cellId.compareTo(b.cellId);
+          if (result != 0) {
+            return result;
+          }
+          return Integer.compare(a.label, b.label);
+        };
 
     private final S2CellId startId;
     private final S2CellId cellId;

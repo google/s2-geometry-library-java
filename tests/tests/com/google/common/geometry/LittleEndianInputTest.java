@@ -15,15 +15,23 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import com.google.common.primitives.Bytes;
 import com.google.common.primitives.Ints;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.Arrays;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link LittleEndianInput}. */
-public class LittleEndianInputTest extends TestCase {
+@RunWith(JUnit4.class)
+public class LittleEndianInputTest {
+  @Test
   public void testByte() throws IOException {
     LittleEndianInput input = input(0, -1);
     assertEquals(0, input.readByte());
@@ -31,6 +39,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testBytes() throws IOException {
     LittleEndianInput input = input(0, 1, 2, 3, 4, 5);
     byte[][] expected = {Bytes.toArray(Ints.asList(0, 1, 2)), Bytes.toArray(Ints.asList(3, 4, 5))};
@@ -39,6 +48,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testInt() throws IOException {
     LittleEndianInput input = input(0, 0, 0, 0, -1, -1, -1, -1);
     assertEquals(0, input.readInt());
@@ -46,6 +56,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testLong() throws IOException {
     LittleEndianInput input = input(0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1, -1);
     assertEquals(0L, input.readLong());
@@ -53,6 +64,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testFloat() throws IOException {
     LittleEndianInput input = input(0, 0, 0, 0, 1, 0, 0, 0, 0, 0, -64, 127, 0, 0, 0x80, 0x7F);
     assertEquals(0F, input.readFloat(), 0F);
@@ -62,6 +74,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testDouble() throws IOException {
     LittleEndianInput input =
         input(
@@ -74,6 +87,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testVarint32() throws IOException {
     LittleEndianInput input = input(0, 1, 127, 0xa2, 0x74);
     assertEquals(0, input.readVarint32());
@@ -84,6 +98,7 @@ public class LittleEndianInputTest extends TestCase {
     expectEOF(input);
   }
 
+  @Test
   public void testVarint64() throws IOException {
     LittleEndianInput input =
         input(

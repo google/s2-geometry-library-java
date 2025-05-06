@@ -20,6 +20,9 @@ import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
 import static java.lang.Math.tan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -27,8 +30,12 @@ import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
 import com.google.common.geometry.S2ClosestPointQuery.Result;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies {@link S2ClosestPointQuery}. */
+@RunWith(JUnit4.class)
 public class S2ClosestPointQueryTest extends GeometryTestCase {
   /** The approximate radius of S2Cap from which query points are chosen. */
   protected static final S1Angle QUERY_RADIUS = kmToAngle(10);
@@ -39,6 +46,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
    */
   private static final double MAX_CHORD_ANGLE_ERROR = 1e-15;
 
+  @Test
   public void testNoPoints() {
     S2PointIndex<Integer> index = new S2PointIndex<>();
     S2ClosestPointQuery<Integer> query = new S2ClosestPointQuery<>(index);
@@ -46,6 +54,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     assertEquals(0, query.findClosestPoints(S2Point.X_POS).size());
   }
 
+  @Test
   public void testManyDuplicatePoints() {
     int numPoints = 10000;
     S2PointIndex<Integer> index = new S2PointIndex<>();
@@ -56,6 +65,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     assertEquals(numPoints, new PointTarget(S2Point.X_POS).findClosestPoints(query).size());
   }
 
+  @Test
   public void testPoints() {
     int numIndexes = 10;
     int numPoints = 1000;
@@ -63,6 +73,18 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     for (PointFactory factory : PointFactory.values()) {
       checkFactory(factory, numIndexes, numPoints, numQueries);
     }
+  }
+
+  @Test
+  public void testFilteredPoints() {
+    int numPoints = 10000;
+    S2PointIndex<Integer> index = new S2PointIndex<>();
+    for (int i = 0; i < numPoints; ++i) {
+      index.add(S2Point.X_POS, i);
+    }
+    S2ClosestPointQuery<Integer> query = new S2ClosestPointQuery<>(index);
+    query.setFilter(x -> x.entry().data() % 2 == 0);
+    assertEquals(numPoints / 2, new PointTarget(S2Point.X_POS).findClosestPoints(query).size());
   }
 
   /**

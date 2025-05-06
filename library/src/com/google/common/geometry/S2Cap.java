@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
+import static com.google.common.geometry.S2.isUnitLength;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.asin;
@@ -31,6 +32,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.Collection;
+import java.util.Collections;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
@@ -55,22 +58,27 @@ import jsinterop.annotations.JsType;
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2Cap implements S2Region, Serializable {
+@SuppressWarnings("Assertion")
+public final class S2Cap implements S2Region, Serializable {
   /** An {@link S2Coder} that uses {@link #encode} and {@link #decode}. */
-  public static final S2Coder<S2Cap> CODER = new S2Coder<S2Cap>() {
-    @JsIgnore  // OutputStream is not available to J2CL.
-    @Override public void encode(S2Cap value, OutputStream output) throws IOException {
-      value.encode(output);
-    }
+  public static final S2Coder<S2Cap> CODER =
+      new S2Coder<S2Cap>() {
+        @JsIgnore // OutputStream is not available to J2CL.
+        @Override
+        public void encode(S2Cap value, OutputStream output) throws IOException {
+          value.encode(output);
+        }
 
-    @Override public S2Cap decode(Bytes data, Cursor cursor) throws IOException {
-      return S2Cap.decode(data.toInputStream(cursor));
-    }
+        @Override
+        public S2Cap decode(Bytes data, Cursor cursor) throws IOException {
+          return S2Cap.decode(data.toInputStream(cursor));
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   private final S2Point axis;
   private final S1ChordAngle radius;
@@ -81,7 +89,7 @@ public final strictfp class S2Cap implements S2Region, Serializable {
   private S2Cap(S2Point axis, S1ChordAngle radius) {
     this.axis = axis;
     this.radius = radius;
-    // assert (isValid());
+    assert isValid();
   }
 
   /**
@@ -97,27 +105,29 @@ public final strictfp class S2Cap implements S2Region, Serializable {
    * the cap axis from the cap center. 'axis' should be a unit-length vector.
    */
   public static S2Cap fromAxisHeight(S2Point axis, double height) {
-    // assert (S2.isUnitLength(axis));
+    assert isUnitLength(axis);
     return new S2Cap(axis, S1ChordAngle.fromLength2(2 * height));
   }
 
   /**
    * Creates a S2Cap given its axis and the cap opening angle, i.e. maximum angle between the axis
-   * and a point on the cap. 'axis' should be a unit-length vector, and 'angle' should be between 0
-   * and 180 degrees.
+   * and a point on the cap. 'axis' must be a unit-length vector, and 'angle' should normally be
+   * between 0 and 180 degrees. However, negative angles are valid, and represent empty caps. If the
+   * angle is greater than 180, it is clamped to 180 and the result is a cap covering the entire
+   * sphere. Requires that 'axis' is a unit-length vector.
    */
   public static S2Cap fromAxisAngle(S2Point axis, S1Angle angle) {
-    // assert (S2.isUnitLength(axis));
+    Preconditions.checkArgument(isUnitLength(axis));
     // The "min" calculation below is necessary to handle S1Angle.INFINITY.
     return fromAxisChord(axis, S1ChordAngle.fromS1Angle(S1Angle.radians(min(angle.radians(), PI))));
   }
 
   /**
    * Create a cap given its axis and its area in steradians. 'axis' should be a unit-length vector,
-   * and 'area' should be between 0 and 4 * PI.
+   * and 'area' should be between 0 and 4 * PI. Requires that 'axis' is a unit-length vector.
    */
   public static S2Cap fromAxisArea(S2Point axis, double area) {
-    // assert (S2.isUnitLength(axis));
+    Preconditions.checkArgument(isUnitLength(axis));
     return new S2Cap(axis, S1ChordAngle.fromLength2(area / PI));
   }
 
@@ -193,7 +203,7 @@ public final strictfp class S2Cap implements S2Region, Serializable {
    * <p>Negative angles or heights are valid, and represent empty caps.
    */
   public boolean isValid() {
-    return S2.isUnitLength(axis) && radius.getLength2() <= 4;
+    return isUnitLength(axis) && radius.getLength2() <= 4;
   }
 
   /** Return true if the cap is empty, i.e. it contains no points. */
@@ -262,22 +272,24 @@ public final strictfp class S2Cap implements S2Region, Serializable {
 
   /**
    * Return true if and only if the given point is contained in the interior of the region (i.e. the
-   * region excluding its boundary). 'p' should be a unit-length vector.
+   * region excluding its boundary). 'p' must be a unit-length vector.
    */
   public boolean interiorContains(S2Point p) {
-    // assert (S2.isUnitLength(p));
+    Preconditions.checkArgument(isUnitLength(p));
     return isFull() || new S1ChordAngle(axis, p).compareTo(radius) < 0;
   }
 
   /**
-   * Increase the cap radius if necessary to include the given point. If the cap is empty the axis
-   * is set to the given point, but otherwise it is left unchanged.
+   * Returns a new S2Cap constructed by increasing the current cap radius if necessary to include
+   * the given point. If the cap is empty the axis is set to the given point, but otherwise the axis
+   * is not changed. Consider using S2Cap.Builder instead, which will reposition the cap to minimize
+   * the radius.
    *
    * @param p must be {@link S2#isUnitLength unit length}
    */
   @CheckReturnValue
   public S2Cap addPoint(S2Point p) {
-    // assert (S2.isUnitLength(p));
+    Preconditions.checkArgument(isUnitLength(p));
     if (isEmpty()) {
       return new S2Cap(p, S1ChordAngle.ZERO);
     } else {
@@ -290,8 +302,9 @@ public final strictfp class S2Cap implements S2Region, Serializable {
   }
 
   /**
-   * Increase the cap radius if necessary to include the given cap. If the current cap is empty, it
-   * is set to the given other cap.
+   * Normally returns a new S2Cap constructed by increasing the current cap radius if necessary to
+   * include the given cap, keeping the current axis. However, if this cap is empty the other is
+   * returned, and if the other cap is empty, this cap is returned.
    */
   @CheckReturnValue
   public S2Cap addCap(S2Cap other) {
@@ -301,10 +314,11 @@ public final strictfp class S2Cap implements S2Region, Serializable {
       return this;
     } else {
       // We round up the distance to ensure that the cap is actually contained.
-      // TODO(user): Do some error analysis in order to guarantee this.
       S1ChordAngle dist = S1ChordAngle.add(new S1ChordAngle(axis, other.axis), other.radius);
-      S1ChordAngle roundedUp = dist.plusError(S2.DBL_EPSILON * dist.getLength2());
-      return new S2Cap(axis, S1ChordAngle.max(radius, roundedUp));
+      dist =
+          dist.plusError(
+              (2 * S2.DBL_EPSILON + S1ChordAngle.RELATIVE_SUM_ERROR) * dist.getLength2());
+      return new S2Cap(axis, S1ChordAngle.max(radius, dist));
     }
   }
 
@@ -329,8 +343,6 @@ public final strictfp class S2Cap implements S2Region, Serializable {
       return this;
     }
 
-    // TODO(torrey): This calculation would be more efficient using S1ChordAngles. Same in C++.
-
     // The distance between the cap centers.
     S1Angle thisRadius = angle();
     S1Angle otherRadius = other.angle();
@@ -338,12 +350,79 @@ public final strictfp class S2Cap implements S2Region, Serializable {
     if (thisRadius.greaterOrEquals(distance.add(otherRadius))) {
       return this;
     }
-
     S1Angle resultRadius = distance.add(thisRadius).add(otherRadius).mul(0.5);
-    S2Point resultAxis = S2EdgeUtil.interpolateAtDistance(
-        distance.sub(thisRadius).add(otherRadius).mul(0.5),
-        axis, other.axis, distance);
+    S2Point resultAxis =
+        S2EdgeUtil.getPointOnLine(
+            axis, other.axis, distance.sub(thisRadius).add(otherRadius).mul(0.5));
     return S2Cap.fromAxisAngle(resultAxis, resultRadius);
+  }
+
+  /** Builder for constructing a minimal {@link S2Cap} that includes added points and edges. */
+  public static class Builder {
+    private S2Point axis = null;
+    private S1Angle radius = null;
+
+    /** Constructs a new empty Builder. */
+    public Builder() {}
+
+    /** Returns a new {@link S2Cap} from the current state of this Builder. */
+    public S2Cap build() {
+      if (radius == null) {
+        return S2Cap.empty();
+      }
+      if (radius.radians() > PI) {
+        return S2Cap.full();
+      }
+      return S2Cap.fromAxisAngle(axis, radius);
+    }
+
+    /** Return true if the cap is empty, i.e. it contains no points. */
+    public boolean isEmpty() {
+      return radius == null;
+    }
+
+    /** Return true if the cap is full, i.e. it contains all points. */
+    public boolean isFull() {
+      return radius != null && radius.radians() >= PI;
+    }
+
+    /** Enlarges this Builder to include the given edge. */
+    public void add(S2Shape.MutableEdge edge) {
+      if (isFull()) {
+        return;
+      }
+
+      if (isEmpty()) {
+        axis = edge.getStart().add(edge.getEnd()).normalize();
+        radius = new S1Angle(edge.getStart(), edge.getEnd());
+        return;
+      }
+
+      add(edge.getStart());
+      add(edge.getEnd());
+    }
+
+    /** Enlarges this Builder to include the given point. */
+    public void add(S2Point p) {
+      if (isFull()) {
+        return;
+      }
+
+      if (isEmpty()) {
+        axis = p;
+        radius = S1Angle.ZERO;
+        return;
+      }
+
+      // Is the point already inside the cap?
+      S1Angle distance = new S1Angle(axis, p);
+      if (radius.greaterOrEquals(distance)) {
+        return;
+      }
+
+      axis = S2EdgeUtil.getPointOnLine(axis, p, distance.sub(radius).mul(0.5));
+      radius = distance.add(radius).mul(0.5);
+    }
   }
 
   // //////////////////////////////////////////////////////////////////////
@@ -402,6 +481,30 @@ public final strictfp class S2Cap implements S2Region, Serializable {
       }
     }
     return new S2LatLngRect(new R1Interval(lat[0], lat[1]), new S1Interval(lng[0], lng[1]));
+  }
+
+  /**
+   * Computes a covering of the S2Cap. In general the covering consists of at most 4 cells except
+   * for very large caps, which may need up to 6 cells. The output is not sorted.
+   */
+  @Override
+  public void getCellUnionBound(Collection<S2CellId> results) {
+    // TODO(ericv): The covering could be made quite a bit tighter by mapping the cap to a rectangle
+    //  in (i,j)-space and finding a covering for that.
+    results.clear();
+
+    // Find the maximum level such that the cap contains at most one cell vertex and such that
+    // S2CellId.appendVertexNeighbors() can be called.
+    int level = S2Projections.MIN_WIDTH.getMaxLevel(angle().radians()) - 1;
+
+    // If level < 0, then more than three face cells are required.
+    if (level < 0) {
+      Collections.addAll(results, S2CellId.FACE_CELLS);
+    } else {
+      // The covering consists of the 4 cells at the given level that share the
+      // cell vertex that is closest to the cap center.
+      S2CellId.fromPoint(axis).getVertexNeighbors(level, results);
+    }
   }
 
   @Override
@@ -488,11 +591,15 @@ public final strictfp class S2Cap implements S2Region, Serializable {
     return false;
   }
 
+  /**
+   * Returns true if this cap contains the point 'p'. Requires that 'p' is a unit-length vector,
+   * which is a Precondition check.
+   */
   @Override
   @JsMethod(name = "containsPoint")
   public boolean contains(S2Point p) {
-    // The point 'p' should be a unit-length vector.
-    // assert (S2.isUnitLength(p));
+    // Note that the S1ChordAngle constructor has a precondition check that its parameters are unit
+    // length.
     return new S1ChordAngle(axis, p).compareTo(radius) <= 0;
   }
 
@@ -569,6 +676,9 @@ public final strictfp class S2Cap implements S2Region, Serializable {
   /** Returns a new S2Cap decoded from the given little endian input stream. */
   static S2Cap decode(LittleEndianInput is) throws IOException {
     S2Point axis = S2Point.decode(is);
+    if (!isUnitLength(axis)) {
+      throw new IOException("Decoded axis is not unit length: " + axis);
+    }
     double length2 = is.readDouble();
     // Negative values encode an empty cap, but length2 must be a number.
     if (Double.isNaN(length2)) {

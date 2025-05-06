@@ -27,6 +27,11 @@ public final class LittleEndianOutput {
     this.output = output;
   }
 
+  /** Returns the output stream. */
+  public OutputStream output() {
+    return output;
+  }
+
   /** Writes a byte. */
   public void writeByte(byte value) throws IOException {
     output.write((int) value);

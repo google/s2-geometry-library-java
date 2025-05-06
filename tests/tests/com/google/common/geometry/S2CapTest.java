@@ -20,14 +20,24 @@ import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2.M_PI_4;
 import static com.google.common.geometry.S2.M_SQRT2;
 import static java.lang.Math.atan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2Cap. */
-public strictfp class S2CapTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2CapTest extends GeometryTestCase {
   public S2Point getLatLngPoint(double latDegrees, double lngDegrees) {
     return S2LatLng.fromDegrees(latDegrees, lngDegrees).toPoint();
   }
@@ -35,6 +45,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
   // About 9 times the double-precision roundoff relative error.
   public static final double EPS = 1e-15;
 
+  @Test
   public void testBasic() {
     // Test basic properties of empty and full caps.
     S2Cap empty = S2Cap.empty();
@@ -46,7 +57,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(full.isFull());
     assertTrue(full.complement().isEmpty());
     assertExactly(2.0, full.height());
-    assertDoubleEquals(full.angle().degrees(), 180);
+    assertAlmostEquals(full.angle().degrees(), 180);
 
     // Test the S1Angle constructor using out-of-range arguments.
     assertTrue(S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.radians(-20)).isEmpty());
@@ -138,16 +149,19 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertFalse(concave.contains(S2Cap.fromAxisHeight(concave.axis().neg(), 0.1)));
   }
 
+  @Test
   public void testAddEmptyCapToNonEmptyCap() {
     S2Cap nonEmptyCap = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.degrees(10));
     assertEquals(nonEmptyCap, nonEmptyCap.addCap(S2Cap.empty()));
   }
 
+  @Test
   public void testAddNonEmptyCapToEmptyCap() {
     S2Cap nonEmptyCap = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.degrees(10));
     assertEquals(nonEmptyCap, S2Cap.empty().addCap(nonEmptyCap));
   }
 
+  @Test
   public void testCustomEmpty() {
     // Verifies that clients can still create custom negative-height empty caps.
     S2Cap empty = S2Cap.fromAxisHeight(S2Point.X_POS, -1);
@@ -155,6 +169,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(empty.isEmpty());
   }
 
+  @Test
   public void testRectBound() {
     // Empty and full caps.
     assertTrue(S2Cap.empty().getRectBound().isEmpty());
@@ -162,7 +177,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
 
     final double kDegreeEps = 1e-13;
     // Maximum allowable error for latitudes and longitudes measured in degrees. (assertDoubleNear
-    // uses a fixed tolerance that is too relaxed, and assertDoubleEquals is too strict.)
+    // uses a fixed tolerance that is too relaxed, and assertAlmostEquals is too strict.)
 
     // Cap that includes the south pole.
     S2LatLngRect rect =
@@ -176,7 +191,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
         S2Cap.fromAxisAngle(new S2Point(1, 0, 1).normalize(), S1Angle.radians(M_PI_4))
             .getRectBound();
     assertExactly(rect.lat().lo(), 0);
-    assertDoubleEquals(rect.lat().hi(), M_PI_2);
+    assertAlmostEquals(rect.lat().hi(), M_PI_2);
     assertTrue(rect.lng().isFull());
 
     rect =
@@ -206,6 +221,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(rect.lng().isFull());
   }
 
+  @Test
   public void testCells() {
     // For each cube face, we construct some cells on that face and some caps whose positions are
     // relative to that face, and then check for the expected intersection/containment results.
@@ -269,6 +285,19 @@ public strictfp class S2CapTest extends GeometryTestCase {
     }
   }
 
+  @Test
+  public void testGetCellUnionBoundLevel1Radius() {
+    // Check that a cap whose radius is approximately the width of a level 1 S2Cell can be covered
+    // by only 3 faces.
+    S2Cap cap = S2Cap.fromAxisAngle(
+        new S2Point(1, 1, 1).normalize(),
+        S1Angle.radians(S2Projections.MIN_WIDTH.getValue(1)));
+    List<S2CellId> covering = new ArrayList<>();
+    cap.getCellUnionBound(covering);
+    assertEquals(3, covering.size());
+  }
+
+  @Test
   public void testExpanded() {
     assertTrue(S2Cap.empty().expanded(S1Angle.radians(2)).isEmpty());
     assertTrue(S2Cap.full().expanded(S1Angle.radians(2)).isFull());
@@ -280,6 +309,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(cap50.expanded(S1Angle.degrees(130.01)).isFull());
   }
 
+  @Test
   public void testGetCentroid() {
     // Empty and full caps.
     assertEquals(new S2Point(), S2Cap.empty().getCentroid());
@@ -296,6 +326,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testUnion() {
     // Two caps which have the same center but one has a larger radius.
     S2Cap a = S2Cap.fromAxisAngle(getLatLngPoint(50.0, 10.0), S1Angle.degrees(0.2));
@@ -344,6 +375,7 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertTrue(hemi.union(hemi.complement()).isFull());
   }
 
+  @Test
   public void testSerialization() throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     S2Cap testCap = S2Cap.fromAxisHeight(S2Point.X_NEG, 0.123);
@@ -351,14 +383,17 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertEquals(testCap, S2Cap.decode(new ByteArrayInputStream(bos.toByteArray())));
   }
 
+  @Test
   public void testDecodeEmptyCap() throws IOException {
     checkCoder("000000000000F03F00000000000000000000000000000000000000000000F0BF", S2Cap.empty());
   }
 
+  @Test
   public void testDecodeFullCap() throws IOException {
     checkCoder("000000000000F03F000000000000000000000000000000000000000000001040", S2Cap.full());
   }
 
+  @Test
   public void testDecodeCapWithHeight() throws IOException {
     checkCoder(
         "00000000000000000000000000000000000000000000F03F0000000000001040",
@@ -374,8 +409,15 @@ public strictfp class S2CapTest extends GeometryTestCase {
     assertEquals(hex, testFormat.encode(baos.toByteArray()));
   }
 
+  @Test
   public void testCoder() throws IOException {
     S2Cap cap = S2Cap.fromAxisChord(S2Point.Y_POS, S1ChordAngle.RIGHT);
     assertEquals(cap, roundtrip(S2Cap.CODER, cap));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2CapSerialization() {
+    doSerializationTest(S2Cap.fromAxisArea(new S2Point(0.1, 0.2, 0.3).normalize(), 5));
   }
 }

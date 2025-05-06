@@ -15,12 +15,13 @@
  */
 package com.google.common.geometry.benchmarks;
 
+import static com.google.common.geometry.S2TextFormat.makeLoop;
 import static com.google.common.geometry.TestDataGenerator.makeFractal;
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2LatLng;
@@ -31,7 +32,6 @@ import com.google.common.geometry.S2Polygon;
 import com.google.common.geometry.S2Shape;
 import com.google.common.geometry.S2ShapeIndex;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -78,12 +78,12 @@ public class S2LaxPolygonBenchmark {
         makeFractal(5, 500),
         makeFractal(6, 600));
 
-    final List<List<S2Point>> vertices;
-    final List<List<S2CellId>> cells;
+    final ImmutableList<ImmutableList<S2Point>> vertices;
+    final ImmutableList<ImmutableList<S2CellId>> cells;
 
     Geo(S2Loop... loops) {
-      this.vertices = new ArrayList<>();
-      this.cells = new ArrayList<>();
+      ImmutableList.Builder<ImmutableList<S2Point>> verts = ImmutableList.builder();
+      ImmutableList.Builder<ImmutableList<S2CellId>> cells = ImmutableList.builder();
 
       for (S2Loop loop : loops) {
         List<S2Point> points = new ArrayList<>();
@@ -92,9 +92,12 @@ public class S2LaxPolygonBenchmark {
           points.add(v);
           ids.add(S2CellId.fromPoint(v));
         }
-        vertices.add(points);
-        cells.add(ids);
+        verts.add(ImmutableList.copyOf(points));
+        cells.add(ImmutableList.copyOf(ids));
       }
+
+      this.vertices = verts.build();
+      this.cells = cells.build();
     }
 
     S2Polygon poly() {
@@ -149,7 +152,7 @@ public class S2LaxPolygonBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       ShapeFactory shapeFactory = ShapeFactory.S2POLYGON;
       shape = shapeFactory.create(geo);
@@ -180,7 +183,7 @@ public class S2LaxPolygonBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       shape = shapeFactory.create(geo);
     }

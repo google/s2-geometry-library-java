@@ -25,7 +25,8 @@ import static com.google.common.geometry.S2Point.X_POS;
 import static com.google.common.geometry.S2Point.Y_POS;
 import static com.google.common.geometry.S2Point.Z_NEG;
 import static com.google.common.geometry.S2Point.Z_POS;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2RobustCrossProd.robustCrossProd;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.acos;
@@ -34,9 +35,14 @@ import static java.lang.Math.atan2;
 import static java.lang.Math.max;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
-import static junit.framework.TestCase.assertSame;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
@@ -45,6 +51,10 @@ import com.google.common.geometry.S2EdgeUtil.ResultError;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
 import java.math.BigDecimal;
 import java.util.Collection;
+import org.junit.Assert;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link S2EdgeUtil}.
@@ -52,12 +62,8 @@ import java.util.Collection;
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp class S2EdgeUtilTest extends GeometryTestCase {
-  /**
-   * S2.robustCrossing() is allowed to return 0 or -1 if either edge is degenerate. We use this
-   * value to represent this possibility.
-   */
-  private static final int DEGEN = -2;
+@RunWith(JUnit4.class)
+public class S2EdgeUtilTest extends GeometryTestCase {
 
   /** Maximum allowed error in latlng calculations. */
   private static final S2LatLng RECT_ERROR = S2EdgeUtil.RectBounder.maxErrorForTests();
@@ -65,16 +71,85 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
   /** The approximate maximum error in S2EdgeUtil.getDistance() for small distances. */
   private static final double GET_DISTANCE_ABS_ERROR = 3 * DBL_EPSILON;
 
-  /**
-   * Helper that asserts actual equals expected, unless we expect a degenerate result, in which case
-   * we check that actual is either of the possible degenerate values.
-   */
-  private static void compareResult(int actual, int expected) {
-    if (expected == DEGEN) {
-      assertTrue(actual <= 0);
-    } else {
-      assertEquals(expected, actual);
-    }
+  // The tests below verify that default or NaN S2Point arguments don't cause crashes when
+  // assertions are disabled, as would be the case in production. Normally, assertions are expected
+  // to be thrown on those invalid inputs, and these tests also verify that.
+
+  private void checkCrossingSignInvalid(S2Point point, int expected) {
+    // Calling the constructor with assertions enabled should throw an AssertionError.
+    Assert.assertThrows(
+        AssertionError.class,
+        () -> {
+          EdgeCrosser unused = new EdgeCrosser(point, point);
+        });
+
+    // Calling the constructor and robustCrossing() with assertions disabled should not crash or
+    // throw an exception, but when assertions are enabled, robustCrossing() should throw an
+    // AssertionError.
+    EdgeCrosser crosser = uncheckedCreate(() -> new EdgeCrosser(point, point));
+    Assert.assertThrows(AssertionError.class, () -> crosser.robustCrossing(point, point));
+    assertEquals(expected, (long) uncheckedCreate(() -> crosser.robustCrossing(point, point)));
+  }
+
+  private void checkEdgeOrVertexCrossingInvalid(S2Point point, boolean expected) {
+    Assert.assertThrows(
+        AssertionError.class,
+        () -> {
+          EdgeCrosser unused = new EdgeCrosser(point, point);
+        });
+
+    EdgeCrosser crosser = uncheckedCreate(() -> new EdgeCrosser(point, point));
+    Assert.assertThrows(AssertionError.class, () -> crosser.edgeOrVertexCrossing(point, point));
+    assertEquals(expected, uncheckedCreate(() -> crosser.edgeOrVertexCrossing(point, point)));
+  }
+
+  private void checkSignedEdgeOrVertexCrossingInvalid(S2Point point, int expected) {
+    Assert.assertThrows(
+        AssertionError.class,
+        () -> {
+          EdgeCrosser unused = new EdgeCrosser(point, point);
+        });
+
+    EdgeCrosser crosser = uncheckedCreate(() -> new EdgeCrosser(point, point));
+    Assert.assertThrows(
+        AssertionError.class, () -> crosser.signedEdgeOrVertexCrossing(point, point));
+    assertEquals(
+        expected, (long) uncheckedCreate(() -> crosser.signedEdgeOrVertexCrossing(point, point)));
+  }
+
+  @Test // Regression test for b/393637044
+  @SuppressWarnings("FloatingPointLiteralPrecision") // to be identical to the C++ test.
+  public void distanceOptimizationIsConservative() {
+    // Verifies that updateMinInteriorDistance() computes the lower bound on the true distance
+    // conservatively. (This test used to fail.)
+    S2Point x = new S2Point(-0.017952729194524016, -0.30232422079175203, 0.95303607751077712);
+    S2Point a = new S2Point(-0.017894725505830295, -0.30229974986194175, 0.95304493075220664);
+    S2Point b = new S2Point(-0.017986591360900289, -0.30233851195954353, 0.95303090543659963);
+    S1ChordAngle minDistance = S2EdgeUtil.updateMinDistance(x, a, b, S1ChordAngle.INFINITY);
+
+    assertTrue(minDistance.equals(
+                   S2EdgeUtil.updateMinDistance(x, a, b, minDistance.successor())));
+  }
+
+  @Test
+  public void testInvalidDefaultPoints() throws Exception {
+    // Check that default-constructed S2Point arguments do throw assertions, when assertions are
+    // enabled, but don't cause crashes when assertions are disabled.
+    S2Point point = new S2Point();
+    checkCrossingSignInvalid(point, 0);
+    checkEdgeOrVertexCrossingInvalid(point, false);
+    checkSignedEdgeOrVertexCrossingInvalid(point, 0);
+  }
+
+  @Test
+  public void testInvalidNanPoints() throws Exception {
+    // Check that NaN S2Point arguments do throw assertions, when assertions are  enabled, but
+    // don't cause crashes when assertions are disabled.
+    double nan = Double.NaN;  // In c++ this test uses std::numeric_limits<double>::quiet_NaN();
+    S2Point point = new S2Point(nan, nan, nan);
+    checkCrossingSignInvalid(point, -1);
+    checkEdgeOrVertexCrossingInvalid(point, false);
+    checkSignedEdgeOrVertexCrossingInvalid(point, 0);
   }
 
   private void checkCrossing(
@@ -82,30 +157,56 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       S2Point b,
       S2Point c,
       S2Point d,
-      int robust,
-      boolean edgeOrVertex,
-      boolean simple) {
-    a = a.normalize();
-    b = b.normalize();
-    c = c.normalize();
-    d = d.normalize();
-    compareResult(S2EdgeUtil.robustCrossing(a, b, c, d), robust);
-    if (simple) {
-      assertEquals(robust > 0, S2EdgeUtil.simpleCrossing(a, b, c, d));
+      int crossingSign,
+      int signedCrossingSign,
+      boolean checkSimple) {
+    // For degenerate edges, robustCrossing() is documented to return 0 if two vertices from
+    // different edges are the same and -1 otherwise. The checkCrossings() function below uses
+    // various argument permutations that can sometimes create this case, so we fix it now if
+    // necessary.
+    if (a.equalsPoint(c) || a.equalsPoint(d) || b.equalsPoint(c) || b.equalsPoint(d)) {
+      crossingSign = 0;
     }
-    EdgeCrosser crosser = new EdgeCrosser(a, b, c);
-    compareResult(crosser.robustCrossing(d), robust);
-    compareResult(crosser.robustCrossing(c), robust);
 
+    // As a sanity check, make sure that the expected value of "signedCrossingSign" is consistent
+    // with its documented properties.
+    if (crossingSign == 1) {
+      assertEquals(signedCrossingSign, S2Predicates.sign(a, b, c));
+    } else if (crossingSign == 0 && signedCrossingSign != 0) {
+      assertEquals(signedCrossingSign, (a.equalsPoint(c) || b.equalsPoint(d)) ? 1 : -1);
+    }
+
+    assertEquals(crossingSign, S2EdgeUtil.robustCrossing(a, b, c, d));
+    boolean edgeOrVertex = signedCrossingSign != 0;
     assertEquals(edgeOrVertex, S2EdgeUtil.edgeOrVertexCrossing(a, b, c, d));
+
+    EdgeCrosser crosser = new EdgeCrosser(a, b, c);
+    assertEquals(crossingSign, crosser.robustCrossing(d));
+    assertEquals(crossingSign, crosser.robustCrossing(c));
+    assertEquals(crossingSign, crosser.robustCrossing(d, c));
+    assertEquals(crossingSign, crosser.robustCrossing(c, d));
+
+    crosser.restartAt(c);
     assertEquals(edgeOrVertex, crosser.edgeOrVertexCrossing(d));
     assertEquals(edgeOrVertex, crosser.edgeOrVertexCrossing(c));
+    assertEquals(edgeOrVertex, crosser.edgeOrVertexCrossing(d, c));
+    assertEquals(edgeOrVertex, crosser.edgeOrVertexCrossing(c, d));
+
+    crosser.restartAt(c);
+    assertEquals(signedCrossingSign, crosser.signedEdgeOrVertexCrossing(d));
+    assertEquals(-signedCrossingSign, crosser.signedEdgeOrVertexCrossing(c));
+    assertEquals(-signedCrossingSign, crosser.signedEdgeOrVertexCrossing(d, c));
+    assertEquals(signedCrossingSign, crosser.signedEdgeOrVertexCrossing(c, d));
 
     // Check that the crosser can be re-used.
     crosser = new EdgeCrosser(c, d);
     crosser.restartAt(a);
-    compareResult(crosser.robustCrossing(b), robust);
-    compareResult(crosser.robustCrossing(a), robust);
+    assertEquals(crossingSign, crosser.robustCrossing(b));
+    assertEquals(crossingSign, crosser.robustCrossing(a));
+
+    if (checkSimple) {
+      assertEquals(crossingSign > 0, S2EdgeUtil.simpleCrossing(a, b, c, d));
+    }
   }
 
   private void checkCrossings(
@@ -113,125 +214,116 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       S2Point b,
       S2Point c,
       S2Point d,
-      int robust,
-      boolean edgeOrVertex,
-      boolean simple) {
-    checkCrossing(a, b, c, d, robust, edgeOrVertex, simple);
-    checkCrossing(b, a, c, d, robust, edgeOrVertex, simple);
-    checkCrossing(a, b, d, c, robust, edgeOrVertex, simple);
-    checkCrossing(b, a, d, c, robust, edgeOrVertex, simple);
-    checkCrossing(a, a, c, d, DEGEN, false, false);
-    checkCrossing(a, b, c, c, DEGEN, false, false);
-    checkCrossing(a, a, c, c, DEGEN, false, false);
-    checkCrossing(a, b, a, b, 0, true, false);
-    checkCrossing(c, d, a, b, robust, edgeOrVertex ^ (robust == 0), simple);
+      int crossingSign,
+      int signedCrossingSign,
+      boolean checkSimple) {
+    a = a.normalize();
+    b = b.normalize();
+    c = c.normalize();
+    d = d.normalize();
+
+    checkCrossing(a, b, c, d, crossingSign, signedCrossingSign, checkSimple);
+    checkCrossing(b, a, c, d, crossingSign, -signedCrossingSign, checkSimple);
+    checkCrossing(a, b, d, c, crossingSign, -signedCrossingSign, checkSimple);
+    checkCrossing(b, a, d, c, crossingSign, signedCrossingSign, checkSimple);
+    checkCrossing(a, a, c, d, -1, 0, false);
+    checkCrossing(a, b, c, c, -1, 0, false);
+    checkCrossing(a, a, c, c, -1, 0, false);
+    checkCrossing(a, b, a, b, 0, 1, false);
+    if (crossingSign == 0) {
+      // For vertex crossings, if AB crosses CD then CD does not cross AB. In order to get the
+      // crossing sign right in both cases, all tests are specified such that AB crosses CD. The
+      // other case is tested here.
+      Preconditions.checkArgument(signedCrossingSign != 0);
+      checkCrossing(c, d, a, b, crossingSign, 0, checkSimple);
+    } else {
+      checkCrossing(c, d, a, b, crossingSign, -signedCrossingSign, checkSimple);
+    }
   }
 
   /**
    * The real tests of edge crossings are in loop and polygon unit tests, but we do a few simple
    * tests here.
    */
+  @SuppressWarnings("FloatingPointLiteralPrecision") // Can't be helped for values like 1e-323.
+  @Test
   public void testCrossings() {
-    // Two regular edges that cross.
+    // 1. Two regular edges that cross.
     checkCrossings(
         new S2Point(1, 2, 1), new S2Point(1, -3, 0.5),
         new S2Point(1, -0.5, -3), new S2Point(0.1, 0.5, 3),
-        1,
-        true,
-        true);
+        1, 1, true);
 
-    // Two regular edges that intersect antipodal points.
+    // 2. Two regular edges that intersect antipodal points.
     checkCrossings(
         new S2Point(1, 2, 1), new S2Point(1, -3, 0.5),
         new S2Point(-1, 0.5, 3), new S2Point(-0.1, -0.5, -3),
-        -1,
-        false,
-        true);
+        -1, 0, true);
 
-    // Two edges on the same great circle that start at antipodal points.
+    // 3. Two edges on the same great circle that start at antipodal points.
     checkCrossings(
         new S2Point(0, 0, -1), new S2Point(0, 1, 0),
         new S2Point(0, 1, 1), new S2Point(0, 0, 1),
-        -1,
-        false,
-        true);
+        -1, 0, true);
 
-    // Two edges that cross where one vertex is S2.origin().
+    // 4. Two edges that cross where one vertex is S2.origin().
     checkCrossings(
         new S2Point(1, 0, 0), S2.origin(),
         new S2Point(1, -0.1, 1), new S2Point(1, 1, -0.1),
-        1,
-        true,
-        true);
+        1, 1, true);
 
-    // Two edges that intersect antipodal points where one vertex is S2.origin().
+    // 5. Two edges that intersect antipodal points where one vertex is S2.origin().
     checkCrossings(
         new S2Point(1, 0, 0), S2.origin(),
         new S2Point(-1, 0.1, -1), new S2Point(-1, -1, 0.1),
-        -1,
-        false,
-        true);
+        -1, 0, true);
 
-    // Two edges that share an endpoint. The Ortho() direction is (-4,0,2), and edge CD is further
-    // CCW around (2,3,4) than AB.
+    // 6. Two edges that share an endpoint. The Ortho() direction is (-4,0,2), and edge AB is
+    // further CCW around (2,3,4) than CD.
     checkCrossings(
-        new S2Point(2, 3, 4), new S2Point(-1, 2, 5),
         new S2Point(7, -2, 3), new S2Point(2, 3, 4),
-        0,
-        false,
-        true);
+        new S2Point(2, 3, 4), new S2Point(-1, 2, 5),
+        0, -1, true);
 
-    // Two edges that barely cross each other near the middle of one edge. The edge AB is
+    // 7. Two edges that barely cross each other near the middle of one edge. The edge AB is
     // approximately in the x=y plane, while CD is approximately perpendicular to it and ends
     // exactly at the x=y plane.
     checkCrossings(
         new S2Point(1, 1, 1), new S2Point(1, nextAfter(1d, 0), -1),
         new S2Point(11, -12, -1), new S2Point(10, 10, 1),
-        1,
-        true,
-        false);
+        1, -1, false);
 
-    // In this version, the edges are separated by a distance of about 1e-15.
+    // 8. In this version, the edges are separated by a distance of about 1e-15.
     checkCrossings(
         new S2Point(1, 1, 1), new S2Point(1, nextAfter(1d, 2), -1),
         new S2Point(1, -1, 0), new S2Point(1, 1, 0),
-        -1,
-        false,
-        false);
+        -1, 0, false);
 
-    // In this version, the edges are separated by a distance of about 1e-640.
-    checkCrossings(
-        new S2Point(0, 0, 1), new S2Point(2, 1e-323, 1),
-        new S2Point(1, -1, 1), new S2Point(1e-323, 0, 1),
-        -1,
-        false,
-        false);
-
-    // Two edges that barely cross each other near the middle of one edge. Computing the exact
-    // determinant of some of the triangles in this test requires more than 2000 bits of precision.
-    checkCrossings(
-        new S2Point(1, -1e-323, -1e-323), new S2Point(1e-323, 1, 1e-323),
-        new S2Point(1, -1, 1e-323), new S2Point(1, 1, 0),
-        1,
-        true,
-        false);
-
-    // Two edges that barely cross each other near the end of both edges. This example cannot be
+    // 9. Two edges that barely cross each other near the end of both edges. This example cannot be
     // handled using regular double-precision arithmetic due to floating-point underflow.
     checkCrossings(
         new S2Point(0, 0, 1), new S2Point(2, -1e-323, 1),
         new S2Point(1, -1, 1), new S2Point(1e-323, 0, 1),
-        1,
-        true,
-        false);
+        1, -1, false);
 
-    // In this version, the edges are separated by a distance of about 1e-640.
+    // 10. In this version, the edges are separated by a distance of about 1e-640.
+    checkCrossings(
+        new S2Point(0, 0, 1), new S2Point(2, 1e-323, 1),
+        new S2Point(1, -1, 1), new S2Point(1e-323, 0, 1),
+        -1, 0, false);
+
+    // 11. Two edges that barely cross each other near the middle of one edge. Computing the exact
+    // determinant of some of the triangles in this test requires more than 2000 bits of precision.
+    checkCrossings(
+        new S2Point(1, -1e-323, -1e-323), new S2Point(1e-323, 1, 1e-323),
+        new S2Point(1, -1, 1e-323), new S2Point(1, 1, 0),
+        1, 1, false);
+
+    // 12. In this version, the edges are separated by a distance of about 1e-640.
     checkCrossings(
         new S2Point(1, 1e-323, -1e-323), new S2Point(-1e-323, 1, 1e-323),
         new S2Point(1, -1, 1e-323), new S2Point(1, 1, 0),
-        -1,
-        false,
-        false);
+        -1, 0, false);
   }
 
   private static S2LatLngRect getEdgeBound(S2Point a, S2Point b) {
@@ -246,6 +338,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return getEdgeBound(new S2Point(x1, y1, z1).normalize(), new S2Point(x2, y2, z2).normalize());
   }
 
+  @Test
   public void testMaxLatitudeSimple() {
     // Check cases where the min/max latitude is attained at a vertex.
     final double kCubeLat = asin(1 / sqrt(3)); // 35.26 degrees
@@ -267,16 +360,16 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     // kRectError).
 
     // Max latitude, CW edge
-    assertDoubleEquals(
+    assertAlmostEquals(
         M_PI_4 + 0.5 * RECT_ERROR.lat().radians(), getEdgeBound(1, 1, 1, 1, -1, 1).lat().hi());
     // Max latitude, CCW edge
-    assertDoubleEquals(
+    assertAlmostEquals(
         M_PI_4 + 0.5 * RECT_ERROR.lat().radians(), getEdgeBound(1, -1, 1, 1, 1, 1).lat().hi());
     // Min latitude, CW edge
-    assertDoubleEquals(
+    assertAlmostEquals(
         -M_PI_4 - 0.5 * RECT_ERROR.lat().radians(), getEdgeBound(1, -1, -1, -1, -1, -1).lat().lo());
     // Min latitude, CCW edge
-    assertDoubleEquals(
+    assertAlmostEquals(
         -M_PI_4 - 0.5 * RECT_ERROR.lat().radians(), getEdgeBound(-1, 1, -1, -1, -1, -1).lat().lo());
 
     // Check cases where the edge passes through one of the poles.
@@ -284,6 +377,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertExactly(-M_PI_2, getEdgeBound(.3, .4, -1, -.3, -.4, -1).lat().lo());
   }
 
+  @Test
   public void testMaxLatitudeRandom() {
     // Check that the maximum latitude of edges is computed accurately to within 3 * DBL_EPSILON
     // (the expected maximum error). We concentrate on maximum latitudes near the equator and
@@ -297,8 +391,8 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       S2Point u = data.getRandomPoint();
       // log is uniform
       u = new S2Point(u.x, u.y, S2.DBL_EPSILON * 1e-6 * pow(1e12, data.nextDouble())).normalize();
-      S2Point v = S2.robustCrossProd(new S2Point(0, 0, 1), u).normalize();
-      S2Point w = S2.robustCrossProd(u, v).normalize();
+      S2Point v = robustCrossProd(new S2Point(0, 0, 1), u).normalize();
+      S2Point w = robustCrossProd(u, v).normalize();
 
       // Construct a line segment AB that passes through U, and check that the maximum latitude of
       // this segment matches the latitude of U.
@@ -333,12 +427,12 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
     if (choice < 0.5) {
       // Return a point such that the distance squared to A will underflow.
-      return S2EdgeUtil.interpolateAtDistance(S1Angle.radians(1e-300), a, b);
+      return S2EdgeUtil.getPointOnLine(a, b, S1Angle.radians(1e-300));
     }
     // Otherwise return a point whose distance from A is near DBL_EPSILON such that the log of the
     // pdf is uniformly distributed.
     double distance = S2.DBL_EPSILON * 1e-5 * pow(1e6, data.nextDouble());
-    return S2EdgeUtil.interpolateAtDistance(S1Angle.radians(distance), a, b);
+    return S2EdgeUtil.getPointOnLine(a, b, S1Angle.radians(distance));
   }
 
   private S2Point randomPole() {
@@ -354,6 +448,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         new S2Point(data.nextDouble(), data.nextDouble(), 0).normalize(), randomPole());
   }
 
+  @Test
   public void testNearlyIdenticalOrAntipodalPoints() {
     // Test pairs of points that are either:
     //  - identical
@@ -433,6 +528,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return out;
   }
 
+  @Test
   public void testExpandForSubregions() {
     // First we check the various situations where the bound contains nearly-antipodal points. The
     // tests are organized into pairs where the two bounds are similar except that the first bound
@@ -496,6 +592,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
                 RECT_ERROR));
   }
 
+  @Test
   public void testLongitudePruner() {
     LongitudePruner pruner1 =
         new LongitudePruner(new S1Interval(0.75 * PI, -0.75 * PI), new S2Point(0, 1, 2));
@@ -534,6 +631,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertEquals(wedgeRelation, S2EdgeUtil.getWedgeRelation(a0, ab1, a2, b0, b2));
   }
 
+  @Test
   public void testWedges() {
     // For simplicity, all of these tests use an origin of (0, 0, 1). This shouldn't matter as long
     // as the lower-level primitives are implemented correctly.
@@ -664,8 +762,8 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     a = a.normalize();
     b = b.normalize();
     expectedClosest = expectedClosest.normalize();
-    // Note the 1e-15 epsilon is not needed by the C++ library, but we need it here due to use of
-    // strictfp.
+    // Note the 1e-15 epsilon is not needed by the C++ library, but we need it here.
+    // TODO(torrey): Investigate why this is needed, fix if possible.
     assertEquals(distanceRadians, S2EdgeUtil.getDistance(x, a, b).radians(), 1E-15);
     S2Point closest = S2EdgeUtil.getClosestPoint(x, a, b);
     if (expectedClosest.equals(ORIGIN)) {
@@ -679,6 +777,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertEquals(distanceRadians, minDistance.toAngle().radians(), 1e-15);
   }
 
+  @Test
   public void testDistance() {
     checkDistance(
         new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(0, 1, 0), 0, new S2Point(1, 0, 0));
@@ -776,6 +875,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertEquals(distanceRadians, maxDistance.toAngle().radians(), 1e-15);
   }
 
+  @Test
   public void testUpdateMaxDistance() {
     checkMaxDistance(new S2Point(1, 0, 1), X_POS, Y_POS, M_PI_2);
     checkMaxDistance(new S2Point(1, 0, -1), X_POS, Y_POS, M_PI_2);
@@ -825,6 +925,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInterpolate() {
     // A zero-length edge, getting the end points with 't' == 0 or 1.
     checkInterpolate(0, new S2Point(1, 0, 0), new S2Point(1, 0, 0), new S2Point(1, 0, 0));
@@ -882,6 +983,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInterpolateCanExtrapolate() {
     final S2Point i = new S2Point(1, 0, 0);
     final S2Point j = new S2Point(0, 1, 0);
@@ -914,6 +1016,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     checkInterpolate(1000, i, p, j);
   }
 
+  @Test
   public void testRepeatedInterpolation() {
     // Check that points do not drift away from unit length when repeated interpolations are done.
     for (int i = 0; i < 100; ++i) {
@@ -926,6 +1029,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetPointToLeftS1Angle() {
     S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
     S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
@@ -937,6 +1041,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertDoubleNear(S2.turnAngle(c, a, b), M_PI_2 /*radians*/, 1e-15);
   }
 
+  @Test
   public void testGetPointToLeftS1ChordAngle() {
     S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
     S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
@@ -948,6 +1053,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertDoubleNear(S2.turnAngle(c, a, b),  M_PI_2 /*radians*/, 1e-15);
   }
 
+  @Test
   public void testGetPointToRightS1Angle() {
     S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
     S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
@@ -959,6 +1065,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertDoubleNear(S2.turnAngle(c, a, b),  -M_PI_2 /*radians*/, 1e-15);
   }
 
+  @Test
   public void testGetPointToRightS1ChordAngle() {
     S2Point a = S2LatLng.fromDegrees(0, 0).toPoint();
     S2Point b = S2LatLng.fromDegrees(0, 5).toPoint();  // east
@@ -984,6 +1091,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     EXACT
   }
 
+  @Test
   public void testIntersectionError() {
     // We repeatedly construct two edges that cross near a random point "p", and measure the
     // distance from the actual intersection point "x" to the expected intersection point "p" and
@@ -1034,6 +1142,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     System.out.println(methodsUsed);
   }
 
+  @Test
   public void testGetIntersectionApproxError() {
     checkCrossingEdges(
         (S2Point a, S2Point b, S2Point c, S2Point d, S2Point p, double slope) -> {
@@ -1062,11 +1171,12 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         a0, a1, b0, b1, S2EdgeUtil.getIntersectionApprox(a0, a1, b0, b1, resultError));
   }
 
+  @Test
   public void testGetProjectionError() {
     checkCrossingEdges(
         (S2Point a, S2Point b, S2Point c, S2Point d, S2Point p, double slope) -> {
           // Precalculate abNorm and its length.
-          S2Point abNorm = S2.robustCrossProd(a, b);
+          S2Point abNorm = robustCrossProd(a, b);
           double abNormLen = abNorm.norm();
 
           // Test projection of c on (a, b). Will be twice dot(c, cross(a, b)) given how
@@ -1113,19 +1223,19 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     b1 = b1.normalize();
     expectedA = expectedA.normalize();
     expectedB = expectedB.normalize();
-    S2Point[] result = new S2Point[2];
+    S2Shape.MutableEdge result = new S2Shape.MutableEdge();
     S2EdgeUtil.getEdgePairClosestPoints(a0, a1, b0, b1, result);
-    if (result[0].equalsPoint(ORIGIN)) {
+    if (result.a.equalsPoint(ORIGIN)) {
       // This special value says that the result should be a0 or a1.
-      assertTrue(result[0].equalsPoint(a0) || result[0].equalsPoint(a1));
+      assertTrue(result.a.equalsPoint(a0) || result.a.equalsPoint(a1));
     } else {
-      assertTrue(S2.approxEquals(expectedA, result[0]));
+      assertTrue(S2.approxEquals(expectedA, result.a));
     }
     if (expectedB.equalsPoint(ORIGIN)) {
       // This special value says that the result should be b0 or b1.
-      assertTrue(result[1].equalsPoint(b0) || result[1].equalsPoint(b1));
+      assertTrue(result.b.equalsPoint(b0) || result.b.equalsPoint(b1));
     } else {
-      assertTrue(S2.approxEquals(expectedB, result[1]));
+      assertTrue(S2.approxEquals(expectedB, result.b));
     }
     assertEquals(
         S1ChordAngle.ZERO, S2EdgeUtil.getEdgePairMinDistance(a0, a1, b0, b1, S1ChordAngle.ZERO));
@@ -1136,6 +1246,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertDoubleNear(distanceRadians, actual.toAngle().radians(), 1e-15);
   }
 
+  @Test
   public void testEdgePairMinDistance() {
     // One edge is degenerate.
     checkEdgePairDistance(
@@ -1291,6 +1402,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
   }
 
   /** Simple tests for edge pair max distances. */
+  @Test
   public void testEdgePairMaxDistanceSimple() {
     // Some test points.
     S2Point center = ll(12, 12);
@@ -1320,6 +1432,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     checkEdgePairMaxDistance(north, nw, south, ss, ss.angle(nw));
   }
 
+  @Test
   public void testEdgePairMaxDistance() {
     // Standard situation. Same hemisphere, not degenerate.
     checkEdgePairMaxDistance(
@@ -1384,6 +1497,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         a.vertex(0), a.vertex(1), b.vertex(0), b.vertex(1), S1Angle.degrees(maxErrorDegrees));
   }
 
+  @Test
   public void testEdgeBNearEdgeA() {
     // Edge is near itself.
     assertTrue(isEdgeBNearEdgeA("5:5, 10:-5", "5:5, 10:-5", 1e-6));
@@ -1440,6 +1554,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     assertTrue(isEdgeBNearEdgeA("0:0, 1:0", "1.2:0, 1.1:0", 0.25));
   }
 
+  @Test
   public void testCollinearEdgesThatDontTouch() {
     final int kIters = 500;
     for (int iter = 0; iter < kIters; ++iter) {
@@ -1447,10 +1562,10 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       S2Point d = data.getRandomPoint();
       S2Point b = S2EdgeUtil.interpolate(0.05, a, d);
       S2Point c = S2EdgeUtil.interpolate(0.95, a, d);
-      assertTrue(0 > S2EdgeUtil.robustCrossing(a, b, c, d));
+      assertTrue(S2EdgeUtil.robustCrossing(a, b, c, d) < 0);
       EdgeCrosser crosser = new EdgeCrosser(a, b, c);
-      assertTrue(0 > crosser.robustCrossing(d));
-      assertTrue(0 > crosser.robustCrossing(c));
+      assertTrue(crosser.robustCrossing(d) < 0);
+      assertTrue(crosser.robustCrossing(c) < 0);
     }
   }
 
@@ -1461,6 +1576,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
   }
 
   @GwtIncompatible("fails due to inadequate robustness in J2CL's S2Predicates.sign method")
+  @Test
   public void testCoincidentZeroLengthEdgesThatDontTouch() {
     // It is important that the edge primitives can handle vertices that are exactly proportional to
     // each other, i.e. that are not identical but are nevertheless exactly coincident when
@@ -1502,21 +1618,16 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
       }
 
       // Verify that the expected edges do not cross.
-      assertTrue(0 > S2EdgeUtil.robustCrossing(a, b, c, d));
+      assertTrue(S2EdgeUtil.robustCrossing(a, b, c, d) < 0);
       EdgeCrosser crosser = new EdgeCrosser(a, b, c);
-      assertTrue(0 > crosser.robustCrossing(d));
-      assertTrue(0 > crosser.robustCrossing(c));
+      assertTrue(crosser.robustCrossing(d) < 0);
+      assertTrue(crosser.robustCrossing(c) < 0);
     }
   }
 
   private void checkFaceClipping(S2Point aRaw, S2Point bRaw) {
     S2Point a = aRaw.normalize();
     S2Point b = bRaw.normalize();
-    // TODO(user): Remove the following line once S2.robustCrossProd is extended to use
-    // simulation of simplicity.
-    if (a.equals(b.neg())) {
-      return;
-    }
 
     // First we test GetFaceSegments.
     FaceSegment[] segments = FaceSegment.allFaces();
@@ -1533,7 +1644,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
         b.angle(S2Projections.faceUvToXyz(segments[n - 1].face, segments[n - 1].b))
             <= S2EdgeUtil.FACE_CLIP_ERROR_RADIANS);
 
-    S2Point norm = S2.robustCrossProd(a, b).normalize();
+    S2Point norm = robustCrossProd(a, b).normalize();
     S2Point aTangent = norm.crossProd(a);
     S2Point bTangent = b.crossProd(norm);
     for (int i = 0; i < n; ++i) {
@@ -1634,6 +1745,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     return a;
   }
 
+  @Test
   public void testFaceClipping() {
     // Start with a few simple cases.
     // An edge that is entirely contained within one cube face:
@@ -1810,6 +1922,7 @@ public strictfp class S2EdgeUtilTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testEdgeClipping() {
     // Test clipping against random rectangles.
     for (int i = 0; i < 5; ++i) {

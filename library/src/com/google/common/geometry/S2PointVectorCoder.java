@@ -15,7 +15,10 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.levelIfCenter;
+import static com.google.common.geometry.S2Projections.siTiToSt;
+import static com.google.common.geometry.S2Projections.stToUV;
+import static com.google.common.geometry.S2Projections.xyzToFaceSiTi;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
@@ -75,6 +78,7 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
 
   /** The value of the FAST encoding format. */
   private static final int FORMAT_FAST = 0;
+
   /** The value of the COMPACT encoding format. */
   private static final int FORMAT_COMPACT = 1;
 
@@ -219,10 +223,10 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    *
    * <p>Each encodable point is first converted to the (sj, tj) representation defined below:
    *
-   * <pre>{@code
+   * {@snippet :
    * sj = (((face & 3) << 30) | (si >> 1)) >> (30 - level);
    * tj = (((face & 4) << 29) | ti) >> (31 - level);
-   * }</pre>
+   * }
    *
    * These two values encode the (face, si, ti) tuple using (2 * level + 3) bits. To see this,
    * recall that "si" and "ti" are 31-bit values that all share a common suffix consisting of a "1"
@@ -232,20 +236,20 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    *
    * <p>We then combine (sj, tj) into one 64-bit value by interleaving bit pairs:
    *
-   * <pre>{@code
+   * {@snippet :
    * v = interleaveBitPairs(sj, tj);
-   * }</pre>
+   * }
    *
    * (We could also interleave individual bits, but it is faster this way). The result is similar to
    * right-shifting an S2CellId by (61 - 2 * level), except that it is faster to decode and the
    * spatial locality is not quite as good.
    *
-   * <p>The 64-bit values are divided into blocks of size 8, and then each value is encoded as the
-   * sum of a base value, a per-block offset, and a per-value delta within that block:
+   * <p>The 64-bit values are divided into blocks of size BLOCK_SIZE, and then each value is encoded
+   * as the sum of a base value, a per-block offset, and a per-value delta within that block:
    *
-   * <pre>{@code
+   * {@snippet :
    * v[i,j] = base + offset[i] + delta[i, j]
-   * }</pre>
+   * }
    *
    * <p>where "i" represents a block and "j" represents an entry in that block.
    *
@@ -270,12 +274,12 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    * encoded in 2 bytes each, deltas are encoded in 2 nibbles (1 byte) each, and "overlap" is 4
    * bits:
    *
-   * <pre>{@code
+   * {@snippet :
    * Base:             1111111100000000-----------------
    * Offset:           -------------1111111100000000----
    * Delta:            -------------------------00000000
    * Overlap:                                   ^^^^
-   * }</pre>
+   * }
    *
    * <p>The numbers (0 or 1) in this diagram denote the byte number of the encoded value. Notice
    * that "base" is shifted so that it starts at the leftmost possible bit, "delta" always starts at
@@ -292,13 +296,13 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    * <p>Now we can move on to the actual encodings. First, there is a 2 byte header encoded as
    * follows:
    *
-   * <pre>{@code
+   * {@snippet :
    * Byte 0, bits 0-2: encodingFormat (COMPACT)
    * Byte 0, bit  3:   haveExceptions
    * Byte 0, bits 4-7: (lastBlockSize - 1)
    * Byte 1, bits 0-2: baseBytes
    * Byte 1, bits 3-7: level (0-30)
-   * }</pre>
+   * }
    *
    * <p>This is followed by an EncodedStringVector containing the encoded blocks. Each block
    * contains BLOCK_SIZE (8) values. The total size of the EncodedS2PointVector is not stored
@@ -312,11 +316,11 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    *
    * <p>Each block starts with a 1 byte header containing the following:
    *
-   * <pre>{@code
+   * {@snippet :
    * Byte 0, bits 0-2: (offsetBytes - overlapNibbles)
    * Byte 0, bit  3:   overlapNibbles
    * Byte 0, bits 4-7: (deltaNibbles - 1)
-   * }</pre>
+   * }
    *
    * <p>"overlapNibbles" is either 0 or 1 (indicating an overlap of 0 or 4 bits), while
    * "offsetBytes" is in the range 0-8 (indicating the number of bytes used to encode the offset for
@@ -329,10 +333,10 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    * bytes for the deltas.
    *
    * <p>If there are any points that could not be represented as S2CellIds, then "haveExceptions" in
-   * the header is true. In that case the delta values within each block are encoded as (delta + 8),
-   * and values 0-7 are used to represent exceptions. If a block has exceptions, they are encoded
-   * immediately following the array of deltas, and are referenced by encoding the corresponding
-   * exception index (0-7) as the delta.
+   * the header is true. In that case the delta values within each block are encoded as (delta +
+   * BLOCK_SIZE), and values 0 ... BLOCK_SIZE-1 are used to represent exceptions. If a block has
+   * exceptions, they are encoded immediately following the array of deltas, and are referenced by
+   * encoding the corresponding exception index (0 - BLOCK_SIZE - 1) as the delta.
    *
    * <p>TODO(user): A vector containing a single leaf cell is currently encoded as 13 bytes
    * (2 byte header, 7 byte base, 1 byte block count, 1 byte block length, 1 byte block header, 1
@@ -342,7 +346,7 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    * by the S2CellId bytes. The extra 2 header bits could be used to store single points using other
    * encodings, e.g. E7.
    *
-   * <p>If we wind up using 8-value blocks, we could also use the extra bit in the first byte of the
+   * <p>If we had used 8-value blocks, we could have used the extra bit in the first byte of the
    * header to indicate that there is only one value, and then skip the 2nd byte of header and the
    * EncodedStringVector. But this would be messy because it also requires special cases while
    * decoding. Essentially this would be a sub-format within the COMPACT format.
@@ -511,35 +515,36 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
         int deltaNibbles = (header >> 4) + 1;
 
         // Decode the offset for this block.
-        int offsetShift = (deltaNibbles - overlapNibbles) << 2;
-        long offset;
-        long delta;
-        try {
+        long offset = 0;
+        if (offsetBytes > 0) {
+          int offsetShift = (deltaNibbles - overlapNibbles) << 2;
           offset = data.readUintWithLength(data.cursor(position), offsetBytes) << offsetShift;
           position += offsetBytes;
-          long exceptionPosition = position;
+        }
 
-          // Decode the delta for the requested value.
-          int deltaNibbleOffset = (index & (BLOCK_SIZE - 1)) * deltaNibbles;
-          int deltaBytes = (deltaNibbles + 1) >> 1;
-          position += deltaNibbleOffset >> 1;
-          delta = data.readUintWithLength(data.cursor(position), deltaBytes);
-          delta >>>= (deltaNibbleOffset & 1) << 2;
-          delta &= bitMask(deltaNibbles << 2);
+        // Decode the delta for the requested value.
+        int deltaNibbleOffset = (index & (BLOCK_SIZE - 1)) * deltaNibbles;
+        int deltaBytes = (deltaNibbles + 1) >> 1;
+        long deltaPosition = position + (deltaNibbleOffset >> 1);
+        long delta = data.readUintWithLength(data.cursor(deltaPosition), deltaBytes);
+        delta >>>= (deltaNibbleOffset & 1) << 2;
+        delta &= bitMask(deltaNibbles << 2);
 
-          // Test whether this point is encoded as an exception.
-          if (haveExceptions) {
-            if (delta < BLOCK_SIZE) {
-              int blockSize = min(BLOCK_SIZE, size - (index & -BLOCK_SIZE));
-              exceptionPosition += (blockSize * deltaNibbles + 1) >> 1;
-              exceptionPosition += delta * SIZEOF_S2POINT;
-              return S2Point.decode(data.toInputStream(exceptionPosition));
+        // Test whether this point is encoded as an exception.
+        if (haveExceptions) {
+          if (delta < BLOCK_SIZE) {
+            int blockSize = min(BLOCK_SIZE, size - (index & -BLOCK_SIZE));
+            position += (blockSize * deltaNibbles + 1) >> 1;
+            position += delta * SIZEOF_S2POINT;
+            try {
+              return S2Point.decode(data.toInputStream(position));
+            } catch (IOException e) {
+              // This should never happen because Bytes.get() does not throw an IOException.
+              // It will throw an IndexOutOfBoundsException past the end of input.
+              throw new RuntimeException(e);
             }
-            delta -= BLOCK_SIZE;
           }
-        } catch (IOException e) {
-          // This should never happen because Bytes.get() does not throw an IOException.
-          throw new RuntimeException(e);
+          delta -= BLOCK_SIZE;
         }
 
         // Otherwise convert the 64-bit value back to an S2Point.
@@ -553,10 +558,7 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
         int si = (((sj << 1) | 1) << shift) & 0x7fffffff;
         int ti = (((tj << 1) | 1) << shift) & 0x7fffffff;
         int face = ((sj << shift) >>> 30) | (((tj << (shift + 1)) >>> 29) & 4);
-        return S2Projections.faceUvToXyz(
-                face,
-                PROJ.stToUV(S2Projections.siTiToSt(si)),
-                PROJ.stToUV(S2Projections.siTiToSt(ti)))
+        return S2Projections.faceUvToXyz(face, stToUV(siTiToSt(si)), stToUV(siTiToSt(ti)))
             .normalize();
       }
 
@@ -574,8 +576,10 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
   private static final class MutableBlockCode {
     /** Delta length in bits (multiple of 4). */
     int deltaBits;
+
     /** Offset length in bits (multiple of 8). */
     int offsetBits;
+
     /** {Delta, Offset} overlap in bits (0 or 4). */
     int overlapBits;
 
@@ -661,8 +665,8 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
     // Count the number of points at each level.
     int[] levelCounts = new int[S2CellId.MAX_LEVEL + 1];
     for (S2Point point : points) {
-      FaceSiTi faceSiTi = PROJ.xyzToFaceSiTi(point);
-      int level = PROJ.levelIfCenter(faceSiTi, point);
+      FaceSiTi faceSiTi = xyzToFaceSiTi(point);
+      int level = levelIfCenter(faceSiTi, point);
       cellPoints.add(new CellPoint(level, faceSiTi));
       if (level >= 0) {
         levelCounts[level]++;
@@ -793,8 +797,9 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
   }
 
   /**
-   * Given a vector of 64-bit values to be encoded and an {@link S2CellId} level, returns the
-   * optimal encoding parameters that should be used to encode each block.
+   * Given a vector of 64-bit values to be encoded and an {@link S2CellId} level, sets the given
+   * MutableBlockCode 'code' to the optimal encoding parameters that should be used to encode each
+   * block.
    */
   private static void getBlockCode(
       MutableBlockCode code, ImmutableLongArray values, long base, boolean haveExceptions) {
@@ -865,9 +870,11 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
       }
     }
 
-    // Avoid wasting 4 bits of delta when the block size is 1. This reduces the encoding size for
-    // single leaf cells by one byte.
-    if (values.length() == 1) {
+    // When the block size is 1 and no exceptions exist, we have deltaBits == 4 and overlapBits == 0
+    // which wastes 4 bits. We fix this below, which among other things reduces the encoding size
+    // for single leaf cells by one byte. (Note that when exceptions exist, deltaBits == 8 and
+    // overlapBits may be 0 or 4. These cases are covered by the unit tests.)
+    if (values.length() == 1 && !haveExceptions) {
       Preconditions.checkArgument(deltaBits == 4 && overlapBits == 0);
       deltaBits = 8;
     }

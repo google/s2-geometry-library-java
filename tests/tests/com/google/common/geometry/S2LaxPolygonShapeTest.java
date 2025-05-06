@@ -15,10 +15,15 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePolygon;
+import static com.google.common.geometry.S2CellId.FACE_CELLS;
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePolygon;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
@@ -29,8 +34,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2LaxPolygonShape}. */
+@RunWith(JUnit4.class)
 public class S2LaxPolygonShapeTest extends GeometryTestCase {
+  private static final S2Polygon POLYGON = makePolygon("0:0, 0:1, 1:0");
+  private static final S2Polygon SNAPPED_POLYGON = new S2Polygon(new S2Loop(ImmutableList.of(
+      FACE_CELLS[0].toPoint(),
+      FACE_CELLS[1].toPoint(),
+      FACE_CELLS[2].toPoint())));
+
+  @Test
   public void testEmptyPolygon() {
     S2LaxPolygonShape shape = S2LaxPolygonShape.create(new S2Polygon());
     assertEquals(0, shape.numChains());
@@ -41,6 +58,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertFalse(shape.getReferencePoint().contained());
   }
 
+  @Test
   public void testFullPolygon() {
     S2LaxPolygonShape shape = S2LaxPolygonShape.create(new S2Polygon(S2Loop.full()));
     assertEquals(1, shape.numChains());
@@ -51,6 +69,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertTrue(shape.getReferencePoint().contained());
   }
 
+  @Test
   public void testSingleVertexPolygon() {
     // S2Polygon doesn't support single-vertex loops, so construct an S2LaxPolygonShape directly.
     List<List<S2Point>> loops = Arrays.asList(parsePoints("0:0"));
@@ -70,6 +89,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertFalse(shape.getReferencePoint().contained());
   }
 
+  @Test
   public void testSingleLoopPolygon() {
     // Test S2Polygon constructor.
     List<S2Point> vertices = parsePoints("0:0, 0:1, 1:1, 1:0");
@@ -94,6 +114,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertFalse(S2ShapeUtil.containsBruteForce(shape, S2.origin()));
   }
 
+  @Test
   public void testMultiLoopPolygon() {
     // Test List<List<S2Point>> constructor.  Make sure that the loops are oriented so that the
     // interior of the polygon is always on the left.
@@ -124,6 +145,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertFalse(S2ShapeUtil.containsBruteForce(shape, S2.origin()));
   }
 
+  @Test
   public void testMultiLoopS2Polygon() {
     // Verify that the orientation of loops representing holes is reversed when converting from an
     // S2Polygon to an S2LaxPolygonShape.
@@ -137,6 +159,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testManyLoopPolygon() {
     // Test a polygon with enough loops so that cumulative_vertices_ is used.
     List<List<S2Point>> loops = new ArrayList<>();
@@ -164,6 +187,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertEquals(numVertices, shape.numEdges());
   }
 
+  @Test
   public void testDegenerateLoops() {
     S2LaxPolygonShape shape = S2LaxPolygonShape.create(Arrays.asList(
         parsePoints("1:1, 1:2, 2:2, 1:2, 1:3, 1:2, 1:1"),
@@ -172,6 +196,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertFalse(shape.getReferencePoint().contained());
   }
 
+  @Test
   public void testInvertedLoops() {
     S2LaxPolygonShape shape = S2LaxPolygonShape.create(Arrays.asList(
         parsePoints("1:2, 1:1, 2:2"),
@@ -179,6 +204,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     assertTrue(S2ShapeUtil.containsBruteForce(shape, S2.origin()));
   }
 
+  @Test
   public void testCompareToS2Loop() {
     for (int iter = 0; iter < 100; iter++) {
       S2FractalBuilder fractal = new S2FractalBuilder(data.rand);
@@ -192,6 +218,7 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     checkEncodeDecode(S2LaxPolygonShape.EMPTY);
     checkEncodeDecode(S2LaxPolygonShape.FULL);
@@ -207,13 +234,15 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     checkEncodeDecode(shape);
   }
 
+  @Test
   public void testCoderFast() {
-    S2LaxPolygonShape shape = S2LaxPolygonShape.create(S2PolygonTest.POLYGON);
+    S2LaxPolygonShape shape = S2LaxPolygonShape.create(POLYGON);
     assertShapesEqual(shape, roundtrip(S2LaxPolygonShape.FAST_CODER, shape));
   }
 
+  @Test
   public void testCoderCompact() {
-    S2LaxPolygonShape shape = S2LaxPolygonShape.create(S2PolygonTest.SNAPPED_POLYGON);
+    S2LaxPolygonShape shape = S2LaxPolygonShape.create(SNAPPED_POLYGON);
     assertShapesEqual(shape, roundtrip(S2LaxPolygonShape.COMPACT_CODER, shape));
   }
 
@@ -224,14 +253,13 @@ public class S2LaxPolygonShapeTest extends GeometryTestCase {
     S2ContainsPointQuery query = new S2ContainsPointQuery(index);
     for (int iter = 0; iter < 100; iter++) {
       S2Point point = data.samplePoint(cap);
-      assertEquals(loop.contains(point), query.shapeContains(shape, point));
+      assertEquals(loop.contains(point), query.shapeContains(0, point));
     }
   }
 
   private static List<S2Point> parsePoints(String str) {
     return Lists.transform(
-        Splitter.on(",").trimResults().splitToList(str),
-        TestDataGenerator::makePoint);
+        Splitter.on(",").trimResults().splitToList(str), S2TextFormat::makePoint);
   }
 
   private static MutableEdge edge(S2Shape shape, int edgeId) {

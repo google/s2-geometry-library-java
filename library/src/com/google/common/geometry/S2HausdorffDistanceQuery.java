@@ -54,7 +54,7 @@ import java.util.Optional;
  * finds the directed Hausdorff distance from A to B and the [undirected] Hausdorff distance between
  * A and B:
  *
- * <pre>{@code
+ * {@snippet :
  * boolean computeHausdorffDistances(
  *     S2ShapeIndex A,
  *     S2ShapeIndex B,
@@ -73,7 +73,7 @@ import java.util.Optional;
  *
  *   return true;
  * }
- * }</pre>
+ * }
  *
  * <p>For the definition of Hausdorff distance and other details see
  * https://en.wikipedia.org/wiki/Hausdorff_distance.
@@ -130,8 +130,8 @@ public final class S2HausdorffDistanceQuery {
     /**
      * The includeInteriors flag (true by default) indicates that the distance should be computed
      * not just to polygon boundaries of the source index, but to polygon interiors as well. For
-     * example, if target shape A is fully contained inside the source shape B, and
-     * includeInteriors is set to true, then the directed Hausdorff distance from A to B is zero.
+     * example, if target shape A is fully contained inside the source shape B, and includeInteriors
+     * is set to true, then the directed Hausdorff distance from A to B is zero.
      */
     @CanIgnoreReturnValue
     public Builder setIncludeInteriors(boolean includeInteriors) {
@@ -145,8 +145,7 @@ public final class S2HausdorffDistanceQuery {
     }
 
     /**
-     * Returns a new S2HausdorffDistanceQuery with options set from current values of this
-     * Builder.
+     * Returns a new S2HausdorffDistanceQuery with options set from current values of this Builder.
      */
     public S2HausdorffDistanceQuery build() {
       return new S2HausdorffDistanceQuery(new Options(this));
@@ -214,8 +213,8 @@ public final class S2HausdorffDistanceQuery {
   }
 
   /**
-   * Internal S2HausdorffDistanceQuery constructor from provided Options. Clients should use
-   * {@code S2HausdorffDistanceQuery query = S2HausdorffDistanceQuery.builder().build();}
+   * Internal S2HausdorffDistanceQuery constructor from provided Options. Clients should use {@code
+   * S2HausdorffDistanceQuery query = S2HausdorffDistanceQuery.builder().build();}
    */
   S2HausdorffDistanceQuery(Options options) {
     this.options = options;
@@ -239,10 +238,11 @@ public final class S2HausdorffDistanceQuery {
    * is not (in general case) equal to that from B (as target) to A (as source).
    */
   public Optional<DirectedResult> getDirectedResult(S2ShapeIndex target, S2ShapeIndex source) {
-    S2ClosestEdgeQuery.Query closestEdgeQuery = S2ClosestEdgeQuery.builder()
-        .setMaxResults(1)
-        .setIncludeInteriors(options.includeInteriors())
-        .build(source);
+    S2ClosestEdgeQuery.Query closestEdgeQuery =
+        S2ClosestEdgeQuery.builder()
+            .setMaxResults(1)
+            .setIncludeInteriors(options.includeInteriors())
+            .build(source);
 
     // maxDistance is repeatedly updated with the largest target-to-source distance found so far.
     maxDistance.reset();
@@ -272,6 +272,42 @@ public final class S2HausdorffDistanceQuery {
   }
 
   /**
+   * Returns true the directed Hausdorff distance is within the distance limit. Can be faster than
+   * computing the actual Hausdorff distance and comparing to the limit.
+   */
+  public boolean isDirectedDistanceLess(
+      S2ShapeIndex target, S2ShapeIndex source, S1ChordAngle distanceLimit) {
+    S2ClosestEdgeQuery.Query closestEdgeQuery =
+        S2ClosestEdgeQuery.builder()
+            .setMaxResults(1)
+            .setIncludeInteriors(options.includeInteriors())
+            .build(source);
+
+    // maxDistance is repeatedly updated with the largest target-to-source distance found so far.
+    maxDistance.reset();
+    // When maxDistance is updated, sourcePoint is updated to the corresponding point on the source.
+    sourcePoint = null;
+    // When maxDistance is updated, targetPoint is updated to the corresponding point on the target.
+    targetPoint = null;
+
+    // This approximation of Haussdorff distance is based on computing closest point distances from
+    // the _vertices_ of the target index to the _edges_ of the source index. Hence we iterate over
+    // all shapes in the target index, then over all chains in those shapes, then over all edges in
+    // those chains, and then over the edges' vertices.
+    for (S2Shape shape : target.getShapes()) {
+      for (List<S2Point> chain : shape.chains()) {
+        for (S2Point vertex : chain) {
+          updateMaxDistance(vertex, closestEdgeQuery);
+          if (maxDistance.distance().greaterThan(distanceLimit)) {
+            return false;
+          }
+        }
+      }
+    }
+    return !maxDistance.distance().isNegative();
+  }
+
+  /**
    * Same as {@link #getDirectedResult(S2ShapeIndex, S2ShapeIndex)}, except returns the actual
    * distance, or S1ChordAngle.INFINITY iff at least one of the shape indexes is empty.
    */
@@ -290,10 +326,12 @@ public final class S2HausdorffDistanceQuery {
   public Optional<Result> getResult(S2ShapeIndex target, S2ShapeIndex source) {
     Optional<DirectedResult> targetToSource = getDirectedResult(target, source);
     if (targetToSource.isPresent()) {
-      return Optional.of(new Result(targetToSource.get(), getDirectedResult(source, target).get()));
-    } else {
-      return Optional.empty();
+      Optional<DirectedResult> sourceToTarget = getDirectedResult(source, target);
+      if (sourceToTarget.isPresent()) {
+        return Optional.of(new Result(targetToSource.get(), sourceToTarget.get()));
+      }
     }
+    return Optional.empty();
   }
 
   /**
@@ -306,6 +344,16 @@ public final class S2HausdorffDistanceQuery {
   }
 
   /**
+   * Returns true if the undirected Hausdorff distance is within the distanceLimit. Can be faster
+   * than computing the actual Hausdorff distance and comparing to the limit.
+   */
+  public boolean isDistanceLess(
+      S2ShapeIndex target, S2ShapeIndex source, S1ChordAngle distanceLimit) {
+    return isDirectedDistanceLess(target, source, distanceLimit)
+        && isDirectedDistanceLess(source, target, distanceLimit);
+  }
+
+  /**
    * This internally used function computes the closest edge distance from the given target "point"
    * to the source index using the given S2ClosestEdgeQuery. If necessary, updates the maxDistance,
    * the targetPoint, and the sourcePoint.
@@ -315,9 +363,9 @@ public final class S2HausdorffDistanceQuery {
     // final Hausdorff distance. Therefore, if the distance between the current target point and the
     // last source point does not exceed this lower bound, we can safely skip this target point, not
     // updating the maximum distance.
-    if (maxDistance.distance().greaterOrEquals(S1ChordAngle.ZERO)
-        && S2Predicates.compareDistance(
-                point, sourcePoint, maxDistance.distance().getLength2()) <= 0) {
+    S1ChordAngle max = maxDistance.distance();
+    if (max.greaterOrEquals(S1ChordAngle.ZERO)
+        && S2Predicates.compareDistance(point, sourcePoint, max.getLength2()) <= 0) {
       return;
     }
 
@@ -325,23 +373,25 @@ public final class S2HausdorffDistanceQuery {
     // geometry to the target point.
     S2ClosestEdgeQuery.PointTarget<S1ChordAngle> target =
         new S2ClosestEdgeQuery.PointTarget<>(point);
-    closestEdgeQuery.findClosestEdges(target, (distance, shape, edgeId) -> {
-      // If this closest distance is greater than the previous maximum, update it and the
-      // corresponding source and target points.
-      if (maxDistance.update(distance)) {
-        targetPoint = point;
+    closestEdgeQuery.findClosestEdges(
+        target,
+        (distance, shapeId, edgeId) -> {
+          // If this closest distance is greater than the previous maximum, update it and the
+          // corresponding source and target points.
+          if (maxDistance.update(distance)) {
+            targetPoint = point;
 
-        // If the edgeId is -1, the target point is contained by the source shape. Otherwise,
-        // find the closest point on the closest source (shape, edge) to the target point.
-        if (edgeId == -1) {
-          sourcePoint = targetPoint;
-        } else {
-          S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
-          shape.getEdge(edgeId, edge);
-          sourcePoint = S2EdgeUtil.getClosestPoint(targetPoint, edge.getStart(), edge.getEnd());
-        }
-      }
-      return true;
-    });
+            // If the edgeId is -1, the target point is contained by the source shape. Otherwise,
+            // find the closest point on the closest source (shape, edge) to the target point.
+            if (edgeId == -1) {
+              sourcePoint = targetPoint;
+            } else {
+              S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
+              closestEdgeQuery.index().getShapes().get(shapeId).getEdge(edgeId, edge);
+              sourcePoint = S2EdgeUtil.getClosestPoint(targetPoint, edge.getStart(), edge.getEnd());
+            }
+          }
+          return true;
+        });
   }
 }

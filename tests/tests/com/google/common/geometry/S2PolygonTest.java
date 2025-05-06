@@ -17,27 +17,35 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolygon;
+import static com.google.common.geometry.S2TextFormat.makePolygonOrDie;
+import static com.google.common.geometry.S2TextFormat.parseVertices;
 import static com.google.common.geometry.TestDataGenerator.concentricLoopsPolygon;
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolygon;
-import static com.google.common.geometry.TestDataGenerator.makeVerbatimPolygon;
-import static com.google.common.geometry.TestDataGenerator.parseVertices;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Ordering;
 import com.google.common.geometry.S2Shape.ChainPosition;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -45,6 +53,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link S2Polygon}.
@@ -52,7 +63,8 @@ import java.util.logging.Logger;
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp class S2PolygonTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2PolygonTest extends GeometryTestCase {
   private static final Logger logger = Logger.getLogger(S2PolygonTest.class.getName());
 
   /**
@@ -205,8 +217,8 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   private final S2Polygon empty = new S2Polygon();
   private final S2Polygon full = new S2Polygon(S2Loop.full());
 
-  static final S2Polygon POLYGON = TestDataGenerator.makePolygon("0:0, 0:1, 1:0");
-  static final S2Polygon SNAPPED_POLYGON = new S2Polygon(new S2Loop(ImmutableList.of(
+  private static final S2Polygon POLYGON = makePolygon("0:0, 0:1, 1:0");
+  private static final S2Polygon SNAPPED_POLYGON = new S2Polygon(new S2Loop(ImmutableList.of(
       FACE_CELLS[0].toPoint(),
       FACE_CELLS[1].toPoint(),
       FACE_CELLS[2].toPoint())));
@@ -241,24 +253,29 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(polygon, decodedPolygon);
   }
 
+  @Test
   public void testCoderFast() {
     assertEquals(POLYGON, roundtrip(S2Polygon.FAST_CODER, POLYGON));
   }
 
+  @Test
   public void testCoderCompact() {
     assertEquals(POLYGON, roundtrip(S2Polygon.COMPACT_CODER, POLYGON));
   }
 
+  @Test
   public void testCoderShapeFast() {
     assertShapesEqual(POLYGON.shape(), roundtrip(S2Polygon.Shape.FAST_CODER, POLYGON.shape()));
   }
 
+  @Test
   public void testCoderShapeCompact() {
     assertShapesEqual(SNAPPED_POLYGON.shape(),
         roundtrip(S2Polygon.Shape.COMPACT_CODER, SNAPPED_POLYGON.shape()));
   }
 
   // Make sure we've set things up correctly.
+  @Test
   public void testInit() {
     checkContains(NEAR1, NEAR0);
     checkContains(NEAR2, NEAR1);
@@ -288,23 +305,36 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     checkContainsPoint(SOUTH_HEMI, SOUTH_POINT);
   }
 
+  @Test
   public void testOverlapFractions() {
     double bOverlapA = S2Polygon.getOverlapFraction(overlapA, overlapB);
     double aOverlapB = S2Polygon.getOverlapFraction(overlapB, overlapA);
     assertEquals(0.25, bOverlapA, 0.01);
     assertEquals(0.5, aOverlapB, 0.01);
 
-    assertDoubleEquals(1.0, S2Polygon.getOverlapFraction(empty, empty));
+    assertAlmostEquals(1.0, S2Polygon.getOverlapFraction(empty, empty));
 
     S2Polygon b = makeVerbatimPolygon(OVERLAP_3);
-    assertDoubleEquals(1.0, S2Polygon.getOverlapFraction(empty, b));
-    assertDoubleEquals(0.0, S2Polygon.getOverlapFraction(b, empty));
+    assertAlmostEquals(1.0, S2Polygon.getOverlapFraction(empty, b));
+    assertAlmostEquals(0.0, S2Polygon.getOverlapFraction(b, empty));
 
     S2Polygon a = makeVerbatimPolygon(OVERLAP_4);
     assertDoubleNear(0.5, S2Polygon.getOverlapFraction(a, b), 1e-14);
     assertDoubleNear(0.5, S2Polygon.getOverlapFraction(b, a), 1e-14);
   }
 
+  @Test
+  public void testIntersectionOverUnion() {
+    double iouAb = S2Polygon.getIntersectionOverUnion(overlapA, overlapB);
+    assertEquals(0.2, iouAb, 0.01);
+
+    assertAlmostEquals(0.0, S2Polygon.getIntersectionOverUnion(empty, empty));
+
+    S2Polygon b = makeVerbatimPolygon(OVERLAP_3);
+    assertAlmostEquals(0.0, S2Polygon.getIntersectionOverUnion(b, empty));
+  }
+
+  @Test
   public void testOriginNearPole() {
     // S2Polygon operations are more efficient if S2.origin() is near a pole.
     // (Loops that contain a pole tend to have very loose bounding boxes because they span the full
@@ -376,6 +406,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
         "10:44, 10:46, 12:46, 12:45, 12:44;")
   };
 
+  @Test
   public void testIsValidUnitLength() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(1 + data.random(6), 3);
@@ -398,6 +429,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidVertexCount() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = Lists.newArrayList();
@@ -411,6 +443,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidDuplicateVertex() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(1, 3);
@@ -423,6 +456,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidSelfIntersection() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       // Use multiple loops so that we can test both holes and shells. We need at least 5 vertices
@@ -436,6 +470,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidEmptyLoop() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(data.random(5), 3);
@@ -445,6 +480,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidFullLoop() {
     S2Loop fullLoop = S2Loop.full();
     List<S2Point> fullLoopPoints = Lists.newArrayList();
@@ -459,6 +495,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidLoopsCrossing() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(2, 4);
@@ -480,6 +517,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidDuplicateEdge() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(2, 4);
@@ -505,6 +543,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidLoopDepthNegative() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       S2Polygon poly =
@@ -519,11 +558,13 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIsValidLoopNestingInvalid() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       S2Polygon poly =
           new S2Polygon(loops(getConcentricLoops(2 + data.random(4), 3 /*min_vertices*/)));
       poly.loop(data.random(poly.numLoops())).invert();
+      poly.index().reset();
       checkInvalid(poly, "Invalid nesting");
     }
   }
@@ -533,6 +574,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
    * they receive arbitrary invalid input. (We don't test large inputs; it is assumed that the
    * client enforces their own size limits before even attempting to construct geometric objects.)
    */
+  @Test
   public void testIsValidFuzz() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       int numLoops = 1 + data.random(10);
@@ -583,18 +625,67 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  /**
+   * Constructs a polygon (presumed to be invalid) from loops constructed from the given points.
+   * Verifies that the S2Polygon constructor throws an AssertionError on the given loops, but does
+   * not when wrapped in {@link S2TestSupport#uncheckedCreate(Supplier)}.
+   *
+   * <p>Checks that the resulting polygon is invalid, with an S2Error that matches the given
+   * snippet, i.e. either error.text() contains the snippet, or error.code().name() equals the
+   * snippet.
+   */
   private static void checkInvalid(List<List<S2Point>> invalidLoops, String snippet) {
-    checkInvalid(new S2Polygon(loops(invalidLoops)), snippet);
+    // First create a list of loops from the lists of points, and shuffle their order.
+    List<S2Loop> invalidS2Loops = uncheckedLoops(invalidLoops);
+    // Verify that S2Polygon construction from invalid loops throws an AssertionError.
+    // TODO(user): After enabling assertions that polygons are valid, check that the
+    // assertions work by enabling this "assertThrows".
+    // assertThrows(AssertionError.class, () -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+
+    // The same S2Polygon construction succeeds when wrapped in uncheckedCreate().
+    S2Polygon invalidPolygon =
+        uncheckedCreate(() -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+    // Verify that findValidationError() finds the expected problem.
+    checkInvalid(invalidPolygon, snippet);
   }
 
+  /**
+   * Checks that the given polygon is invalid, with an S2Error that has text containing the given
+   * snippet, or S2Error.Code.name() equal to the given snippet, like "DUPLICATE_VERTICES".
+   */
   private static void checkInvalid(S2Polygon polygon, String snippet) {
     S2Error error = new S2Error();
-    assertTrue(polygon.findValidationError(error));
+    boolean hasError = polygon.findValidationError(error);
     assertTrue(
-        "Actual Error: " + error.text() + ",\n but expected substring: " + snippet,
-        error.text().contains(snippet));
+        "No error found, but expected validation error with substring or code: '"
+            + snippet
+            + "'\nfor polygon "
+            + S2TextFormat.toString(polygon),
+        hasError);
+    assertTrue(
+        "Actual Error: '" + error.text() + "' with code " + error.code()
+            + "\n but expected substring: " + snippet,
+        error.text().contains(snippet) || error.code().name().equals(snippet));
   }
 
+  /**
+   * Constructs a List of possibly invalid S2Loops from the given lists of points. The vertices are
+   * allowed to not be unit length. Shuffles the order of the resulting loops.
+   */
+  private static List<S2Loop> uncheckedLoops(List<List<S2Point>> vertices) {
+    List<S2Loop> loops = Lists.newArrayList();
+    for (int i = 0; i < vertices.size(); ++i) {
+      loops.add(uncheckedLoop(vertices.get(i)));
+    }
+    Collections.shuffle(loops);
+    return loops;
+  }
+
+  private static S2Loop uncheckedLoop(List<S2Point> vertices) {
+    return uncheckedCreate(() -> new S2Loop(vertices));
+  }
+
+  /** Constructs S2Loops and shuffles their order. All vertices must at least be unit length. */
   private static List<S2Loop> loops(List<List<S2Point>> vertices) {
     List<S2Loop> loops = Lists.newArrayList();
     for (int i = 0; i < vertices.size(); ++i) {
@@ -604,6 +695,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     return loops;
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     // Empty polygon.
     encodeDecode(empty);
@@ -620,12 +712,14 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testEncodingSize_emptyPolygon() throws IOException {
     byte[] encoded = encode(new S2Polygon());
     // 1 byte for version, 1 for the level, 1 for the length.
     assertEquals(3, encoded.length);
   }
 
+  @Test
   public void testEncodingSize_snappedPolygon() throws IOException {
     S2Polygon snapped = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0", S2CellId.MAX_LEVEL);
     byte[] encoded = encode(snapped);
@@ -641,6 +735,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(1 + 1 + 1 + 2 * 5 + 7 * 8, encoded.length);
   }
 
+  @Test
   public void testOperations() {
     S2Polygon farSouth = new S2Polygon();
     farSouth.initToIntersection(farH, southH);
@@ -699,6 +794,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
    * This tests polyline-polyline intersections. It covers the same edge cases as {@code
    * testOperations} and also adds some extra tests for shared edges.
    */
+  @Test
   public void testPolylineIntersection() {
     for (int v = 0; v < 3; ++v) {
       polylineIntersectionSharedEdgeTest(cross1, v, 1);
@@ -778,6 +874,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     checkEqual(a, b1);
   }
 
+  @Test
   public void testApproxContains() {
     // Get a random S2Cell as a polygon.
     S2CellId id = S2CellId.fromLatLng(S2LatLng.fromE6(69852241, 6751108));
@@ -1019,6 +1116,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testRelations() {
     checkRelation(near10, empty, true, false, false);
     checkRelation(near10, near10, true, true, true);
@@ -1091,6 +1189,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     checkRelation(overlap1CenterHole, overlap2CenterHole, false, false, true);
   }
 
+  @Test
   public void testUnionSloppySuccess() {
     S2Polygon union = S2Polygon.unionSloppy(Arrays.asList(adj0, adj1), S1Angle.degrees(0.1));
 
@@ -1108,6 +1207,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(expected.boundaryApproxEquals(s2Loop, maxError));
   }
 
+  @Test
   public void testUnionSloppyFailure() {
     // The polygons are sufficiently far apart that this angle will not
     // bring them together:
@@ -1116,6 +1216,41 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, union.numLoops());
   }
 
+  /**
+   * Test for b/373414882. The two nearly-equal points shown in screen/6VXEja3nCcnvzVj generate
+   * intersecting edges which, due to floating point errors, cause S2PolygonBuilder.spliceEdges to
+   * loop infinitely if the default mergeRadius is too small.
+   */
+  @Test
+  public void testUnionErrorTolerance() {
+    var aPoints =
+        new S2Point[] {
+          new S2Point(-0.4233762535751846, -0.6818147440520357, 0.5965577949385107),
+          new S2Point(-0.4233760956593306, -0.6818147800268495, 0.5965578658950028),
+          new S2Point(-0.4233761112005162, -0.6818147082926758, 0.5965579368514861),
+          new S2Point(-0.42337613281264846, -0.6818146817526661, 0.5965579518463546),
+          new S2Point(-0.4233762907285011, -0.6818146457778499, 0.5965578808898605),
+          new S2Point(-0.42337627518731696, -0.6818147175120258, 0.5965578099333793),
+        };
+    var bPoints =
+        new S2Point[] {
+          new S2Point(-0.42337629072850064, -0.6818146457778491, 0.5965578808898617),
+          new S2Point(-0.4233761884587999, -0.6818147713665217, 0.5965578099333851),
+          new S2Point(-0.4233761172714648, -0.6818147534868428, 0.5965578808898722),
+          new S2Point(-0.4233761149633853, -0.6818147497698579, 0.5965578867761089),
+          new S2Point(-0.423376217233087, -0.6818146241811852, 0.5965579577325839),
+          new S2Point(-0.4233762884204217, -0.6818146420608652, 0.5965578867760968),
+        };
+    S2Polygon a = new S2Polygon(new S2Loop(aPoints));
+    S2Polygon b = new S2Polygon(new S2Loop(bPoints));
+
+    S2Polygon union = new S2Polygon();
+    union.initToUnionSloppy(a, b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+
+    assertEquals(12, union.getNumVertices());
+  }
+
+  @Test
   public void testCompareTo() {
     // Polygons with same loops, but in different order:
     S2Polygon p1 = makePolygon(RECTANGLE1 + RECTANGLE2);
@@ -1135,16 +1270,17 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     // Polygons with a differing number of loops
     S2Polygon p7 = makePolygon(RECTANGLE1 + RECTANGLE2);
     S2Polygon p8 = makePolygon(TRIANGLE);
-    assertTrue(0 > p8.compareTo(p7));
-    assertTrue(0 < p7.compareTo(p8));
+    assertTrue(p8.compareTo(p7) < 0);
+    assertTrue(p7.compareTo(p8) > 0);
 
     // Polygons with a differing number of loops (one a subset of the other)
     S2Polygon p9 = makePolygon(RECTANGLE1 + RECTANGLE2 + TRIANGLE);
     S2Polygon p10 = makePolygon(RECTANGLE1 + RECTANGLE2);
-    assertTrue(0 < p9.compareTo(p10));
-    assertTrue(0 > p10.compareTo(p9));
+    assertTrue(p9.compareTo(p10) > 0);
+    assertTrue(p10.compareTo(p9) < 0);
   }
 
+  @Test
   public void testGetDistance() {
     // Error margin since we're doing numerical computations.
     double epsilon = 1e-15;
@@ -1179,6 +1315,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(1d, shell.getDistance(origin).degrees(), epsilon);
   }
 
+  @Test
   public void testMultipleInit() {
     S2Polygon polygon = makePolygon("0:0, 0:2, 2:0");
     assertEquals(1, polygon.numLoops());
@@ -1196,6 +1333,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(!bound1.equals(polygon.getRectBound()));
   }
 
+  @Test
   public void testProject() {
     S2Polygon polygon = makeVerbatimPolygon(NEAR0 + NEAR2);
     double epsilon = 1e-15;
@@ -1223,6 +1361,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(makePoint("0:-2").aequal(projected, epsilon));
   }
 
+  @Test
   public void testProjectMatchesDistance() {
     S2Polygon polygon = makePolygon(NEAR0 + NEAR2);
     double epsilon = 1e-15;
@@ -1240,6 +1379,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(polygon.getDistance(point).radians(), point.angle(projected), epsilon);
   }
 
+  @Test
   public void testFastInit() {
     S2LatLngRect bound;
     Map<S2Loop, List<S2Loop>> nestedLoops = Maps.newHashMap();
@@ -1276,6 +1416,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertDoubleNear(0.003821967440517272, polygon.getArea());
   }
 
+  @Test
   public void testInitToSnappedWithSnapLevel() {
     S2Polygon polygon = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0");
 
@@ -1283,7 +1424,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
       S2Polygon snappedPolygon = new S2Polygon();
       snappedPolygon.initToSnapped(polygon, level);
       assertTrue(snappedPolygon.isValid());
-      double cellAngle = PROJ.maxDiag.getValue(level);
+      double cellAngle = MAX_DIAG.getValue(level);
       S1Angle mergeRadius = S1Angle.radians(cellAngle);
       assertTrue(
           "snapped polygon should approx contain original polygon for"
@@ -1299,6 +1440,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetBestSnapLevel() {
     // Unsnapped polygon.
     assertEquals(-1, makePolygon("10:10, 30:20, 20:30").getBestSnapLevel());
@@ -1309,11 +1451,12 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
         makePolygon("10:10, 30:20, 20:30", S2CellId.MAX_LEVEL).getBestSnapLevel());
     // Mixed snap levels for different loops.
     List<S2Loop> loops = Lists.newArrayList();
-    loops.add(makeLoop("10:10, 30:20, 20:30", 10));
-    loops.add(makeLoop("60:60, 80:70, 70:80", 12));
+    loops.add(makeLoop("10:10, 20:30, 30:20", 10));
+    loops.add(makeLoop("60:60, 70:80, 80:70", 12));
     assertEquals(10, new S2Polygon(loops).getBestSnapLevel());
   }
 
+  @Test
   public void testInitToSimplifiedInCellPointsOnCellBoundaryKept() {
     S2CellId cellId = S2CellId.fromToken("89c25c");
     S2Cell cell = new S2Cell(cellId);
@@ -1329,6 +1472,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(-1, simplifiedLoop.getSnapLevel());
   }
 
+  @Test
   public void testInitToSimplifiedInCellPointsInsideCellSimplified() {
     S2CellId cellId = S2CellId.fromToken("89c25c");
     S2Cell cell = new S2Cell(cellId);
@@ -1346,6 +1490,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
    * get merged correctly. To do this we generate two random adjacent cells, convert to polygon, and
    * make sure the polygon only has a single loop.
    */
+  @Test
   public void testFromCellUnionBorder() {
     for (int iter = 0; iter < 200; ++iter) {
       // Choose a random non-leaf cell.
@@ -1384,11 +1529,15 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetLoops() {
+    // These loops share an edge (0:36, 0:39), so the polygon is actually invalid.
     S2Loop loopA = makeLoop("0:30, 0:34, 0:36, 0:39, 0:41, 0:44, 30:44, 30:30");
     S2Loop loopB = makeLoop("0:30, -30:30, -30:44, 0:44, 0:41, 0:39, 0:36, 0:34");
-    List<S2Loop> expected = Arrays.asList(loopA, loopB);
-    List<S2Loop> actual = new S2Polygon(new ArrayList<>(expected)).getLoops();
+    ImmutableList<S2Loop> expected = ImmutableList.of(loopA, loopB);
+    // Create a new mutable list because the constructor clears its input.
+    List<S2Loop> listCopy = new ArrayList<>(expected);
+    List<S2Loop> actual = uncheckedCreate(() -> new S2Polygon(listCopy)).getLoops();
     assertEquals(2, actual.size());
     assertTrue(actual.contains(loopA));
     assertTrue(actual.contains(loopB));
@@ -1424,18 +1573,21 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
    * means the polygon is invalid, it is common to fix invalidity issues by doing a self-
    * intersection to node crossings and drop duplicates.
    */
+  @Test
   public void testDuplicatePointClipping() {
-    S2Polygon p = makePolygon("0:0, 0:0, 0:4, 4:4, 4:0");
+    S2Polygon invalid = uncheckedCreate(() -> makePolygonOrDie("0:0, 0:0, 0:4, 4:4, 4:0"));
     S2Polygon fixed = new S2Polygon();
-    fixed.initToIntersection(p, p);
-    assertEquals(makePolygon("0:0, 0:4, 4:4, 4:0"), fixed);
+    fixed.initToIntersection(invalid, invalid);
+    S2Polygon valid = makePolygon("0:0, 0:4, 4:4, 4:0");
+    assertEquals(valid, fixed);
   }
 
-  // Create 'numLoops' nested regular loops around a common center point. All loops have the same
-  // number of vertices (at least 'minVertices'). Furthermore, the vertices at the same index
-  // position are collinear with the common center point of all the loops. The loop radii decrease
-  // exponentially in order to prevent accidental loop crossings when one of the loops is
-  // modified.
+  /**
+   * Create 'numLoops' nested regular loops around a common center point. All loops have the given
+   * number of vertices 'numVertices'. Furthermore, the vertices at the same index position are
+   * collinear with the common center point of all the loops. The loop radii decrease exponentially
+   * in order to prevent accidental loop crossings when one of the loops is modified.
+   */
   private List<List<S2Point>> getConcentricLoops(int numLoops, int minVertices) {
     List<List<S2Point>> loops = Lists.newArrayList();
     // Radii decrease exponentially.
@@ -1444,16 +1596,12 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     int numVertices = minVertices + data.random(10);
     for (int i = 0; i < numLoops; ++i) {
       S1Angle radius = S1Angle.degrees(80 * pow(0.1, i));
-      S2Loop loop = S2Loop.makeRegularLoop(center, radius, numVertices);
-      List<S2Point> loopPoints = Lists.newArrayList();
-      for (int j = 0; j < loop.numVertices(); ++j) {
-        loopPoints.add(loop.vertex(j));
-      }
-      loops.add(loopPoints);
+      loops.add(S2Loop.makeRegularVertices(center, radius, numVertices));
     }
     return loops;
   }
 
+  @Test
   public void testSplitting() {
     // It takes too long to test all the polygons in debug mode, so we just pick out some of the
     // more interesting ones.
@@ -1479,7 +1627,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     for (int iter = 0; iter < 10; ++iter) {
       // Compute the minimum level such that the polygon's bounding cap is guaranteed to be cut.
       double diameter = 2 * polygon.getCapBound().angle().radians();
-      int minLevel = PROJ.maxDiag.getMinLevel(diameter);
+      int minLevel = MAX_DIAG.getMinLevel(diameter);
 
       // TODO(user): Choose a level that will have up to 256 cells in the covering.
       int level = minLevel + data.random(4);
@@ -1492,8 +1640,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
       ArrayList<S2CellId> cells = Lists.newArrayList();
       coverer.getCovering(polygon, cells);
-      S2CellUnion covering = new S2CellUnion();
-      covering.initFromCellIds(cells);
+      S2CellUnion covering = new S2CellUnion().initFromCellIds(cells);
       checkCovering(polygon, covering, false);
       checkCoveringIsConservative(polygon, cells);
       logger.fine(cells.size() + " cells in covering");
@@ -1576,6 +1723,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
   /** Checks that the index is properly deserialized. */
   @GwtIncompatible("Object serialization")
+  @Test
   public void testIndexDeserialization() throws IOException, ClassNotFoundException {
     S2Point center = S2Point.X_POS;
     S1Angle angle = S1Angle.radians(10);
@@ -1584,7 +1732,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     // Initialize the index.
     S2Iterator<S2ShapeIndex.Cell> unused = polygon.index.iterator();
     ByteArrayOutputStream output = new ByteArrayOutputStream();
-    java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(output);
+    ObjectOutputStream out = new ObjectOutputStream(output);
 
     // Serialize the object.
     out.writeObject(polygon);
@@ -1592,7 +1740,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
 
     // Deserialize the object.
     ByteArrayInputStream input = new ByteArrayInputStream(output.toByteArray());
-    java.io.ObjectInputStream in = new java.io.ObjectInputStream(input);
+    ObjectInputStream in = new ObjectInputStream(input);
     S2Polygon copy = (S2Polygon) in.readObject();
     in.close();
 
@@ -1603,6 +1751,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertTrue(copy.contains(S2Point.X_POS));
   }
 
+  @Test
   public void testEmptyPolygonShape() {
     S2Polygon.Shape shape = empty.shape();
     assertTrue(shape.isEmpty());
@@ -1615,6 +1764,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
   public void testFullPolygonShape() {
     S2Polygon.Shape shape = full.shape();
     assertFalse(shape.isEmpty());
@@ -1629,6 +1779,51 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
+  public void testEmptyLoopsRemoved() throws IOException {
+    // Include an invalid loop in the following tests that appears to be empty but really isn't.
+    S2Loop invalid = new S2Loop(ImmutableList.of(S2Point.X_POS));
+    assertTrue(invalid.isEmpty());
+    assertFalse(S2Polygon.literalEmpty(invalid));
+    assertEquals(0, farH.loop(0).depth());
+
+    // Verify that polygons remove their empty loops during construction.
+    // A single empty loop is removed.
+    assertEquals(0, new S2Polygon(S2Loop.empty()).numLoops());
+    // Multiple empty loops are removed, leaving the other loops unchanged.
+    List<S2Loop> loops = ImmutableList.of(
+        S2Loop.empty(),
+        invalid,
+        S2Loop.full(),
+        S2Loop.empty(),
+        farH.loop(0));
+    // This isn't a valid polygon so uncheckedCreate() is needed. Note that the farH.loop(0) loop is
+    // modified to have depth 1 when it is built into the polygon.
+    S2Polygon invalidPolygon = uncheckedCreate(() -> new S2Polygon(new ArrayList<>(loops)));
+    assertEquals(
+        ImmutableSet.of(invalid, S2Loop.full(), farH.loop(0)),
+        ImmutableSet.copyOf(invalidPolygon.getLoops()));
+    assertEquals(1, farH.loop(0).depth());
+
+    // Verify that polygons remove serialized canonical empty loops during decoding. Note that
+    // S2Polygon.decode guarantees it will not return an invalid polygon, so other kinds of invalid
+    // loops cannot be included in this test. That includes having a full loop along with other
+    // loops. Also, the remaining loop must have a valid loop depth, but fromExplicitLoops() doesn't
+    // set the depth, so we need to fix that ourselves.
+    // Reset the loop depth which was modified above.
+    farH.loop(0).setDepth(0);
+    S2Polygon polygon = S2Polygon.fromExplicitLoops(ImmutableList.of(farH.loop(0), S2Loop.empty()));
+    assertTrue(polygon.getLoops().stream().anyMatch(S2Loop::isEmpty));
+
+    ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+    polygon.encode(encoded);
+    S2Polygon decoded = S2Polygon.decode(new ByteArrayInputStream(encoded.toByteArray()));
+
+    assertEquals(0, farH.loop(0).depth());
+    assertEquals(ImmutableSet.of(farH.loop(0)), ImmutableSet.copyOf(decoded.getLoops()));
+  }
+
+  @Test
   public void testOneLoopPolygonShape() {
     S2Polygon.Shape shape = near0.shape();
     assertFalse(shape.isEmpty());
@@ -1644,6 +1839,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
   public void testSeveralLoopPolygonShape() {
     S2Polygon.Shape shape = near3210.shape();
     assertFalse(shape.isEmpty());
@@ -1659,6 +1855,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  @Test
   public void testManyLoopPolygonShape() {
     int numLoops = 100;
     int numVerticesPerLoop = 6;
@@ -1697,12 +1894,15 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testInitRecursion() {
     String loop = "-18.84:-40.96, -18.93:-40.96, -18.93:-40.86, -18.84:-40.86";
-    assertFalse(makePolygon(loop + "; " + loop).isValid());
+    S2Polygon duplicateLoops = uncheckedCreate(() -> makePolygonOrDie(loop + "; " + loop));
+    checkInvalid(duplicateLoops, "POLYGON_LOOPS_SHARE_EDGE");
   }
 
   /** Verifies a bug in S2ShapeIndex has been fixed. */
+  @Test
   public void testPointInBigLoop() {
     S2LatLng center = S2LatLng.fromRadians(0.3, 2);
     S2Loop loop = S2Loop.makeRegularLoop(center.toPoint(), S1Angle.degrees(80), 10);
@@ -1710,11 +1910,13 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
   }
 
   /** Verifies S2Polygon.getCentroid() can handle polygons with empty loops. */
+  @Test
   public void testEmptyLoopCentroid() {
     S2Polygon polygon = new S2Polygon(S2Loop.empty());
     assertEquals(polygon.getCentroid(), S2Point.ORIGIN);
   }
 
+  @Test
   public void testEncodeDecodeLossless() throws Exception {
     S2Polygon polygon = makePolygon("1:2, 3:4, 5:6; 7:8, 9:10, 11:12");
 
@@ -1738,6 +1940,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(0, in.available());
   }
 
+  @Test
   public void testDecodeEncodeSingleLoopLossless() throws IOException {
     String encodedBytesHexString =
         "010100010000000108000000D44A8442C3F9EF3F7EDA2AB341DC913F27DCF7C958DEA1BFB4"
@@ -1759,12 +1962,14 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(encodedBytesHexString, BaseEncoding.base16().encode(bos.toByteArray()));
   }
 
+  @Test
   public void testEncodeDecodeEmptyLossless() throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     new S2Polygon().encode(bos);
     assertEquals("041E00", BaseEncoding.base16().encode(bos.toByteArray()));
   }
 
+  @Test
   public void testEncodeDecodeCorruptLossless() {
     try {
       S2Polygon.decode(new ByteArrayInputStream(BaseEncoding.base16().decode("0101FFFFFF")));
@@ -1774,6 +1979,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testEncodeDecodeTwoPolygons() throws IOException {
     S2Polygon p1 = makePolygon("10:10,10:0,0:0");
     S2Polygon p2 = makePolygon("0:0,1:0,1:1,0:1");
@@ -1790,6 +1996,7 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     assertEquals(0, in.available());
   }
 
+  @Test
   public void testDecodeEncodeTwoLoopsLossless() throws IOException {
     String encodedBytesHexString =
         "010101020000000108000000D44A8442C3F9EF3F7EDA2AB341DC913F27DCF7C958DEA1BFB4"
@@ -1814,5 +2021,22 @@ public strictfp class S2PolygonTest extends GeometryTestCase {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     decodedPolygon.encode(bos);
     assertEquals(encodedBytesHexString, BaseEncoding.base16().encode(bos.toByteArray()));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2PolygonSerialization() {
+    // This used to be a loop from the cell at point S2Point(0.1, 0.2, 0.3) but that causes
+    // a POLYGON_LOOPS_CROSS error.
+    S2Loop loop1 = new S2Loop(new S2Cell(new S2Point(-0.2, 0.3, 0.4)));
+    S2Loop loop2 =
+        new S2Loop(
+            ImmutableList.of(
+                new S2Point(0.1, 0.2, 0.3).normalize(),
+                new S2Point(0.5, 0, 0).normalize(),
+                new S2Point(4, 4, 4).normalize(),
+                new S2Point(6, 7, 8).normalize()));
+    doSerializationTest(
+        new S2Polygon(Lists.newArrayList(loop1, loop2)), Ordering.<S2Polygon>natural());
   }
 }

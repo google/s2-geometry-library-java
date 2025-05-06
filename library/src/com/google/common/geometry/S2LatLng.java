@@ -40,48 +40,61 @@ import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 
 /**
- * This class represents a point on the unit sphere as a pair of latitude-longitude coordinates.
- * Like the rest of the "geometry" package, the intent is to represent spherical geometry as a
+ * An immutable representation of a point on the unit sphere, as a pair of latitude-longitude
+ * coordinates.
+ *
+ * <p>Like the rest of the "geometry" package, the intent is to represent spherical geometry as a
  * mathematical abstraction, so functions that are specifically related to the Earth's geometry
- * (e.g. easting/northing conversions) should be put elsewhere. Note that the serialized form of
- * this class is not stable and should not be relied upon for long-term persistence.
+ * (e.g. easting/northing conversions) are elsewhere. Note that the serialized form of this class is
+ * not stable and should not be relied upon for long-term persistence. Avoid using Java
+ * serialization, use the provided S2Coder instead.
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @Immutable
 @JsType
-public final strictfp class S2LatLng implements Serializable {
-  /** The center point the lat/lng coordinate system. */
+@SuppressWarnings("Assertion")
+public final class S2LatLng implements Serializable {
+  /** The center point of the lat/lng coordinate system. */
   public static final S2LatLng CENTER = new S2LatLng(0.0, 0.0);
 
   /** A {@link S2Coder} of latlngs. */
-  public static final S2Coder<S2LatLng> CODER = new S2Coder<S2LatLng>() {
-    @Override public void encode(S2LatLng value, OutputStream output) throws IOException {
-      LittleEndianOutput.writeDouble(output, value.latRadians);
-      LittleEndianOutput.writeDouble(output, value.lngRadians);
-    }
+  public static final S2Coder<S2LatLng> CODER =
+      new S2Coder<S2LatLng>() {
+        @Override
+        public void encode(S2LatLng value, OutputStream output) throws IOException {
+          LittleEndianOutput.writeDouble(output, value.latRadians);
+          LittleEndianOutput.writeDouble(output, value.lngRadians);
+        }
 
-    @Override public S2LatLng decode(Bytes data, Cursor cursor) throws IOException {
-      try {
-        double lat = data.readLittleEndianDouble(cursor.position);
-        double lng = data.readLittleEndianDouble(cursor.position + Doubles.BYTES);
-        cursor.position += 2 * Doubles.BYTES;
-        return S2LatLng.fromRadians(lat, lng);
-      } catch (ArrayIndexOutOfBoundsException e) {
-        throw new IOException("Insufficient or invalid input bytes: ", e);
-      }
-    }
+        @Override
+        public S2LatLng decode(Bytes data, Cursor cursor) throws IOException {
+          try {
+            double lat = data.readLittleEndianDouble(cursor.position);
+            double lng = data.readLittleEndianDouble(cursor.position + Doubles.BYTES);
+            cursor.position += 2 * Doubles.BYTES;
+            return S2LatLng.fromRadians(lat, lng);
+          } catch (ArrayIndexOutOfBoundsException e) {
+            throw new IOException("Insufficient or invalid input bytes: ", e);
+          }
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   private final double latRadians;
   private final double lngRadians;
 
-  /** Returns a new S2LatLng specified in radians. */
+  /**
+   * Returns a new S2LatLng specified in radians. Some methods on S2LatLng require that the latitude
+   * and longitude are valid. If you are unsure, use {@link #isValid(double, double)} to check that
+   * the lat and lng are valid before attempting to construct the S2LatLng, or use {@link
+   * #isValid()} after construction.
+   */
   public static S2LatLng fromRadians(double latRadians, double lngRadians) {
     return new S2LatLng(latRadians, lngRadians);
   }
@@ -197,10 +210,18 @@ public final strictfp class S2LatLng implements Serializable {
   }
 
   /**
-   * Return true if the latitude is between -90 and 90 degrees inclusive and the longitude is
-   * between -180 and 180 degrees inclusive.
+   * Return true if this LatLng is {@link normalized()}, i.e. the latitude is between -90 and 90
+   * degrees inclusive and the longitude is between -180 and 180 degrees inclusive.
    */
   public boolean isValid() {
+    return isValid(latRadians, lngRadians);
+  }
+
+  /**
+   * Return true if the given lat and lng would be a valid LatLng, i.e. the latitude is between -90
+   * and 90 degrees inclusive and the longitude is between -180 and 180 degrees inclusive.
+   */
+  public static boolean isValid(double latRadians, double lngRadians) {
     return abs(latRadians) <= M_PI_2 && abs(lngRadians) <= PI;
   }
 
@@ -228,14 +249,24 @@ public final strictfp class S2LatLng implements Serializable {
    * {@link normalized()}) are wrapped around the sphere as would be expected based on their
    * definition as spherical angles. So for example the following pairs yield equivalent points
    * (modulo numerical error):
+   *
    * <pre>
    *   (90.5, 10) =~ (89.5, -170)
    *   (a, b) =~ (a + 360 * n, b)
    * </pre>
+   *
    * The maximum error in the result is 1.5 * DBL_EPSILON. (This does not include the error of
    * converting degrees, E5, E6, or E7 to radians.)
+   *
+   * <p>The latitude and longitude must be finite.
    */
   public S2Point toPoint() {
+    assert Double.isFinite(latRadians) : latRadians;
+    assert Double.isFinite(lngRadians) : lngRadians;
+    // TODO(torrey): Consider enabling this assertion, even though it isn't actually required by
+    // the toPoint() code. Clients calling toPoint() with unnormalized LatLngs may not actually be
+    // consciously relying on this code to correctly wrap latitudes > 90 around the sphere, but are
+    // instead using invalid data without knowing it.
     // assert isValid();
     double phi = latRadians;
     double theta = lngRadians;
@@ -251,13 +282,14 @@ public final strictfp class S2LatLng implements Serializable {
    * that 8 digits is still accurate to within about 10cm for a sphere the size of the Earth.
    *
    * <p>This could be fixed with another sin() and cos() below, but at that point you might as well
-   * just convert both arguments to S2Points and compute the distance that way (which gives about
-   * 15 digits of accuracy for all distances).
-   **/
+   * just convert both arguments to S2Points and compute the distance that way (which gives about 15
+   * digits of accuracy for all distances).
+   */
   public S1Angle getDistance(final S2LatLng o) {
+    // TODO(torrey): As above, consider enabling these assertions even though they are not required
+    // by the getDistance() code, because most violations are likely garbage data.
     // assert isValid();
     // assert o.isValid();
-
     double lat1 = latRadians;
     double lat2 = o.latRadians;
     double lng1 = lngRadians;
@@ -337,11 +369,13 @@ public final strictfp class S2LatLng implements Serializable {
     return approxEquals(o, 1e-9);
   }
 
+  /** Returns a String with the lat and lng in radians. See also {@link #toStringDegrees()}. */
   @Override
   public String toString() {
     return "(" + latRadians + ", " + lngRadians + ")";
   }
 
+  /** Returns a String with the lat and lng in degrees. */
   public String toStringDegrees() {
     return "(" + latDegrees() + ", " + lngDegrees() + ")";
   }

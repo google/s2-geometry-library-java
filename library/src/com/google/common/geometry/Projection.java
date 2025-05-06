@@ -96,10 +96,10 @@ public interface Projection {
     double y = b.y();
     // The code below ensures that "b" is unmodified unless wrapping is required.
     if (wrap.x() > 0 && Math.abs(x - a.x()) > 0.5 * wrap.x()) {
-      x = a.x() + Platform.IEEEremainder(x - a.x(), wrap.x());
+      x -= Math.round((x - a.x()) / wrap.x()) * wrap.x();
     }
     if (wrap.y() > 0 && Math.abs(y - a.y()) > 0.5 * wrap.y()) {
-      y = a.y() + Platform.IEEEremainder(y - a.y(), wrap.y());
+      y -= Math.round((y - a.y()) / wrap.y()) * wrap.y();
     }
     return new R2Vector(x, y);
   }

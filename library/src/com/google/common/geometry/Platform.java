@@ -15,30 +15,32 @@
  */
 package com.google.common.geometry;
 
+import com.google.errorprone.annotations.FormatMethod;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.logging.Logger;
 
 /**
- * Contains utility methods which require different GWT client and server implementations. This
- * contains the server side implementations.
+ * Contains utility methods which require different implementations for the Java and J2CL-generated
+ * Javascript implementations. This contains the Java implementations. The J2CL versions are in
+ * java/com/google/gwt/corp/emul/com/google/common/geometry/Platform.java.
  */
-final class Platform {
+public final class Platform {
 
   private Platform() {}
 
   /**
    * @see Math#IEEEremainder(double, double)
    */
-  static double IEEEremainder(double f1, double f2) {
+  public static double IEEEremainder(double f1, double f2) {
     return Math.IEEEremainder(f1, f2);
   }
 
   /**
    * @see Math#getExponent(double)
    */
-  static int getExponent(double d) {
+  public static int getExponent(double d) {
     return Math.getExponent(d);
   }
 
@@ -52,31 +54,49 @@ final class Platform {
   }
 
   /**
-   * Invokes {@code stream.printf} with the arguments. The GWT client just prints the format string
+   * Workaround for the difficulty of getting identical formatting of numbers between J2CL and Java.
+   * Supports different "expected" strings for Java and J2CL. Those should normally be similar, but
+   * J2CL behaves differently in ways that are hard to work around otherwise. For example, J2CL's
+   * Double.toString() will use fewer decimal digits, in some cases.
+   *
+   * <p>TODO(user): Remove this method in favor of a consistent cross-platform method of
+   * formatting doubles.
+   */
+  public static void assertStringEquals(String expectedJava, String expectedJ2cl, String actual) {
+    if (!expectedJava.contentEquals(actual)) {
+      throw new AssertionError("Expected '" + expectedJava + "' to equal '" + actual + "'");
+    }
+  }
+
+  /**
+   * Invokes {@code stream.printf} with the arguments. The J2CL client just prints the format string
    * and the arguments separately. Using this method is not recommended; you should instead
    * construct strings with normal string concatenation whenever possible, so it will work the same
-   * way in normal Java and GWT client versions.
+   * way in normal Java and J2CL client versions.
    */
-  static void printf(PrintStream stream, String format, Object... params) {
+  public static void printf(PrintStream stream, String format, Object... params) {
     stream.printf(format, params);
   }
 
   /**
-   * Returns {@code String.format} with the arguments. The GWT client just returns a string
+   * Returns {@code String.format} with the arguments. The J2CL client just returns a string
    * consisting of the format string with the parameters concatenated to the end of it. Using this
    * method is not recommended; you should instead construct strings with normal string
-   * concatenation whenever possible, so it will work the same way in normal Java and GWT client
+   * concatenation whenever possible, so it will work the same way in normal Java and J2CL client
    * versions.
    */
-  static String formatString(String format, Object... params) {
+  @FormatMethod
+  public static String formatString(String format, Object... params) {
     return String.format(format, params);
   }
 
   /**
-   * Formats the double as a string and removes unneeded trailing zeros, to behave the same as
-   * printf("%.15g",d) in C++. The Javascript implementation does NOT have identical behavior.
+   * A cross platform (Java / Javascript) method to format a double as a string, very similar to
+   * the behavior of printf("%.15g",d) in C++. Provides (almost?) always consistent behavior between
+   * Java and J2CL. This method should only be used where cross-platform formatting is required, as
+   * it is slower than Double.toString(), and nonstandard.
    */
-  static String formatDouble(double d) {
+  public static String formatDouble(double d) {
     StringBuilder out = new StringBuilder();
     if (d == 0d) {
       return "0";

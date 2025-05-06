@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import java.util.Collection;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 
@@ -33,28 +34,50 @@ import jsinterop.annotations.JsType;
 public interface S2Region {
 
   /** Return a bounding spherical cap. */
-  public abstract S2Cap getCapBound();
+  S2Cap getCapBound();
 
   /** Return a bounding latitude-longitude rectangle. */
-  public abstract S2LatLngRect getRectBound();
+  S2LatLngRect getRectBound();
+
+  /**
+   * Adds a small collection of cells to {@code output} whose union covers {@code region}. The cells
+   * are not sorted, may have redundancies (such as cells that contain other cells), and may cover
+   * much more area than necessary.
+   *
+   * <p>This method is not intended for direct use by client code. Clients should typically use
+   * {@link S2RegionCoverer#getCovering}, which has options to control the size and accuracy of the
+   * covering. Alternatively, if you want a fast covering and don't care about accuracy, consider
+   * calling {@link S2RegionCoverer#getFastCovering} (which returns a cleaned-up version of the
+   * covering computed by this method).
+   *
+   * <p>Implementations of this method should attempt to return a small covering (ideally 4 cells or
+   * fewer) that covers the region and can be computed quickly. The result is used by {@link
+   * S2RegionCoverer} as a starting point for further refinement.
+   *
+   * <p>The default implementation uses {@link #getCapBound()}'s {@link S2Cap#getCellUnionBound},
+   * which is always valid, but subclasses should override with something better when possible.
+   */
+  default void getCellUnionBound(Collection<S2CellId> results) {
+    getCapBound().getCellUnionBound(results);
+  }
 
   /**
    * If this method returns true, the region completely contains the given cell. Otherwise, either
    * the region does not contain the cell or the containment relationship could not be determined.
    */
   @JsMethod(name = "containsCell")
-  public abstract boolean contains(S2Cell cell);
+  boolean contains(S2Cell cell);
 
   /**
    * Returns true if and only if the given point is contained by the region. {@code p} is generally
    * required to be unit length, although some subtypes may relax this restriction.
    */
   @JsMethod(name = "containsPoint")
-  public abstract boolean contains(S2Point p);
+  boolean contains(S2Point p);
 
   /**
    * If this method returns false, the region does not intersect the given cell. Otherwise, either
    * the region intersects the cell, or the intersection relationship could not be determined.
    */
-  public abstract boolean mayIntersect(S2Cell cell);
+  boolean mayIntersect(S2Cell cell);
 }

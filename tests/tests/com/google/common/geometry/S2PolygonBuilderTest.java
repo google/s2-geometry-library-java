@@ -16,19 +16,27 @@
 
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static java.lang.Math.sin;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link S2PolygonBuilder}.
@@ -36,16 +44,15 @@ import java.util.logging.Logger;
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2PolygonBuilderTest extends GeometryTestCase {
   /** Holds the original S2Loop loglevel. */
   private Level oldLoopLevel;
   /** Holds the original S2Polygon loglevel. */
   private Level oldPolygonLevel;
 
-  @Override
-  protected void setUp() {
-    super.setUp();
-
+  @Before
+  public void setupLogging() {
     // Disable the logging done by S2Loop and S2Polygon, since it will get in the way of the logging
     // we need to see from S2PolygonBuilder*java, and save the levels to restore when we teardown
     // the test.
@@ -57,8 +64,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     polyLogger.setLevel(Level.OFF);
   }
 
-  @Override
-  protected void tearDown() {
+  @After
+  public void tearDown() {
     // Restore the logging done by S2Loop and S2Polygon to the prior settings.
     Platform.getLoggerForClass(S2Loop.class).setLevel(oldLoopLevel);
     Platform.getLoggerForClass(S2Polygon.class).setLevel(oldPolygonLevel);
@@ -76,6 +83,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 0: No loops. */
+  @Test
   public void testNoLoops() {
     Chain[] chainsIn = {new Chain(null, false)};
     String[] loopsOut = {};
@@ -83,6 +91,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 1: One loop with some extra edges. */
+  @Test
   public void testLoopWithExtras() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:10, 10:5", true),
@@ -94,6 +103,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 2: One loop that has an edge removed by XORing, plus lots of extra edges. */
+  @Test
   public void testLoopEdgeXorWithExtras() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:10, 5:15, 10:10, 10:0", true),
@@ -110,6 +120,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 3: Three loops (two shells and one hole) that combine into one. */
+  @Test
   public void testOneShellTwoHoles() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:10, 5:10, 10:10, 10:5, 10:0", true),
@@ -125,6 +136,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * Test 4: A big CCW triangle contain 3 CW triangular holes. The whole thing looks like a pyramid
    * of nine small triangles (with two extra edges).
    */
+  @Test
   public void testTriangleWithHoles() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:2, 0:4, 0:6, 1:5, 2:4, 3:3, 2:2, 1:1", true),
@@ -150,6 +162,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * Test 5: A square divided into four subsquares. In this case we want to extract the four loops
    * rather than taking their union. There are four extra edges as well.
    */
+  @Test
   public void testFourSubsquaresLoops() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:5, 5:5, 5:0", true),
@@ -167,6 +180,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 6: Five nested loops that touch at a point. */
+  @Test
   public void testFiveNestedLoops() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:10, 10:10, 10:0", true),
@@ -186,6 +200,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 7: Four diamonds nested within each other touching at two points. */
+  @Test
   public void testFourNestedDiamonds() {
     Chain[] chainsIn = {
       new Chain("0:-20, -10:0, 0:20, 10:0", true),
@@ -206,6 +221,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   /**
    * Test 8: Seven diamonds nested within each other touching at one point between each nested pair.
    */
+  @Test
   public void testSevenDiamonds() {
     Chain[] chainsIn = {
       new Chain("0:-70, -70:0, 0:70, 70:0", true),
@@ -228,7 +244,8 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     runTest(1, 0, true, 0.0, 9.0, 4.0, chainsIn, loopsOut, 0, true);
   }
 
-  /** Test 9: A triangle and a self-intersecting bowtie. */
+  /** Test 9: A triangle and a self-intersecting (invalid) bowtie. */
+  @Test
   public void testTriangleAndBowtie() {
     Chain[] chainsIn = {
       new Chain("0:0, 0:10, 5:5", true),
@@ -240,6 +257,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /** Test 10: Two triangles that intersect each other. */
+  @Test
   public void testTwoIntersectingTriangles() {
     Chain[] chainsIn = {new Chain("0:0, 0:12, 6:6", true), new Chain("3:6, 3:18, 9:12", true)};
     String[] loopsOut = {};
@@ -247,9 +265,9 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   /**
-   * Test 11: Four squares that combine to make a big square. The nominal edges of the square are
-   * at +/-8.5 degrees in latitude and longitude. All vertices except the center vertex are
-   * perturbed by up to 0.5 degrees in latitude and/or longitude.
+   * Test 11: Four squares that combine to make a big square. The nominal edges of the square are at
+   * +/-8.5 degrees in latitude and longitude. All vertices except the center vertex are perturbed
+   * by up to 0.5 degrees in latitude and/or longitude.
    *
    * <p>The various copies of the center vertex are misaligned by more than this (i.e. they are
    * structured as a tree where adjacent vertices are separated by at most 1 degree in latitude
@@ -258,6 +276,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * the output. However, it's important that all edge pairs that need to be XORed are separated by
    * no more than 'min_merge' below.
    */
+  @Test
   public void testFourSubsquaresUnion() {
     Chain[] chainsIn = {
       new Chain("-8:-8, -8:0", false),
@@ -618,10 +637,10 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
 
       boolean result;
       if (xorEdges < 0) {
-        result = builder.assembleLoops(loops, unusedEdges);
+        result = uncheckedCreate(() -> builder.assembleLoops(loops, unusedEdges));
       } else {
         S2Polygon polygon = new S2Polygon();
-        result = builder.assemblePolygon(polygon, unusedEdges);
+        result = uncheckedCreate(() -> builder.assemblePolygon(polygon, unusedEdges));
         polygon.release(loops);
         for (S2Loop loop : loops) {
           loop.normalize();
@@ -703,6 +722,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   static final int NUM_TESTS = 100;
+
   /**
    * Verifies that {@link S2PolygonBuilder#assemblePolygon(S2Polygon,List)} produces an {@code
    * S2Polygon} with consistently merged points as long as the edges are added in the same order and
@@ -711,6 +731,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
    * coordinates read from a file, most applications desire the builder to always merge the same
    * vertices, and this test verifies that it will.
    */
+  @Test
   public void testVertexMergeDeterminism() {
     // Make sure the points vary by reference.
     S2Point[][] points = new S2Point[NUM_TESTS][5];
@@ -757,6 +778,7 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testSnapLevel() {
     S2PolygonBuilder.Options options =
         S2PolygonBuilder.Options.builder().setRobustnessRadius(S1Angle.degrees(180.0)).build();
@@ -768,23 +790,23 @@ public strictfp class S2PolygonBuilderTest extends GeometryTestCase {
     options = options.toBuilder().setSnapToCellCenters(true).build();
     assertEquals(0, options.getSnapLevel());
     assertTrue(
-        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel()) / 2.0)
+        S1Angle.radians(MAX_DIAG.getValue(options.getSnapLevel()) / 2.0)
             .lessOrEquals(options.getRobustnessRadius()));
 
     // Something smallish.
     options = options.toBuilder().setRobustnessRadius(S1Angle.degrees(0.1)).build();
     assertTrue(
-        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel()) / 2.0)
+        S1Angle.radians(MAX_DIAG.getValue(options.getSnapLevel()) / 2.0)
             .lessOrEquals(options.getRobustnessRadius()));
     assertTrue(
-        S1Angle.radians(PROJ.maxDiag.getValue(options.getSnapLevel() - 1) / 2.0)
+        S1Angle.radians(MAX_DIAG.getValue(options.getSnapLevel() - 1) / 2.0)
             .greaterThan(options.getRobustnessRadius()));
 
     // Too small for a leaf cell.
     options =
         options
             .toBuilder()
-            .setRobustnessRadius(S1Angle.radians(PROJ.maxDiag.getValue(S2CellId.MAX_LEVEL) / 2.1))
+            .setRobustnessRadius(S1Angle.radians(MAX_DIAG.getValue(S2CellId.MAX_LEVEL) / 2.1))
             .build();
     assertEquals(-1, options.getSnapLevel());
   }

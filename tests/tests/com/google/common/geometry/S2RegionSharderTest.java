@@ -15,15 +15,23 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import java.util.List;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public class S2RegionSharderTest extends TestCase {
+/** Tests for {@link S2RegionSharder}. */
+@RunWith(JUnit4.class)
+public class S2RegionSharderTest {
   private static final int DEFAULT_SHARD = 42;
 
+  @Test
   public void testGetMostIntersectingShard() {
     ImmutableList<S2CellUnion> coverings = ImmutableList.of(
         S2CellUnion.copyFrom(ImmutableList.of(
@@ -55,6 +63,7 @@ public class S2RegionSharderTest extends TestCase {
         DEFAULT_SHARD));
   }
 
+  @Test
   public void testGetIntersectingShards() {
     List<S2CellUnion> coverings = ImmutableList.of(
         S2CellUnion.copyFrom(ImmutableList.of(S2CellId.fromFacePosLevel(0, 0, 10))),

@@ -15,10 +15,16 @@
  */
 package com.google.common.geometry;
 
-import junit.framework.TestCase;
+import static org.junit.Assert.assertEquals;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2Error. */
-public class S2ErrorTest extends TestCase {
+@RunWith(JUnit4.class)
+public class S2ErrorTest {
+  @Test
   public void testBasic() {
     S2Error error = new S2Error();
     error.init(S2Error.Code.DUPLICATE_VERTICES, "Vertex %d is the same as vertex %d", 23, 47);

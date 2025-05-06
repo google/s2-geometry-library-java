@@ -16,9 +16,11 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.DBL_EPSILON;
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.faceSiTiToXyz;
 import static com.google.common.geometry.S2Projections.siTiToSt;
 import static com.google.common.geometry.S2Projections.stToIj;
+import static com.google.common.geometry.S2Projections.stToUV;
+import static com.google.common.geometry.S2Projections.uvToST;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
@@ -47,6 +49,7 @@ public class S2PaddedCell {
 
   /** Minimum (i,j)-coordinates of this cell, before padding. */
   private final int iLo;
+
   private final int jLo;
 
   /** Hilbert curve orientation of this cell. */
@@ -156,8 +159,8 @@ public class S2PaddedCell {
     // cells where the recursion terminates.)
     if (middle == null) {
       int ijSize = S2CellId.getSizeIJ(level);
-      double u = PROJ.stToUV(siTiToSt(2L * iLo + ijSize));
-      double v = PROJ.stToUV(siTiToSt(2L * jLo + ijSize));
+      double u = stToUV(siTiToSt(2L * iLo + ijSize));
+      double v = stToUV(siTiToSt(2L * jLo + ijSize));
       middle =
           new R2Rect(
               new R1Interval(u - padding, u + padding), new R1Interval(v - padding, v + padding));
@@ -189,8 +192,8 @@ public class S2PaddedCell {
         return id();
       }
     } else {
-      if (rect.x().contains(PROJ.stToUV(siTiToSt(2L * iLo + ijSize)))
-          || rect.y().contains(PROJ.stToUV(siTiToSt(2L * jLo + ijSize)))) {
+      if (rect.x().contains(stToUV(siTiToSt(2L * iLo + ijSize)))
+          || rect.y().contains(stToUV(siTiToSt(2L * jLo + ijSize)))) {
         return id();
       }
     }
@@ -202,10 +205,10 @@ public class S2PaddedCell {
     // Increase the padding to compensate for the error in uvToST().
     // (The constant below is a provable upper bound on the additional error.)
     R2Rect padded = rect.expanded(padding() + 1.5 * DBL_EPSILON);
-    int iMin = max(iLo, stToIj(PROJ.uvToST(padded.x().lo())));
-    int jMin = max(jLo, stToIj(PROJ.uvToST(padded.y().lo())));
-    int iMax = min(iLo + ijSize - 1, stToIj(PROJ.uvToST(padded.x().hi())));
-    int jMax = min(jLo + ijSize - 1, stToIj(PROJ.uvToST(padded.y().hi())));
+    int iMin = max(iLo, stToIj(uvToST(padded.x().lo())));
+    int jMin = max(jLo, stToIj(uvToST(padded.y().lo())));
+    int iMax = min(iLo + ijSize - 1, stToIj(uvToST(padded.x().hi())));
+    int jMax = min(jLo + ijSize - 1, stToIj(uvToST(padded.y().hi())));
     int iXor = iMin ^ iMax;
     int jXor = jMin ^ jMax;
 
@@ -230,7 +233,7 @@ public class S2PaddedCell {
     int ijSize = S2CellId.getSizeIJ(level);
     long si = 2L * iLo + ijSize;
     long ti = 2L * jLo + ijSize;
-    return PROJ.faceSiTiToXyz(id.face(), si, ti).normalize();
+    return faceSiTiToXyz(id.face(), si, ti).normalize();
   }
 
   /** Returns the vertex where the S2 space-filling curve enters this cell. */
@@ -244,7 +247,7 @@ public class S2PaddedCell {
       i += ijSize;
       j += ijSize;
     }
-    return PROJ.faceSiTiToXyz(id.face(), 2L * i, 2L * j).normalize();
+    return faceSiTiToXyz(id.face(), 2L * i, 2L * j).normalize();
   }
 
   /** Returns the vertex where the S2 space-filling curve exits this cell. */
@@ -259,6 +262,6 @@ public class S2PaddedCell {
     } else {
       j += ijSize;
     }
-    return PROJ.faceSiTiToXyz(id.face(), 2L * i, 2L * j).normalize();
+    return faceSiTiToXyz(id.face(), 2L * i, 2L * j).normalize();
   }
 }

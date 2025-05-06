@@ -16,12 +16,21 @@
 
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2PointRegion. */
+@RunWith(JUnit4.class)
 public class S2PointRegionTest extends GeometryTestCase {
+  @Test
   public void testS2Region() {
     S2PointRegion pointRegion = new S2PointRegion(1, 0, 0);
 
@@ -38,6 +47,7 @@ public class S2PointRegionTest extends GeometryTestCase {
     assertTrue(pointRegion.mayIntersect(cell));
   }
 
+  @Test
   public void testSerialization() throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     new S2PointRegion(S2Point.X_NEG).encode(bos);

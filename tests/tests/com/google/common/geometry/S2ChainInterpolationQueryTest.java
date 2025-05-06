@@ -15,20 +15,25 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/**
- * Tests for S2ChainInterpolationQuery.
- */
-public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
+/** Tests for S2ChainInterpolationQuery. */
+@RunWith(JUnit4.class)
+public class S2ChainInterpolationQueryTest extends GeometryTestCase {
   static final double EPSILON = 1.e-8;
+  static final S1Angle TOLERANCE = S1Angle.degrees(0.01);
 
   private static class TestResult {
     S2Point point;
@@ -42,6 +47,7 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testS1AngleQuerySimplePolylines() {
     // Set up the test inputs.
     final double latitudeB = 1.0;
@@ -58,8 +64,7 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     S2LaxPolylineShape shapeBB = S2LaxPolylineShape.create(ImmutableList.of(b, b));
     S2Polyline polylineCC = new S2Polyline(ImmutableList.of(c));
 
-    S2ChainInterpolationQuery queryEmpty =
-        new S2ChainInterpolationQuery(emptyShape);
+    S2ChainInterpolationQuery queryEmpty = new S2ChainInterpolationQuery(emptyShape);
     S2ChainInterpolationQuery queryAC = new S2ChainInterpolationQuery(shapeAC);
     S2ChainInterpolationQuery queryABC = new S2ChainInterpolationQuery(shapeABC);
     S2ChainInterpolationQuery queryBB = new S2ChainInterpolationQuery(shapeBB);
@@ -142,23 +147,25 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     assertEquals(groundTruth.size(), resultsAC.size());
     assertEquals(groundTruth.size(), resultsABC.size());
     assertEquals(groundTruth.size(), resultsBB.size());
-    assertTrue(resultsCC.isEmpty());
+    assertEquals(groundTruth.size(), resultsCC.size());
 
     assertTrue(new S1Angle(acPointAtInfinity, c).degrees() <= EPSILON);
 
     for (int i = 0; i < groundTruth.size(); ++i) {
-      assertTrue(new S1Angle(resultsAC.get(i).point, groundTruth.get(i).point).degrees()
-                     <= EPSILON);
-      assertTrue(new S1Angle(resultsABC.get(i).point, groundTruth.get(i).point).degrees()
-                     <= EPSILON);
+      assertTrue(
+          new S1Angle(resultsAC.get(i).point, groundTruth.get(i).point).degrees() <= EPSILON);
+      assertTrue(
+          new S1Angle(resultsABC.get(i).point, groundTruth.get(i).point).degrees() <= EPSILON);
       assertTrue(new S1Angle(resultsBB.get(i).point, shapeBB.vertex(0)).degrees() <= EPSILON);
 
       assertEquals(0, resultsAC.get(i).edgeId);
       assertEquals(0, resultsBB.get(i).edgeId);
+      assertEquals(0, resultsCC.get(i).edgeId);
       assertEquals(groundTruth.get(i).edgeId, resultsABC.get(i).edgeId);
     }
   }
 
+  @Test
   public void testS2ParametricQueryDistance() {
     // Set up the test inputs.
     final ImmutableList<Double> distances =
@@ -198,12 +205,12 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     for (final double d : distances) {
       boolean findResult = query.findPoint(S1Angle.degrees(d));
       assertTrue(findResult);
-      results.add(new TestResult(
-          query.resultPoint(), query.resultEdgeId(), query.resultDistance()));
+      results.add(
+          new TestResult(query.resultPoint(), query.resultEdgeId(), query.resultDistance()));
     }
 
     // Check the test results.
-    assertEquals(totalLength, length, totalLength);
+    assertDoubleNear(totalLength, length, EPSILON);
     assertEquals(distances.size(), results.size());
 
     for (int i = 0; i < distances.size(); ++i) {
@@ -213,13 +220,13 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
       final S1Angle distance = results.get(i).distance;
 
       if (queryDistance < 0) {
-        assertDoubleEquals(lat, 0);
+        assertAlmostEquals(lat, 0);
         assertEquals(0, edgeId);
-        assertDoubleEquals(distance.degrees(), 0.0);
+        assertAlmostEquals(distance.degrees(), 0.0);
       } else if (queryDistance > 2) {
         assertEquals(2, lat, EPSILON);
         assertEquals(shape.numEdges() - 1, edgeId);
-        assertDoubleEquals(distance.degrees(), totalLength);
+        assertAlmostEquals(distance.degrees(), totalLength);
       } else {
         assertEquals(queryDistance, lat, EPSILON);
         assertTrue(edgeId >= 0);
@@ -233,11 +240,12 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testS2ParametricQueryChains() {
-    // Set up the test input.  Two closed degenerate loops, each with two edges.
+    // Set up the test input. Two closed degenerate loops, each with two edges.
     ArrayList<List<S2Point>> loops = new ArrayList<>();
-    loops.add(makeLoop("0:0, 1:0").vertices());
-    loops.add(makeLoop("2:0, 3:0").vertices());
+    loops.add(makeInvalidLoop("0:0, 1:0").vertices());
+    loops.add(makeInvalidLoop("2:0, 3:0").vertices());
     S2LaxPolygonShape shape = S2LaxPolygonShape.create(loops);
 
     S2ChainInterpolationQuery query = new S2ChainInterpolationQuery(shape);
@@ -257,5 +265,91 @@ public strictfp class S2ChainInterpolationQueryTest extends GeometryTestCase {
     assertEquals(1, S2LatLng.latitude(query.resultPoint()).degrees(), EPSILON);
     assertEquals(0.5, S2LatLng.latitude(query0.resultPoint()).degrees(), EPSILON);
     assertEquals(2.5, S2LatLng.latitude(query1.resultPoint()).degrees(), EPSILON);
+  }
+
+  @Test
+  public void testGetLengthAtEdgeEmpty() {
+    S2LaxPolylineShape shape = S2LaxPolylineShape.EMPTY;
+    S2ChainInterpolationQuery query = new S2ChainInterpolationQuery(shape);
+    assertEquals(query.getLengthAtEdgeEnd(0), S1Angle.ZERO);
+  }
+
+  @Test
+  public void testGetLengthAtEdgePolyline() {
+    S2Point vertex0 = S2LatLng.fromDegrees(0.0, 0.0).toPoint();
+    S2Point vertex1 = S2LatLng.fromDegrees(0.0, 1.0).toPoint();
+    S2Point vertex2 = S2LatLng.fromDegrees(0.0, 3.0).toPoint();
+    S2Point vertex3 = S2LatLng.fromDegrees(0.0, 6.0).toPoint();
+
+    S2LaxPolylineShape shape =
+        S2LaxPolylineShape.create(ImmutableList.of(vertex0, vertex1, vertex2, vertex3));
+
+    S2ChainInterpolationQuery query = new S2ChainInterpolationQuery(shape);
+
+    assertEquals(query.getLength(), S1Angle.degrees(6.0));
+    assertEquals(query.getLengthAtEdgeEnd(-100), S1Angle.INFINITY);
+    assertEquals(query.getLengthAtEdgeEnd(0), S1Angle.degrees(1.0));
+    assertEquals(query.getLengthAtEdgeEnd(1), S1Angle.degrees(3.0));
+    assertEquals(query.getLengthAtEdgeEnd(2), S1Angle.degrees(6.0));
+    assertEquals(query.getLengthAtEdgeEnd(100), S1Angle.INFINITY);
+  }
+
+  @Test
+  public void testGetLengthAtEdgePolygon() {
+    S2Point vertex0 = S2LatLng.fromDegrees(1.0, 1.0).toPoint();
+    S2Point vertex1 = S2LatLng.fromDegrees(2.0, 1.0).toPoint();
+    S2Point vertex2 = S2LatLng.fromDegrees(2.0, 3.0).toPoint();
+    S2Point vertex3 = S2LatLng.fromDegrees(1.0, 3.0).toPoint();
+    S2Point vertex4 = S2LatLng.fromDegrees(0.0, 0.0).toPoint();
+    S2Point vertex5 = S2LatLng.fromDegrees(0.0, 4.0).toPoint();
+    S2Point vertex6 = S2LatLng.fromDegrees(3.0, 4.0).toPoint();
+    S2Point vertex7 = S2LatLng.fromDegrees(3.0, 0.0).toPoint();
+
+    List<List<S2Point>> loops = new ArrayList<>();
+    loops.add(ImmutableList.of(vertex0, vertex1, vertex2, vertex3));
+    loops.add(ImmutableList.of(vertex4, vertex5, vertex6, vertex7));
+
+    S2LaxPolygonShape shape = S2LaxPolygonShape.create(loops);
+
+    S2ChainInterpolationQuery query0 = new S2ChainInterpolationQuery(shape, 0);
+
+    assertDoubleNear(query0.getLength().degrees(), 6.0, TOLERANCE.degrees());
+    assertEquals(query0.getLengthAtEdgeEnd(-100), S1Angle.INFINITY);
+    assertDoubleNear(query0.getLengthAtEdgeEnd(0).degrees(), 1.0, TOLERANCE.degrees());
+    assertDoubleNear(query0.getLengthAtEdgeEnd(1).degrees(), 3.0, TOLERANCE.degrees());
+    assertDoubleNear(query0.getLengthAtEdgeEnd(2).degrees(), 4.0, TOLERANCE.degrees());
+    assertDoubleNear(query0.getLengthAtEdgeEnd(3).degrees(), 6.0, TOLERANCE.degrees());
+    assertEquals(query0.getLengthAtEdgeEnd(4), S1Angle.INFINITY);
+    assertEquals(query0.getLengthAtEdgeEnd(5), S1Angle.INFINITY);
+    assertEquals(query0.getLengthAtEdgeEnd(6), S1Angle.INFINITY);
+    assertEquals(query0.getLengthAtEdgeEnd(7), S1Angle.INFINITY);
+    assertEquals(query0.getLengthAtEdgeEnd(100), S1Angle.INFINITY);
+
+    S2ChainInterpolationQuery query1 = new S2ChainInterpolationQuery(shape, 1);
+
+    assertDoubleNear(query1.getLength().degrees(), 14.0, TOLERANCE.degrees());
+    assertEquals(query1.getLengthAtEdgeEnd(-100), S1Angle.INFINITY);
+    assertEquals(query1.getLengthAtEdgeEnd(0), S1Angle.INFINITY);
+    assertEquals(query1.getLengthAtEdgeEnd(1), S1Angle.INFINITY);
+    assertEquals(query1.getLengthAtEdgeEnd(2), S1Angle.INFINITY);
+    assertEquals(query1.getLengthAtEdgeEnd(3), S1Angle.INFINITY);
+    assertDoubleNear(query1.getLengthAtEdgeEnd(4).degrees(), 4.0, TOLERANCE.degrees());
+    assertDoubleNear(query1.getLengthAtEdgeEnd(5).degrees(), 7.0, TOLERANCE.degrees());
+    assertDoubleNear(query1.getLengthAtEdgeEnd(6).degrees(), 11.0, TOLERANCE.degrees());
+    assertDoubleNear(query1.getLengthAtEdgeEnd(7).degrees(), 14.0, TOLERANCE.degrees());
+    assertEquals(query1.getLengthAtEdgeEnd(100), S1Angle.INFINITY);
+  }
+
+  @Test
+  public void testSlice() {
+    S2ChainInterpolationQuery emptyQuery = new S2ChainInterpolationQuery(S2LaxPolylineShape.EMPTY);
+    assertEquals("", S2TextFormat.toString(emptyQuery.slice(0, 1)));
+
+    S2LaxPolylineShape polyline = S2TextFormat.makeLaxPolylineOrDie("0:0, 0:1, 0:2");
+    S2ChainInterpolationQuery query = new S2ChainInterpolationQuery(polyline);
+    assertEquals("0:0, 0:1, 0:2", S2TextFormat.toString(query.slice(0, 1)));
+    assertEquals("0:0, 0:1", S2TextFormat.toString(query.slice(0, 0.5)));
+    assertEquals("0:2, 0:1", S2TextFormat.toString(query.slice(1, 0.5)));
+    assertEquals("0:0.5, 0:1, 0:1.5", S2TextFormat.toString(query.slice(0.25, 0.75)));
   }
 }

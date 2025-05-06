@@ -16,8 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static java.lang.Math.abs;
-import static java.lang.Math.acos;
+import static com.google.common.geometry.S2.skipAssertions;
 import static java.lang.Math.asin;
 import static java.lang.Math.cos;
 import static java.lang.Math.max;
@@ -34,8 +33,8 @@ import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 
 /**
- * S2LatLngRect represents a latitude-longitude rectangle. It is capable of representing the empty
- * and full rectangles as well as single points. Rectangles may be constructed via a {@link
+ * S2LatLngRect represents a closed latitude-longitude rectangle. It is capable of representing the
+ * empty and full rectangles as well as single points. Rectangles may be constructed via a {@link
  * Builder}, or more commonly via {@link S2Region#getRectBound()}, or by the static factory methods
  * provided here.
  *
@@ -45,41 +44,50 @@ import jsinterop.annotations.JsType;
  * Use the polarClosure() method if you want to expand a rectangle so that it contains all possible
  * representations of any contained poles.
  *
- * <p>Because S2LatLngRect uses S1Interval to store the longitude range, longitudes of -180 degrees
- * are treated specially. Except for empty and full longitude spans, -180 degree longitudes will
- * turn into +180 degrees. This sign flip causes lng.lo() to be greater than lng.hi(), indicating
- * that the rectangle will wrap around through -180 instead of through +179. Thus the math is
- * consistent with the library, but the sign flip can be surprising, especially when working with
- * map projections where -180 and +180 are at opposite ends of the flattened map. See {@link
- * S1Interval} for more details.
+ * <p>Note that the longitude range may have {@code lo() > hi()}. This indicates that the rectangle
+ * crosses the 180 degree longitude line, rather than wrapping around the other side of the sphere.
  *
- * <p>S2LatLngRect is immutable, so all methods that change the boundary return a new instance. To
- * efficiently make numerous alterations to the bounds, use a {@link Builder} instead, mutate it to
- * compute the desired bounds, and then call {@link Builder#build()} to convert it to an immutable
- * S2LatLngRect.
+ * <p>Furthermore, because S2LatLngRect uses S1Interval to store the longitude range, longitudes of
+ * -180 degrees are treated specially. Except for empty and full longitude spans, -180 degree
+ * longitudes will turn into +180 degrees. This sign flip causes lng.lo() to be greater than
+ * lng.hi(), indicating that the rectangle will wrap around through -180 instead of through +179.
+ * Thus the math is consistent with the library, but the sign flip can be surprising, especially
+ * when working with map projections where -180 and +180 are at opposite ends of the flattened map.
+ * See {@link S1Interval} for more details.
+ *
+ * <p>S2LatLngRect is effectively immutable: public methods that change the boundary return new
+ * instances. (Mutating methods on the R1Interval and S1Interval that define the bounds are package-
+ * private). To efficiently make numerous alterations to the bounds, use a {@link Builder} instead,
+ * mutate it to compute the desired bounds, and then call {@link Builder#build()} to convert it to
+ * an S2LatLngRect. See also {@link S2EdgeUtil.RectBounder}.
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2LatLngRect extends S2LatLngRectBase {
+@SuppressWarnings("Assertion")
+public final class S2LatLngRect extends S2LatLngRectBase {
   /** Version number of the lossless encoding format for S2LatLngRect. */
   private static final byte LOSSLESS_ENCODING_VERSION = 1;
 
   /** An {@link S2Coder} that uses {@link #encode} and {@link #decode}. */
-  public static final S2Coder<S2LatLngRect> CODER = new S2Coder<S2LatLngRect>() {
-    @Override public void encode(S2LatLngRect value, OutputStream output) throws IOException {
-      value.encode(output);
-    }
+  public static final S2Coder<S2LatLngRect> CODER =
+      new S2Coder<S2LatLngRect>() {
+        @Override
+        public void encode(S2LatLngRect value, OutputStream output) throws IOException {
+          value.encode(output);
+        }
 
-    @Override public S2LatLngRect decode(Bytes data, Cursor cursor) throws IOException {
-      return S2LatLngRect.decode(data.toInputStream(cursor));
-    }
+        @Override
+        public S2LatLngRect decode(Bytes data, Cursor cursor) throws IOException {
+          return S2LatLngRect.decode(data.toInputStream(cursor));
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   /**
    * The canonical empty rectangle, as derived from the empty R1 and S1 intervals. Empty: lat.lo =
@@ -120,9 +128,9 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     return fromPoint(center).expanded(size.mul(0.5));
   }
 
-  /** Convenience method to construct a rectangle containing a single point. */
+  /** Convenience method to construct a rectangle containing a single normalized point. */
   public static S2LatLngRect fromPoint(S2LatLng p) {
-    // assert (p.isValid());
+    assert skipAssertions || p.isValid();
     return new S2LatLngRect(p, p);
   }
 
@@ -134,7 +142,8 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
    * rectangle.
    */
   public static S2LatLngRect fromPointPair(S2LatLng p1, S2LatLng p2) {
-    // assert (p1.isValid() && p2.isValid());
+    assert skipAssertions || p1.isValid();
+    assert skipAssertions || p2.isValid();
     return new S2LatLngRect(
         R1Interval.fromPointPair(p1.lat().radians(), p2.lat().radians()),
         S1Interval.fromPointPair(p1.lng().radians(), p2.lng().radians()));
@@ -144,31 +153,16 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
    * Returns a latitude-longitude rectangle that contains the edge from "a" to "b". Both points must
    * be unit-length. Note that the bounding rectangle of an edge can be larger than the bounding
    * rectangle of its endpoints.
+   *
+   * @deprecated Use {@link S2EdgeUtil.RectBounder} instead.
    */
+  @Deprecated
   public static S2LatLngRect fromEdge(S2Point a, S2Point b) {
-    // assert (S2.isUnitLength(a) && S2.isUnitLength(b));
-    S2LatLngRect r = fromPointPair(new S2LatLng(a), new S2LatLng(b));
-
-    // Check whether the min/max latitude occurs in the edge interior. We find the normal to the
-    // plane containing AB, and then a vector "dir" in this plane that also passes through the
-    // equator. We use RobustCrossProd to ensure that the edge normal is accurate even when the two
-    // points are very close together.
-    S2Point ab = S2.robustCrossProd(a, b);
-    S2Point dir = ab.crossProd(S2Point.Z_POS);
-    double da = dir.dotProd(a);
-    double db = dir.dotProd(b);
-    if (da * db >= 0) {
-      // Minimum and maximum latitude are attained at the vertices.
-      return r;
-    }
-    // Minimum/maximum latitude occurs in the edge interior. This affects the latitude bounds but
-    // not the longitude bounds.
-    double absLat = acos(abs(ab.z / ab.norm()));
-    if (da < 0) {
-      return new S2LatLngRect(new R1Interval(r.lat().lo(), absLat), r.lng());
-    } else {
-      return new S2LatLngRect(new R1Interval(-absLat, r.lat().hi()), r.lng());
-    }
+    // Note that RectBounder asserts that the given S2Point is unit length.
+    S2EdgeUtil.RectBounder bounder = new S2EdgeUtil.RectBounder();
+    bounder.addPoint(a);
+    bounder.addPoint(b);
+    return bounder.getBound();
   }
 
   /**
@@ -176,18 +170,26 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
    * hi.lng()}, the rectangle spans the 180 degree longitude line. Both points must be normalized,
    * with {@code lo.lat() <= hi.lat()}. The rectangle contains all the points p such that {@code lo
    * <= p && p <= hi}, where {@code <=} is defined in the obvious way.
+   *
+   * <p>Callers can check validity before construction using {@link #isValid(S2LatLng, S2LatLng)}.
    */
   @JsIgnore
   public S2LatLngRect(final S2LatLng lo, final S2LatLng hi) {
     super(lo, hi);
-    // assert (isValid());
+    assertValid();
   }
 
-  /** Constructs a rectangle from latitude and longitude intervals. */
+  /**
+   * Constructs a rectangle from latitude and longitude intervals. The two intervals must either be
+   * both empty or both non-empty, and the latitude interval must not extend outside [-90, +90]
+   * degrees. Note that both intervals (and hence the rectangle) are closed.
+   *
+   * <p>Callers can check validity before construction using {@link #isValid(S2LatLng, S2LatLng)}.
+   */
   @JsIgnore
   public S2LatLngRect(R1Interval lat, S1Interval lng) {
     super(lat, lng);
-    // assert (isValid());
+    assertValid();
   }
 
   /** Creates a new S2LatLngRect as a copy of {@code b}. */
@@ -217,7 +219,8 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
 
   /**
    * Returns a new rectangle that includes this rectangle and the given point, expanding this
-   * rectangle to include the point by the minimum amount possible.
+   * rectangle to include the point by the minimum amount possible. The point does not need to be
+   * normalized.
    */
   public S2LatLngRect addPoint(S2Point p) {
     return addPoint(new S2LatLng(p));
@@ -225,12 +228,11 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
 
   /**
    * Returns a new rectangle that includes this rectangle and the given S2LatLng, expanding this
-   * rectangle to include the point by the minimum amount possible. The S2LatLng argument must be
-   * normalized.
+   * rectangle to include the point by the minimum amount possible. The argument must be normalized.
    */
   @JsMethod(name = "addLatLng")
   public S2LatLngRect addPoint(S2LatLng ll) {
-    // assert (ll.isValid());
+    assert skipAssertions || ll.isValid();
     R1Interval newLat = lat.addPoint(ll.lat().radians());
     S1Interval newLng = lng.addPoint(ll.lng().radians());
     return new S2LatLngRect(newLat, newLng);
@@ -249,7 +251,8 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
    * 5km), use the convolveWithCap() method instead.
    */
   public S2LatLngRect expanded(S2LatLng margin) {
-    // assert (margin.lat().radians() >= 0 && margin.lng().radians() >= 0);
+    assert margin.lat().radians() >= 0;
+    assert margin.lng().radians() >= 0;
     return new S2LatLngRect(
         lat.expanded(margin.lat().radians()).intersection(fullLat()),
         lng.expanded(margin.lng().radians()));
@@ -301,9 +304,14 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
       // Shrink the latitude interval unless the latitude interval contains a pole and the longitude
       // interval is full, in which case the rectangle has no boundary at that pole.
       R1Interval full = fullLat();
-      R1Interval latResult = new R1Interval(
-          lat().lo() <= full.lo() && lng().isFull() ? full.lo() : lat().lo() - distance.radians(),
-          lat().hi() >= full.hi() && lng().isFull() ? full.hi() : lat().hi() + distance.radians());
+      R1Interval latResult =
+          new R1Interval(
+              lat().lo() <= full.lo() && lng().isFull()
+                  ? full.lo()
+                  : lat().lo() - distance.radians(),
+              lat().hi() >= full.hi() && lng().isFull()
+                  ? full.hi()
+                  : lat().hi() + distance.radians());
       if (latResult.isEmpty()) {
         return S2LatLngRect.empty();
       }
@@ -375,13 +383,6 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     return builder.build();
   }
 
-  // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of Object,
-  // so we can't mark it as such.
-  @SuppressWarnings("MissingOverride")
-  public S2Region clone() {
-    return new S2LatLngRect(this.lo(), this.hi());
-  }
-
   @Override
   public S2LatLngRect getRectBound() {
     return this;
@@ -434,11 +435,10 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     double lngLo = decoder.readDouble();
     double lngHi = decoder.readDouble();
     S1Interval lng = new S1Interval(lngLo, lngHi);
-    S2LatLngRect bound = new S2LatLngRect(lat, lng);
-    if (!bound.isValid()) {
-      throw new IOException("Decoded S2LatLngRect is invalid.");
+    if (!S2LatLngRect.isValid(lat, lng)) {
+      throw new IOException("Decoded lat and lng intervals do not form a valid S2LatLngRect.");
     }
-    return bound;
+    return new S2LatLngRect(lat, lng);
   }
 
   /**
@@ -451,15 +451,35 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
    * S2LatLngRect.Builder(); for (S2LatLng point : points) { builder.addPoint(point); } return
    * builder.build(); }}
    */
-  public static final strictfp class Builder extends S2LatLngRectBase {
+  public static final class Builder extends S2LatLngRectBase {
+    /** Constructs an empty rectangle Builder. */
     public Builder() {
       super();
     }
 
+    /**
+     * Constructs a rectangle Builder from the given minimum and maximum latitudes and longitudes.
+     * If {@code lo.lng() > hi.lng()}, the rectangle spans the 180 degree longitude line. Both
+     * points must be normalized, with {@code lo.lat() <= hi.lat()}, although validity is not
+     * checked until {@link #build()} is called. The rectangle contains all the points p such that
+     * {@code lo <= p && p <= hi}, where {@code <=} is defined in the obvious way.
+     *
+     * <p>Callers can check input validity before construction with {@link #isValid(S2LatLng,
+     * S2LatLng)}, or before calling build() using {@link #isValid()}.
+     */
     public Builder(final S2LatLng lo, final S2LatLng hi) {
       super(lo, hi);
     }
 
+    /**
+     * Constructs a rectangle Builder from the given latitude and longitude intervals. The two
+     * intervals must either be both empty or both non-empty, and the latitude interval must not
+     * extend outside [-90, +90] degrees, although validity is not checked until {@link #build()} is
+     * called. Note that both intervals (and hence the rectangle) are closed.
+     *
+     * <p>Callers can check input validity before construction with {@link #isValid(R1Interval,
+     * S1Interval)}, or before calling build() using {@link #isValid()}.
+     */
     public Builder(R1Interval lat, S1Interval lng) {
       super(lat, lng);
     }
@@ -469,6 +489,12 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
       lat.setLo(b.lat.lo());
       lat.setHi(b.lat.hi());
       lng.set(b.lng.lo(), b.lng.hi(), true);
+    }
+
+    /** Clears the state of this builder, making it empty. */
+    public void clear() {
+      lat.setEmpty();
+      lng.setEmpty();
     }
 
     @Override
@@ -485,9 +511,20 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
       return new S1Interval(lng);
     }
 
+    /** Directly sets the latitude interval of the rectangle being built. */
+    public void setLat(double lo, double hi) {
+      lat.set(lo, hi);
+    }
+
+    /** Directly sets the longitude interval of the rectangle being built. */
+    public void setLng(double lo, double hi) {
+      lng.set(lo, hi, false);
+    }
+
     /** Returns a new immutable S2LatLngRect copied from the current state of this builder. */
     public S2LatLngRect build() {
-      return new S2LatLngRect(new R1Interval(lat), new S1Interval(lng));
+      S2LatLngRect r = new S2LatLngRect(new R1Interval(lat), new S1Interval(lng));
+      return r;
     }
 
     /** A builder initialized to be empty (such that it doesn't contain anything). */
@@ -504,8 +541,8 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
     }
 
     /**
-     * Increases the size of the bounding rectangle to include the given point. The rectangle is
-     * expanded by the minimum amount possible.
+     * Increases the size of the bounding rectangle to include the given point, which must be
+     * normalized. The rectangle is expanded by the minimum amount possible.
      */
     @CanIgnoreReturnValue
     public Builder addPoint(S2Point p) {
@@ -515,11 +552,11 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
 
     /**
      * Increases the size of the bounding rectangle to include the given point. The rectangle is
-     * expanded by the minimum amount possible.
+     * expanded by the minimum amount possible. The given S2LatLng must be valid.
      */
     @CanIgnoreReturnValue
     public Builder addPoint(S2LatLng ll) {
-      // assert (ll.isValid());
+      assert skipAssertions || ll.isValid();
       lat.unionInternal(ll.lat().radians());
       lng.unionInternal(S1Interval.fromPoint(ll.lng().radians()));
       return this;
@@ -537,7 +574,8 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
      */
     @CanIgnoreReturnValue
     public Builder expanded(S2LatLng margin) {
-      // assert (margin.lat().radians() >= 0 && margin.lng().radians() >= 0);
+      assert margin.lat().radians() >= 0;
+      assert margin.lng().radians() >= 0;
       lat.expandedInternal(margin.lat().radians());
       lat.intersectionInternal(fullLat());
       lng.expandedInternal(margin.lng().radians());
@@ -606,13 +644,6 @@ public final strictfp class S2LatLngRect extends S2LatLngRectBase {
       union(S2Cap.fromAxisChord(S2LatLng.fromRadians(latHi, lngLo).toPoint(), r).getRectBound());
       union(S2Cap.fromAxisChord(S2LatLng.fromRadians(latHi, lngHi).toPoint(), r).getRectBound());
       return this;
-    }
-
-    // NOTE: This should be marked as @Override, but clone() isn't present in GWT's version of
-    // Object, so we can't mark it as such.
-    @SuppressWarnings("MissingOverride")
-    public S2Region clone() {
-      return new S2LatLngRect(this.lo(), this.hi());
     }
 
     @Override

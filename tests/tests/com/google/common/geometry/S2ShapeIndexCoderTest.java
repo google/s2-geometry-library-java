@@ -15,13 +15,18 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
+import static java.lang.Math.max;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
+import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -31,24 +36,31 @@ import java.util.Map;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2ShapeIndexCoder. */
+@RunWith(JUnit4.class)
 public class S2ShapeIndexCoderTest extends GeometryTestCase {
-  // TODO(user): Add benchmarks.
+  // TODO(user): Add benchmarks for the S2ShapeIndexCoder.
 
   private static final S2Shape oneEdge = makePolyline("1:1, 2:2");
 
+  @Test
   public void testEmpty() throws IOException {
     S2ShapeIndex expected = new S2ShapeIndex();
     checkEncodeDecode(expected, 4);
   }
 
+  @Test
   public void testNull() throws IOException {
     byte[] b = BaseEncoding.base16().decode("080028000000");
     S2ShapeIndex index = decode(b);
     assertNull(index.shapes.get(0));
   }
 
+  @Test
   public void testOneEdge() throws IOException {
     S2ShapeIndex expected = new S2ShapeIndex();
     expected.add(oneEdge);
@@ -56,6 +68,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     checkEncodeDecode(expected, 8);
   }
 
+  @Test
   public void testOneEdgeNull() throws IOException {
     byte[] b =
         BaseEncoding.base16()
@@ -64,9 +77,10 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
                     + "28516A6D8FDBA13F27DCF7C958DEA13F28C809010408020010");
     S2ShapeIndex index = decode(b);
     assertNull(index.shapes.get(0));
-    assertEquals(oneEdge, index.shapes.get(1));
+    assertShapesEqual(oneEdge, index.shapes.get(1));
   }
 
+  @Test
   public void testSameShapeTwice() throws IOException {
     S2ShapeIndex expected = new S2ShapeIndex();
     S2Polyline polyline = makePolyline("1:1, 2:2");
@@ -75,6 +89,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     checkEncodeDecode(expected, 12);
   }
 
+  @Test
   public void testRegularLoops() throws IOException {
     Map<Integer, Integer> testCases =
         ImmutableMap.<Integer, Integer>builder()
@@ -97,6 +112,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testOverlappingPointClouds() throws IOException {
     int[][] testCases = new int[][] {{1, 50, 73}, {2, 100, 591}, {4, 100, 1461}};
 
@@ -120,6 +136,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testOverlappingPolylines() throws IOException {
     int[][] testCases = new int[][] {{2, 50, 136}, {10, 50, 1015}, {20, 50, 2191}};
 
@@ -138,8 +155,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
         S2Point b = data.getRandomPoint();
         List<S2Point> vertices = new ArrayList<>();
         for (int j = 0; j < numShapeEdges; j++) {
-          vertices.add(
-              S2EdgeUtil.interpolateAtDistance(S1Angle.radians(edgeLen.radians() * j), a, b));
+          vertices.add(S2EdgeUtil.getPointOnLine(a, b, S1Angle.radians(edgeLen.radians() * j)));
         }
         expected.add(new S2Polyline(vertices));
       }
@@ -147,6 +163,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testOverlappingLoops() throws IOException {
     int[][] testCases = new int[][] {{2, 250, 737}, {5, 250, 784}, {25, 50, 3848}};
 
@@ -175,6 +192,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testSnappedFractalPolylines() throws IOException {
     S2ShapeIndex expected = new S2ShapeIndex();
 
@@ -192,6 +210,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     checkEncodeDecode(expected, 10132);
   }
 
+  @Test
   public void testShapesThreadSafe() throws Exception {
     // Try reading each shape of an EncodedS2ShapeIndex in multiple threads at the same time. Given
     // that ByteBuffer is not thread-safe, if the decoding of each S2Shape is not properly
@@ -202,7 +221,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     for (int i = 0; i < numIterations; i++) {
       S2ShapeIndex index = new S2ShapeIndex();
       for (int j = 0; j < numShapes; j++) {
-        int numVertices = 4 * data.skewed(10);
+        int numVertices = max(3, 4 * data.skewed(10)); // Loop must have at least 3 vertices.
         index.add(
             new S2Polygon(S2Loop.makeRegularLoop(data.getRandomPoint(), kmToAngle(5), numVertices))
                 .shape());
@@ -241,6 +260,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIteratorThreadSafe() throws Exception {
     // Try iterating over each cell of an EncodedS2ShapeIndex in multiple readers at the same time.
     int numIterations = 100;
@@ -248,7 +268,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
 
     for (int i = 0; i < numIterations; i++) {
       S2ShapeIndex index = new S2ShapeIndex();
-      int numVertices = 4 * data.skewed(10);
+      int numVertices = max(3, 4 * data.skewed(10));
       index.add(
           new S2Polygon(S2Loop.makeRegularLoop(data.getRandomPoint(), kmToAngle(5), numVertices))
               .shape());
@@ -296,6 +316,52 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  // This tests an invalid encoded shape index that was found by C++ fuzzing.
+  // TODO(torrey): Port s2index_util_valid and its tests to Java, move this there.
+  @Test
+  public void fuzzValidateIndexRegression1() {
+    // Causes a signed 32-bit integer overflow in
+    // S2ShapeIndexCoder.ClippedShapeCoder.decodeClippedShapes.
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> validateIndex(
+              "\000\000\242/"
+                  + "0\01600h0000003333_"
+                  + "5\377\377\377\377\007\000\000\000\000\000\000\000\000\000\000\000\000"
+                  + "\000\000\000\000\000\0003333330\311p_"
+                  + "\301000000000000\3370000000000000000000\2500000+"
+                  + "00000000000000000000000000000000000000000\025\025\025\025\025\025\025"
+                  + "\025\025\025\200\200\205\200\025\025\025\025\000\000\000\000\000\000\000"
+                  + "\000\025\025\025\025\025\025\0250\240\333\347\025("
+                  + "V\000j\000\000\000\0000000000000000000000000\000\000\000\002\000\000\000"
+                  + "\000\206#\005\264\004\000"));
+  }
+
+  /**
+   * Partially validates an encoded S2ShapeIndex and its shapes in the provided String (which
+   * contains Bytes) by decoding it.
+   */
+  private static void validateIndex(String utf8) {
+    try {
+      S2ShapeIndex decoded = decode(utf8.getBytes("UTF-8"));
+
+      // decode() returns an EncodedS2ShapeIndex which decodes cells lazily. To validate the cell
+      // decoding, we need to iterate over those cells and their clipped shapes.
+      S2Iterator<S2ShapeIndex.Cell> iter = decoded.iterator();
+      while (!iter.done()) {
+        S2ShapeIndex.Cell c = iter.entry();
+        List<S2ClippedShape> clippedShapes = c.clippedShapes();
+        for (int i = 0; i < clippedShapes.size(); ++i) {
+          S2ClippedShape unused = clippedShapes.get(i);
+        }
+        iter.next();
+      }
+
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   private static S2ShapeIndex decode(byte[] bytes) throws IOException {
     Bytes data = Bytes.fromByteArray(bytes);
     Cursor cursor = data.cursor();
@@ -317,15 +383,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
 
     assertEquals(expectedBytes, cursor.position - shapeIndexOffset);
     assertEquals(expected.options().getMaxEdgesPerCell(), actual.options().getMaxEdgesPerCell());
-    assertEquals(expected, actual);
+    assertShapeIndexesEqual(expected, actual);
     S2ShapeIndexTest.checkIteratorMethods(actual);
-  }
-
-  private static void assertEquals(S2ShapeIndex expected, S2ShapeIndex actual) {
-    assertTrue(S2ShapeUtil.equals(expected, actual));
-  }
-
-  private static void assertEquals(S2Shape expected, S2Shape actual) {
-    assertTrue(S2ShapeUtil.equals(expected, actual));
   }
 }

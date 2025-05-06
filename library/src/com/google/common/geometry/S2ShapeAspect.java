@@ -28,22 +28,23 @@ import java.util.List;
  * into several aspects, each focused on a subset of the overall API:
  *
  * <ul>
- * <li>{@link VertexAspect} provides a logical list of vertices, where the 'vertexId' is
- * at least 0 and less than {@link VertexAspect#numVertices}. Each implementation stores the list in
- * a different way, for example a {@link ChainAspect.Simple.Packed packed array}. This isn't part of
- * the S2Shape API, but is provided for use by the other aspects.
- * <li>{@link EdgeAspect} provides the 'vertexId' that starts and ends each edge or each
- * chain/offset, where the 'edgeId' is at least 0 and less than {@link EdgeAspect#numEdges}, the
- * 'chainId' is at least 0 and less than {@link ChainAspect#numChains}, and the 'edgeOffset' is at
- * least {@code edgeId(chainId)} and less than {@code edgeId(chainid+1)}. For example, the endpoint
- * of the last {@link EdgeAspect.Closed closed} edge wraps back to the first vertex of that chain.
- * <li>{@link ChainAspect} provides a mapping between chains and edge ranges, where 'chainId' is at
- * least 0 and less than {@link ChainAspect#numChains}, and the {@link ChainAspect#getChainStart}
- * and {@link ChainAspect#getChainLength} methods provide the 'edgeId' range of each chain.
- * <li>{@link TopoAspect} provides the methods to relate a point in the world to the interior,
- * exterior, or boundary of the shape.
- *
- * <p>There may be fewer edges than vertices, e.g. 2 vertices can define 1 edge.
+ *   <li>{@link VertexAspect} provides a logical list of vertices, where the 'vertexId' is at least
+ *       0 and less than {@link VertexAspect#numVertices}. Each implementation stores the list in a
+ *       different way, for example a {@link ChainAspect.Simple.Packed packed array}. This isn't
+ *       part of the S2Shape API, but is provided for use by the other aspects.
+ *   <li>{@link EdgeAspect} provides the 'vertexId' that starts and ends each edge or each
+ *       chain/offset, where the 'edgeId' is at least 0 and less than {@link EdgeAspect#numEdges},
+ *       the 'chainId' is at least 0 and less than {@link ChainAspect#numChains}, and the
+ *       'edgeOffset' is at least {@code edgeId(chainId)} and less than {@code edgeId(chainid+1)}.
+ *       For example, the endpoint of the last {@link EdgeAspect.Closed closed} edge wraps back to
+ *       the first vertex of that chain.
+ *   <li>{@link ChainAspect} provides a mapping between chains and edge ranges, where 'chainId' is
+ *       at least 0 and less than {@link ChainAspect#numChains}, and the {@link
+ *       ChainAspect#getChainStart} and {@link ChainAspect#getChainLength} methods provide the
+ *       'edgeId' range of each chain.
+ *   <li>{@link TopoAspect} provides the methods to relate a point in the world to the interior,
+ *       exterior, or boundary of the shape.
+ *       <p>There may be fewer edges than vertices, e.g. 2 vertices can define 1 edge.
  */
 interface S2ShapeAspect {
   /** A provider of S2Point given a 'vertexId', allowing alternate storage options. */
@@ -57,10 +58,13 @@ interface S2ShapeAspect {
     /** Returns the vertices in this shape. Less efficient but may be more convenient. */
     default List<S2Point> vertices() {
       return new AbstractList<S2Point>() {
-        @Override public int size() {
+        @Override
+        public int size() {
           return numVertices();
         }
-        @Override public S2Point get(int index) {
+
+        @Override
+        public S2Point get(int index) {
           return vertex(index);
         }
       };
@@ -73,8 +77,8 @@ interface S2ShapeAspect {
    */
   interface EdgeAspect {
     /**
-     * Returns the vertexId that starts 'edgeId', assuming
-     * {@code edgeId(chainId) <= edgeId && edgeId < edgeId(chainId + 1)}.
+     * Returns the vertexId that starts 'edgeId', assuming {@code edgeId(chainId) <= edgeId &&
+     * edgeId < edgeId(chainId + 1)}.
      */
     int vertexId(int chainId, int edgeId);
 
@@ -83,7 +87,7 @@ interface S2ShapeAspect {
      * that start each chain. This requires knowledge of the edge/vertex mapping, and hence this
      * aspect of S2Shape construction is delegated here.
      */
-    void adjustChains(int ... chainStarts);
+    void adjustChains(int... chainStarts);
 
     /**
      * Returns the start point of the edge that would be returned by {@link S2Shape#getChainEdge},
@@ -102,35 +106,41 @@ interface S2ShapeAspect {
 
     /** Chains are closed, that is, there is an implicit edge between the ends of each chain. */
     interface Closed extends Mixed {
-      @Override default void adjustChains(int ... chainStarts) {
-      }
+      @Override
+      default void adjustChains(int... chainStarts) {}
 
-      @Override default int numEdges() {
+      @Override
+      default int numEdges() {
         return numVertices();
       }
 
-      @Override default void getEdge(int edgeId, MutableEdge result) {
+      @Override
+      default void getEdge(int edgeId, MutableEdge result) {
         // Note edgeId=vertexId, since the last edge is implicit.
         result.set(vertex(edgeId), vertex(vertexId(chainId(edgeId), edgeId + 1)));
       }
 
-      @Override default void getChainEdge(int chainId, int edgeOffset, MutableEdge result) {
+      @Override
+      default void getChainEdge(int chainId, int edgeOffset, MutableEdge result) {
         int edgeId = getChainStart(chainId) + edgeOffset;
         result.set(vertex(edgeId), vertex(vertexId(chainId, edgeId + 1)));
       }
 
-      @Override default S2Point getChainVertex(int chainId, int edgeOffset) {
+      @Override
+      default S2Point getChainVertex(int chainId, int edgeOffset) {
         return vertex(vertexId(chainId, getChainStart(chainId) + edgeOffset));
       }
 
-      @Override default int vertexId(int chainId, int edgeId) {
+      @Override
+      default int vertexId(int chainId, int edgeId) {
         return edgeId < edgeId(chainId + 1) ? edgeId : getChainStart(chainId);
       }
     }
 
     /** Chains are open, that is, there is no implicit edge between the ends of each chain. */
     interface Open extends Mixed {
-      @Override default void adjustChains(int ... chainStarts) {
+      @Override
+      default void adjustChains(int... chainStarts) {
         Preconditions.checkArgument(chainStarts.length > 0, "Must have at least 1 chain.");
         int last = chainStarts[0];
         for (int i = 1; i < chainStarts.length; i++) {
@@ -141,25 +151,30 @@ interface S2ShapeAspect {
         }
       }
 
-      @Override default int numEdges() {
+      @Override
+      default int numEdges() {
         return numVertices() - numChains();
       }
 
-      @Override default void getEdge(int edgeId, MutableEdge result) {
+      @Override
+      default void getEdge(int edgeId, MutableEdge result) {
         int vertexId = vertexId(chainId(edgeId), edgeId);
         result.set(vertex(vertexId), vertex(vertexId + 1));
       }
 
-      @Override default void getChainEdge(int chainId, int edgeOffset, MutableEdge result) {
+      @Override
+      default void getChainEdge(int chainId, int edgeOffset, MutableEdge result) {
         int vertexId = vertexId(chainId, getChainStart(chainId) + edgeOffset);
         result.set(vertex(vertexId), vertex(vertexId + 1));
       }
 
-      @Override default S2Point getChainVertex(int chainId, int edgeOffset) {
+      @Override
+      default S2Point getChainVertex(int chainId, int edgeOffset) {
         return vertex(vertexId(chainId, getChainStart(chainId) + edgeOffset));
       }
 
-      @Override default int vertexId(int chainId, int edgeId) {
+      @Override
+      default int vertexId(int chainId, int edgeId) {
         return chainId + edgeId;
       }
     }
@@ -187,21 +202,25 @@ interface S2ShapeAspect {
 
     /** A single non-empty chain. */
     abstract class Simple implements Mixed {
-      @Override public int numChains() {
+      @Override
+      public int numChains() {
         return 1;
       }
 
-      @Override public int getChainStart(int chainId) {
+      @Override
+      public int getChainStart(int chainId) {
         Preconditions.checkElementIndex(chainId, 1);
         return 0;
       }
 
-      @Override public int getChainLength(int chainId) {
+      @Override
+      public int getChainLength(int chainId) {
         Preconditions.checkElementIndex(chainId, 1);
         return numEdges();
       }
 
-      @Override public int edgeId(int chainId) {
+      @Override
+      public int edgeId(int chainId) {
         switch (chainId) {
           case 0:
             return 0;
@@ -212,7 +231,8 @@ interface S2ShapeAspect {
         }
       }
 
-      @Override public int chainId(int edgeIndex) {
+      @Override
+      public int chainId(int edgeIndex) {
         Preconditions.checkElementIndex(edgeIndex, numEdges());
         return 0;
       }
@@ -241,11 +261,13 @@ interface S2ShapeAspect {
           this.vertices = vertices;
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return vertices.length;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return vertices[index];
         }
 
@@ -269,11 +291,13 @@ interface S2ShapeAspect {
           this.coordinates = toArray(vertices);
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return coordinates.length / 3;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return vertex(coordinates, index);
         }
 
@@ -302,11 +326,13 @@ interface S2ShapeAspect {
           this.vertices = toArray(vertices);
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return vertices.length;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return new S2CellId(vertices[index]).toPoint();
         }
 
@@ -342,24 +368,29 @@ interface S2ShapeAspect {
         adjustChains(cumulativeEdges);
       }
 
-      @Override public final int numChains() {
+      @Override
+      public final int numChains() {
         return cumulativeEdges.length - 1;
       }
 
-      @Override public final int edgeId(int chainId) {
+      @Override
+      public final int edgeId(int chainId) {
         return cumulativeEdges[chainId];
       }
 
-      @Override public final int getChainStart(int chainId) {
+      @Override
+      public final int getChainStart(int chainId) {
         Preconditions.checkElementIndex(chainId, numChains());
         return edgeId(chainId);
       }
 
-      @Override public final int getChainLength(int chainId) {
+      @Override
+      public final int getChainLength(int chainId) {
         return edgeId(chainId + 1) - edgeId(chainId);
       }
 
-      @Override public final int chainId(int edgeId) {
+      @Override
+      public final int chainId(int edgeId) {
         int chainId = Arrays.binarySearch(cumulativeEdges, edgeId);
         if (chainId < 0) {
           chainId = -chainId - 2;
@@ -388,11 +419,13 @@ interface S2ShapeAspect {
           this.vertices = Simple.Array.toArray(Iterables.concat(chains));
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return vertices.length;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return vertices[index];
         }
       }
@@ -406,11 +439,13 @@ interface S2ShapeAspect {
           this.coordinates = Simple.Packed.toArray(Iterables.concat(chains));
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return coordinates.length / 3;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return Simple.Packed.vertex(coordinates, index);
         }
       }
@@ -424,11 +459,13 @@ interface S2ShapeAspect {
           this.vertices = Simple.Snapped.toArray(Iterables.concat(chains));
         }
 
-        @Override public int numVertices() {
+        @Override
+        public int numVertices() {
           return vertices.length;
         }
 
-        @Override public S2Point vertex(int index) {
+        @Override
+        public S2Point vertex(int index) {
           return new S2CellId(vertices[index]).toPoint();
         }
       }

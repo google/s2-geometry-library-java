@@ -16,20 +16,30 @@
 
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
+
+@RunWith(JUnit4.class)
 public final class ProjectionTest extends GeometryTestCase {
 
+  @Test
   public void testInterpolateArgumentsAreNotReversed() {
     assertEquals(
         new R2Vector(1.5, 6),
         Projection.interpolate(0.25, new R2Vector(1.0, 5.0), new R2Vector(3.0, 9.0)));
   }
 
+  @Test
   public void testInterpolateExtrapolation() {
     assertEquals(
         new R2Vector(-3.0, 0),
         Projection.interpolate(-2, new R2Vector(1.0, 0.0), new R2Vector(3.0, 0.0)));
   }
 
+  @Test
   public void testWrapDestination() {
     // Prefer traversing the Antemeridian rather than traversing the Prime Meridian.
     Projection proj = new Projection.PlateCarreeProjection(180);
@@ -39,6 +49,7 @@ public final class ProjectionTest extends GeometryTestCase {
     assertEquals(new R2Vector(190, 0), adjustedWesternPoint);
   }
 
+  @Test
   public void testInterpolateCheckSameLengthAtBothEndpoints() {
     // Check that interpolation is exact at both endpoints.
     R2Vector a = new R2Vector(1.234, -5.456e-20);
@@ -47,6 +58,7 @@ public final class ProjectionTest extends GeometryTestCase {
     assertEquals(b, Projection.interpolate(1, a, b));
   }
 
+  @Test
   public void testMercatorUnproject() {
     Projection.MercatorProjection proj = new Projection.MercatorProjection(180);
     double inf = Double.POSITIVE_INFINITY;
@@ -60,6 +72,7 @@ public final class ProjectionTest extends GeometryTestCase {
         proj, new R2Vector(0, 70.25557896783025), S2LatLng.fromRadians(1, 0).toPoint());
   }
 
+  @Test
   public void testPlateCarreeUnproject() {
     Projection.PlateCarreeProjection proj = new Projection.PlateCarreeProjection(180);
     assertProjectUnproject(proj, new R2Vector(0, 0), new S2Point(1, 0, 0));
@@ -77,6 +90,6 @@ public final class ProjectionTest extends GeometryTestCase {
     // The arguments are chosen such that projection is exact, but
     // unprojection may not be.
     assertEquals(px, projection.project(x));
-    assertEquals(x, projection.unproject(px), 1e-15);
+    assertPointsWithinDistance(x, projection.unproject(px), 1e-15);
   }
 }

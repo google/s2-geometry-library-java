@@ -21,12 +21,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 import com.google.common.geometry.S2Iterator;
 import com.google.common.geometry.S2Loop;
-import com.google.common.geometry.S2Polygon;
-import com.google.common.geometry.S2Polygon.S2PolygonIndex;
 import com.google.common.geometry.S2ShapeIndex;
 import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -62,25 +59,15 @@ public class S2ShapeIndexBenchmark {
     int numVertices;
 
     private final List<S2Loop> loops = new ArrayList<>();
-    private S2Polygon poly;
 
     @Setup(Level.Iteration)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       loops.clear();
       for (int k = 0; k < numLoops; k++) {
         loops.add(S2Loop.makeRegularLoop(data.getRandomPoint(), kmToAngle(5), numVertices));
       }
-      poly = new S2Polygon(new ArrayList<>(loops));
-    }
-
-    /** Measures the time to construct an S2PolygonIndex on the provided S2Polygon. */
-    @Benchmark
-    public S2PolygonIndex s2PolygonIndexInitialization() {
-      S2PolygonIndex idx = new S2PolygonIndex(poly);
-      idx.computeIndex();
-      return idx;
     }
 
     /** Measures the time to construct an S2ShapeIndex with the provided S2Loops. */

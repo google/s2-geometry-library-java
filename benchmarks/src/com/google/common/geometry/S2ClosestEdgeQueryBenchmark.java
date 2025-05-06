@@ -48,15 +48,6 @@ public class S2ClosestEdgeQueryBenchmark {
     public S2ClosestEdgeQuery<S1ChordAngle> query;
     public ArrayList<S2ClosestEdgeQuery.Target<S1ChordAngle>> targets;
 
-    @Override
-    public S2BestEdgesQueryBase<S1ChordAngle> query() {
-      return query;
-    }
-
-    @Override
-    public ArrayList<S2ClosestEdgeQuery.Target<S1ChordAngle>> targets() {
-      return targets;
-    }
   }
 
   public static class ClosestEdgeBenchmarkBaseState extends BestEdgesBenchmarkBaseState {

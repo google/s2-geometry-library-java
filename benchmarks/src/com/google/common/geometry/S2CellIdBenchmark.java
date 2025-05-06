@@ -23,7 +23,6 @@ import com.google.common.geometry.R2Vector;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2Point;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -138,7 +137,7 @@ public class S2CellIdBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       ids = new S2CellId[NUM_IDS];
       tokens = new String[NUM_IDS];
@@ -295,7 +294,7 @@ public class S2CellIdBenchmark {
     protected int index;
 
     @Setup(Level.Trial)
-    public void setup() throws IOException {
+    public void setup() {
       points = new ArrayList<>(NUM_POINTS);
       // The sample points follow a spiral curve that completes one revolution around the z-axis
       // every 1/dt samples.  The z-coordinate increases from -4 to +4 over 'count' samples.

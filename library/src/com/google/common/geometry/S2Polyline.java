@@ -19,7 +19,6 @@ package com.google.common.geometry;
 import static java.lang.Math.PI;
 import static java.lang.Math.asin;
 import static java.lang.Math.atan2;
-import static java.lang.Math.cos;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.sin;
@@ -31,6 +30,8 @@ import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2Projections.FaceSiTi;
+import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
+import com.google.errorprone.annotations.InlineMe;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -39,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.logging.Logger;
 import jsinterop.annotations.JsConstructor;
 import jsinterop.annotations.JsIgnore;
@@ -47,16 +49,20 @@ import jsinterop.annotations.JsType;
 /**
  * An S2Polyline represents a sequence of zero or more vertices connected by straight edges
  * (geodesics). Edges of length 0 and 180 degrees are not allowed, i.e. adjacent vertices should not
- * be identical or antipodal.
+ * be identical or antipodal. An S2Polyline with a single vertex generally represents a degenerate
+ * edge. In particular, an S2Polyline can be viewed as an S2Shape via {@link #shape()}, and a single
+ * vertex S2Polyline will be presented as an S2Shape with one degenerate edge.
  *
- * <p>Note: Polylines do not have a Contains(S2Point) method, because "containment" is not
+ * S2Polylines are immutable.
+ *
+ * <p>Note: Polylines do not have a contains(S2Point) method, because "containment" is not
  * numerically well-defined except at the polyline vertices.
  *
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2Polyline implements S2Shape, S2Region, Serializable {
+public final class S2Polyline implements S2Shape, S2Region, Serializable {
   private static final Logger log = Platform.getLoggerForClass(S2Polyline.class);
 
   private static final S2Point[] ARR_TEMPLATE = {};
@@ -64,52 +70,66 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   private static final byte COMPRESSED_ENCODING_VERSION = 2;
 
   /** A fast {@link S2Coder} of polylines that uses {@link #encode} and {@link #decode}. */
-  public static final S2Coder<S2Polyline> FAST_CODER = new S2Coder<S2Polyline>() {
-    @Override public void encode(S2Polyline value, OutputStream output) throws IOException {
-      value.encodeUncompressed(new LittleEndianOutput(output));
-    }
+  public static final S2Coder<S2Polyline> FAST_CODER =
+      new S2Coder<S2Polyline>() {
+        @Override
+        public void encode(S2Polyline value, OutputStream output) throws IOException {
+          value.encodeUncompressed(new LittleEndianOutput(output));
+        }
 
-    @Override public S2Polyline decode(Bytes data, Cursor cursor) throws IOException {
-      return S2Polyline.decode(data.toInputStream(cursor));
-    }
+        @Override
+        public S2Polyline decode(Bytes data, Cursor cursor) throws IOException {
+          return S2Polyline.decode(data.toInputStream(cursor));
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   /** A fast {@link S2Coder} of polylines that uses {@link #encode} and {@link #decode}. */
-  public static final S2Coder<S2Polyline> COMPACT_CODER = new S2Coder<S2Polyline>() {
-    @Override public void encode(S2Polyline value, OutputStream output) throws IOException {
-      value.encodeCompact(output);
-    }
+  public static final S2Coder<S2Polyline> COMPACT_CODER =
+      new S2Coder<S2Polyline>() {
+        @Override
+        public void encode(S2Polyline value, OutputStream output) throws IOException {
+          value.encodeCompact(output);
+        }
 
-    @Override public S2Polyline decode(Bytes data, Cursor cursor) throws IOException {
-      return S2Polyline.decode(data.toInputStream(cursor));
-    }
+        @Override
+        public S2Polyline decode(Bytes data, Cursor cursor) throws IOException {
+          return S2Polyline.decode(data.toInputStream(cursor));
+        }
 
-    @Override public boolean isLazy() {
-      return false;
-    }
-  };
+        @Override
+        public boolean isLazy() {
+          return false;
+        }
+      };
 
   private final int numVertices;
   private final S2Point[] vertices;
 
   /**
    * Create a polyline that connects the given vertices, which are copied. Empty polylines are
-   * allowed. Adjacent vertices should not be identical or antipodal. All vertices should be
-   * unit length.
+   * allowed. Adjacent vertices should not be identical or antipodal. All vertices must be unit
+   * length.
    */
   @JsIgnore
   public S2Polyline(List<S2Point> vertices) {
     this(vertices.toArray(ARR_TEMPLATE));
   }
 
+  /** Copy constructor. */
+  @JsIgnore
+  public S2Polyline(S2Polyline other) {
+    this(other.vertices().toArray(ARR_TEMPLATE));
+  }
+
   /**
-   * As {@link S2Polyline(List)}, creates a polyline that connects the given vertices, but
-   * takes ownership of the provided array of points which may not be further modified by the
-   * caller.
+   * As {@link S2Polyline(List)}, creates a polyline that connects the given vertices, but takes
+   * ownership of the provided array of points which may not be further modified by the caller. All
+   * vertices must be unit length.
    */
   @JsConstructor
   S2Polyline(S2Point[] vertices) {
@@ -222,27 +242,31 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   /**
    * Return the point whose distance from vertex 0 along the polyline is the given fraction of the
    * polyline's total length. Fractions less than zero or greater than one are clamped. The return
-   * value is unit length. This cost of this function is currently linear in the number of vertices.
+   * value is unit length if this polyline is valid. This cost of this function is currently linear
+   * in the number of vertices.
+   *
+   * @throws IllegalStateException if this polyline has no vertices.
    */
   public S2Point interpolate(double fraction) {
+    Preconditions.checkState(numVertices() > 0, "Empty polyline");
+
     // We intentionally let the (fraction >= 1) case fall through, since we need to handle it in the
     // loop below in any case because of possible roundoff errors.
     if (fraction <= 0) {
       return vertex(0);
     }
 
-    double lengthSum = 0;
+    double lengthSum = 0; // radians
     for (int i = 1; i < numVertices(); ++i) {
       lengthSum += vertex(i - 1).angle(vertex(i));
     }
-    double target = fraction * lengthSum;
+    double target = fraction * lengthSum; // radians
     for (int i = 1; i < numVertices(); ++i) {
       double length = vertex(i - 1).angle(vertex(i));
       if (target < length) {
-        // This code interpolates with respect to arc length rather than straight-line distance, and
+        // This interpolates with respect to arc length rather than straight-line distance, and
         // produces a unit-length result.
-        double f = sin(target) / sin(length);
-        return vertex(i - 1).mul(cos(target) - f * cos(length)).add(vertex(i).mul(f));
+        return S2EdgeUtil.getPointOnLine(vertex(i - 1), vertex(i), S1Angle.radians(target));
       }
       target -= length;
     }
@@ -263,8 +287,14 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
    * points is selected in a deterministic but unpredictable manner, and the fraction is computed up
    * to that position. For example, all points of the S2 edge from (1,0,0) to (0,1,0) are
    * equidistant from (0,0,1), so any fraction from 0 to 1 is a correct answer!
+   *
+   * <p>The polyline should not be empty. If it has fewer than 2 vertices the return value is zero.
    */
   public double uninterpolate(S2Point queryPoint) {
+    if (numVertices() == 1) {
+      return 0;
+    }
+
     int i = getNearestEdgeIndex(queryPoint);
 
     double arcLength =
@@ -340,6 +370,28 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
       }
     }
     return false;
+  }
+
+  /**
+   * Removes any point from the given List of points that is exactly equal to to its next neighbor.
+   * Valid S2Polylines may not have duplicate adjacent points, so this may be useful to make a list
+   * of points into a valid polyline. The resulting list of points may have only one point.
+   */
+  public static void deduplicatePoints(List<S2Point> linePoints) {
+    if (linePoints.size() < 2) {
+      return;
+    }
+    linePoints.removeIf(
+        new Predicate<S2Point>() {
+          S2Point last = null;
+
+          @Override
+          public boolean test(S2Point p) {
+            boolean remove = last != null && p.equalsPoint(last);
+            last = p;
+            return remove;
+          }
+        });
   }
 
   /**
@@ -489,9 +541,12 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   }
 
   /**
-   * Given a point, returns the index of the start point of the (first) edge on the polyline that is
-   * closest to the given point. The polyline must have at least one vertex. Throws
-   * IllegalStateException if this is not the case.
+   * Given a point, which must be normalized, returns the index of the start point of the (first)
+   * edge on this polyline that is closest to the given point. This polyline must have at least one
+   * vertex.
+   *
+   * @throws IllegalStateException if this polyline does not have any vertices
+   * @throws IllegalArgumentException if 'point' is not unit length
    */
   public int getNearestEdgeIndex(S2Point point) {
     Preconditions.checkState(numVertices() > 0, "Empty polyline");
@@ -519,10 +574,14 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   /**
    * Given a point p and the index of the start point of an edge of this polyline, returns the point
    * on that edge that is closest to p.
+   *
+   * @throws IllegalStateException if this polyline does not have any vertices
+   * @throws IllegalArgumentException if the given index is out of range for this polyline
    */
   public S2Point projectToEdge(S2Point point, int index) {
     Preconditions.checkState(numVertices() > 0, "Empty polyline");
-    Preconditions.checkState(numVertices() == 1 || index < numVertices() - 1, "Invalid edge index");
+    Preconditions.checkArgument(
+        numVertices() == 1 || index < numVertices() - 1, "Invalid edge index");
     if (numVertices() == 1) {
       // If there is only one vertex, it is always closest to any given point.
       return vertex(0);
@@ -531,10 +590,14 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   }
 
   /**
-   * Returns the point on the polyline closest to {@code queryPoint}.
+   * Returns the point on this polyline closest to {@code queryPoint}, which must be normalized.
+   * This polyline must have at least one point.
    *
    * <p>In the unusual case of a query point that is equidistant from multiple points on the line,
    * one is returned in a deterministic but otherwise unpredictable way.
+   *
+   * @throws IllegalStateException if this polyline does not have any vertices
+   * @throws IllegalArgumentException if 'queryPoint' is not unit length
    */
   public S2Point project(S2Point queryPoint) {
     Preconditions.checkState(numVertices() > 0, "Empty polyline");
@@ -614,65 +677,178 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
 
   // S2Shape interface (see S2Shape.java for details):
 
+  private transient S2Shape shape;
+
+  /**
+   * Returns an S2Shape view of this polyline.
+   *
+   * <p>Note that while a valid S2Polyline may have a single vertex, the S2Shape API only supports
+   * edges organized into chains. Therefore, shape() presents single-vertex S2Polylines as a one
+   * dimensional S2Shape with a single degenerate edge, in a one-edge chain.
+   */
+  public S2Shape shape() {
+    if (shape == null) {
+      if (numVertices == 1) {
+        S2EdgeVectorShape evs = new S2EdgeVectorShape();
+        evs.addDegenerate(vertices[0]);
+        shape = evs;
+      } else {
+        // Zero vertices or >=2 vertices.
+        shape =
+            new S2Shape() {
+              @Override
+              public int numEdges() {
+                return max(0, numVertices - 1);
+              }
+
+              @Override
+              public void getEdge(int index, MutableEdge result) {
+                result.set(vertices[index], vertices[index + 1]);
+              }
+
+              @Override
+              public boolean hasInterior() {
+                return false;
+              }
+
+              @Override
+              public boolean containsOrigin() {
+                throw new IllegalStateException(
+                    "An S2Polyline has no interior, so containsOrigin()"
+                        + " should never be called on one.");
+              }
+
+              @Override
+              public int numChains() {
+                return (numVertices > 1) ? 1 : 0;
+              }
+
+              @Override
+              public int getChainStart(int chainId) {
+                Preconditions.checkElementIndex(chainId, numChains());
+                return 0;
+              }
+
+              @Override
+              public int getChainLength(int chainId) {
+                Preconditions.checkElementIndex(chainId, numChains());
+                return numEdges();
+              }
+
+              @Override
+              public void getChainEdge(int chainId, int offset, MutableEdge result) {
+                Preconditions.checkElementIndex(chainId, numChains());
+                getEdge(offset, result);
+              }
+
+              @Override
+              public S2Point getChainVertex(int chainId, int edgeOffset) {
+                Preconditions.checkElementIndex(chainId, numChains());
+                return vertex(edgeOffset);
+              }
+
+              @Override
+              public void getChainPosition(int edgeId, ChainPosition result) {
+                // All the edges are in the single chain.
+                result.set(0, edgeId);
+              }
+
+              @Override
+              public int dimension() {
+                return 1;
+              }
+            };
+      }
+    }
+    return shape;
+  }
+
+  /** @deprecated Use shape().numEdges() */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().numEdges()")
   @Override
   public int numEdges() {
-    return max(0, numVertices - 1);
+    return shape().numEdges();
   }
 
+  /** @deprecated Use shape().getEdge(index, result) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getEdge(index, result)")
   @Override
   public void getEdge(int index, MutableEdge result) {
-    result.set(vertices[index], vertices[index + 1]);
+    shape().getEdge(index, result);
   }
 
+  /** @deprecated Use shape().hasInterior() */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().hasInterior()")
   @Override
   public boolean hasInterior() {
-    return false;
+    return shape().hasInterior();
   }
 
+  /** @deprecated Use shape().containsOrigin() */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().containsOrigin()")
   @Override
   public boolean containsOrigin() {
-    throw new IllegalStateException(
-        "An S2Polyline has no interior, so " + "containsOrigin() should never be called on one.");
+    return shape().containsOrigin();
   }
 
+  /** @deprecated Use shape().numChains() */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().numChains()")
   @Override
   public int numChains() {
-    return (numVertices > 1) ? 1 : 0;
+    return shape().numChains();
   }
 
+  /** @deprecated Use shape().getChainStart(chainId) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getChainStart(chainId)")
   @Override
   public int getChainStart(int chainId) {
-    Preconditions.checkElementIndex(chainId, numChains());
-    return 0;
+    return shape().getChainStart(chainId);
   }
 
+  /** @deprecated Use shape().getChainLength(chainId) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getChainLength(chainId)")
   @Override
   public int getChainLength(int chainId) {
-    Preconditions.checkElementIndex(chainId, numChains());
-    return numEdges();
+    return shape().getChainLength(chainId);
   }
 
+  /** @deprecated Use shape().getChainEdge(chainId, offset, result) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getChainEdge(chainId, offset, result)")
   @Override
   public void getChainEdge(int chainId, int offset, MutableEdge result) {
-    Preconditions.checkElementIndex(chainId, numChains());
-    getEdge(offset, result);
+    shape().getChainEdge(chainId, offset, result);
   }
 
+  /** @deprecated Use shape().getChainVertex(chainId, edgeOffset) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getChainVertex(chainId, edgeOffset)")
   @Override
   public S2Point getChainVertex(int chainId, int edgeOffset) {
-    Preconditions.checkElementIndex(chainId, numChains());
-    return vertex(edgeOffset);
+    return shape().getChainVertex(chainId, edgeOffset);
   }
 
+  /** @deprecated Use shape().getChainPosition(edgeId, result) */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().getChainPosition(edgeId, result)")
   @Override
   public void getChainPosition(int edgeId, ChainPosition result) {
-    // All the edges are in the single chain.
-    result.set(0, edgeId);
+    shape().getChainPosition(edgeId, result);
   }
 
+  /** @deprecated Use shape().dimension() */
+  @Deprecated
+  @InlineMe(replacement = "this.shape().dimension()")
   @Override
   public int dimension() {
-    return 1;
+    return shape().dimension();
   }
 
   /** Encodes this polyline into the given output stream. */
@@ -766,8 +942,8 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   public int getSnapLevel() {
     int snapLevel = -1;
     for (S2Point p : vertices) {
-      FaceSiTi faceSiTi = S2Projections.PROJ.xyzToFaceSiTi(p);
-      int level = S2Projections.PROJ.levelIfCenter(faceSiTi, p);
+      FaceSiTi faceSiTi = S2Projections.xyzToFaceSiTi(p);
+      int level = S2Projections.levelIfCenter(faceSiTi, p);
       if (level < 0) {
         // Vertex is not a cell center.
         return level;
@@ -795,8 +971,8 @@ public final strictfp class S2Polyline implements S2Shape, S2Region, Serializabl
   int getBestSnapLevel() {
     int[] histogram = new int[S2CellId.MAX_LEVEL + 1];
     for (S2Point p : vertices) {
-      FaceSiTi faceSiTi = S2Projections.PROJ.xyzToFaceSiTi(p);
-      int level = S2Projections.PROJ.levelIfCenter(faceSiTi, p);
+      FaceSiTi faceSiTi = S2Projections.xyzToFaceSiTi(p);
+      int level = S2Projections.levelIfCenter(faceSiTi, p);
       // Level is -1 for unsnapped points.
       if (level >= 0) {
         histogram[level]++;

@@ -18,10 +18,18 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2.DBL_EPSILON;
 import static com.google.common.geometry.S2.M_PI_2;
 import static java.lang.Math.PI;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for {@link S1Interval}. */
-public strictfp class S1IntervalTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S1IntervalTest extends GeometryTestCase {
   // Create some standard intervals to use in the tests.  These include the empty and full
   // intervals, intervals containing a single point, and intervals spanning one or more "quadrants"
   // which are numbered as follows:
@@ -46,7 +54,6 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
   S1Interval quad12 = new S1Interval(0, -PI);
   S1Interval quad23 = new S1Interval(M_PI_2, -M_PI_2);
   S1Interval quad34 = new S1Interval(-PI, 0);
-  S1Interval quad41 = new S1Interval(-M_PI_2, M_PI_2);
   // Quadrant triples:
   S1Interval quad123 = new S1Interval(0, -M_PI_2);
   S1Interval quad234 = new S1Interval(M_PI_2, 0);
@@ -59,6 +66,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
   S1Interval mid34 = new S1Interval(-M_PI_2 - 0.01, -M_PI_2 + 0.02);
   S1Interval mid41 = new S1Interval(-0.01, 0.02);
 
+  @Test
   public void testConstructorsAndAccessors() {
     // Spot-check the constructors and accessors.
     assertExactly(0d, quad12.lo());
@@ -82,6 +90,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertExactly(empty.hi(), defaultEmpty.hi());
   }
 
+  @Test
   public void testSimplePredicates() {
     // is_valid(), is_empty(), is_full(), is_inverted()
     assertTrue(zero.isValid() && !zero.isEmpty() && !zero.isFull());
@@ -94,6 +103,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertTrue(mipi.isValid() && !mipi.isEmpty() && !mipi.isInverted());
   }
 
+  @Test
   public void testGetCenter() {
     assertExactly(M_PI_2, quad12.getCenter());
     assertExactly(3.0 - PI, new S1Interval(3.1, 2.9).getCenter());
@@ -105,6 +115,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertExactly(0.75 * PI, quad123.getCenter());
   }
 
+  @Test
   public void testGetLength() {
     assertExactly(PI, quad12.getLength());
     assertExactly(0d, pi.getLength());
@@ -115,6 +126,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertTrue(empty.getLength() < 0);
   }
 
+  @Test
   public void testComplement() {
     assertTrue(empty.complement().isFull());
     assertTrue(full.complement().isEmpty());
@@ -126,6 +138,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertTrue(quad123.complement().approxEquals(quad4));
   }
 
+  @Test
   public void testContains() {
     // Contains(double), InteriorContains(double)
     assertTrue(!empty.contains(0) && !empty.contains(PI) && !empty.contains(-PI));
@@ -175,6 +188,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testIntervalOps() {
     // Contains(S1Interval), InteriorContains(S1Interval), Intersects(), InteriorIntersects(),
     // Union(), Intersection()
@@ -293,6 +307,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     testIntervalOps(mid41, quad23, "FFFF", quadeps123, empty);
   }
 
+  @Test
   public void testAddPoint() {
     S1Interval r = empty;
     r = r.addPoint(0);
@@ -334,6 +349,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertTrue(r.isFull());
   }
 
+  @Test
   public void testClampPoint() {
     S1Interval r = new S1Interval(-PI, -PI);
     assertExactly(PI, r.clampPoint(-PI));
@@ -351,6 +367,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertExactly(PI, S1Interval.full().clampPoint(-PI));
   }
 
+  @Test
   public void testFromPointPair() {
     assertEquals(S1Interval.fromPointPair(-PI, PI), pi);
     assertEquals(S1Interval.fromPointPair(PI, -PI), pi);
@@ -358,6 +375,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertEquals(S1Interval.fromPointPair(mid23.lo(), mid23.hi()), mid23);
   }
 
+  @Test
   public void testExpanded() {
     assertEquals(empty.expanded(1), empty);
     assertEquals(full.expanded(1), full);
@@ -377,6 +395,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertEquals(quad412.expanded(-M_PI_2), quad1);
   }
 
+  @Test
   public void testApproxEquals() {
     // Choose two values kLo and kHi such that it's okay to shift an endpoint by kLo (i.e., the
     // resulting interval is equivalent) but not by kHi.
@@ -436,6 +455,7 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertFalse(new S1Interval(2 + kLo, 1 - kHi).approxEquals(new S1Interval(2, 1)));
   }
 
+  @Test
   public void testGetDirectedHausdorffDistance() {
     assertExactly(0.0, empty.getDirectedHausdorffDistance(empty));
     assertExactly(0.0, empty.getDirectedHausdorffDistance(mid12));
@@ -446,5 +466,11 @@ public strictfp class S1IntervalTest extends GeometryTestCase {
     assertExactly(3.0, new S1Interval(-0.1, 0.2).getDirectedHausdorffDistance(in));
     assertExactly(3.0 - 0.1, new S1Interval(0.1, 0.2).getDirectedHausdorffDistance(in));
     assertExactly(3.0 - 0.1, new S1Interval(-0.2, -0.1).getDirectedHausdorffDistance(in));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS1IntervalSerialization() {
+    doSerializationTest(new S1Interval(0.5, 2.0));
   }
 }

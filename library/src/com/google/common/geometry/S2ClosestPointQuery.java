@@ -25,7 +25,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
-import javax.annotation.Nullable;
+import java.util.function.Predicate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Given a set of points stored in an S2PointIndex, S2ClosestPointQuery provides methods that find
@@ -33,7 +34,7 @@ import javax.annotation.Nullable;
  *
  * <p>Example usage:
  *
- * <pre>{@code
+ * {@snippet :
  * void test(List<S2Point> points, List<S2Point> targets) {
  *   // The template argument allows auxiliary data to be attached to each point (in this case, the
  *   // array index).
@@ -52,7 +53,7 @@ import javax.annotation.Nullable;
  *     }
  *   }
  * }
- * }</pre>
+ * }
  *
  * <p>You can find either the k closest points, or all points within a given radius, or both (i.e.,
  * the k closest points up to a given maximum radius). E.g. to find all the points within 5
@@ -66,6 +67,7 @@ import javax.annotation.Nullable;
  * class can however share an existing index with other queries, and is cheap to build so each
  * thread may simply create its own.
  */
+@SuppressWarnings("Assertion")
 public final class S2ClosestPointQuery<T> {
   // TODO(user): retune the constants.
 
@@ -85,10 +87,13 @@ public final class S2ClosestPointQuery<T> {
   private S1ChordAngle maxDistance;
 
   /** The region to restrict closest point search to. */
-  @Nullable private S2Region region;
+  private @Nullable S2Region region;
 
   /** Whether to use brute force, which is cheaper when the index has few edges. */
   private boolean useBruteForce;
+
+  /** An optional filter to apply to each point before adding them to the result. */
+  private Predicate<Result<T>> filter;
 
   /** A small (<6) cell covering of the indexed points. */
   private final List<S2CellId> indexCovering = Lists.newArrayList();
@@ -139,6 +144,7 @@ public final class S2ClosestPointQuery<T> {
     maxPoints = Integer.MAX_VALUE;
     maxDistance = S1ChordAngle.INFINITY;
     region = null;
+    filter = x -> true;
     reset();
   }
 
@@ -223,6 +229,15 @@ public final class S2ClosestPointQuery<T> {
    */
   public void setMaxDistance(S1Angle maxDistance) {
     this.maxDistance = S1ChordAngle.fromS1Angle(maxDistance);
+  }
+
+  /**
+   * Specifies a filter to apply to each point before adding them to the result.
+   *
+   * @param filter a predicate that returns true if the point should be included in the result.
+   */
+  public void setFilter(Predicate<Result<T>> filter) {
+    this.filter = filter;
   }
 
   /**
@@ -347,10 +362,13 @@ public final class S2ClosestPointQuery<T> {
   private interface Target {
     /** Returns the approximate center of the target. */
     S2Point center();
+
     /** Returns the distance between this target and the given cell. */
     S1ChordAngle getDistance(S2Cell cell);
+
     /** Returns the radian radius of an angular cap that encloses this target. */
     double radius();
+
     /** Returns the smaller of {@code distance} and a new distance from target to {@code point}. */
     S1ChordAngle getMinDistance(S2Point point, S1ChordAngle distance);
   }
@@ -445,7 +463,7 @@ public final class S2ClosestPointQuery<T> {
     lastIt.finish();
     lastIt.prev();
     S2CellId indexLast = lastIt.id();
-    if (!nextIt.equalIterators(lastIt)) {
+    if (nextIt.compareTo(indexLast) != 0) {
       // The index has at least two cells. Choose a level such that the entire index can be spanned
       // with at most 6 cells (if the index spans multiple faces) or 4 cells (if the index spans a
       // single face).
@@ -526,19 +544,24 @@ public final class S2ClosestPointQuery<T> {
       return;
     }
 
+    Result<T> result = new Result<>(distance, entry);
+    if (!filter.test(result)) {
+      return;
+    }
+
     // Add this point to results.
     if (results.size() >= maxPoints) {
       // Replace the furthest result point.
       results.poll();
     }
-    results.add(new Result<>(distance, entry));
+    results.add(result);
     if (results.size() >= maxPoints) {
       maxDistanceLimit = results.peek().distance();
     }
   }
 
   private void initQueue(Target target) {
-    // assert queue.isEmpty();
+    assert queue.isEmpty();
 
     // Optimization: rather than starting with the entire index, see if we can limit the search
     // region to a small disc. Then we can find a covering for that disc and intersect it with the

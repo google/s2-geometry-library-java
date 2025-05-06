@@ -18,17 +18,20 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2TextFormat.makeIndexOrDie;
 import static java.util.Comparator.reverseOrder;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.geometry.S2BestEdgesQueryBase.Result;
 import com.google.common.geometry.S2ShapeUtil.PointVisitor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Comparator;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/**
- * This is a proof-of-concept test prototype of a possible S2FurthestEdgeTestQuery class. The
- * purpose of this test is just to make sure that the code compiles and does something reasonable.
- */
+/** Unit test for S2BestEdgesQueryBase. */
+@RunWith(JUnit4.class)
 public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
 
   static class PointTarget extends S2BestEdgesQueryBase.PointTarget<S1ChordAngle>
@@ -196,11 +199,11 @@ public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
   // Track the number of visits the ResultVisitor gets.
   private int visitCount;
 
+  @Test
   public void testMaxDistance() {
     // An index with four points. This will be a single shape with four edges.
     S2ShapeIndex index = makeIndexOrDie("0:0 | 1:0 | 2:0 | 3:0 # #");
     assertEquals(1, index.getShapes().size());
-    S2Shape shape = index.getShapes().get(0);
 
     // A target of a single point. The furthest point in the index is at 0:0, distance 4.
     PointTarget target = new PointTarget(S2TextFormat.makePointOrDie("4:0"));
@@ -215,7 +218,7 @@ public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
     // The single result should be the furthest index point: edge 0 of the single shape, at 0:0.
     assertEquals(1, results.size());
     Result<S1ChordAngle> result = results.get(0);
-    assertEquals(shape, result.shape());
+    assertEquals(0, result.shapeId());
     assertEquals(0, result.edgeId());
     assertDoubleNear(4, result.distance().degrees(), 1e-13);
 
@@ -231,13 +234,13 @@ public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
           visitCount++;
 
           // Just check the distance against the edge id to ensure they're valid.
-          if (0 == result.edgeId()) {
+          if (result.edgeId() == 0) {
             assertDoubleNear(4, result.distance().degrees(), 1e-13);
-          } else if (1 == result.edgeId()) {
+          } else if (result.edgeId() == 1) {
             assertDoubleNear(3, result.distance().degrees(), 1e-13);
-          } else if (2 == result.edgeId()) {
+          } else if (result.edgeId() == 2) {
             assertDoubleNear(2, result.distance().degrees(), 1e-13);
-          } else if (3 == result.edgeId()) {
+          } else if (result.edgeId() == 3) {
             assertDoubleNear(1, result.distance().degrees(), 1e-13);
           }
 
@@ -247,10 +250,10 @@ public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
     assertEquals(3, visitCount);
   }
 
+  @Test
   public void testShapeInteriorsAreDeduplicated() {
     // An index with one polygon.
     S2ShapeIndex index = makeIndexOrDie("# # 0:0, 0:5, 5:5, 5:0");
-    S2Shape shape = index.getShapes().get(0);
 
     // Get up to 8 results with no minimum distance.
     FurthestEdgeTestQuery.Builder builder = new FurthestEdgeTestQuery.Builder(8);
@@ -269,7 +272,7 @@ public final class S2BestEdgesQueryBaseTest extends GeometryTestCase {
     int edgeResults = 0;
 
     for (Result<S1ChordAngle> result : results) {
-      assertEquals(shape, result.shape());
+      assertEquals(0, result.shapeId());
       if (result.isInterior()) {
         interiorResults++;
         assertEquals(S1ChordAngle.STRAIGHT, result.distance());

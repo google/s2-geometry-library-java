@@ -15,11 +15,17 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+
 import java.math.BigDecimal;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link BigPoint}. */
-public class BigPointTest extends TestCase {
+@RunWith(JUnit4.class)
+public class BigPointTest {
+  @Test
   public void testCrossProd() {
     BigPoint a = createBp("1.2", "3.4", "5.6");
     BigPoint b = createBp("-7.8", "9.0", "-1.2");
@@ -27,6 +33,7 @@ public class BigPointTest extends TestCase {
     assertEquals(createBp("54.48", "42.24", "-37.32"), b.crossProd(a));
   }
 
+  @Test
   public void testDotProd() {
     BigPoint a = createBp("1.2", "3.4", "5.6");
     BigPoint b = createBp("-7.8", "9.0", "-1.2");

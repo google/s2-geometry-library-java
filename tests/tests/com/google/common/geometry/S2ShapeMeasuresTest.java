@@ -16,11 +16,12 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.TestDataGenerator.makeIndex;
-import static com.google.common.geometry.TestDataGenerator.makeLoop;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolygon;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2TextFormat.makeIndexWithLegacyShapes;
+import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolygon;
+import static com.google.common.geometry.S2TextFormat.makePolygonOrDie;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.acos;
@@ -30,20 +31,30 @@ import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static java.lang.Math.sin;
 import static java.lang.Math.tan;
+import static java.util.Comparator.naturalOrder;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.S2ShapeMeasures.LoopOrder;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2ShapeMeasures}. */
+@RunWith(JUnit4.class)
 public class S2ShapeMeasuresTest extends GeometryTestCase {
 
   private static final double MAX_DISTANCE = 1e-6;
   // The full loop is represented as a loop with no vertices.
   private static final S2Loop FULL = makeLoop("full");
   // A degenerate loop in the shape of a "V".
-  private static final S2Loop V_LOOP = makeLoop("5:1, 0:2, 5:3, 0:2");
+  private static final S2Loop V_LOOP = makeInvalidLoop("5:1, 0:2, 5:3, 0:2");
   // The northern hemisphere, defined using two pairs of antipodal points.
   private static final S2Loop NORTH_HEMI = makeLoop("0:-180, 0:-90, 0:0, 0:90");
   // The northern hemisphere, defined using three points 120 degrees apart.
@@ -62,20 +73,40 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
   private static final S2Loop SKINNY_CHEVRON = makeLoop("0:0, -1e-320:80, 0:1e-320, 1e-320:80");
   // A loop where the same vertex appears three times.
   private static final S2Loop THREE_LEAF_CLOVER =
-      makeLoop("0:0, -3:3, 3:3, 0:0, 3:0, 3:-3, 0:0, -3:-3, -3:0");
+      makeInvalidLoop("0:0, -3:3, 3:3, 0:0, 3:0, 3:-3, 0:0, -3:-3, -3:0");
   // A loop with groups of 3 or more vertices in a straight line.
   private static final S2Loop TESSELLATED_LOOP =
       makeLoop("10:34, 5:34, 0:34, -10:34, -10:36, -5:36, 0:36, 10:36");
 
+  // A list of distinct vertices sorted by their natural ordering.
+  private static final List<S2Point> regularVertices;
+  // A map from the points in regularVertices to their index in the list.
+  private static final Map<S2Point, Integer> regularVerticesMap = new HashMap<>();
+
+  static {
+    regularVertices = S2Loop.makeRegularVertices(
+          S2LatLng.fromDegrees(30, 30).toPoint(), S1Angle.degrees(10), 256);
+    regularVertices.sort(naturalOrder());
+
+    for (int i = 0; i < regularVertices.size(); i++) {
+      regularVerticesMap.put(regularVertices.get(i), i);
+    }
+  }
+
+  @Test
   public void testLength() {
-    assertEquals(S1Angle.ZERO, S2ShapeMeasures.length(makeIndex("0:0 # #").getShapes().get(0)));
+    assertEquals(
+        S1Angle.ZERO,
+        S2ShapeMeasures.length(makeIndexWithLegacyShapes("0:0 # #").getShapes().get(0)));
     assertEquals(S1Angle.ZERO, S2ShapeMeasures.length(makePolygon("0:0, 0:1, 1:0").shape()));
   }
 
+  @Test
   public void testLengthNoPolylines() {
     assertEquals(S1Angle.ZERO, S2ShapeMeasures.length(makePolyline("")));
   }
 
+  @Test
   public void testLengthThreePolylinesInOneShape() {
     List<List<S2Point>> pointss = new ArrayList<>();
     for (String text : new String[] {"1:0", "2:0", "3:0"}) {
@@ -85,53 +116,67 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     assertEquals(S1Angle.degrees(6), S2ShapeMeasures.length(shape));
   }
 
+  @Test
   public void testPerimeterWrongDimension() {
-    assertEquals(S1Angle.ZERO, S2ShapeMeasures.perimeter(makeIndex("0:0 # #").getShapes().get(0)));
+    assertEquals(
+        S1Angle.ZERO,
+        S2ShapeMeasures.perimeter(makeIndexWithLegacyShapes("0:0 # #").getShapes().get(0)));
     assertEquals(S1Angle.ZERO, S2ShapeMeasures.perimeter(makePolyline("0:0, 0:1, 1:0")));
   }
 
+  @Test
   public void testPerimeterEmptyPolygon() {
     assertEquals(S1Angle.ZERO, S2ShapeMeasures.perimeter(makePolygon("empty").shape()));
   }
 
+  @Test
   public void testPerimeterFullPolygon() {
     assertEquals(S1Angle.ZERO, S2ShapeMeasures.perimeter(makePolygon("full").shape()));
   }
 
+  @Test
   public void testPerimeterTwoLoopPolygon() {
     // To ensure that all edges are 1 degree long, we use degenerate loops.
+    S2Polygon invalidPolygon = uncheckedCreate(() -> makePolygonOrDie("0:0, 1:0; 0:1, 0:2, 0:3"));
     assertEquals(
         S1Angle.degrees(6),
-        S2ShapeMeasures.perimeter(makePolygon("0:0, 1:0; 0:1, 0:2, 0:3").shape()));
+        S2ShapeMeasures.perimeter(invalidPolygon.shape()));
   }
 
+  @Test
   public void testLoopPerimeterOctant() {
     assertEquals(
         S1Angle.radians(3 * M_PI_2),
         S2ShapeMeasures.loopPerimeter(makePolygon("0:0, 0:90, 90:0").shape(), 0));
   }
 
+  @Test
   public void testLoopPerimeterMoreThanTwoPi() {
     assertEquals(
         S1Angle.radians(5 * M_PI_2),
         S2ShapeMeasures.loopPerimeter(makePolygon("0:0, 0:90, 0:180, 90:0, 0:-90").shape(), 0));
   }
 
+  @Test
   public void testAreaWrongDimension() {
-    assertExactly(0.0, S2ShapeMeasures.area(makeIndex("0:0 # #").getShapes().get(0)));
+    assertExactly(
+        0.0, S2ShapeMeasures.area(makeIndexWithLegacyShapes("0:0 # #").getShapes().get(0)));
     assertExactly(0.0, S2ShapeMeasures.area(makePolyline("0:0, 0:1")));
   }
 
+  @Test
   public void testAreaEmptyPolygon() {
     assertExactly(0.0, S2ShapeMeasures.area(makePolygon("empty").shape()));
     assertExactly(0.0, S2ShapeMeasures.approxArea(makePolygon("empty").shape()));
   }
 
+  @Test
   public void testAreaFullPolygon() {
     assertExactly(4 * PI, S2ShapeMeasures.area(makePolygon("full").shape()));
     assertExactly(4 * PI, S2ShapeMeasures.approxArea(makePolygon("full").shape()));
   }
 
+  @Test
   public void testAreaTwoTinyShellsPolygon() {
     // Two small squares with sides about 10 um (micrometers) long.
     double side = S1Angle.degrees(1e-10).radians();
@@ -142,12 +187,14 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     assertDoubleNear(2 * side * side, S2ShapeMeasures.approxArea(shape), 1e-12);
   }
 
+  @Test
   public void testAreaShellAndHolePolygon() {
     S2Shape shape = makePolygon("0:0, 1:0, 0:1; 0.3:0.3, 0.3:0.6, 0.6:0.3").shape();
     assertDoubleNear(1.386e-4, S2ShapeMeasures.area(shape), 1e-7);
     assertDoubleNear(1.386e-4, S2ShapeMeasures.approxArea(shape), 1e-7);
   }
 
+  @Test
   public void testCanonicalLoopOrderAllDegeneracies() {
     checkCanonicalLoopOrder("", new LoopOrder(0, 1));
     checkCanonicalLoopOrder("a", new LoopOrder(0, 1));
@@ -158,6 +205,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     checkCanonicalLoopOrder("bacbcab", new LoopOrder(8, -1));
   }
 
+  @Test
   public void testLoopAreaConsistentWithTurningAngle() {
     checkLoopAreaConsistentWithTurningAngle(FULL);
     checkLoopAreaConsistentWithTurningAngle(NORTH_HEMI);
@@ -172,6 +220,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
   }
 
   // TODO(user): testLoopAreaConsistentWithOrientation can fail for other random seeds.
+  @Test
   public void testLoopAreaConsistentWithOrientation() {
     // Test that loopArea() returns an area near 0 for degenerate loops that contain almost no
     // points, and an area near 4*Pi for degenerate loops that contain almost all points.
@@ -188,7 +237,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
           // opposed to following the entire equator).
           vertices.add(S2LatLng.fromRadians(0, data.nextDouble() * M_PI_2).toPoint());
         }
-      } while (!new S2Loop(vertices).isValid());
+      } while (!S2Loop.isValid(vertices));
       S2Loop loop = new S2Loop(vertices);
       boolean ccw = loop.isNormalized();
       // The error bound is sufficient for current tests but not guaranteed.
@@ -197,6 +246,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLoopAreaAndLoopCentroid() {
     assertExactly(4 * PI, S2ShapeMeasures.loopArea(FULL, 0));
     assertEquals(new S2Point(0, 0, 0), S2ShapeMeasures.loopCentroid(FULL, 0));
@@ -241,6 +291,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testTurningAngle() {
     assertExactly(-2 * PI, S2ShapeMeasures.turningAngle(FULL, 0));
     assertExactly(2 * PI, S2ShapeMeasures.turningAngle(V_LOOP, 0));
@@ -293,6 +344,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
         0.01 * S2.getTurningAngleMaxError(loop.size()));
   }
 
+  @Test
   public void testPruneDegeraciesAllDegeracies() {
     checkPruneDegeracies("", "");
     checkPruneDegeracies("a", "");
@@ -307,6 +359,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     checkPruneDegeracies("abcdcdedefedcbcdcb", "");
   }
 
+  @Test
   public void testPruneDegeraciesSomeDegeracies() {
     checkPruneDegeracies("abc", "abc");
     checkPruneDegeracies("abca", "abc");
@@ -319,21 +372,26 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     checkPruneDegeracies("xxyyzzaabbccaazzyyxx", "abc");
   }
 
+  @Test
   public void testCentroidPoints() {
-    S2Point actual = S2ShapeMeasures.centroid(makeIndex("0:0 | 0:90 # #").getShapes().get(0));
+    S2Point actual =
+        S2ShapeMeasures.centroid(makeIndexWithLegacyShapes("0:0 | 0:90 # #").getShapes().get(0));
     assertEquals(new S2Point(1, 1, 0), actual);
   }
 
+  @Test
   public void testCentroidPolyline() {
     S2Point actual = S2ShapeMeasures.centroid(makePolyline("0:0, 0:90"));
     assertTrue(S2.approxEquals(new S2Point(1, 1, 0), actual));
   }
 
+  @Test
   public void testCentroidPolygon() {
     S2Point actual = S2ShapeMeasures.centroid(makePolygon("0:0, 0:90, 90:0").shape());
     assertTrue(S2.approxEquals(new S2Point(PI / 4, PI / 4, PI / 4), actual));
   }
 
+  @Test
   public void testPolylineLengthAndCentroid() {
     // Construct random great circles and divide them randomly into segments. Then make sure that
     // the length and centroid are correct. Note that because of the way the centroid is computed,
@@ -359,6 +417,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLoopCentroid() {
     assertEquals(S2Point.ORIGIN, S2ShapeMeasures.loopCentroid(S2LaxPolygonShape.FULL, 0));
 
@@ -402,7 +461,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     List<S2Point> vertices = S2ShapeMeasures.pruneDegeneracies(loop.vertices());
     StringBuilder actualBuilder = new StringBuilder();
     for (S2Point v : vertices) {
-      actualBuilder.append((char) v.x);
+      actualBuilder.append(pointToChar(v));
     }
     assertEquals(expected, actualBuilder.toString());
   }
@@ -449,11 +508,29 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
     }
   }
 
+  /**
+   * Given a string like "abc", produces an S2Loop with a vertex for every input letter. Each letter
+   * is consistently converted to the same unit-length S2Point, which can be converted back to the
+   * corresponding letter with pointToChar(). Invalid loops are allowed.
+   */
   private static S2Loop testLoop(String text) {
     List<S2Point> loop = new ArrayList<>();
-    for (char c : text.toCharArray()) {
-      loop.add(new S2Point(c, 0, 0));
+    for (int i = 0; i < text.length(); i++) {
+      loop.add(charToPoint(text.charAt(i)));
     }
-    return new S2Loop(loop);
+    return uncheckedCreate(() -> new S2Loop(loop));
+  }
+
+  /**
+   * Given a char, returns the corresponding S2Point in regularVertices.
+   */
+  private static S2Point charToPoint(char c) {
+    return regularVertices.get(c);
+  }
+
+  /** Given an S2Point from regularVertices, returns its index. */
+  private static char pointToChar(S2Point p) {
+    int index = regularVerticesMap.get(p);
+    return (char) index;
   }
 }

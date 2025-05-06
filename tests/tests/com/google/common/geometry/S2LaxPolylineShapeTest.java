@@ -15,10 +15,12 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2PolylineTest.LINE;
-import static com.google.common.geometry.S2PolylineTest.SNAPPED_LINE;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2CellId.FACE_CELLS;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -31,14 +33,24 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2LaxPolylineShape}. */
+@RunWith(JUnit4.class)
 public class S2LaxPolylineShapeTest extends GeometryTestCase {
+  private static final S2Polyline LINE = makePolyline("1:1, 2:2, 3:3");
+  private static final S2Polyline SNAPPED_LINE = new S2Polyline(ImmutableList.of(
+      FACE_CELLS[0].toPoint(),
+      FACE_CELLS[2].toPoint()));
   private final S2Point a = makePoint("0:0");
   private final S2Point b = makePoint("0:1");
   private final S2Point c = makePoint("1:1");
   private final ImmutableMap<S2Point, String> labels = ImmutableMap.of(a, "a", b, "b", c, "c");
   private final List<S2Point> vertices = Arrays.asList(a, b, c);
 
+  @Test
   public void testNoVertices() {
     S2LaxPolylineShape shape = S2LaxPolylineShape.create(ImmutableList.of());
     assertTrue(shape.isEmpty());
@@ -46,6 +58,7 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
     assertEquals("[[]]", edges(shape));
   }
 
+  @Test
   public void testOneVertex() {
     S2LaxPolylineShape line = S2LaxPolylineShape.create(ImmutableList.of(S2Point.X_POS));
     // Note that the C++ lax polyline stores a vertex, but there is no way to access it, whereas we
@@ -58,6 +71,19 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
     assertFalse(line.isFull());
   }
 
+  @Test
+  public void testFromDegenerateS2Polyline() {
+    S2Polyline s2Polyline = new S2Polyline(ImmutableList.of(S2Point.X_POS));
+    S2LaxPolylineShape line = S2LaxPolylineShape.create(s2Polyline);
+    // An S2Polyline with a single point represents a degenerate edge. The create method must
+    // convert to the S2LaxPolylineShape representation which uses two identical vertices.
+    assertEquals(2, line.numVertices());
+    assertEquals(1, line.numEdges());
+    assertEquals(1, line.numChains());
+    assertFalse(line.isEmpty());
+  }
+
+  @Test
   public void testTwoEdges() {
     S2LaxPolylineShape shape = S2LaxPolylineShape.create(vertices);
     assertEquals(1, shape.dimension());
@@ -66,6 +92,7 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
     assertEquals("[[[a, b], [b, c]]]", edges(shape));
   }
 
+  @Test
   public void testDegenerateSingle() {
     assertEquals(
         "[[[a, b], [b, a]]]",
@@ -73,11 +100,13 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
             Arrays.asList(Arrays.asList(c), Arrays.asList(a, b, a)))));
   }
 
+  @Test
   public void testCreateMultiEmpty() {
     assertTrue(
         S2LaxPolylineShape.createMulti(Arrays.asList(Arrays.asList())).isEmpty());
   }
 
+  @Test
   public void testCreateMultiUsingSimpleArray() {
     assertEquals(
         "[[[a, b]]]",
@@ -85,6 +114,7 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
             Arrays.asList(Arrays.asList(a, b)))));
   }
 
+  @Test
   public void testDegenerateMulti() {
     // Note that the C++ lax polyline only supports 1 chain today, so cannot encode this case yet.
     assertEquals(
@@ -96,6 +126,7 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
             Arrays.asList(c, b)))));
   }
 
+  @Test
   public void testEncodeDecode() throws IOException {
     checkEncodeDecode(S2LaxPolylineShape.create(makePolyline("0:0, 0:1, 1:1").vertices()));
     checkEncodeDecode(S2LaxPolylineShape.EMPTY);
@@ -142,11 +173,13 @@ public class S2LaxPolylineShapeTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCoderFast() {
     S2LaxPolylineShape shape = S2LaxPolylineShape.create(LINE);
     assertShapesEqual(shape, roundtrip(S2LaxPolylineShape.FAST_CODER, shape));
   }
 
+  @Test
   public void testCoderCompact() {
     S2LaxPolylineShape shape = S2LaxPolylineShape.create(SNAPPED_LINE);
     assertShapesEqual(shape, roundtrip(S2LaxPolylineShape.COMPACT_CODER, shape));

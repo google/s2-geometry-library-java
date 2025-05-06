@@ -21,10 +21,16 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Preconditions;
 import java.util.Random;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Tests for {@link S2FractalBuilder}. */
+@RunWith(JUnit4.class)
 public class S2FractalBuilderTest extends GeometryTestCase {
   /**
    * Constructs a fractal and then computes various metrics (number of vertices, total length,
@@ -126,26 +132,32 @@ public class S2FractalBuilderTest extends GeometryTestCase {
     return 3 * (1 << (2 * level));
   }
 
+  @Test
   public void testTriangleFractal() {
     assertFractal(7, 7, 1.0);
   }
 
+  @Test
   public void testTriangleMultiFractal() {
     assertFractal(1, 6, 1.0);
   }
 
+  @Test
   public void testKochCurveFractal() {
     assertFractal(7, 7, log(4) / log(3));
   }
 
+  @Test
   public void testKochCurveMultiFractal() {
     assertFractal(4, 8, log(4) / log(3));
   }
 
+  @Test
   public void testCesaroFractal() {
     assertFractal(7, 7, 1.8);
   }
 
+  @Test
   public void testCesaroMultiFractal() {
     assertFractal(2, 6, 1.8);
   }

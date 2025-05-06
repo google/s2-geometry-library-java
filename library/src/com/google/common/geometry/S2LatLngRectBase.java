@@ -17,6 +17,9 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.DBL_EPSILON;
 import static com.google.common.geometry.S2.M_PI_2;
+import static com.google.common.geometry.S2.isUnitLength;
+import static com.google.common.geometry.S2.skipAssertions;
+import static com.google.common.geometry.S2RobustCrossProd.robustCrossProd;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.atan2;
@@ -36,7 +39,8 @@ import jsinterop.annotations.JsType;
  * S2LatLngRect.Builder}.
  */
 @JsType
-public abstract strictfp class S2LatLngRectBase implements S2Region, Serializable {
+@SuppressWarnings("Assertion")
+public abstract class S2LatLngRectBase implements S2Region, Serializable {
   // A vector orthogonal to longitude 0.
   private static final S2Point ORTHO_LNG = S2Point.Y_NEG;
 
@@ -45,25 +49,33 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
 
   /**
    * Constructs a rectangle from minimum and maximum latitudes and longitudes. If lo.lng() >
-   * hi.lng(), the rectangle spans the 180 degree longitude line. Both points must be normalized,
-   * with lo.lat() <= hi.lat(). The rectangle contains all the points p such that 'lo' <= p <= 'hi',
-   * where '<=' is defined in the obvious way.
+   * hi.lng(), the rectangle spans the 180 degree longitude line. For a rectangle to be valid, both
+   * points must be normalized, with lo.lat() <= hi.lat(). The rectangle contains all the points p
+   * such that 'lo' <= p <= 'hi', where '<=' is defined in the obvious way.
+   *
+   * <p>This constructor does not validate the resulting rectangle, which is the responsibility of
+   * the subclass, using {@link #assertValid()}. Construction of invalid rectangles is allowed for
+   * testing, but many methods require valid rectangles.
    */
   S2LatLngRectBase(final S2LatLng lo, final S2LatLng hi) {
     lat = new R1Interval(lo.lat().radians(), hi.lat().radians());
     lng = new S1Interval(lo.lng().radians(), hi.lng().radians());
-    // assert (isValid());
   }
 
   /**
-   * Constructs a rectangle from latitude and longitude intervals. The two intervals must either be
-   * both empty or both non-empty, and the latitude interval must not extend outside [-90, +90]
-   * degrees. Note that both intervals (and hence the rectangle) are closed.
+   * Constructs a rectangle from latitude and longitude intervals. For a rectangle to be valid, the
+   * two intervals must either be both empty or both non-empty, and the latitude interval must not
+   * extend outside [-90, +90] degrees. Note that both intervals (and hence the rectangle) are
+   * closed.
+   *
+   * <p>This constructor does not validate the resulting rectangle, which is the responsibility of
+   * the subclass. Construction of invalid rectangles is allowed for testing, but many methods
+   * require valid rectangles. Check validity before construction with {@link #isValid(R1Interval,
+   * S1Interval)}, or use {@link #isValid()} after construction.
    */
   S2LatLngRectBase(R1Interval lat, S1Interval lng) {
     this.lat = lat;
     this.lng = lng;
-    // assert (isValid());
   }
 
   /**
@@ -75,17 +87,48 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     lng = S1Interval.empty();
   }
 
+  /** Asserts that this S2LatLngRect {@link #isValid()}. */
+  protected void assertValid() {
+    assert skipAssertions || abs(lat.lo()) <= M_PI_2;
+    assert skipAssertions || abs(lat.hi()) <= M_PI_2;
+    assert skipAssertions || lng.isValid();
+    assert skipAssertions || lat.isEmpty() == lng.isEmpty();
+  }
+
+  /**
+   * Returns true if an S2LatLngRect constructed from the given lat and lng fields would be valid,
+   * which essentially just means that the latitude bounds do not exceed Pi/2 in absolute value and
+   * the longitude bounds do not exceed Pi in absolute value. Also, if either the latitude or
+   * longitude bound is empty then both must be.
+   */
+  @JsMethod(name = "isValidIntervals")
+  public static boolean isValid(R1Interval lat, S1Interval lng) {
+    return abs(lat.lo()) <= M_PI_2
+        && abs(lat.hi()) <= M_PI_2
+        && lng.isValid()
+        && lat.isEmpty() == lng.isEmpty();
+  }
+
+  /**
+   * Returns true if an S2LatLngRect constructed from the given 'lo' and 'hi' fields would be valid,
+   * which essentially just means that the latitude bounds do not exceed Pi/2 in absolute value and
+   * the longitude bounds do not exceed Pi in absolute value. Also, if either the latitude or
+   * longitude bound is empty then both must be.
+   */
+  @JsMethod(name = "isValidLoHi")
+  public static boolean isValid(S2LatLng lo, S2LatLng hi) {
+    R1Interval lat = new R1Interval(lo.lat().radians(), hi.lat().radians());
+    S1Interval lng = new S1Interval(lo.lng().radians(), hi.lng().radians());
+    return isValid(lat, lng);
+  }
+
   /**
    * Returns true if the rectangle is valid, which essentially just means that the latitude bounds
    * do not exceed Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute
    * value. Also, if either the latitude or longitude bound is empty then both must be.
    */
   public final boolean isValid() {
-    // The lat/lng ranges must either be both empty or both non-empty.
-    return (abs(lat.lo()) <= M_PI_2
-        && abs(lat.hi()) <= M_PI_2
-        && lng.isValid()
-        && lat.isEmpty() == lng.isEmpty());
+    return isValid(lat, lng);
   }
 
   // Accessor methods.
@@ -274,13 +317,16 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
   /**
    * Returns the undirected Hausdorff distance (measured along the surface of the sphere) to the
    * given S2LatLngRect. The directed Hausdorff distance from rectangle A to rectangle B is given by
-   * <pre>{@code
+   *
+   * {@snippet :
    *     h(A, B) = max{p in A}[min{q in B}[d(p, q) )]
-   * }</pre>
+   * }
+   *
    * The Hausdorff distance between rectangle A and rectangle B is given by
-   * <pre>{@code
+   *
+   * {@snippet :
    *     H(A, B) = max(h(A, B), h(B, A))
-   * }</pre>
+   * }
    */
   public final S1Angle getHausdorffDistance(S2LatLngRectBase other) {
     return S1Angle.max(
@@ -288,15 +334,19 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
   }
 
   /**
-   * Returns the directed Hausdorff distance (measured along the surface of the sphere) to the
-   * given S2LatLngRect. The directed Hausdorff distance from rectangle A to rectangle B is given by
-   * <pre>{@code
+   * Returns the directed Hausdorff distance (measured along the surface of the sphere) to the given
+   * S2LatLngRect. The directed Hausdorff distance from rectangle A to rectangle B is given by
+   *
+   * {@snippet :
    *     h(A, B) = max{p in A}[min{q in B}[d(p, q)]]
-   * }</pre>
+   * }
+   *
+   *
    * The Hausdorff distance between rectangle A and rectangle B is given by
-   * <pre>{@code
+   *
+   * {@snippet :
    *     H(A, B) = max(h(A, B), h(B, A))
-   * }</pre>
+   * }
    */
   public final S1Angle getDirectedHausdorffDistance(S2LatLngRectBase other) {
     if (isEmpty()) {
@@ -307,7 +357,7 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     }
 
     double lngDistance = lng().getDirectedHausdorffDistance(other.lng());
-    // assert lngDistance >= 0;
+    assert lngDistance >= 0;
     return getDirectedHausdorffDistance(lngDistance, lat(), other.lat());
   }
 
@@ -344,8 +394,8 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     // of U, if any, where D (resp. U) is the portion of edge a below (resp. above) the intersection
     // point from B2.
 
-    // assert lngDiff >= 0;
-    // assert lngDiff <= PI;
+    assert lngDiff >= 0;
+    assert lngDiff <= PI;
 
     if (lngDiff == 0) {
       return S1Angle.radians(a.getDirectedHausdorffDistance(b));
@@ -415,7 +465,7 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     } else {
       orthoBisector = S2LatLng.fromRadians(-latCenter - M_PI_2, lng - PI);
     }
-    return S2.robustCrossProd(ORTHO_LNG, orthoBisector.toPoint());
+    return robustCrossProd(ORTHO_LNG, orthoBisector.toPoint());
   }
 
   /**
@@ -516,8 +566,8 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
    */
   @JsMethod(name = "containsLatLng")
   public final boolean contains(S2LatLng ll) {
-    // assert (ll.isValid());
-    return (lat.contains(ll.latRadians()) && lng.contains(ll.lngRadians()));
+    assert skipAssertions || ll.isValid();
+    return lat.contains(ll.latRadians()) && lng.contains(ll.lngRadians());
   }
 
   /**
@@ -531,11 +581,12 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
 
   /**
    * More efficient version of interiorContains() that accepts a S2LatLng rather than an S2Point.
+   * The argument must be normalized.
    */
   @JsMethod(name = "interiorContainsLatLng")
   public final boolean interiorContains(S2LatLng ll) {
-    // assert (ll.isValid());
-    return (lat.interiorContains(ll.lat().radians()) && lng.interiorContains(ll.lng().radians()));
+    assert ll.isValid();
+    return lat.interiorContains(ll.lat().radians()) && lng.interiorContains(ll.lng().radians());
   }
 
   /** Returns true if and only if the rectangle contains the given other rectangle. */
@@ -598,8 +649,9 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     // Now check whether the boundaries intersect. Unfortunately, a latitude-longitude rectangle
     // does not have straight edges -- two edges are curved, and at least one of them is concave.
     for (int i = 0; i < 4; ++i) {
-      S1Interval edgeLng = S1Interval.fromPointPair(
-          cellLatLng[i].lng().radians(), cellLatLng[(i + 1) & 3].lng().radians());
+      S1Interval edgeLng =
+          S1Interval.fromPointPair(
+              cellLatLng[i].lng().radians(), cellLatLng[(i + 1) & 3].lng().radians());
       if (!lng.intersects(edgeLng)) {
         continue;
       }
@@ -661,7 +713,7 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
   /** Returns true if these are the same type of rectangle and contain the same set of points. */
   @Override
   public final boolean equals(Object that) {
-    if ((that == null) || this.getClass() != that.getClass()) {
+    if (!(that instanceof S2LatLngRectBase)) {
       return false;
     }
     S2LatLngRectBase otherRect = (S2LatLngRectBase) that;
@@ -723,8 +775,9 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     }
     // Ensure that the bounding cap is conservative taking into account errors in the arithmetic
     // above and the S1Angle/S1ChordAngle conversion.
-    S2Cap poleCap = S2Cap.fromAxisAngle(new S2Point(0, 0, poleZ),
-        S1Angle.radians((1 + 2 * DBL_EPSILON) * poleAngle));
+    S2Cap poleCap =
+        S2Cap.fromAxisAngle(
+            new S2Point(0, 0, poleZ), S1Angle.radians((1 + 2 * DBL_EPSILON) * poleAngle));
 
     // For bounding rectangles that span 180 degrees or less in longitude, the maximum cap size is
     // achieved at one of the rectangle vertices. For rectangles that are larger than 180 degrees,
@@ -783,24 +836,29 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
         S2LatLng.fromRadians(lat.hi(), lng).toPoint());
   }
 
-  /** Returns true if the edge AB intersects the given edge of constant latitude. */
+  /**
+   * Returns true if the edge AB intersects the given edge of constant latitude. The given points
+   * must be unit length.
+   */
   public static final boolean intersectsLatEdge(S2Point a, S2Point b, double lat, S1Interval lng) {
     // Return true if the segment AB intersects the given edge of constant latitude. Unfortunately,
     // lines of constant latitude are curves on the sphere. They can intersect a straight edge in
     // 0, 1, or 2 points.
-    // assert (S2.isUnitLength(a) && S2.isUnitLength(b));
+    assert isUnitLength(a);
+    assert isUnitLength(b);
 
     // First, compute the normal to the plane AB that points vaguely north.
-    S2Point z = S2.robustCrossProd(a, b).normalize();
+    S2Point z = robustCrossProd(a, b).normalize();
     if (z.z < 0) {
       z = z.neg();
     }
 
     // Extend this to an orthonormal frame (x,y,z) where x is the direction where the great circle
     // through AB achieves its maximum latitude.
-    S2Point y = S2.robustCrossProd(z, S2Point.Z_POS).normalize();
+    S2Point y = robustCrossProd(z, S2Point.Z_POS).normalize();
     S2Point x = y.crossProd(z);
-    // assert (S2.isUnitLength(x) && x.z >= 0);
+    assert S2.isUnitLength(x);
+    assert x.z >= 0;
 
     // Compute the angle "theta" from the x-axis (in the x-y plane defined above) where the great
     // circle intersects the given line of latitude.
@@ -808,7 +866,7 @@ public abstract strictfp class S2LatLngRectBase implements S2Region, Serializabl
     if (abs(sinLat) >= x.z) {
       return false; // The great circle does not reach the given latitude.
     }
-    // assert (x.z > 0);
+    assert x.z > 0;
     double cosTheta = sinLat / x.z;
     double sinTheta = sqrt(1 - cosTheta * cosTheta);
     double theta = atan2(sinTheta, cosTheta);

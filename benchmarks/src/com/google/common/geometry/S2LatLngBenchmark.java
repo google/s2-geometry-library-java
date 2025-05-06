@@ -21,7 +21,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2Point;
-import java.io.IOException;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -55,7 +54,7 @@ public class S2LatLngBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       ll = new S2LatLng(S1Angle.e7(0x150bc888), S1Angle.e7(0x5099d63f));
       x = S2LatLng.fromDegrees(25.0, -78.0);
@@ -110,7 +109,7 @@ public class S2LatLngBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       point = data.getRandomPoint();
     }

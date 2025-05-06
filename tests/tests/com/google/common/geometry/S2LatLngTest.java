@@ -19,12 +19,21 @@ import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2.M_PI_4;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import java.io.IOException;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2LatLng. */
-public strictfp class S2LatLngTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2LatLngTest extends GeometryTestCase {
 
+  @Test
   public void testBasic() {
     S2LatLng llRad = S2LatLng.fromRadians(M_PI_4, M_PI_2);
     assertTrue(llRad.lat().radians() == M_PI_4);
@@ -41,14 +50,14 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     S2LatLng better = bad.normalized();
     assertTrue(better.isValid());
     assertEquals(better.lat(), S1Angle.degrees(90));
-    assertDoubleEquals(better.lng().radians(), S1Angle.degrees(-160).radians());
+    assertAlmostEquals(better.lng().radians(), S1Angle.degrees(-160).radians());
 
     bad = S2LatLng.fromDegrees(-100, -360);
     assertFalse(bad.isValid());
     better = bad.normalized();
     assertTrue(better.isValid());
     assertEquals(better.lat(), S1Angle.degrees(-90));
-    assertDoubleEquals(better.lng().radians(), 0);
+    assertAlmostEquals(better.lng().radians(), 0);
 
     assertTrue(
          S2LatLng.fromDegrees(10, 20).add(S2LatLng.fromDegrees(20, 30))
@@ -59,13 +68,14 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertTrue(S2LatLng.fromDegrees(10, 20).mul(0.5).approxEquals(S2LatLng.fromDegrees(5, 10)));
   }
 
+  @Test
   public void testConversion() {
     // Test special cases: poles, "date line"
-    assertDoubleEquals(
+    assertAlmostEquals(
         new S2LatLng(S2LatLng.fromDegrees(90.0, 65.0).toPoint()).lat().degrees(), 90.0);
     assertExactly(
         -M_PI_2, new S2LatLng(S2LatLng.fromRadians(-M_PI_2, 1).toPoint()).lat().radians());
-    assertDoubleEquals(
+    assertAlmostEquals(
         abs(new S2LatLng(S2LatLng.fromDegrees(12.2, 180.0).toPoint()).lng().degrees()), 180.0);
     assertExactly(PI, abs(new S2LatLng(S2LatLng.fromRadians(0.1, -PI).toPoint()).lng().radians()));
 
@@ -77,10 +87,11 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
 
     // Test generation from E5
     S2LatLng test = S2LatLng.fromE5(123456, 98765);
-    assertDoubleEquals(test.lat().degrees(), 1.23456);
-    assertDoubleEquals(test.lng().degrees(), 0.98765);
+    assertAlmostEquals(test.lat().degrees(), 1.23456);
+    assertAlmostEquals(test.lng().degrees(), 0.98765);
   }
 
+  @Test
   public void testNegativeZeros() {
     // Equal and same sign
     assertIdentical(S2LatLng.latitude(new S2Point(1., 0., -0.)).radians(), +0.);
@@ -90,6 +101,7 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
     assertIdentical(S2LatLng.longitude(new S2Point(-0., -0., 1.)).radians(), +0.);
   }
 
+  @Test
   public void testDistance() {
     assertExactly(
         0.0, S2LatLng.fromDegrees(90, 0).getDistance(S2LatLng.fromDegrees(90, 0)).radians());
@@ -107,8 +119,15 @@ public strictfp class S2LatLngTest extends GeometryTestCase {
         2e-6);
   }
 
+  @Test
   public void testCoder() throws IOException {
     S2LatLng value = S2LatLng.fromRadians(1, 2);
     assertEquals(value, roundtrip(S2LatLng.CODER, value));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2LatLngSerialization() {
+    doSerializationTest(S2LatLng.fromRadians(0.1, 0.5));
   }
 }

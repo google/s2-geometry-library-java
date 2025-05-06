@@ -56,15 +56,15 @@ import java.util.List;
  *
  * <p>This class is not thread-safe.
  *
- * This class implements Andrew's monotone chain algorithm, which is a variant of the Graham scan
+ * <p>This class implements Andrew's monotone chain algorithm, which is a variant of the Graham scan
  * (see https://en.wikipedia.org/wiki/Graham_scan). The time complexity is O(n log n), and the space
  * required is O(n). In fact only the call to "sort" takes O(n log n) time; the rest of the
  * algorithm is linear.
  *
- * Demonstration of the algorithm and code:
+ * <p>Demonstration of the algorithm and code:
  * en.wikibooks.org/wiki/Algorithm_Implementation/Geometry/Convex_hull/Monotone_chain
  */
-public final strictfp class S2ConvexHullQuery {
+public final class S2ConvexHullQuery {
   /** The length of edges to expand away from degenerate points to form a polygon. */
   private static final double OFFSET_FOR_SINGLE_POINT_LOOP = 1e-15;
 

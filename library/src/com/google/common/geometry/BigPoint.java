@@ -19,7 +19,7 @@ import com.google.common.base.Objects;
 import java.math.BigDecimal;
 
 /** A point consisting of BigDecimal coordinates. */
-final strictfp class BigPoint implements Comparable<BigPoint> {
+final class BigPoint implements Comparable<BigPoint> {
   final BigDecimal x;
   final BigDecimal y;
   final BigDecimal z;
@@ -34,6 +34,11 @@ final strictfp class BigPoint implements Comparable<BigPoint> {
     this.x = x;
     this.y = y;
     this.z = z;
+  }
+
+  /** Subtracts 'p' from this. */
+  public BigPoint sub(BigPoint p) {
+    return new BigPoint(x.subtract(p.x), y.subtract(p.y), z.subtract(p.z));
   }
 
   /** Returns the negative of this point. */

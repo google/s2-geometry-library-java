@@ -18,8 +18,8 @@ package com.google.common.geometry;
 
 import com.google.common.base.Objects;
 import java.io.Serializable;
-import javax.annotation.Nullable;
 import jsinterop.annotations.JsType;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The area of an interior, i.e. the region on the left side of an odd number of loops and
@@ -33,19 +33,27 @@ import jsinterop.annotations.JsType;
 public final class S2AreaCentroid implements Serializable {
 
   private final double area;
-  private final S2Point centroid;
+  private final @Nullable S2Point centroid;
 
+  /** Constructs a new S2AreaCentroid with an area and optional centroid. */
   public S2AreaCentroid(double area, @Nullable S2Point centroid) {
     this.area = area;
     this.centroid = centroid;
   }
 
+  /**
+   * Returns the area of a shape interior, i.e. the region on the left side of an odd number of
+   * loops.
+   */
   public double getArea() {
     return area;
   }
 
-  @Nullable
-  public S2Point getCentroid() {
+  /**
+   * Returns the true centroid of a shape, scaled by the area of the shape. Note that this not a
+   * unit-length vector. The centroid might not be contained by the shape.
+   */
+  public @Nullable S2Point getCentroid() {
     return centroid;
   }
 

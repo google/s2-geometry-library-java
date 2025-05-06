@@ -15,10 +15,13 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makeIndex;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolygon;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2TextFormat.makeIndexWithLegacyShapes;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolygon;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -28,12 +31,21 @@ import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2TaggedShapeCoder. */
+@RunWith(JUnit4.class)
 public class S2TaggedShapeCoderTest extends GeometryTestCase {
 
-  public void testMixedShapes() throws IOException {
-    S2ShapeIndex index = makeIndex("0:0 | 0:1 # 1:1, 1:2, 1:3 # 2:2; 2:3, 2:4, 3:3");
+  @Test
+  public void testMixedShapes() throws Exception {
+    // The polygon defined here has a loop with a single point, which is not valid. We want to test
+    // that the coder correctly handles invalid polygons, so disable assertions to allow the invalid
+    // polygon to be created.
+    S2ShapeIndex index = uncheckedCreate(
+            () -> makeIndexWithLegacyShapes("0:0 | 0:1 # 1:1, 1:2, 1:3 # 2:2; 2:3, 2:4, 3:3"));
     index.add(S2LaxPolylineShape.create(makePolyline("1:1, 1:2, 1:3").vertices()));
 
     index.add(S2LaxPolygonShape.EMPTY);
@@ -49,9 +61,10 @@ public class S2TaggedShapeCoderTest extends GeometryTestCase {
     Bytes data = Bytes.fromByteArray(output.toByteArray());
     Cursor cursor = data.cursor();
 
+    // We also have to disable assertions when decoding to allow the invalid polygon to be decoded.
     for (S2Shape expected : index.getShapes()) {
-      S2Shape shape1 = S2TaggedShapeCoder.FAST.decode(data, cursor);
-      S2Shape shape2 = S2TaggedShapeCoder.COMPACT.decode(data, cursor);
+      S2Shape shape1 = unsafeCreate(() -> S2TaggedShapeCoder.FAST.decode(data, cursor));
+      S2Shape shape2 = unsafeCreate(() -> S2TaggedShapeCoder.COMPACT.decode(data, cursor));
 
       assertTrue(S2ShapeUtil.equals(expected, shape1));
       assertTrue(S2ShapeUtil.equals(expected, shape2));
@@ -60,6 +73,7 @@ public class S2TaggedShapeCoderTest extends GeometryTestCase {
     assertEquals(output.size(), cursor.position);
   }
 
+  @Test
   public void testDecodeFromByteString() throws IOException {
     byte[] bytes =
         BaseEncoding.base16()
@@ -99,6 +113,7 @@ public class S2TaggedShapeCoderTest extends GeometryTestCase {
    * Checks that attempting to encode a shape class without a tagged decoder throws an exception,
    * and that after adding a coder for the new class, it succeeds.
    */
+  @Test
   public void testNewShapeClass() throws IOException {
     S2Point.Shape shape =
         new Shape() {

@@ -18,11 +18,18 @@ package com.google.common.geometry;
 import static java.lang.Double.parseDouble;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.google.common.geometry.S2Shape.MutableEdge;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * S2TextFormat contains a collection of functions for converting geometry to and from a human-
@@ -30,23 +37,25 @@ import javax.annotation.Nullable;
  * readable format is *not* designed to preserve the full precision of the original object, so it
  * should not be used for data storage.
  */
-public strictfp class S2TextFormat {
+public final class S2TextFormat {
 
   /**
    * Returns an S2Point corresponding to the given a latitude-longitude coordinate in degrees.
-   * Example of the input format: "-20:150"
+   * Example of the input format: "-20:150".
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2Point makePointOrDie(String str) {
+  public static S2Point makePointOrDie(String str) throws IllegalArgumentException {
     S2Point point = makePoint(str);
-    Preconditions.checkState(null != point, ": str == \"%s\"", str);
+    Preconditions.checkArgument(point != null, ": str == \"%s\"", str);
     return point;
   }
 
   /**
-   * As above, but do not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makePointOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2Point makePoint(String str) {
+  public static @Nullable S2Point makePoint(String str) {
     List<S2Point> vertices = parsePoints(str);
     if (vertices == null || vertices.size() != 1) {
       return null;
@@ -55,29 +64,29 @@ public strictfp class S2TextFormat {
   }
 
   /**
-   * Parses a string of one or more latitude-longitude coordinates in degrees, and return the
-   * corresponding List of S2LatLng points.
+   * Parses a string of one or more comma-separated latitude-longitude coordinates in degrees, and
+   * returns the corresponding List of S2LatLng points.
    *
-   * <p>Examples of the input format:
-   *
-   * <pre>
+   * <pre> Examples of the input format:
    *     ""                          // no points
    *     "-20:150"                   // one point
    *     "-20:150, -20:151, -19:150" // three points
    * </pre>
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static List<S2LatLng> parseLatLngsOrDie(String str) {
+  public static List<S2LatLng> parseLatLngsOrDie(String str) throws IllegalArgumentException {
     List<S2LatLng> latlngs = parseLatLngs(str);
-    Preconditions.checkState(latlngs != null, ": str == \"%s\"", str);
+    Preconditions.checkArgument(latlngs != null, ": str == \"%s\"", str);
     return latlngs;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #parseLatLngsOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  static List<S2LatLng> parseLatLngs(String str) {
-    List<ParseEntry> ps = dictionaryParse(str);
+  static @Nullable List<S2LatLng> parseLatLngs(String str) {
+    ImmutableList<ParseEntry> ps = dictionaryParse(str);
     if (ps == null) {
       return null;
     }
@@ -97,67 +106,131 @@ public strictfp class S2TextFormat {
   }
 
   /**
-   * Parses a string in the same format as parseLatLngs, and return the corresponding List of
-   * S2Point values.
+   * Parses multiple points from a string, where the points are separated by '|', using {@link
+   * #makePointOrDie(String)} to parse each point. Note that this "|"-delimited format is different
+   * than {@link #parsePointsOrDie(String)}, which uses a comma-delimited format.
    */
-  public static List<S2Point> parsePointsOrDie(String str) {
+  public static List<S2Point> makePointsOrDie(String str) {
+    ArrayList<S2Point> result = new ArrayList<>();
+    for (String lineStr : splitString(str, "\\|")) {
+      result.add(makePointOrDie(lineStr));
+    }
+    return result;
+  }
+
+  /**
+   * Parses a string in the same format as {@link #parseLatLngs(String)}, and returns the
+   * corresponding List of S2Point values.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static List<S2Point> parsePointsOrDie(String str) throws IllegalArgumentException {
     List<S2Point> vertices = parsePoints(str);
-    Preconditions.checkState(vertices != null, ": str == \"%s\"", str);
+    Preconditions.checkArgument(vertices != null, ": str == \"%s\"", str);
     return vertices;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #parsePointsOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static List<S2Point> parsePoints(String str) {
+  public static @Nullable List<S2Point> parsePoints(String str) {
+    return parsePoints(str, -1);
+  }
+
+  /**
+   * As {@link #parsePoints(String)} above, but also snaps the vertices to the specified S2CellId
+   * level if level >= 0. Returns null if conversion is unsuccessful.
+   */
+  public static @Nullable List<S2Point> parsePoints(String str, int level) {
     List<S2LatLng> latlngs = parseLatLngs(str);
     if (latlngs == null) {
       return null;
     }
     List<S2Point> vertices = new ArrayList<>();
     for (S2LatLng latlng : latlngs) {
-      vertices.add(latlng.toPoint());
+      S2Point vertex = latlng.toPoint();
+      if (level >= 0) {
+        vertex = snapPointToLevel(vertex, level);
+      }
+      vertices.add(vertex);
     }
     return vertices;
   }
 
-  /** Given a string in the same format as ParseLatLngs, returns a single S2LatLng. */
-  public static S2LatLng makeLatLngOrDie(String str) {
+  /**
+   * Parses the given String into S2Points and appends them to the provided list of vertices. The
+   * provided string must be a comma-separated sequence of lat:lng values in degrees, where each lat
+   * and lng can be parsed as a Double, like "10:20, 90:0, 20:30". Returns the bounding rectangle of
+   * the parsed points.
+   */
+  @CanIgnoreReturnValue
+  public static S2LatLngRect parseVertices(String str, List<S2Point> vertices) {
+    List<S2Point> points = parsePoints(str);
+    S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
+    for (S2Point point : points) {
+      vertices.add(point);
+      builder.addPoint(point);
+    }
+    return builder.build();
+  }
+
+  /** Snaps the given S2Point to the nearest S2CellId center at the given level. */
+  public static S2Point snapPointToLevel(S2Point point, int level) {
+    return S2CellId.fromPoint(point).parent(level).toPoint();
+  }
+
+  /** Snaps the given list of S2Points to the nearest S2CellId centers at the given level. */
+  public static List<S2Point> snapPointsToLevel(List<S2Point> points, int level) {
+    List<S2Point> snapped = new ArrayList<>(points.size());
+    for (S2Point p : points) {
+      snapped.add(snapPointToLevel(p, level));
+    }
+    return snapped;
+  }
+
+  /**
+   * Given a string in the same format as {@link #parseLatLngs(String)}, returns a single S2LatLng.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2LatLng makeLatLngOrDie(String str) throws IllegalArgumentException {
     S2LatLng latlng = makeLatLng(str);
-    Preconditions.checkState(null != latlng, ": str == \"%s\"", str);
+    Preconditions.checkArgument(latlng != null, ": str == \"%s\"", str);
     return latlng;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeLatLngOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2LatLng makeLatLng(String str) {
+  public static @Nullable S2LatLng makeLatLng(String str) {
     List<S2LatLng> latlngs = parseLatLngs(str);
-    if (null == latlngs || latlngs.size() != 1) {
+    if (latlngs == null || latlngs.size() != 1) {
       return null;
     }
     return latlngs.get(0);
   }
 
   /**
-   * Given a string in the same format as ParseLatLngs, returns the minimal bounding S2LatLngRect
-   * that contains the coordinates.
+   * Given a string in the same format as {@link #parseLatLngs(String)}, returns the minimal
+   * bounding S2LatLngRect that contains the coordinates.
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  S2LatLngRect makeLatLngRectOrDie(String str) {
+  public static S2LatLngRect makeLatLngRectOrDie(String str) throws IllegalArgumentException {
     S2LatLngRect rect = makeLatLngRect(str);
-    Preconditions.checkState(null != rect, ": str == \"%s\"", str);
+    Preconditions.checkArgument(rect != null, ": str == \"%s\"", str);
     return rect;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeLatLngRectOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2LatLngRect makeLatLngRect(String str) {
+  public static @Nullable S2LatLngRect makeLatLngRect(String str) {
     List<S2LatLng> latlngs = parseLatLngs(str);
-    if (null == latlngs || latlngs.isEmpty()) {
+    if (latlngs == null || latlngs.isEmpty()) {
       return null;
     }
     S2LatLngRect rect = S2LatLngRect.fromPoint(latlngs.get(0));
@@ -175,19 +248,21 @@ public strictfp class S2TextFormat {
    * <p>For example "4/" represents S2CellId.fromFace(4), and "3/02" represents
    * S2CellId.fromFace(3).child(0).child(2).
    *
-   * <p>This function is a wrapper for S2CellId.fromDebugString().
+   * <p>This function is a wrapper for {@link S2CellId#fromDebugString(String)}.
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2CellId makeCellIdOrDie(String str) {
+  public static S2CellId makeCellIdOrDie(String str) throws IllegalArgumentException {
     S2CellId cellId = makeCellId(str);
-    Preconditions.checkState(null != cellId, ": str == \"%s\"", str);
+    Preconditions.checkArgument(cellId != null, ": str == \"%s\"", str);
     return cellId;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeCellIdOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2CellId makeCellId(String str) {
+  public static @Nullable S2CellId makeCellId(String str) {
     S2CellId cellId = S2CellId.fromDebugString(str);
     if (cellId.equals(S2CellId.none())) {
       return null;
@@ -196,33 +271,33 @@ public strictfp class S2TextFormat {
   }
 
   /**
-   * Parses a comma-separated list of S2CellIds in the format above, and returns the corresponding
-   * S2CellUnion. (Note that S2CellUnions are automatically normalized by sorting, removing
-   * duplicates, and replacing groups of 4 child cells by their parent cell.)
+   * Parses a comma-separated list of S2CellIds as described in {@link #makeCellIdOrDie(String)},
+   * and returns the corresponding S2CellUnion. (Note that S2CellUnions are automatically normalized
+   * by sorting, removing duplicates, and replacing groups of 4 child cells by their parent cell.)
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2CellUnion makeCellUnionOrDie(String str) {
+  public static S2CellUnion makeCellUnionOrDie(String str) throws IllegalArgumentException {
     S2CellUnion cellUnion = makeCellUnion(str);
-    Preconditions.checkState(null != cellUnion, ": str == \"%s\"", str);
+    Preconditions.checkArgument(cellUnion != null, ": str == \"%s\"", str);
     return cellUnion;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeCellUnionOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2CellUnion makeCellUnion(String str) {
+  public static @Nullable S2CellUnion makeCellUnion(String str) {
     ArrayList<S2CellId> cellIds = new ArrayList<>();
     for (String cellStr : splitString(str, ",")) {
       cellStr = cellStr.trim();
       S2CellId cellId = makeCellId(cellStr);
-      if (null == cellId) {
+      if (cellId == null) {
         return null;
       }
       cellIds.add(cellId);
     }
-    S2CellUnion cellUnion = new S2CellUnion();
-    cellUnion.initFromCellIds(cellIds);
-    return cellUnion;
+    return new S2CellUnion().initFromCellIds(cellIds);
   }
 
   /**
@@ -232,67 +307,141 @@ public strictfp class S2TextFormat {
    * <p>"-20:150, 10:-120, 0.123:-170.652"
    *
    * <p>The strings "empty" or "full" create an empty or full loop respectively.
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2Loop makeLoopOrDie(String str) {
-    S2Loop loop = makeLoop(str);
-    Preconditions.checkState(loop != null, ": str == \"%s\"", str);
+  public static S2Loop makeLoopOrDie(String str) throws IllegalArgumentException {
+    return makeLoopOrDie(str, -1);
+  }
+
+  /**
+   * Like {@link #makeLoopOrDie(String)} above, but also snaps the vertices of the resultant loop to
+   * the given S2CellId level.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2Loop makeLoopOrDie(String str, int level) throws IllegalArgumentException {
+    S2Loop loop = makeLoop(str, level);
+    Preconditions.checkArgument(loop != null, ": str == \"%s\"", str);
     return loop;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * Like {@link #makeLoopOrDie(String)} above, but does not throw IllegalArgumentException on
+   * failure, instead returning null.
    */
-  @Nullable
-  public static S2Loop makeLoop(String str) {
-    if (str.equals("empty")) {
+  public static @Nullable S2Loop makeLoop(String str) {
+    return makeLoop(str, -1);
+  }
+
+  /**
+   * Like {@link #makeLoopOrDie(String, int)} above, but does not throw IllegalArgumentException on
+   * failure, instead returning null.
+   */
+  public static @Nullable S2Loop makeLoop(String str, int level) {
+    if ("empty".equalsIgnoreCase(str)) {
       return S2Loop.empty();
-    }
-    if (str.equals("full")) {
+    } else if ("full".equalsIgnoreCase(str)) {
       return S2Loop.full();
     }
-    List<S2Point> vertices = parsePoints(str);
+    List<S2Point> vertices = parsePoints(str, level);
     if (vertices == null) {
       return null;
     }
     return new S2Loop(vertices);
   }
 
-  /** Similar to makeLoop(), but returns an S2Polyline rather than an S2Loop. */
-  public static S2Polyline makePolylineOrDie(String str) {
+  /** Wraps the S2Loop constructor to accept an array of vertices. */
+  public static S2Loop makeLoop(S2Point... vertices) {
+    return new S2Loop(vertices);
+  }
+
+  /**
+   * Parses multiple polylines from a string, where the polylines are separated by '|', using {@link
+   * #makePolylineOrDie(String)} to parse each polyline.
+   */
+  public static List<S2Polyline> makePolylinesOrDie(String str) {
+    ArrayList<S2Polyline> result = new ArrayList<>();
+    for (String lineStr : splitString(str, "\\|")) {
+      result.add(makePolylineOrDie(lineStr));
+    }
+    return result;
+  }
+
+  /**
+   * Parses an input in the same format as {@link #makeLoop(String)}, but returns an S2Polyline
+   * rather than an S2Loop.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2Polyline makePolylineOrDie(String str) throws IllegalArgumentException {
     S2Polyline polyline = makePolyline(str);
-    Preconditions.checkState(null != polyline, ": str == \"%s\"", str);
+    Preconditions.checkArgument(polyline != null, ": str == \"%s\"", str);
     return polyline;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makePolylineOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2Polyline makePolyline(String str) {
+  public static @Nullable S2Polyline makePolyline(String str) {
     List<S2Point> vertices = parsePoints(str);
-    if (null == vertices) {
+    if (vertices == null) {
       return null;
     }
     return new S2Polyline(vertices);
   }
 
-  /** Like makePolyline, but returns an S2LaxPolylineShape instead. */
-  public static S2LaxPolylineShape makeLaxPolylineOrDie(String str) {
+  /**
+   * Given a string of lat,lng points in degrees, returns an S2Polyline containing those points
+   * after passing it through the encode/decode roundtrip.
+   */
+  public static S2Polyline makePolylineWithEncodeDecodeRoundtrip(String str) {
+    List<S2Point> vertices = Lists.newArrayList();
+    parseVertices(str, vertices);
+    try {
+      ByteArrayOutputStream bos = new ByteArrayOutputStream();
+      new S2Polyline(vertices).encode(bos);
+      return S2Polyline.decode(new ByteArrayInputStream(bos.toByteArray()));
+    } catch (IOException e) {
+      throw new IllegalArgumentException(e);
+    }
+  }
+
+  /**
+   * Like {@link #makePolyline(String)} above, but returns an S2LaxPolylineShape instead.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2LaxPolylineShape makeLaxPolylineOrDie(String str)
+      throws IllegalArgumentException {
     S2LaxPolylineShape laxPolyline = makeLaxPolyline(str);
-    Preconditions.checkState(null != laxPolyline, ": str == \"%s\"", str);
+    Preconditions.checkArgument(laxPolyline != null, ": str == \"%s\"", str);
     return laxPolyline;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeLaxPolylineOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2LaxPolylineShape makeLaxPolyline(String str) {
+  public static @Nullable S2LaxPolylineShape makeLaxPolyline(String str) {
     List<S2Point> vertices = parsePoints(str);
-    if (null == vertices) {
+    if (vertices == null) {
       return null;
     }
     return S2LaxPolylineShape.create(vertices);
+  }
+
+  /**
+   * Parses multiple polygons from a string, where the polygons are separated by '|', using {@link
+   * #makePolygonOrDie(String)} to parse each polygon.
+   */
+  public static List<S2Polygon> makePolygonsOrDie(String str) {
+    ArrayList<S2Polygon> result = new ArrayList<>();
+    for (String polyStr : splitString(str, "\\|")) {
+      result.add(makePolygonOrDie(polyStr));
+    }
+    return result;
   }
 
   /**
@@ -311,56 +460,61 @@ public strictfp class S2TextFormat {
    *     "empty"              // the empty polygon (consisting of no loops)
    *     "full"               // the full polygon (consisting of one full loop).
    * </pre>
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2Polygon makePolygonOrDie(String str) {
+  public static S2Polygon makePolygonOrDie(String str) throws IllegalArgumentException {
     S2Polygon polygon = makePolygon(str);
-    Preconditions.checkState(polygon != null, ": str == \"%s\"", str);
+    Preconditions.checkArgument(polygon != null, ": str == \"%s\"", str);
     return polygon;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makePolygonOrDie(String)} above, but also snaps the polygon to the specified level.
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  @Nullable
-  public static S2Polygon makePolygon(String str) {
-    return internalMakePolygon(str, true);
-  }
-
-  /**
-   * Like MakePolygon(), except that it does not normalize loops (i.e., it gives you exactly what
-   * you asked for).
-   */
-  public static S2Polygon makeVerbatimPolygonOrDie(String str) {
-    S2Polygon polygon = makeVerbatimPolygon(str);
-    Preconditions.checkState(polygon != null, ": str == \"%s\"", str);
+  public static S2Polygon makePolygonOrDie(String str, int level) throws IllegalArgumentException {
+    S2Polygon polygon = makePolygon(str, level);
+    Preconditions.checkArgument(polygon != null, ": str == \"%s\"", str);
     return polygon;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makePolygonOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2Polygon makeVerbatimPolygon(String str) {
-    return internalMakePolygon(str, false);
+  public static @Nullable S2Polygon makePolygon(String str) {
+    return makePolygon(str, -1);
   }
 
   /**
-   * Parses a string in the same format as MakePolygon, except that loops must be oriented so that
-   * the interior of the loop is always on the left, and polygons with degeneracies are supported.
-   * As with MakePolygon, "full" denotes the full polygon, and "" or "empty" denote the empty
-   * polygon.
+   * As {@link #makePolygonOrDie(String, int)}, above but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  public static S2LaxPolygonShape makeLaxPolygonOrDie(String str) {
+  public static @Nullable S2Polygon makePolygon(String str, int level) {
+    return internalMakePolygon(str, true, level);
+  }
+
+  /**
+   * Parses a string in the same format as {@link #makePolygonOrDie(String)}, except that loops must
+   * be oriented so that the interior of the loop is always on the left, and polygons with
+   * degeneracies are supported. As with {@link #makePolygon(String)}, "full" denotes the full
+   * polygon, and "" or "empty" denote the empty polygon.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2LaxPolygonShape makeLaxPolygonOrDie(String str) throws IllegalArgumentException {
     S2LaxPolygonShape laxPolygon = makeLaxPolygon(str);
-    Preconditions.checkState(null != laxPolygon, ": str == \"%s\"", str);
+    Preconditions.checkArgument(laxPolygon != null, ": str == \"%s\"", str);
     return laxPolygon;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeLaxPolygonOrDie(String)} above, but does not throw IllegalArgumentException on
+   * invalid input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2LaxPolygonShape makeLaxPolygon(String str) {
+  public static @Nullable S2LaxPolygonShape makeLaxPolygon(String str) {
     List<String> loopStrs = splitString(str, ";");
     List<List<S2Point>> loops = new ArrayList<>();
     for (String loopStr : loopStrs) {
@@ -368,7 +522,7 @@ public strictfp class S2TextFormat {
         loops.add(new ArrayList<S2Point>());
       } else if (!loopStr.equals("empty")) {
         List<S2Point> points = parsePoints(loopStr);
-        if (null == points) {
+        if (points == null) {
           return null;
         }
         loops.add(points);
@@ -386,12 +540,12 @@ public strictfp class S2TextFormat {
    * <p>Examples:
    *
    * <ul>
-   * <li>1:2 | 2:3 # #                     // Two points (one S2Point.Shape)
-   * <li># 0:0, 1:1, 2:2 | 3:3, 4:4 #      // Two polylines
-   * <li># # 0:0, 0:3, 3:0; 1:1, 2:1, 1:2  // Two nested loops (one polygon)
-   * <li>5:5 # 6:6, 7:7 # 0:0, 0:1, 1:0    // One of each point, line, and polygon
-   * <li># # empty                         // One empty polygon
-   * <li># # empty | full                  // One empty polygon, one full polygon
+   *   <li>1:2 | 2:3 # # // Two points (one S2Point.Shape)
+   *   <li># 0:0, 1:1, 2:2 | 3:3, 4:4 # // Two polylines
+   *   <li># # 0:0, 0:3, 3:0; 1:1, 2:1, 1:2 // Two nested loops (one polygon)
+   *   <li>5:5 # 6:6, 7:7 # 0:0, 0:1, 1:0 // One of each point, line, and polygon
+   *   <li># # empty // One empty polygon
+   *   <li># # empty | full // One empty polygon, one full polygon
    * </ul>
    *
    * <p>All the points, if any, are stored as a single S2Point.Shape in the index. Polylines are
@@ -404,18 +558,20 @@ public strictfp class S2TextFormat {
    *
    * <p>CAVEAT: Because whitespace is ignored, empty polygons must be specified as the string
    * "empty" rather than as the empty string ("").
+   *
+   * @throws IllegalArgumentException on unparsable input.
    */
-  public static S2ShapeIndex makeIndexOrDie(String str) {
+  public static S2ShapeIndex makeIndexOrDie(String str) throws IllegalArgumentException {
     S2ShapeIndex index = makeIndex(str);
-    Preconditions.checkState(index != null, ": str == \"%s\"", str);
+    Preconditions.checkArgument(index != null, ": str == \"%s\"", str);
     return index;
   }
 
   /**
-   * As above, but does not CHECK-fail on invalid input. Returns null if conversion is unsuccessful.
+   * As {@link #makeIndexOrDie(String)} above, but does not throw IllegalStatException on invalid
+   * input. Returns null if conversion is unsuccessful.
    */
-  @Nullable
-  public static S2ShapeIndex makeIndex(String str) {
+  public static @Nullable S2ShapeIndex makeIndex(String str) {
     String[] strs = str.split("#", -1); // Here, we want to include empty strings in split.
     if (strs.length != 3) {
       return null;
@@ -448,6 +604,45 @@ public strictfp class S2TextFormat {
         return null;
       }
       index.add(laxPolygon);
+    }
+    return index;
+  }
+
+  /**
+   * Like {@link #makeIndex(String)} above, but returns an index containing S2Polylines instead of
+   * S2LaxPolylines, and S2Polygon.Shapes instead of S2LaxPolygonShapes.
+   *
+   * <p>Returns an S2ShapeIndex containing the points, polylines, and loops (in the form of a single
+   * polygon) described by the following format:
+   *
+   * <pre>point1|point2|... # line1|line2|... # polygon1|polygon2|...</pre>
+   *
+   * <table>
+   * <caption>Examples</caption>
+   * <tr><td>Two points</td><td><pre>1:2 | 2:3 # #</pre></td></tr>
+   * <tr><td>Two polylines</td><td><pre># 0:0, 1:1, 2:2 | 3:3, 4:4 #</pre></td></tr>
+   * <tr><td>Shell with hole</td><td><pre># # 0:0, 0:3, 3:0; 1:1, 2:1, 1:2</pre></td></tr>
+   * <tr><td>One of each</td><td><pre>5:5 # 6:6, 7:7 # 0:0, 0:1, 1:0</pre></td></tr>
+   * </table>
+   *
+   * <p>Loops should be directed so that the region's interior is on the left.
+   */
+  public static S2ShapeIndex makeIndexWithLegacyShapes(String str) {
+    S2ShapeIndex index = new S2ShapeIndex();
+    ImmutableList<String> strs = ImmutableList.copyOf(Splitter.on('#').split(str));
+    Preconditions.checkArgument(strs.size() == 3, "Must contain two # characters: %s", str);
+    List<S2Point> points = new ArrayList<>();
+    for (String point : Splitter.on('|').omitEmptyStrings().split(strs.get(0).trim())) {
+      points.add(makePoint(point));
+    }
+    if (!points.isEmpty()) {
+      index.add(S2Point.Shape.fromList(points));
+    }
+    for (String line : Splitter.on('|').omitEmptyStrings().split(strs.get(1).trim())) {
+      index.add(makePolyline(line));
+    }
+    for (String polygon : Splitter.on('|').omitEmptyStrings().split(strs.get(2).trim())) {
+      index.add(makePolygon(polygon).shape());
     }
     return index;
   }
@@ -515,6 +710,18 @@ public strictfp class S2TextFormat {
     return out.toString();
   }
 
+  /**
+   * Convert a list of S2Points to the S2TextFormat string representation documented above as if it
+   * were a line.
+   */
+  public static String toString(List<S2Point> linePoints) {
+    StringBuilder out = new StringBuilder();
+    if (!linePoints.isEmpty()) {
+      appendVertices(linePoints, out);
+    }
+    return out.toString();
+  }
+
   /** Convert an S2Polygon to the S2TextFormat string representation documented above. */
   public static String toString(S2Polygon polygon) {
     return toString(polygon, ";\n");
@@ -537,25 +744,6 @@ public strictfp class S2TextFormat {
         out.append(loopSeparator);
       }
       appendVertices(polygon.loop(i).vertices(), out);
-    }
-    return out.toString();
-  }
-
-  /** Convert a list of S2Points to the S2TextFormat string representation documented above. */
-  public static String s2PointsToString(List<S2Point> points) {
-    StringBuilder out = new StringBuilder();
-    appendVertices(points, out);
-    return out.toString();
-  }
-
-  /** Convert a list of S2LatLngs to the S2TextFormat string representation documented above. */
-  public static String s2LatLngsToString(List<S2LatLng> latlngs) {
-    StringBuilder out = new StringBuilder();
-    for (int i = 0; i < latlngs.size(); ++i) {
-      if (i > 0) {
-        out.append(", ");
-      }
-      appendVertex(latlngs.get(i), out);
     }
     return out.toString();
   }
@@ -600,7 +788,7 @@ public strictfp class S2TextFormat {
   }
 
   /**
-   * Convert an S2CellUnion to the S2TextFormat string representation documented above. The index
+   * Convert an S2ShapeIndex to the S2TextFormat string representation documented above. The index
    * may contain S2Shapes of any type. Shapes are reordered if necessary so that all point geometry
    * (shapes of dimension 0) are first, followed by all polyline geometry, followed by all polygon
    * geometry.
@@ -648,8 +836,90 @@ public strictfp class S2TextFormat {
     return out.toString();
   }
 
+  /**
+   * Returns the current content of the given S2BuilderGraph as a multi-line string, with no limits
+   * on size. Intended for debugging unit tests.
+   */
+  public static String toString(S2BuilderGraph graph) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("Vertices: \n");
+    for (int vertexId = 0; vertexId < graph.numVertices(); ++vertexId) {
+      sb.append("  VertexId ")
+          .append(vertexId)
+          .append(" is point ")
+          .append(graph.vertex(vertexId))
+          .append("\n");
+    }
+    sb.append("Edges: \n");
+    for (int edgeId = 0; edgeId < graph.numEdges(); ++edgeId) {
+      int setId = graph.inputEdgeIdSetIds().get(edgeId);
+      sb.append("  EdgeId ")
+          .append(edgeId)
+          .append(" is edge (")
+          .append(graph.edgeSrcId(edgeId))
+          .append(" - ")
+          .append(graph.edgeDstId(edgeId))
+          .append(")\n")
+          .append("      with input edge ids: ")
+          .append(graph.inputEdgeIdSetLexicon().idSet(setId))
+          .append("\n");
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Summarizes some key information about the given index: for each shape, the dimension, the
+   * number of edges and chains, and for each chain the chainStart and length. Useful for debugging.
+   */
+  public static String summarizeIndex(S2ShapeIndex index) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("Index has").append(index.getShapes().size()).append(" shapes.\n");
+    for (int shapeId = 0; shapeId < index.getShapes().size(); ++shapeId) {
+      S2Shape shape = index.getShapes().get(shapeId);
+      sb.append("  Shape #")
+          .append(shapeId)
+          .append(" has dimension ")
+          .append(shape.dimension())
+          .append(", ")
+          .append(shape.numEdges())
+          .append(" edges, and ")
+          .append(shape.numChains())
+          .append(" chains.")
+          .append("\n");
+      for (int c = 0; c < shape.numChains(); ++c) {
+        sb.append("    Chain #")
+            .append(c)
+            .append(" starts at shape edge #")
+            .append(shape.getChainStart(c))
+            .append(" and has length ")
+            .append(shape.getChainLength(c))
+            .append("\n");
+      }
+    }
+    return sb.toString();
+  }
+
+  /** Convert a list of S2Points to the S2TextFormat string representation documented above. */
+  public static String s2PointsToString(List<S2Point> points) {
+    StringBuilder out = new StringBuilder();
+    appendVertices(points, out);
+    return out.toString();
+  }
+
+  /** Convert a list of S2LatLngs to the S2TextFormat string representation documented above. */
+  public static String s2LatLngsToString(List<S2LatLng> latlngs) {
+    StringBuilder out = new StringBuilder();
+    for (int i = 0; i < latlngs.size(); ++i) {
+      if (i > 0) {
+        out.append(", ");
+      }
+      appendVertex(latlngs.get(i), out);
+    }
+    return out.toString();
+  }
+
   // Split on the given regexp. Trim whitespace and skip empty strings to produce the result.
-  private static List<String> splitString(String str, String regexp) {
+  public static List<String> splitString(String str, String regexp) {
     String[] parts = str.split(regexp);
     List<String> result = new ArrayList<>();
     for (String part : parts) {
@@ -671,9 +941,11 @@ public strictfp class S2TextFormat {
   }
 
   /** Modeled on the DictionaryParse method of strings/serialize.cc */
-  @Nullable
-  private static List<ParseEntry> dictionaryParse(String str) {
-    List<ParseEntry> items = new ArrayList<>();
+  private static @Nullable ImmutableList<ParseEntry> dictionaryParse(String str) {
+    if (str == null || str.isEmpty()) {
+      return ImmutableList.of();
+    }
+    ImmutableList.Builder<ParseEntry> items = new ImmutableList.Builder<>();
     String[] entries = str.split(",", -1);
     for (String entry : entries) {
       if (entry.trim().isEmpty()) { // skip empty
@@ -685,18 +957,17 @@ public strictfp class S2TextFormat {
       }
       items.add(new ParseEntry(fields[0], fields[1]));
     }
-    return items;
+    return items.build();
   }
 
-  @Nullable
-  private static S2Polygon internalMakePolygon(String str, boolean normalizeLoops) {
+  static @Nullable S2Polygon internalMakePolygon(String str, boolean normalizeLoops, int level) {
     if (str.equals("empty")) {
-      return new S2Polygon(new ArrayList<S2Loop>()); // Can't be an ImmutableList, it is clear()ed.
+      return new S2Polygon();
     }
     List<String> loopStrs = splitString(str, ";");
     List<S2Loop> loops = new ArrayList<>();
     for (String loopStr : loopStrs) {
-      S2Loop loop = makeLoop(loopStr);
+      S2Loop loop = makeLoop(loopStr, level);
       if (loop == null) {
         return null;
       }
@@ -709,13 +980,21 @@ public strictfp class S2TextFormat {
     return new S2Polygon(loops);
   }
 
+  /** Formats the given S2LatLng as a colon-separated pair of values, like "12.345:-67.89". */
   private static void appendVertex(S2LatLng ll, StringBuilder out) {
-    out.append(Platform.formatDouble((ll.latDegrees())))
+    out.append(Platform.formatDouble(ll.latDegrees()))
         .append(':')
-        .append(Platform.formatDouble((ll.lngDegrees())));
+        .append(Platform.formatDouble(ll.lngDegrees()));
   }
 
+  /**
+   * Formats the given S2Point as an S2LatLng using {@link #appendVertex(S2LatLng, StringBuilder)}.
+   */
   private static void appendVertex(S2Point p, StringBuilder out) {
+    if (p == null) {
+      out.append("null");
+      return;
+    }
     appendVertex(new S2LatLng(p), out);
   }
 
@@ -728,4 +1007,6 @@ public strictfp class S2TextFormat {
       }
     }
   }
+
+  private S2TextFormat() {}
 }

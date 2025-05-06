@@ -36,7 +36,6 @@
 
   <modules>
    <module>library</module>
-   <module>testdatagenerator</module>
    <module>tests</module>
    <module>benchmarks</module>
   </modules>
@@ -75,10 +74,10 @@
 
   <properties>
     <revision>HEAD-SNAPSHOT</revision>
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
-    <guava.version>32.0-jre</guava.version>
+    <maven.compiler.release>11</maven.compiler.release>
+    <guava.version>33.4.7-jre</guava.version>
     <errorprone.version>2.19.1</errorprone.version>
+    <fastutil.version>8.5.15</fastutil.version>
     <jsr305.version>3.0.2</jsr305.version>
     <jsinterop.version>2.0.0</jsinterop.version>
     <surefire.version>3.0.0-M7</surefire.version>

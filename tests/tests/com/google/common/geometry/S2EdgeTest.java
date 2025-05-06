@@ -15,15 +15,24 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
+import com.google.common.annotations.GwtIncompatible;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/** Tests for S2Edge. */
+/** Unit tests for S2Edge. */
+@RunWith(JUnit4.class)
 public final class S2EdgeTest extends GeometryTestCase {
 
   private final List<S2Point> vertices = S2TextFormat.parsePointsOrDie("0:0, 1:1");
 
+  @Test
   public void testBasic() {
     final S2Edge edge = new S2Edge(vertices.get(0), vertices.get(1));
     assertSame(vertices.get(0), edge.getStart());
@@ -33,6 +42,7 @@ public final class S2EdgeTest extends GeometryTestCase {
     assertEquals(1, edge.numChains());
   }
 
+  @Test
   public void testGetChainMethods() {
     final S2Edge edge = new S2Edge(vertices.get(0), vertices.get(1));
     assertEquals(0, edge.getChainStart(0));
@@ -48,6 +58,7 @@ public final class S2EdgeTest extends GeometryTestCase {
     assertSame(vertices.get(1), edge.getChainVertex(0, 1));
   }
 
+  @Test
   public void testGetChainArgumentValidation() {
     final S2Edge edge = new S2Edge(vertices.get(0), vertices.get(1));
 
@@ -71,5 +82,11 @@ public final class S2EdgeTest extends GeometryTestCase {
         () -> assertEquals(vertices.get(0), edge.getChainVertex(1, 0)));
     assertThrows("Index out of range", IndexOutOfBoundsException.class,
         () -> assertEquals(vertices.get(0), edge.getChainVertex(0, 2)));
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2EdgeSerialization() {
+    doSerializationTest(new S2Edge(new S2Point(0.1, 0.2, 0.3), new S2Point(0.5, 0.6, -100)));
   }
 }

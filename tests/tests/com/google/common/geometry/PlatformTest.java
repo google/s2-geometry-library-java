@@ -21,16 +21,22 @@ import static java.lang.Double.MIN_VALUE;
 import static java.lang.Double.NEGATIVE_INFINITY;
 import static java.lang.Double.NaN;
 import static java.lang.Double.POSITIVE_INFINITY;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link Platform} methods. */
-public class PlatformTest extends TestCase {
+@RunWith(JUnit4.class)
+public class PlatformTest {
   private static final Double NEGATIVE_ZERO = Double.parseDouble("-0");
 
+  @Test
   public void testExp() {
     assertEquals(-1023, Platform.getExponent(-0.000000));
     assertEquals(1, Platform.getExponent(-3.141593));
@@ -57,6 +63,7 @@ public class PlatformTest extends TestCase {
     assertEquals(1024, Platform.getExponent(NaN));
   }
 
+  @Test
   public void testRemainder() {
     double[] numerators = {0, 1, -2, 7, Math.E, NaN, NEGATIVE_INFINITY};
     double[] denominators = {0, -3, 4, Math.PI, NaN, POSITIVE_INFINITY};
@@ -118,6 +125,7 @@ public class PlatformTest extends TestCase {
     }
   }
 
+  @Test
   public void testUlp() {
     assertExactly(1.2689709186578246e-116, Platform.ulp(1e-100));
     assertExactly(1.2924697071141057E-26, Platform.ulp(1e-10));
@@ -126,6 +134,7 @@ public class PlatformTest extends TestCase {
     assertExactly(1.942668892225729e84, Platform.ulp(1e100));
   }
 
+  @Test
   public void testNextAfter() {
     // NaNs
     assertTrue(Double.isNaN(Platform.nextAfter(NaN, NaN)));
@@ -158,7 +167,7 @@ public class PlatformTest extends TestCase {
 
     // zero.
     assertExactly(-MIN_VALUE, Platform.nextAfter(0, NEGATIVE_INFINITY));
-    assertExactly(-MIN_VALUE, Platform.nextAfter(-0, -MAX_VALUE));
+    assertExactly(-MIN_VALUE, Platform.nextAfter(-0.0, -MAX_VALUE));
     assertExactly(0.0, Platform.nextAfter(0, 0));
     assertExactly(MIN_VALUE, Platform.nextAfter(0, MIN_VALUE));
 
@@ -185,6 +194,7 @@ public class PlatformTest extends TestCase {
     assertExactly(POSITIVE_INFINITY, Platform.nextAfter(POSITIVE_INFINITY, POSITIVE_INFINITY));
   }
 
+  @Test
   public void testNewBigDecimal() {
     BigDecimal ideal = new BigDecimal("0.1000000000000000055511151231257827021181583404541015625");
     BigDecimal actual = Platform.newBigDecimal(0.1);
@@ -197,6 +207,7 @@ public class PlatformTest extends TestCase {
   }
 
   @GwtIncompatible("Javascript uses its own version of Platform#sign")
+  @Test
   public void testSign() {
     // Run some standard determinant checks.
     S2Point a = new S2Point(1.0, 0.0, 0.0);

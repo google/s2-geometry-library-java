@@ -15,12 +15,12 @@
  */
 package com.google.common.geometry;
 
-import static java.lang.Math.max;
-
 import com.google.common.base.Function;
 import com.google.common.geometry.S2ShapeIndex.CellRelation;
 import com.google.common.primitives.UnsignedLongs;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.objects.ObjectAVLTreeSet;
+import it.unimi.dsi.fastutil.objects.ObjectBidirectionalIterator;
 import java.util.List;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
@@ -31,13 +31,12 @@ import jsinterop.annotations.JsType;
  * current position does not alter the position of the cursor. The cursor has a {@link #compareTo}
  * method to compare the value at the current position of the iterator with a given S2CellId.
  */
-// TODO(user): Replace Entry<T> with a Multimap<long,T> that is space efficient, and supports
-// time-efficient inserts, removes, and lookups.
 @JsType
-public final class S2Iterator<T extends S2Iterator.Entry> {
+@SuppressWarnings("Assertion")
+public interface S2Iterator<T extends S2Iterator.Entry> {
   /** An interface to provide the cell ID for an element in a sorted list. */
   @JsType
-  public interface Entry {
+  interface Entry {
     /** Returns the cell ID of this cell as a primitive. */
     long id();
   }
@@ -47,123 +46,276 @@ public final class S2Iterator<T extends S2Iterator.Entry> {
    * classes guarantee the necessary preconditions on {@code entries} -- that the cell IDs of each
    * entry are sorted in ascending order.
    */
-  static <T extends S2Iterator.Entry> S2Iterator<T> create(List<T> entries) {
-    return new S2Iterator<T>(entries);
-  }
-
-  /**
-   * Same as {@link #create(List)}, but accepts {@code seekFunction}, which is used as the
-   * implementation of {@link #seek(S2CellId)}.
-   *
-   * @param entries the list of entries which back this iterator.
-   * @param seekFunction a function which takes a target {@link S2CellId} and returns an index to
-   *     which this iterator will be repositioned.
-   */
-  static <T extends S2Iterator.Entry> S2Iterator<T> create(
-      List<T> entries, Function<S2CellId, Integer> seekFunction) {
-    return new S2Iterator<T>(entries, seekFunction);
-  }
-
-  /** Creates a new iterator with the same entries and position as {@code it}. */
-  static <T extends S2Iterator.Entry> S2Iterator<T> copy(S2Iterator<T> it) {
-    S2Iterator<T> copy = new S2Iterator<T>(it.entries, it.seekFunction);
-    copy.pos = it.pos;
-    return copy;
+  static <T extends S2Iterator.Entry> ListIterator<T> fromList(List<T> entries) {
+    return new ListIterator<>(entries);
   }
 
   /** Returns a copy of this iterator, positioned as this iterator is. */
-  public S2Iterator<T> copy() {
-    S2Iterator<T> it = new S2Iterator<T>(entries, seekFunction);
-    it.pos = pos;
-    return it;
+  S2Iterator<T> copy();
+
+  /** An {@link S2Iterator} based on a list. */
+  class ListIterator<T extends Entry> implements S2Iterator<T> {
+    private final List<T> entries;
+    protected int pos;
+
+    /**
+     * Create a new iterator based on the given list of entries. Results are undefined if the
+     * entries are not in ascending sorted order.
+     *
+     * @param entries the list of entries which back this iterator.
+     */
+    ListIterator(List<T> entries) {
+      this.entries = entries;
+    }
+
+    @Override
+    public S2Iterator<T> copy() {
+      ListIterator<T> it = new ListIterator<T>(entries);
+      it.pos = pos;
+      return it;
+    }
+
+    @Override
+    public void restart() {
+      pos = 0;
+    }
+
+    @Override
+    public T entry() {
+      assert !done();
+      return entries.get(pos);
+    }
+
+    @Override
+    public boolean next() {
+      if (pos < entries.size()) {
+        pos++;
+        return true;
+      }
+      return false;
+    }
+
+    @Override
+    public boolean prev() {
+      if (pos > 0) {
+        pos--;
+        return true;
+      }
+      return false;
+    }
+
+    @Override
+    public boolean done() {
+      return pos == entries.size();
+    }
+
+    @Override
+    public boolean atBegin() {
+      return pos == 0;
+    }
+
+    @Override
+    public void seek(S2CellId target) {
+      seek(0, target);
+    }
+
+    @Override
+    public void seekForward(S2CellId target) {
+      seek(pos, target);
+    }
+
+    private void seek(int start, S2CellId target) {
+      int end = entries.size() - 1;
+      while (start <= end) {
+        pos = (start + end) / 2;
+        int result = id().compareTo(target);
+        if (result > 0) {
+          end = pos - 1;
+        } else if (result < 0) {
+          start = pos + 1;
+        } else if (start != pos) {
+          end = pos;
+        } else {
+          return;
+        }
+      }
+      pos = start;
+    }
+
+    @Override
+    public void finish() {
+      pos = entries.size();
+    }
   }
 
-  private final List<T> entries;
-  private final Function<S2CellId, Integer> seekFunction;
-  private int pos;
+  /** * An {@link S2Iterator} implemented on an {@link ObjectAVLTreeSet AVL tree}. */
+  class AvlSetIterator<T extends Entry> implements S2Iterator<T> {
+    /** The entries of this set. */
+    private final ObjectAVLTreeSet<T> entries;
 
-  /**
-   * Create a new iterator based on the given list of entries. Results are undefined if the entries
-   * are not in ascending sorted order.
-   *
-   * @param entries the list of entries which back this iterator.
-   */
-  S2Iterator(List<T> entries) {
-    this.entries = entries;
-    this.seekFunction =
-        (target) -> {
-          int start = 0;
-          int end = entries.size() - 1;
-          while (start <= end) {
-            int mid = (start + end) / 2;
-            long id = entries.get(mid).id();
-            int result = UnsignedLongs.compare(id, target.id());
-            if (result > 0) {
-              end = mid - 1;
-            } else if (result < 0) {
-              start = mid + 1;
-            } else if (start != mid) {
-              end = mid;
-            } else {
-              return mid;
-            }
-          }
-          return start;
-        };
-  }
+    /** Returns an entry that is less than all other entries with the given cell. */
+    private final Function<S2CellId, T> min;
 
-  /**
-   * Same as {@link #S2Iterator(List)}, but accepts {@code seekFunction}, which is used as the
-   * implementation of {@link #seek(S2CellId)}.
-   *
-   * @param entries the list of entries which back this iterator.
-   * @param seekFunction a function which takes a target {@link S2CellId} and returns an index to
-   *     which this iterator will be repositioned.
-   */
-  S2Iterator(List<T> entries, Function<S2CellId, Integer> seekFunction) {
-    this.entries = entries;
-    this.seekFunction = seekFunction;
+    /** The current unbounded iterator position in this set. Positioned after 'entry'. */
+    private ObjectBidirectionalIterator<T> setIter;
+
+    /** The current entry of this S2Iterator. Null if the iterator is done. */
+    private T entry;
+
+    /**
+     * Creates a new AVL tree-based S2Iterator.
+     *
+     * @param entries the entries to wrap
+     * @param min returns an entry that is less than all other entries with the given cell
+     */
+    public AvlSetIterator(ObjectAVLTreeSet<T> entries, Function<S2CellId, T> min) {
+      this.entries = entries;
+      this.min = min;
+      restart();
+    }
+
+    @Override
+    public void restart() {
+      setIter = entries.iterator(); // at this point, 'it' has 'next' but 'curr' is null.
+      entry = setIter.hasNext() ? setIter.next() : null;
+    }
+
+    @Override
+    public void finish() {
+      this.setIter = entries.isEmpty() ? entries.iterator() : entries.iterator(entries.last());
+      entry = null;
+    }
+
+    /**
+     * Positions this iterator at the given entry and remembers the current entry. The given entry
+     * must be one of the entries in the set: otherwise an assertion error will be thrown (if
+     * assertions are enabled).
+     */
+    private void set(T entry) {
+      assert entries.contains(entry);
+      this.setIter = entries.iterator(entry);
+      this.entry = entry;
+    }
+
+    @Override
+    public S2Iterator<T> copy() {
+      AvlSetIterator<T> result = new AvlSetIterator<>(entries, min);
+      result.set(entry);
+      assert result.isEqualTo(this);
+      return result;
+    }
+
+    @Override
+    public T entry() {
+      return entry;
+    }
+
+    // TODO(torrey): comparing entries with equals() is non-trivial, can it be avoided or faster?
+    @Override
+    public boolean atBegin() {
+      return entries.isEmpty() || entries.first().equals(entry);
+    }
+
+    @Override
+    public boolean next() {
+      if (setIter.hasNext()) {
+        entry = setIter.next();
+        return true;
+      }
+      entry = null;
+      return false;
+    }
+
+    /**
+     * If there is a previous entry, move to it and return true. Otherwise, do not move and return
+     * false.
+     */
+    @Override
+    public boolean prev() {
+      if (!setIter.hasPrevious()) {
+        return false;
+      }
+
+      // done() is a special case.
+      if (entry == null) {
+        entry = setIter.previous();
+        return true;
+      }
+
+      // The setIter is just after 'entry'. Position setIter just before 'entry' so we can find out
+      // if there is a previous entry.
+      setIter.previous();
+
+      if (setIter.hasPrevious()) {
+        // There is a previous entry. Get it, which positions setIter just before it.
+        entry = setIter.previous();
+        // Reposition setIter just after 'entry', where we want it.
+        setIter.next();
+        return true;
+      } else {
+        // No previous entry. Reposition setIter back to the original position and return false.
+        setIter.next();
+        return false;
+      }
+    }
+
+    @Override
+    public boolean done() {
+      return entry == null;
+    }
+
+    @Override
+    public void seek(S2CellId target) {
+      this.setIter = entries.iterator(min.apply(target));
+      this.entry = setIter.hasNext() ? setIter.next() : null;
+    }
+
+    /**
+     * Returns true if this AvlSetIterator is equal to the given other AvlSetIterator: they are
+     * iterating over the same AVLTreeSet instance, and are positioned at the same entry.
+     */
+    @SuppressWarnings("ReferenceEquality")
+    public boolean isEqualTo(AvlSetIterator<T> other) {
+      if (entries != other.entries) {
+        return false;
+      }
+      if (min != other.min) {
+        return false;
+      }
+      if ((entry == null) != (other.entry == null)) {
+        return false;
+      }
+      if (entry != null && entry != other.entry) {
+        return false;
+      }
+      if (setIter.hasNext() != other.setIter.hasNext()) {
+        return false;
+      }
+      if (setIter.hasPrevious() != other.setIter.hasPrevious()) {
+        return false;
+      }
+      return true;
+    }
   }
 
   /** Positions the iterator so that {@link #atBegin()} is true. */
-  public void restart() {
-    pos = 0;
-  }
+  void restart();
 
   /** Returns the comparison from the current iterator cell to the given cell ID. */
-  public int compareTo(S2CellId cellId) {
+  default int compareTo(S2CellId cellId) {
     return UnsignedLongs.compare(entry().id(), cellId.id());
   }
 
-  /** Returns true if {@code o} is an {@link S2Iterator} with equal entries and position. */
-  @Override
-  public boolean equals(Object o) {
-    return o instanceof S2Iterator<?> && equalIterators((S2Iterator<?>) o);
-  }
-
-  @Override
-  public int hashCode() {
-    return 31 * pos + entries.hashCode();
-  }
-
-  /** Returns true if these iterators have the same entries and position. */
-  public boolean equalIterators(S2Iterator<?> it) {
-    return entries == it.entries && pos == it.pos;
-  }
-
   /** Returns the cell id for the current cell. */
-  public S2CellId id() {
+  default S2CellId id() {
     return new S2CellId(entry().id());
   }
 
   /** Returns the current entry. */
-  public T entry() {
-    // assert !done();
-    return entries.get(pos);
-  }
+  T entry();
 
   /** Returns the center of the cell (used as a reference point for shape interiors.) */
-  public S2Point center() {
+  default S2Point center() {
     return id().toPoint();
   }
 
@@ -172,61 +324,39 @@ public final class S2Iterator<T extends S2Iterator.Entry> {
    * returns false. Otherwise, advances the iterator to the next cell in the index and returns true.
    */
   @CanIgnoreReturnValue
-  public boolean next() {
-    if (pos < entries.size()) {
-      pos++;
-      return true;
-    }
-    return false;
-  }
+  boolean next();
 
   /**
    * If {@code pos} is equal to 0, does not move the iterator and returns false. Otherwise,
    * positions the iterator at the previous cell in the index and returns true.
    */
   @CanIgnoreReturnValue
-  public boolean prev() {
-    if (pos > 0) {
-      pos--;
-      return true;
-    }
-    return false;
-  }
+  boolean prev();
 
   /** Returns true if the iterator is positioned past the last index cell. */
-  public boolean done() {
-    return pos == entries.size();
-  }
+  boolean done();
 
   /** Returns true if the iterator is positioned at the first index cell. */
-  public boolean atBegin() {
-    return pos == 0;
-  }
+  boolean atBegin();
 
   /**
    * Positions the iterator at the first cell with {@code id() >= target}, or at the end of the
    * index if no such cell exists.
    */
-  public void seek(S2CellId target) {
-    pos = seekFunction.apply(target);
-  }
+  void seek(S2CellId target);
 
   /**
-   * Advances the iterator to the next cell with {@code id() >= target}. If the iterator is
-   * {@link #done()} or already satisfies {@code id() >= target}, there is no effect.
+   * Advances the iterator to the next cell with {@code id() >= target}. If the iterator is {@link
+   * #done()} or already satisfies {@code id() >= target}, there is no effect.
    */
-  public void seekForward(S2CellId target) {
+  default void seekForward(S2CellId target) {
     if (!done() && compareTo(target) < 0) {
-      int tmpPos = pos;
       seek(target);
-      pos = max(pos, tmpPos + 1);
     }
   }
 
   /** Positions the iterator so that {@link #done()} is true. */
-  public void finish() {
-    pos = entries.size();
-  }
+  void finish();
 
   /**
    * Positions the iterator at the index cell containing "target" and returns true, or if no such
@@ -236,7 +366,7 @@ public final class S2Iterator<T extends S2Iterator.Entry> {
    * line segment between {@code targetPoint} and {@link #center()}.
    */
   @JsIgnore // No method overloading for J2CL.
-  public boolean locate(S2Point targetPoint) {
+  default boolean locate(S2Point targetPoint) {
     // Let I be the first cell not less than T, where T is the leaf cell containing "targetPoint".
     // Then if T is contained by an index cell, then the containing cell is either I or I'. We
     // test for containment by comparing the ranges of leaf cells spanned by T, I, and I'.
@@ -270,7 +400,7 @@ public final class S2Iterator<T extends S2Iterator.Entry> {
    *       because the given target cell does not intersect any of the index's cells.
    * </ul>
    */
-  public CellRelation locate(S2CellId target) {
+  default CellRelation locate(S2CellId target) {
     // Let T be the target, let I be the first cell not less than T.rangeMin(), and let I' be the
     // predecessor of I.  If T contains any index cells, then T contains I.  Similarly, if T is
     // contained by an index cell, then the containing cell is either I or I'.  We test for
@@ -291,11 +421,5 @@ public final class S2Iterator<T extends S2Iterator.Entry> {
       }
     }
     return CellRelation.DISJOINT;
-  }
-
-  /** Set this iterator to the position given by the other iterator. */
-  public void position(S2Iterator<T> it) {
-    // assert entries == it.entries;
-    pos = it.pos;
   }
 }

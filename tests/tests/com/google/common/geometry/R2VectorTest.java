@@ -15,8 +15,17 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+
+import com.google.common.annotations.GwtIncompatible;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
+
 /** Verifies R2Vector. */
+@RunWith(JUnit4.class)
 public class R2VectorTest extends GeometryTestCase {
+  @Test
   public void testConstructors() {
     double[] coordinates = new double[2];
     coordinates[0] = 1.5;
@@ -27,6 +36,7 @@ public class R2VectorTest extends GeometryTestCase {
     assertExactly(2.5, v.y());
   }
 
+  @Test
   public void testOrtho() {
     assertEquals(new R2Vector(1, 1), new R2Vector(1, -1).ortho());
     assertEquals(new R2Vector(1, -1), new R2Vector(-1, -1).ortho());
@@ -34,20 +44,29 @@ public class R2VectorTest extends GeometryTestCase {
     assertEquals(new R2Vector(1, 1), new R2Vector(1, -1).ortho());
   }
 
+  @Test
   public void testAdd() {
     assertEquals(new R2Vector(5, 5), R2Vector.add(new R2Vector(4, 3), new R2Vector(1, 2)));
     assertEquals(new R2Vector(5, 5), new R2Vector(4, 3).add(new R2Vector(1, 2)));
   }
 
+  @Test
   public void testSub() {
     assertEquals(new R2Vector(3, 1), R2Vector.sub(new R2Vector(4, 3), new R2Vector(1, 2)));
     assertEquals(new R2Vector(3, 1), new R2Vector(4, 3).sub(new R2Vector(1, 2)));
   }
 
+  @Test
   public void testMul() {
-    assertDoubleEquals(12.0, R2Vector.mul(new R2Vector(4, 3), 3.0).x());
-    assertDoubleEquals(9.0, R2Vector.mul(new R2Vector(4, 3), 3.0).y());
-    assertDoubleEquals(12.0, new R2Vector(4, 3).mul(3.0).x());
-    assertDoubleEquals(9.0, new R2Vector(4, 3).mul(3.0).y());
+    assertAlmostEquals(12.0, R2Vector.mul(new R2Vector(4, 3), 3.0).x());
+    assertAlmostEquals(9.0, R2Vector.mul(new R2Vector(4, 3), 3.0).y());
+    assertAlmostEquals(12.0, new R2Vector(4, 3).mul(3.0).x());
+    assertAlmostEquals(9.0, new R2Vector(4, 3).mul(3.0).y());
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testR2VectorSerialization() {
+    doSerializationTest(new R2Vector(0.025, 1e6));
   }
 }

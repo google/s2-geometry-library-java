@@ -15,10 +15,19 @@
  */
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.geometry.R1Interval.Endpoint;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies R1Interval. */
-public strictfp class R1IntervalTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class R1IntervalTest extends GeometryTestCase {
   /**
    * Test all of the interval operations on the given pair of intervals.
    *
@@ -35,6 +44,7 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
   }
 
   @SuppressWarnings("SelfEquals")
+  @Test
   public void testBasics() {
     // Constructors and accessors.
     R1Interval unit = new R1Interval(0, 1);
@@ -156,10 +166,11 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
     assertTrue(empty.intersection(unit).isEmpty());
   }
 
+  @Test
   public void testApproxEquals() {
     // Choose two values kLo and kHi such that it's okay to shift an endpoint by kLo (i.e., the
     // resulting interval is equivalent) but not by kHi. The kLo bound is a bit closer to epsilon
-    // in Java compared to C++, due to the use of strictfp.
+    // in Java compared to C++. TODO(torrey): Investigate why, fix if possible.
     final double kLo = 2 * S2.DBL_EPSILON; // < max_error default
     final double kHi = 6 * S2.DBL_EPSILON; // > max_error default
 
@@ -192,10 +203,17 @@ public strictfp class R1IntervalTest extends GeometryTestCase {
     assertFalse(new R1Interval(1 + kLo, 2 - kHi).approxEquals(new R1Interval(1, 2)));
   }
 
+  @Test
   public void testOpposites() {
     assertEquals(Endpoint.LO, Endpoint.HI.opposite());
     assertEquals(Endpoint.HI, Endpoint.LO.opposite());
     assertEquals(Endpoint.LO, Endpoint.LO.opposite().opposite());
     assertEquals(Endpoint.HI, Endpoint.HI.opposite().opposite());
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testR1IntervalSerialization() {
+    doSerializationTest(new R1Interval(1e5, 1e-6));
   }
 }

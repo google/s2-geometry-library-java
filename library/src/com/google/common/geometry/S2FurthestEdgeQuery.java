@@ -68,7 +68,7 @@ class FurthestEdgeDemo {
     // target point, and at least 10 km from it.
     query.findFurthestEdges(
         pointTarget,
-        (S1ChordAngle distance, S2Shape shape, int edgeId) -> {
+        (S1ChordAngle distance, int shapeId, int edgeId) -> {
           // Do something with each of these furthest edge results.
           return true;
         });
@@ -83,11 +83,11 @@ class FurthestEdgeDemo {
     Optional<S2BestEdgesQueryBase.Result<S1ChordAngle>> result =
         query.findFurthestEdge(shapeIndexTarget);
 
-    // If the result.isPresent() it contains distance(), shape(), and edgeId().
-    if (result.isPresent()) {
+    // If the result.isPresent() it contains distance(), shapeId(), and edgeId().
+    if (result.isPresent() && !result.get().isInterior()) {
       // Get the actual furthest polyline edge endpoints from the Result shape and edge id.
       S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
-      S2ClosestEdgeQuery.getEdge(result.get(), edge);
+      query.getEdge(result.get(), edge);
       // Do something with the edge endpoints.
     }
   }
@@ -99,47 +99,43 @@ class FurthestEdgeDemo {
  * as shown in the example above. To find the furthest edges from a query edge rather than a point,
  * use:
  *
- * <pre>{@code
+ * {@snippet :
  * S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target
  *     = new S2FurthestEdgeQuery.EdgeTarget<>(v0, v1);
  * query.findFurthestEdges(target);
- * }</pre>
+ * }
  *
- * <p>Similarly you can find the furthest edges from an S2Cell by using a
- * {@link S2FurthestEdgeQuery.CellTarget}, and you can find the furthest edges from an arbitrary
- * collection of points, polylines, and polygons by using an
- * {@link S2FurthestEdgeQuery.ShapeIndexTarget}.
+ * <p>Similarly you can find the furthest edges from an S2Cell by using a {@link
+ * S2FurthestEdgeQuery.CellTarget}, and you can find the furthest edges from an arbitrary collection
+ * of points, polylines, and polygons by using an {@link S2FurthestEdgeQuery.ShapeIndexTarget}.
  *
  * <p>There are two overloads of the findFurthestEdges() method:
+ *
  * <ol>
- *   <li> Users may simply get a returned list of Result objects. However, for cases where many
- *        calls to findFurthestEdges will be made for a single query, the alternative can be much
- *        more efficient.
- *   <li> Users may instead provide a ResultVisitor that accepts (distance, shape, edge id) tuples
- *        This avoids boxing values, but it does fully compute the set of results before any are
- *        visited.
+ *   <li>Users may simply get a returned list of Result objects. However, for cases where many calls
+ *       to findFurthestEdges will be made for a single query, the alternative can be much more
+ *       efficient.
+ *   <li>Users may instead provide a ResultVisitor that accepts (distance, shape, edge id) tuples
+ *       This avoids boxing values, but it does fully compute the set of results before any are
+ *       visited.
  * </ol>
  *
  * The {@link Result} object contains the following accessors:
  *
  * <ul>
  *   <li>{@link Result#distance()} is the distance to the edge.
- *   <li>{@link Result#shape()} is the S2Shape containing the edge.
+ *   <li>{@link Result#shapeId()} is the index of the shape containing the edge in the index.
  *   <li>{@link Result#edgeId()} identifies the edge with the given shape.
  *   <li>{@link Result#isInterior()} indicates that the result is an interior point.
  * </ul>
- *
- * <p>The following convenience method may also be useful:
- * {@link S2FurthestEdgeQuery#getEdge(Result, MutableEdge)} fills the MutableEdge with the endpoints
- * of the Result edge.
  *
  * <p>You can find either the k furthest edges, or all edges no closer than a given radius, or both
  * (i.e., the k furthest edges no closer than a given minimum radius). E.g. to find all the edges
  * further than 5 kilometers, call:
  *
- * <pre>{@code
+ * {@snippet :
  * options.setMinDistance(S2Earth.toAngle(new Length.Kilometers(5)));
- * }</pre>
+ * }
  *
  * <p>By default, *all* edges are returned, so you should always specify either maxResults() or
  * minDistance() or both. Setting min distance may not be very restrictive, so strongly consider
@@ -165,58 +161,135 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
 
   /** A target for finding the furthest edges from a point. */
   public static class PointTarget<D extends S1Distance<D>>
-      extends S2MaxDistanceTargets.PointTarget<D> implements Target<D> {
+      extends S2BestEdgesQueryBase.PointTarget<D> implements Target<D> {
     public PointTarget(S2Point p) {
       super(p);
     }
 
-    /** See {@link S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
+    /** See {@code S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
     @Override
     public int maxBruteForceIndexSize() {
       return 64;
     }
+
+    @Override
+    public S2Cap getCapBound() {
+      return S2Cap.fromAxisChord(point.neg(), S1ChordAngle.ZERO);
+    }
   }
 
   /** A target for finding the furthest edges from an edge. */
-  public static class EdgeTarget<D extends S1Distance<D>> extends S2MaxDistanceTargets.EdgeTarget<D>
-      implements Target<D> {
+  public static class EdgeTarget<D2 extends S1Distance<D2>>
+      extends S2BestEdgesQueryBase.EdgeTarget<D2> implements Target<D2> {
     public EdgeTarget(S2Point a, S2Point b) {
       super(a, b);
     }
 
-    /** See {@link S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
+    /** See {@code S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
     @Override
     public int maxBruteForceIndexSize() {
       return 40;
     }
+
+    @Override
+    public S2Cap getCapBound() {
+      double r2 = getHalfEdgeLength2();
+      return S2Cap.fromAxisChord(a.add(b).neg().normalize(), S1ChordAngle.fromLength2(r2));
+    }
   }
 
   /** A target for finding the furthest edges from an S2Cell. */
-  public static class CellTarget<D extends S1Distance<D>> extends S2MaxDistanceTargets.CellTarget<D>
-      implements Target<D> {
+  public static class CellTarget<D2 extends S1Distance<D2>>
+      extends S2BestEdgesQueryBase.CellTarget<D2> implements Target<D2> {
+    public static final int MAX_BRUTE_FORCE_INDEX_SIZE = 96;
+
     public CellTarget(S2Cell c) {
       super(c);
     }
 
-    /** See {@link S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
+    /** See {@code S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
     @Override
     public int maxBruteForceIndexSize() {
-      return 96;
+      return MAX_BRUTE_FORCE_INDEX_SIZE;
+    }
+
+    @Override
+    public S2Cap getCapBound() {
+      S2Cap cap = cell.getCapBound();
+      return S2Cap.fromAxisChord(cap.axis().neg(), cap.radius());
     }
   }
 
-  /** A target for finding the furthest edges from an S2Cell. */
+    /**
+   * A target for finding the furthest edges from an S2ShapeIndex. Shape interiors are included, by
+   * default.
+   */
   public static class ShapeIndexTarget<D extends S1Distance<D>>
-      extends S2MaxDistanceTargets.ShapeIndexTarget<D>
-      implements Target<D> {
+      extends S2BestEdgesQueryBase.ShapeIndexTarget<D> implements Target<D> {
+
+    /**
+     * Clients using S1ChordAngle as their S1Distance type may find it convenient to use
+     * {@link S2FurthestEdgeQuery#createShapeIndexTarget(S2ShapeIndex)}.
+     *
+     * <p>Otherwise, constructing a ShapeIndexTarget for a specific S1Distance type requires
+     * providing a S2BestEdgesQueryBase.Builder for furthest edges and the templated S1Distance
+     * type.
+     */
     public ShapeIndexTarget(S2ShapeIndex index, S2BestEdgesQueryBase.Builder<D> queryBuilder) {
       super(index, queryBuilder);
     }
 
-    /** See {@link S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
+    /** See {@code S2FurthestEdgeQueryBenchmark.DetermineGoodBruteForceIndexSizes}. */
     @Override
     public int maxBruteForceIndexSize() {
       return 32;
+    }
+
+    @Override
+    @CanIgnoreReturnValue
+    public boolean updateBestDistance(S2Point p, DistanceCollector<D> collector) {
+      return updateBestDistance(new PointTarget<D>(p), collector);
+    }
+
+    @Override
+    @CanIgnoreReturnValue
+    public boolean updateBestDistance(S2Point v0, S2Point v1, DistanceCollector<D> collector) {
+      return updateBestDistance(new EdgeTarget<D>(v0, v1), collector);
+    }
+
+    @Override
+    @CanIgnoreReturnValue
+    public boolean updateBestDistance(S2Cell cell, DistanceCollector<D> collector) {
+      return updateBestDistance(new CellTarget<D>(cell), collector);
+    }
+
+    /**
+     * Returns an S2Cap that bounds the reflection of this target S2ShapeIndex projected through the
+     * center of the sphere. This is therefore a bound on the set of points whose maximum distance
+     * to the target is S1ChordAngle.STRAIGHT, the largest possible valid distance.
+     */
+    @Override
+    public S2Cap getCapBound() {
+      // If the index hasn't been built and the number of edges is sufficiently small, we avoid
+      // building the index just to compute the cap bound here. If the index has more than
+      // CellTarget.MAX_BRUTE_FORCE_INDEX_SIZE edges, it will be built later anyway.
+      if (index.isFresh()
+          || S2ShapeUtil.countEdgesUpTo(index, CellTarget.MAX_BRUTE_FORCE_INDEX_SIZE)
+              >= CellTarget.MAX_BRUTE_FORCE_INDEX_SIZE) {
+        S2Cap cap = new S2ShapeIndexRegion(index).getCapBound();
+        return S2Cap.fromAxisChord(cap.axis().neg(), cap.radius());
+      } else {
+        S2Cap.Builder builder = new S2Cap.Builder();
+        S2Shape.MutableEdge e = new S2Shape.MutableEdge();
+        for (S2Shape shape : index.getShapes()) {
+          for (int i = 0; i < shape.numEdges(); i++) {
+            shape.getEdge(i, e);
+            builder.add(e);
+          }
+        }
+        S2Cap cap = builder.build();
+        return S2Cap.fromAxisChord(cap.axis().neg(), cap.radius());
+      }
     }
   }
 
@@ -233,7 +306,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
    *
    * <p>Note that if options().includeInteriors() is true, the result list may include some entries
    * with edgeId == -1. This indicates that the furthest distance is attained at a point in the
-   * interior of the indexed polygon with the given shape. Such results may be identifed by calling
+   * interior of the indexed polygon with the given shape. Such results may be identified by calling
    * result.isInterior().
    */
   public List<Result<D>> findFurthestEdges(S2BestDistanceTarget<D> target) {
@@ -274,7 +347,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
   }
 
   /**
-   * Returns true if the distance to "target" is greater than "limit".
+   * Returns true if an edge is found with distance to "target" greater than "limit".
    *
    * <p>This method is usually much faster than getDistance(), since it is less work to determine
    * whether the maximum distance is above or below a threshold than it is to calculate the actual
@@ -285,16 +358,11 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     maxError = worstDistance();
     distanceLimit = limit;
 
-    // Determine if the furthest edge is beyond the limit.
+    // Determine if any edge is beyond the limit.
     findBestEdgesInternal(target);
-    boolean result = !resultQueue.isEmpty();
-    resultQueue.clear();
+    boolean result = bestResult != null;
+    bestResult = null;
     return result;
-  }
-
-  /** Gets the edge endpoints for the given result, which must not be interior. */
-  public static void getEdge(Result<?> result, S2Shape.MutableEdge edge) {
-    result.shape().getEdge(result.edgeId(), edge);
   }
 
   /**
@@ -304,7 +372,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
    * completely contain a connected component of the target.
    *
    * <p>This is a low-level method, visible for testing. Clients should use {@link
-   * findFurthestEdges} with a minDistance of S1ChordAngle.STRAIGHT and then check {@link
+   * #findFurthestEdges} with a minDistance of S1ChordAngle.STRAIGHT and then check {@link
    * Result#isInterior()}.
    */
   @VisibleForTesting
@@ -426,7 +494,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     }
 
     /**
-     * Like {@link setConservativeMinDistance(S1ChordAngle)} but takes an S1Angle for convenience.
+     * Like {@link #setConservativeMinDistance(S1ChordAngle)} but takes an S1Angle for convenience.
      */
     @CanIgnoreReturnValue
     public Builder setConservativeMinDistance(S1Angle minDistance) {
@@ -442,12 +510,12 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     /**
      * A non-zero maxError specifies that edges with distance up to maxError closer than the true
      * furthest edges may be substituted in the result set, as long as such edges satisfy all the
-     * the remaining search criteria. This option only has an effect if {@link maxResults()} is
+     * the remaining search criteria. This option only has an effect if {@link #maxResults()} is
      * also specified; otherwise all edges that satisfy the minDistance() will be returned.
      *
      * <p>Note that this does not affect how the distance between edges is computed; it simply
      * gives the algorithm permission to stop the search early, as soon as the best possible
-     * improvement drops below {@link maxError()}.
+     * improvement drops below {@link #maxError()}.
      *
      * <p>This can be used to implement distance predicates efficiently. For example, to determine
      * whether the maximum distance is more than 'threshold', set {@code maxResults == 1} and {@code
@@ -462,7 +530,7 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       return this;
     }
 
-    /** Like {@link setMaxError(S1ChordAngle)}, but maxError is provided as an S1Angle. */
+    /** Like {@link #setMaxError(S1ChordAngle)}, but maxError is provided as an S1Angle. */
     @CanIgnoreReturnValue
     public Builder setMaxError(S1Angle maxError) {
       this.maxError = S1ChordAngle.fromS1Angle(maxError);
@@ -524,8 +592,8 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     }
 
     /** Convenience method to get a Builder from this Query's current options. */
-    public Builder toBuilder() {
-      return new Builder(options());
+    public S2FurthestEdgeQuery.Builder toBuilder() {
+      return new S2FurthestEdgeQuery.Builder(options());
     }
 
     @Override
@@ -540,7 +608,10 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
 
     @Override
     protected Comparator<S1ChordAngle> distanceComparator() {
-      return Comparator.reverseOrder();
+      // TODO(torrey): When Android supports it, return Collections.reverseOrder();
+      return (S1ChordAngle a, S1ChordAngle b) -> {
+        return b.compareTo(a);
+      };
     }
 
     @Override
@@ -563,10 +634,15 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       return S1ChordAngle.NEGATIVE;
     }
 
-    /** Adjust the given 'value' towards the maximum by the maximum error allowed by options. */
+    /**
+     * Adjust the given 'value' towards the maximum by the currently set maximum error.
+     *
+     * <p>For {@link #isDistanceGreater(S2BestDistanceTarget, S1Distance)}, maxError is ZERO, so the
+     * value is unchanged.
+    */
     @Override
     protected S1ChordAngle errorBoundedDistance(S1ChordAngle value) {
-      return S1ChordAngle.add(value, options().maxError());
+      return S1ChordAngle.add(value, maxError);
     }
 
     /**
@@ -589,8 +665,8 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     }
 
     /**
-     * Like {@link S2FurthestEdgeQuery#isDistanceGreater(Target, D)}, but also returns true if the
-     * distance to "target" is exactly equal to "limit".
+     * Like {@link #isDistanceGreater(S2BestDistanceTarget, S1Distance)}, but also returns true if
+     * the distance to "target" is exactly equal to "limit".
      */
     public boolean isDistanceGreaterOrEqual(Target<S1ChordAngle> target, S1ChordAngle limit) {
       // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
@@ -600,19 +676,19 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       maxError = worstDistance();
 
       findBestEdgesInternal(target);
-      boolean result = !resultQueue.isEmpty();
-      resultQueue.clear();
+      boolean result = bestResult != null;
+      bestResult = null;
 
       return result;
     }
 
     /**
-     * Like {@link isDistanceGreaterOrEqual(Target, S1ChordAngle)}, except that "limit" is
+     * Like {@link #isDistanceGreaterOrEqual(Target, S1ChordAngle)}, except that "limit" is
      * decreased by the maximum error in the distance calculation. This ensures that this function
      * returns true whenever the true, exact distance is greater than or equal to "limit".
      */
     public boolean isConservativeDistanceGreaterOrEqual(
-        Target<S1ChordAngle> target, S1ChordAngle limit) {
+       Target<S1ChordAngle> target, S1ChordAngle limit) {
       // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
       // not the same-named Options fields.
       distanceLimit = limit.plusError(-S2EdgeUtil.getMinDistanceMaxError(limit)).predecessor();
@@ -620,8 +696,8 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
       maxError = worstDistance();
 
       findBestEdgesInternal(target);
-      boolean result = !resultQueue.isEmpty();
-      resultQueue.clear();
+      boolean result = bestResult != null;
+      bestResult = null;
 
       return result;
     }

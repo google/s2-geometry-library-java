@@ -15,7 +15,7 @@
  */
 package com.google.common.geometry.benchmarks;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
 import static com.google.common.geometry.TestDataGenerator.kmToAngle;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -23,9 +23,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.S1Angle;
-import com.google.common.geometry.S1ChordAngle;
-import com.google.common.geometry.S2BestDistanceTarget;
-import com.google.common.geometry.S2BestEdgesQueryBase;
 import com.google.common.geometry.S2Cap;
 import com.google.common.geometry.S2Cell;
 import com.google.common.geometry.S2CellId;
@@ -83,12 +80,6 @@ public final class BestEdgesBenchmarkHarness {
 
     // The number of edges in 'index'. Stored here to avoid repeated counting.
     public int numIndexEdges;
-
-    // The query built on the index.
-    public abstract S2BestEdgesQueryBase<S1ChordAngle> query();
-
-    // Targets to query against the index.
-    public abstract ArrayList<? extends S2BestDistanceTarget<S1ChordAngle>> targets();
 
     // If the index is encoded, this is the list of shapes in it, which are encoded separately.
     public List<S2Shape> shapes;
@@ -379,7 +370,7 @@ public final class BestEdgesBenchmarkHarness {
           chooseTargetFromIndex
               ? data.sampleCell(output.index)
               : S2CellId.fromPoint(targetCap.axis())
-                  .parent(PROJ.maxDiag.getClosestLevel(targetCap.radius().radians()));
+                  .parent(MAX_DIAG.getClosestLevel(targetCap.radius().radians()));
       return new S2Cell(cellId);
     }
 
@@ -410,7 +401,7 @@ public final class BestEdgesBenchmarkHarness {
         targetIndex = factory.getShape(targetCap, numTargetEdges);
       }
 
-      targetIndex.iterator(); // Force an index build.
+      targetIndex.applyUpdates();
       return targetIndex;
     }
 

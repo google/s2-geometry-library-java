@@ -15,15 +15,17 @@
  */
 package com.google.common.geometry;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import com.google.common.base.Supplier;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.PrimitiveArrays.Longs;
 import com.google.common.primitives.ImmutableLongArray;
 import com.google.common.primitives.Ints;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
+import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.List;
 
@@ -32,55 +34,67 @@ import java.util.List;
  */
 public class VectorCoder<T> implements S2Coder<List<T>> {
 
+  /** Interface that convinces Java that the suppliers are indeed Serializable. */
+  public interface SerializableSupplier extends Supplier<InMemoryOutputStream>, Serializable {}
+
+  /** Default {@code InMemoryOutputStream} backed by {@code ByteArrayOutputStream}. */
+  private static final InMemoryOutputStream defaultInMemoryOutputStreamSupplier() {
+    return new InMemoryOutputStream.ByteArrayInMemoryOutputStream();
+  }
+
   /** An encoder/decoder of {@code List<byte[]>}. */
-  static final VectorCoder<byte[]> BYTE_ARRAY = new VectorCoder<>(new S2Coder<byte[]>() {
-    @Override
-    public void encode(byte[] value, OutputStream output) throws IOException {
-      output.write(value);
-    }
+  static final VectorCoder<byte[]> BYTE_ARRAY =
+      new VectorCoder<>(
+          new S2Coder<byte[]>() {
+            @Override
+            public void encode(byte[] value, OutputStream output) throws IOException {
+              output.write(value);
+            }
 
-    @Override
-    public byte[] decode(Bytes data, Cursor cursor) throws IOException {
-      byte[] b = new byte[Ints.checkedCast(cursor.remaining())];
-      try {
-        for (int i = 0; i < b.length; i++) {
-          b[i] = data.get(cursor.position++);
-        }
-      } catch (IndexOutOfBoundsException e) {
-        // TODO(user): Find what causes this and fix the underlying issue.
-        throw new IOException(
-            "'data' and 'cursor' are out of sync. Expected to read " + b.length + " bytes.", e);
-      }
-      return b;
-    }
+            @Override
+            public byte[] decode(Bytes data, Cursor cursor) throws IOException {
+              byte[] b = new byte[Ints.checkedCast(cursor.remaining())];
+              try {
+                for (int i = 0; i < b.length; i++) {
+                  b[i] = data.get(cursor.position++);
+                }
+              } catch (IndexOutOfBoundsException e) {
+                throw new IOException(
+                    "'data' and 'cursor' are out of sync. Expected to read " + b.length + " bytes.",
+                    e);
+              }
+              return b;
+            }
 
-    @Override
-    public boolean isLazy() {
-      return false;
-    }
-  });
+            @Override
+            public boolean isLazy() {
+              return false;
+            }
+          });
 
   /** An encoder/decoder of {@code List<String>}. */
-  public static final VectorCoder<String> STRING = new VectorCoder<>(new S2Coder<String>() {
-    /** The charset to use. Note the StandardCharsets constant is not available in Android. */
-    private Charset charset = Charset.forName("UTF-8");
+  public static final VectorCoder<String> STRING =
+      new VectorCoder<>(
+          new S2Coder<String>() {
+            @Override
+            public void encode(String value, OutputStream output) throws IOException {
+              output.write(value.getBytes(UTF_8));
+            }
 
-    @Override public void encode(String value, OutputStream output) throws IOException {
-      output.write(value.getBytes(charset));
-    }
+            @Override
+            public String decode(PrimitiveArrays.Bytes data, Cursor cursor) {
+              byte[] b = new byte[Ints.checkedCast(cursor.remaining())];
+              for (int i = 0; i < b.length; i++) {
+                b[i] = data.get(cursor.position++);
+              }
+              return new String(b, UTF_8);
+            }
 
-    @Override public String decode(PrimitiveArrays.Bytes data, Cursor cursor) {
-      byte[] b = new byte[Ints.checkedCast(cursor.remaining())];
-      for (int i = 0; i < b.length; i++) {
-        b[i] = data.get(cursor.position++);
-      }
-      return new String(b, charset);
-    }
-
-    @Override public boolean isLazy() {
-      return false;
-    }
-  });
+            @Override
+            public boolean isLazy() {
+              return false;
+            }
+          });
 
   /**
    * An encoder/decoder of {@link S2Shape}s, where the shapes use the {@link
@@ -90,23 +104,35 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
 
   /**
    * An encoder/decoder of {@link S2Shape}s, where the shapes use the {@link
-   * S2TaggedShapeCoder#COMPACT} encoding.  Decoding is on-demand.
+   * S2TaggedShapeCoder#COMPACT} encoding. Decoding is on-demand.
    */
   public static final VectorCoder<S2Shape> COMPACT_SHAPE =
       new VectorCoder<>(S2TaggedShapeCoder.COMPACT);
 
   private final S2Coder<T> coder;
+  private final SerializableSupplier inMemoryOutputStreamSupplier;
 
   /**
    * Constructs a {@code VectorCoder} which encodes/decodes elements with the given {@code coder}.
    */
   public VectorCoder(S2Coder<T> coder) {
     this.coder = coder;
+    this.inMemoryOutputStreamSupplier = VectorCoder::defaultInMemoryOutputStreamSupplier;
+  }
+
+  /**
+   * Constructs a {@code VectorCoder} which encodes/decodes elements with the given {@code coder}
+   * and which will use the given inMemoryOutputStreamProvider to instantiate an in memory output
+   * stream.
+   */
+  public VectorCoder(S2Coder<T> coder, SerializableSupplier inMemoryOutputStreamSupplier) {
+    this.coder = coder;
+    this.inMemoryOutputStreamSupplier = inMemoryOutputStreamSupplier;
   }
 
   @Override
   public void encode(List<T> values, OutputStream output) throws IOException {
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+    InMemoryOutputStream bos = inMemoryOutputStreamSupplier.get();
     ImmutableLongArray.Builder offsetsBuilder = ImmutableLongArray.builder(values.size());
 
     for (T value : values) {

@@ -15,27 +15,39 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePoint;
 import static java.lang.Math.abs;
 import static java.lang.Math.min;
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertFalse;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.S2Shape.MutableEdge;
+import com.google.common.geometry.primitives.IntPairVector;
+import com.google.common.geometry.primitives.IntVector;
 import com.google.common.primitives.UnsignedLong;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import junit.framework.TestCase;
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
+import org.junit.Before;
 
 /** Common code for geometry tests. */
-public strictfp class GeometryTestCase extends TestCase {
+public class GeometryTestCase {
   /**
    * How many ULP's (Units in the Last Place) we want to tolerate when comparing two numbers. The
    * gtest framework for C++ also uses 4, and documents why in gtest-internal.h.
@@ -62,9 +74,130 @@ public strictfp class GeometryTestCase extends TestCase {
   /**
    * Initializes the TestDataGenerator, and in particular, the random number generator it contains.
    */
-  @Override
-  protected void setUp() {
+  @Before
+  public final void setUp() {
     data = new TestDataGenerator();
+  }
+
+  /**
+   * Returns the result of calling 'supplier' with many (not all) S2 internal Java assertions
+   * disabled. Normally, when Java assertions are enabled, as they typically are when running unit
+   * tests, creating S2 objects with invalid input parameters will cause AssertionErrors to be
+   * thrown. That is usually the desired behavior for unit testing.
+   *
+   * <p>However, it is also necessary to test code with invalid S2 objects, such as when testing
+   * methods like {@link S2Polygon#findValidationError(S2Error)}. For example:
+   *
+   * {@snippet :
+   * @Test
+   * public testRectangleValidation() {
+   *   // Test that creating an invalid S2LatLngRect with lo.lat() > hi.lat() will throw an
+   *   // AssertionError.
+   *   assertThrows(AssertionError.class, () ->
+   *       new S2LatLngRect(S2LatLng.fromE7(30, 30), S2LatLng.fromE7(10, 10)));
+   *
+   *   // But unit tests may use uncheckedCreate to deliberately create an invalid S2LatLngRect.
+   *   S2LatLngRect invalidRect = uncheckedCreate(() ->
+   *       new S2LatLngRect(S2LatLng.fromE7(30, 30), S2LatLng.fromE7(10, 10)));
+   *
+   *   // Verify that isValid() correctly returns false for the invalid S2LatLngRect.
+   *   assertFalse(invalidRect.isValid());
+   * }
+   * }
+   *
+   * If you need to create an S2 object with a method that may throw a checked exception, such as
+   * {@code S2TaggedShapeCoder.FAST.decode()}, use {@link #unsafeCreate(Callable)} instead.
+   */
+  public static synchronized <T> T uncheckedCreate(Supplier<T> supplier) {
+    boolean skip = S2.skipAssertions;
+    try {
+      S2.skipAssertions = true;
+      return supplier.get();
+    } finally {
+      S2.skipAssertions = skip;
+    }
+  }
+
+  /**
+   * Returns the result of calling 'callable' with many (not all) S2 internal Java assertions
+   * enabled, to allow the creation of invalid S2 objects. This is exactly like
+   * {@link #uncheckedCreate(Supplier)} above, except that it can be used with a {@link Callable}
+   * that may throw checked exceptions. This method will only throw a checked exception if the given
+   * Callable does.
+   *
+   * <p>If you have a constructor or other method that cannot throw a checked exception, it is
+   * recommended and more convenient to use {@link #uncheckedCreate(Supplier)} instead.
+   */
+  public static synchronized <T> T unsafeCreate(Callable<T> callable) throws Exception {
+    boolean skip = S2.skipAssertions;
+    try {
+      S2.skipAssertions = true;
+      return callable.call();
+    } finally {
+      S2.skipAssertions = skip;
+    }
+  }
+
+  /**
+   * Runs the given 'initializer' with many (not all) S2 internal Java assertions disabled. Like the
+   * {@link #unsafeCreate(Callable)} method above, and used for the same purposes, but with
+   * initializers like {@code S2Polygon#init(List<S2Loop>)} that return void. For example, in a unit
+   * test:
+   *
+   * {@snippet :
+   * @Test
+   * public testPolygonIsValid() {
+   *   List<S2Loop> crossingLoops = ImmutableList.of(...);
+   *   S2Polygon p = new S2Polygon();
+   *
+   *   // Accidentally initializing an S2Polygon with crossing loops throws an AssertionError.
+   *   assertThrows(AssertionError.class, () -> p.initNested(crossingLoops));
+   *
+   *   // But unsafeInitialize can deliberately initialize an invalid S2Polygon:
+   *   unsafeInitialize(() -> p.initNested(crossingLoops));
+   *
+   *   // Now we can test isValid() on the invalid S2Polygon.
+   *   assertFalse(p.isValid());
+   * }
+   * }
+   */
+  public static synchronized void uncheckedInitialize(Runnable initializer) {
+    boolean skip = S2.skipAssertions;
+    try {
+      S2.skipAssertions = true;
+      initializer.run();
+    } finally {
+      S2.skipAssertions = skip;
+    }
+  }
+
+  /**
+   * Returns the result of calling {@link S2TextFormat#makeLoop(String)} with assertions disabled.
+   */
+  public static S2Loop makeInvalidLoop(String str) {
+    return uncheckedCreate(() -> S2TextFormat.makeLoop(str));
+  }
+
+  /**
+   * Like {@link S2TextFormat#makePolygonOrDie(String)}, except that it does not normalize loops
+   * (i.e., it gives you exactly what you asked for). Disables internal assertion of polygon
+   * validity, allowing invalid polygons to be constructed.
+   *
+   * @throws IllegalArgumentException on unparsable input.
+   */
+  public static S2Polygon makeVerbatimPolygonOrDie(String str) {
+    S2Polygon polygon = makeVerbatimPolygon(str);
+    Preconditions.checkArgument(polygon != null, ": str == \"%s\"", str);
+    return polygon;
+  }
+
+  /**
+   * As {@link #makeVerbatimPolygonOrDie(String)} above, but does not throw IllegalArgumentException
+   * on invalid input. Disables internal assertions of polygon validity, allowing invalid polygons
+   * to be constructed. Returns null if conversion is unsuccessful.
+   */
+  public static @Nullable S2Polygon makeVerbatimPolygon(String str) {
+    return uncheckedCreate(() -> S2TextFormat.internalMakePolygon(str, false, -1));
   }
 
   /**
@@ -119,7 +252,7 @@ public strictfp class GeometryTestCase extends TestCase {
    * MAX_ULPS (which is 4) ULP's away from b".
    *
    * <p>This is similar to the implementation of "AlmostEquals" which underlies the gtest floating
-   * point comparison macros. So, our Java unit tests can use assertDoubleEquals(a, b) and have the
+   * point comparison macros. So, our Java unit tests can use assertAlmostEquals(a, b) and have the
    * same behavior as our equivalent C++ unit tests using EXPECT_DOUBLE_EQ(a, b).
    *
    * <p>There is one exception for comparing by ULPs: If a and b are both non-zero, and have
@@ -127,33 +260,39 @@ public strictfp class GeometryTestCase extends TestCase {
    * point numbers with different signs doesn't make sense. For details, read:
    * <a>https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/</a>
    */
-  public static void assertDoubleEquals(String message, double a, double b) {
+  public static void assertAlmostEquals(String message, double a, double b) {
     assertDoubleUlpsWithin(message, a, b, MAX_ULPS);
   }
 
-  /** Returns true if and only if 'x' is within 4 units-in-the-last-place of 'y'. */
-  public static void assertDoubleEquals(double a, double b) {
-    assertDoubleEquals("", a, b);
+  /** Succeeds if and only if 'x' is within 4 units-in-the-last-place of 'y'. */
+  public static void assertAlmostEquals(double a, double b) {
+    assertAlmostEquals("", a, b);
   }
 
-  /** Returns true if and only if 'x' is less than or equal to 'y'. */
+  /** Succeeds if and only if 'x' is less than or equal to 'y'. */
   public static <T extends Comparable<T>> void assertLessOrEqual(T x, T y) {
     assertTrue("Expected " + x + " <= " + y + " but it is not.", x.compareTo(y) <= 0);
   }
 
-  /** Returns true if and only if 'x' is greater than or equal to 'y'. */
+  /** Succeeds if and only if 'x' is greater than or equal to 'y'. */
   public static <T extends Comparable<T>> void assertGreaterOrEqual(T x, T y) {
     assertTrue("Expected " + x + " >= " + y + " but it is not.", x.compareTo(y) >= 0);
   }
 
-  /** Returns true if and only if 'x' is less than 'y'. */
+  /** Succeeds if and only if 'x' is less than 'y'. */
   public static <T extends Comparable<T>> void assertLessThan(T x, T y) {
     assertTrue("Expected " + x + " < " + y + " but it is not.", x.compareTo(y) < 0);
   }
 
-  /** Returns true if and only if 'x' is greater than 'y'. */
+  /** Succeeds if and only if 'x' is greater than 'y'. */
   public static <T extends Comparable<T>> void assertGreaterThan(T x, T y) {
     assertTrue("Expected " + x + " > " + y + " but it is not.", x.compareTo(y) > 0);
+  }
+
+  /** Succeeds if and only if 'x' is between 'hi' and 'lo' inclusive. */
+  public static <T extends Comparable<T>> void assertBetween(T x, T lo, T hi) {
+    assertTrue("Expected " + x + " >= " + lo + " but it is not.", x.compareTo(lo) >= 0);
+    assertTrue("Expected " + x + " <= " + hi + " but it is not.", x.compareTo(hi) <= 0);
   }
 
   /**
@@ -163,6 +302,14 @@ public strictfp class GeometryTestCase extends TestCase {
    * tests can use assertDoubleNear() and get the same behavior as C++ tests using EXPECT_NEAR().
    */
   public static void assertDoubleNear(double val1, double val2, double absError) {
+    assertDoubleNear("", val1, val2, absError);
+  }
+
+  /**
+   * As above but with a custom error message that is prefixed to the report of the difference, if
+   * the distance is larger than absError.
+   */
+  public static void assertDoubleNear(String message, double val1, double val2, double absError) {
     double diff = Math.abs(val1 - val2);
     if (diff <= absError) {
       return;
@@ -173,18 +320,25 @@ public strictfp class GeometryTestCase extends TestCase {
     // Find the distance to the next double from that value.
     double epsilon = nextUp(minAbs) - minAbs;
 
+    if (!message.isEmpty()) {
+      message = message + "\n";
+    }
     // Detect the case where absError is so small that "near" is effectively the same as "equal",
     // and give an informative error message so that the situation can be more easily understood.
     // Don't do an epsilon check if absError is zero because that implies that an equality check
     // was actually intended.
     if (!Double.isNaN(val1) && !Double.isNaN(val2) && absError > 0 && absError < epsilon) {
-      fail("The difference between val1 (" + val1 + ") and val2 (" + val2 + ") is " + diff
-            + ".\nThe absError parameter (" + absError + ") is smaller than the minimum "
-            + "distance between doubles for numbers of this magnitude, which is " + epsilon
-            + ", thus making this 'Near' check equivalent to an exact equality check.");
+      fail(
+          Platform.formatString(
+                  "%sThe difference between val1 (%s) and val2 (%s) is %s.\n"
+                  + "The absError parameter (%s) is smaller than the minimum distance between"
+                  + " doubles for numbers of this magnitude, which is %s, thus making this 'Near'"
+                  + " check equivalent to an exact equality check.",
+              message, val1, val2, diff, absError, epsilon));
     }
-    fail("The difference between " + val1 + " and " + val2 + " is " + diff + ", which exceeds "
-          + absError + " by " + (diff - absError) + ".");
+    fail(Platform.formatString(
+        "%sThe difference between %s and %s is %s, which exceeds %s by %s.",
+             message, val1, val2, diff, absError, (diff - absError)));
   }
 
   /**
@@ -218,18 +372,66 @@ public strictfp class GeometryTestCase extends TestCase {
     assertEquals(expected.getLength2(), actual.getLength2(), 0.0);
   }
 
+  /**
+   * Assert that the S1ChordAngle distance {@code actual} is within {@code tolerance} of {@code
+   * expected}.
+   */
+  public static void assertDistanceWithin(
+      S1ChordAngle expected, S1ChordAngle actual, S1ChordAngle tolerance) {
+    double diff = Math.abs(expected.getLength2() - actual.getLength2());
+    assertTrue(
+        "expected: "
+            + expected
+            + ", actual: "
+            + actual
+            + ", difference = "
+            + S1ChordAngle.fromLength2(diff)
+            + " which exceeds tolerance "
+            + tolerance,
+        diff < tolerance.getLength2());
+  }
+
   /** Checks that two doubles are exactly equal and have the same sign. */
   public static void assertIdentical(double a, double b) {
-    assertEquals(Double.doubleToRawLongBits(a), Double.doubleToRawLongBits(b));
+    TestPlatform.assertIdentical(a, b);
   }
 
   /**
    * Checks that the 3D distance between {@code expected} and {@code actual} is at most {@code eps}
    * units.
    */
-  public static void assertEquals(S2Point expected, S2Point actual, double eps) {
+  public static void assertPointsWithinDistance(S2Point expected, S2Point actual, double eps) {
     assertTrue(
         "expected: " + expected + " but was: " + actual, expected.getDistance2(actual) < eps * eps);
+  }
+
+  /**
+   * Checks that the spherical distance between {@code expected} and {@code actual} is at most
+   * {@code degrees} degrees.
+   */
+  public static void assertPointsWithinDegrees(S2Point expected, S2Point actual, double degrees) {
+    double actualDegrees = new S1Angle(actual, expected).degrees();
+    assertTrue(
+        "Expected "
+            + actual.toDegreesString()
+            + " to be within "
+            + degrees
+            + " degrees of "
+            + expected.toDegreesString()
+            + " but the actual distance is "
+            + actualDegrees
+            + " degrees.",
+        actualDegrees <= degrees);
+  }
+
+  /**
+   * Checks that each of the three components of the two given points are within the given {@code
+   * eps} units.
+   */
+  public static void assertPointsNear(S2Point expected, S2Point actual, double eps) {
+    assertDoubleNear(expected.getX(), actual.getX(), eps);
+    assertDoubleNear(expected.getY(), actual.getY(), eps);
+    assertDoubleNear(expected.getZ(), actual.getZ(), eps);
   }
 
   /**
@@ -245,6 +447,51 @@ public strictfp class GeometryTestCase extends TestCase {
   /** Assets that the actual shape {@link S2ShapeUtil#equals equals} the expected shape. */
   public static void assertShapesEqual(S2Shape expected, S2Shape actual) {
     assertTrue(S2ShapeUtil.equals(expected, actual));
+  }
+
+  /**
+   * Assets that the methods of the two shape indexes return the same results, including all the
+   * shapes in the indexes.
+   */
+  public static void assertShapeIndexesEqual(S2ShapeIndex expected, S2ShapeIndex actual) {
+    assertTrue(S2ShapeUtil.equals(expected, actual));
+  }
+
+  /** Returns true if the two S2Errors have the same content. */
+  public static boolean errorsEqual(S2Error a, S2Error b) {
+    return a.toString().equals(b.toString());
+  }
+
+  /**
+   * Returns true if the "expected" and "actual" IntVectors contain the same ints, in any order,
+   * ignoring duplicates. Note that this implementation is not very efficient, and should only be
+   * used in testing with small lists.
+   */
+  public void assertSameElements(IntVector expected, IntVector actual) {
+    expected.forEach(
+        i -> assertTrue("Expected contains " + i + " but actual does not.", actual.contains(i)));
+    actual.forEach(
+        i -> assertTrue("Actual contains " + i + " but expected does not.", expected.contains(i)));
+  }
+
+  /**
+   * Returns true if the "expected" and "actual" IntPairVectors contain the same pairs, in any
+   * order, ignoring duplicates. Note that the given IntPairVectors are sorted.
+   */
+  public void assertSameElements(IntPairVector expected, IntPairVector actual) {
+    expected.sort();
+    actual.sort();
+
+    expected.forEach(
+        (l, r) ->
+            assertTrue(
+                "Expected contains (" + l + ", " + r + ") but actual does not.",
+                actual.contains(l, r)));
+    actual.forEach(
+        (l, r) ->
+            assertTrue(
+                "Actual contains (" + l + ", " + r + ") but expected does not.",
+                expected.contains(l, r)));
   }
 
   /**
@@ -279,11 +526,21 @@ public strictfp class GeometryTestCase extends TestCase {
     return S2LatLng.fromDegrees(lat, lng).toPoint();
   }
 
+  /** Rotates the given list of edges left by 'n' places. */
+  public static void rotate(List<S2Edge> edges, int n) {
+    Collections.rotate(edges, -1 * n);
+  }
+
+  /** Randomly permutes the given list of edges. */
+  public static void shuffle(List<S2Edge> edges) {
+    Collections.shuffle(edges);
+  }
+
   /**
    * As {@link #checkCovering(S2Region, S2CellUnion, boolean, S2CellId)}, but creates a default and
    * invalid S2CellId for the last argument.
    */
-  void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight) {
+  public void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight) {
     checkCovering(region, covering, checkTight, new S2CellId());
   }
 
@@ -292,7 +549,7 @@ public strictfp class GeometryTestCase extends TestCase {
    * that it does not contain any cells that do not intersect the given region. ("id" is only used
    * internally.)
    */
-  void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight, S2CellId id) {
+  public void checkCovering(S2Region region, S2CellUnion covering, boolean checkTight, S2CellId id) {
     if (!id.isValid()) {
       for (int face = 0; face < 6; ++face) {
         checkCovering(region, covering, checkTight, S2CellId.fromFacePosLevel(face, 0, 0));
@@ -396,12 +653,30 @@ public strictfp class GeometryTestCase extends TestCase {
     }
   }
 
+  /** Expects obj.equals(deserialize(serialize(obj))) to be true. */
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  protected void doSerializationTest(Object obj) {
+    doSerializationTest(obj, null);
+  }
+
+  /**
+   * If a non-null comparator is provided, expects obj.compare(deserialize(serialize(obj))) to be
+   * zero. Otherwise, expects obj.equals(deserialize(serialize(obj))) to be true.
+   */
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  protected <T> void doSerializationTest(T obj, Comparator<T> comparator) {
+    try {
+      TestPlatform.testSerialization(obj, comparator);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
 
   /**
    * Returns a set of strings that are the "toToken" representation of the cell ids in the given
    * S2CellUnion.
    */
-  public static HashSet<String> toTokenSet(S2CellUnion cells) {
+  public static Set<String> toTokenSet(S2CellUnion cells) {
     HashSet<String> tokens = new HashSet<>();
     cells.forEach(cell -> tokens.add(cell.toToken()));
     return tokens;
@@ -410,7 +685,7 @@ public strictfp class GeometryTestCase extends TestCase {
   /**
    * Returns a set of strings that are the "toToken" representation of the given set of cell ids.
    */
-  public static HashSet<String> toTokenSet(Set<S2CellId> cells) {
+  public static Set<String> toTokenSet(Set<S2CellId> cells) {
     HashSet<String> tokens = new HashSet<>();
     cells.forEach(cell -> tokens.add(cell.toToken()));
     return tokens;
@@ -420,7 +695,7 @@ public strictfp class GeometryTestCase extends TestCase {
    * Returns a set of Strings that are the "toToken" representations of the cell id of every node in
    * the given density tree.
    */
-  public static HashSet<String> toTokenSet(S2DensityTree tree) {
+  public static Set<String> toTokenSet(S2DensityTree tree) {
     HashSet<String> tokens = new HashSet<>();
     tree.visitCells(
         (S2CellId cellId, S2DensityTree.Cell node) -> {
@@ -522,6 +797,47 @@ public strictfp class GeometryTestCase extends TestCase {
     @Override
     public String toString() {
       return toDegreesString();
+    }
+  }
+
+  /** A simple implementation of Pair for unit tests. */
+  public static final class Pair<A, B> { // TODO(user): Use a record when J2CL supports it.
+    public A first;
+    public B second;
+
+    /** Constructs a new Pair with the given values. */
+    public Pair(A a, B b) {
+      this.first = a;
+      this.second = b;
+    }
+
+    /** Returns the first element of this Pair. */
+    public A getFirst() {
+      return first;
+    }
+
+    /** Returns the second element of this Pair. */
+    public B getSecond() {
+      return second;
+    }
+
+    /** Returns a new Pair containing the given values. */
+    public static <A, B> Pair<A, B> of(A a, B b) {
+      return new Pair<A, B>(a, b);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (other instanceof Pair) {
+        Pair<?, ?> otherPair = (Pair<?, ?>) other;
+        return first.equals(otherPair.first) && second.equals(otherPair.second);
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      return first.hashCode() * 3 + second.hashCode();
     }
   }
 }

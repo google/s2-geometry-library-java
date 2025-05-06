@@ -20,10 +20,9 @@ import com.google.common.base.Preconditions;
 import com.google.common.geometry.S2ContainsPointQuery.S2VertexModel;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
+import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Collection;
 
 /**
  * This class wraps an S2ShapeIndex object with the additional methods needed to implement the
@@ -48,8 +47,11 @@ import java.util.Map;
  * expensive).
  */
 public class S2ShapeIndexRegion implements S2Region {
-  /** The vertex model for contains(S2Point) tests. */
-  private final S2VertexModel model;
+  /** The query for contains(S2Point) tests. */
+  private final S2ContainsPointQuery containsQuery;
+
+  /** The current index wrapped by this region. */
+  private final S2ShapeIndex index;
 
   /** The iterator over the cells of the underlying S2ShapeIndex. */
   private final S2Iterator<S2ShapeIndex.Cell> it;
@@ -69,6 +71,9 @@ public class S2ShapeIndexRegion implements S2Region {
   /** Temporary R2 point for internal usage. */
   private final R2Vector p1 = new R2Vector();
 
+  /** Temporary shape IDs used in query processing. */
+  private final IntVector ids = new IntVector();
+
   /**
    * Creates a new region with the given index, and a {@link S2VertexModel#SEMI_OPEN semi-open}
    * vertex model.
@@ -79,8 +84,9 @@ public class S2ShapeIndexRegion implements S2Region {
 
   /** Creates a new region with the given index, and a given {@link S2VertexModel}. */
   public S2ShapeIndexRegion(S2ShapeIndex index, S2VertexModel model) {
+    this.index = index;
     this.it = index.iterator();
-    this.model = model;
+    this.containsQuery = new S2ContainsPointQuery(index, new S2ContainsPointQuery.Options(model));
   }
 
   @Override
@@ -99,7 +105,8 @@ public class S2ShapeIndexRegion implements S2Region {
    * Clears the given list of cells and adds the cell union of this index. An index of shapes in one
    * face adds up to 4 cells, otherwise up to 6 may be added.
    */
-  public void getCellUnionBound(List<S2CellId> cellIds) {
+  @Override
+  public void getCellUnionBound(Collection<S2CellId> cellIds) {
     // We find the range of S2Cells spanned by the index and choose a level such that the entire
     // index can be covered with just a few cells. There are two cases:
     //
@@ -121,11 +128,10 @@ public class S2ShapeIndexRegion implements S2Region {
 
     // Find the last S2CellId in the index.
     it.finish();
-    if (it.atBegin()) {
+    if (!it.prev()) {
       // Empty index.
       return;
     }
-    it.prev();
     S2CellId lastIndexId = it.id();
     it.restart();
     S2CellId currentIndexId = it.id();
@@ -163,7 +169,7 @@ public class S2ShapeIndexRegion implements S2Region {
    *
    * @throws IllegalArgumentException "first" and "last" don't have a common ancestor.
    */
-  private static void coverRange(S2CellId first, S2CellId last, List<S2CellId> cellIds) {
+  private static void coverRange(S2CellId first, S2CellId last, Collection<S2CellId> cellIds) {
     if (first.equals(last)) {
       // The range consists of a single index cell.
       cellIds.add(first);
@@ -185,7 +191,7 @@ public class S2ShapeIndexRegion implements S2Region {
       S2Point center = it.center();
       S2ShapeIndex.Cell cell = it.entry();
       for (int s = 0; s < cell.numShapes(); ++s) {
-        if (model.shapeContains(center, cell.clipped(s), p)) {
+        if (containsQuery.shapeContains(center, cell.clipped(s), p)) {
           return true;
         }
       }
@@ -227,9 +233,10 @@ public class S2ShapeIndexRegion implements S2Region {
         }
       } else {
         // It is faster to call AnyEdgeIntersects() before Contains().
-        if (clipped.shape().hasInterior()
+        S2Shape shape = index.getShapes().get(clipped.shapeId());
+        if (shape.hasInterior()
             && !anyEdgeIntersects(clipped, target)
-            && model.shapeContains(center, clipped, target.getCenter())) {
+            && containsQuery.shapeContains(center, clipped, target.getCenter())) {
           return true;
         }
       }
@@ -245,7 +252,7 @@ public class S2ShapeIndexRegion implements S2Region {
    * intersecting shapes, or false to terminate the algorithm early.
    */
   public interface ShapeVisitor {
-    public boolean test(S2Shape shape, boolean containsTarget);
+    boolean test(int shapeId, boolean containsTarget);
   }
 
   /**
@@ -265,27 +272,32 @@ public class S2ShapeIndexRegion implements S2Region {
       case SUBDIVIDED:
         // A shape contains the target cell iff (1) it appears in at least one descendent cell,
         // and (2) it contains the center of all descendent cells, and (3) it has no edges in any
-        // descendent cell.
-        IdentityHashMap<S2Shape, Boolean> shapeContains = new IdentityHashMap<>();
+        // descendent cell. Add the shapeId<<1|contains bits, sortDistinct the bits, and then since
+        // each shape may occur twice, once with each contains bit in that order, and we want to
+        // report !contains if any id was not contained, then simply skip any cases where the shape
+        // ID is the same as the last shape ID, since the preceding contains bit must be 0.
+        ids.clear();
         for (S2CellId max = target.id().rangeMax();
             !it.done() && it.id().lessOrEquals(max);
             it.next()) {
           S2ShapeIndex.Cell cell = it.entry();
           for (int s = 0; s < cell.numShapes(); ++s) {
             S2ClippedShape clipped = cell.clipped(s);
-            // TODO(user): Android doesn't yet support Map.getOrDefault().
-            Boolean contains = shapeContains.get(clipped.shape());
-            if (contains == null) {
-              contains = true;
-            }
-            contains = contains && (clipped.numEdges() == 0) && clipped.containsCenter();
-            shapeContains.put(clipped.shape(), contains);
+            boolean containsTarget = clipped.numEdges() == 0 && clipped.containsCenter();
+            ids.add((clipped.shapeId() << 1) | (containsTarget ? 1 : 0));
           }
         }
-        for (Map.Entry<S2Shape, Boolean> shapeContainsEntry : shapeContains.entrySet()) {
-          if (!visitor.test(shapeContainsEntry.getKey(), shapeContainsEntry.getValue())) {
+        ids.sort();
+        ids.unique();
+
+        for (int i = 0, last = -1; i < ids.size(); i++) {
+          int id = ids.get(i);
+          boolean contains = (id & 1) != 0;
+          int shapeId = id >>> 1;
+          if (last != shapeId && !visitor.test(shapeId, contains)) {
             return false;
           }
+          last = shapeId;
         }
         return true;
 
@@ -302,7 +314,7 @@ public class S2ShapeIndexRegion implements S2Region {
           } else {
             // The index contains a parent of the target.
             if (!anyEdgeIntersects(clipped, target)) {
-              if (!model.shapeContains(it.center(), clipped, target.getCenter())) {
+              if (!containsQuery.shapeContains(it.center(), clipped, target.getCenter())) {
                 // The shape and target are disjoint.
                 continue;
               }
@@ -310,7 +322,7 @@ public class S2ShapeIndexRegion implements S2Region {
               contains = true;
             }
           }
-          if (!visitor.test(clipped.shape(), contains)) {
+          if (!visitor.test(clipped.shapeId(), contains)) {
             return false;
           }
         }
@@ -357,7 +369,7 @@ public class S2ShapeIndexRegion implements S2Region {
     for (int s = 0; s < cell.numShapes(); ++s) {
       S2ClippedShape clipped = cell.clipped(s);
       if (anyEdgeIntersects(clipped, target)
-          || model.shapeContains(center, clipped, target.getCenter())) {
+          || containsQuery.shapeContains(center, clipped, target.getCenter())) {
         return true;
       }
     }
@@ -373,7 +385,7 @@ public class S2ShapeIndexRegion implements S2Region {
     target.setBoundUV(bound);
     bound.expand(S2EdgeUtil.MAX_CELL_EDGE_ERROR);
     int face = target.face();
-    S2Shape shape = clipped.shape();
+    S2Shape shape = index.getShapes().get(clipped.shapeId());
     int numEdges = clipped.numEdges();
     for (int i = 0; i < numEdges; ++i) {
       shape.getEdge(clipped.edge(i), edge);

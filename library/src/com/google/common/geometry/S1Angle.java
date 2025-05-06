@@ -44,7 +44,8 @@ import jsinterop.annotations.JsType;
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  */
 @JsType
-public final strictfp class S1Angle implements S1Distance<S1Angle>, Serializable {
+@SuppressWarnings("Assertion")
+public final class S1Angle implements S1Distance<S1Angle>, Serializable {
 
   /** An angle larger than any finite angle. */
   public static final S1Angle INFINITY = new S1Angle(Double.POSITIVE_INFINITY);
@@ -257,13 +258,10 @@ public final strictfp class S1Angle implements S1Distance<S1Angle>, Serializable
     return Math.tan(radians);
   }
 
-  /**
-   * Returns the angle normalized to the range (-180, 180] degrees.
-   */
+  /** Returns the angle normalized to the range (-180, 180] degrees. */
   @CheckReturnValue
   public S1Angle normalize() {
-    final boolean isNormalized = radians > -PI && radians <= PI;
-    if (isNormalized) {
+    if (radians > -PI && radians <= PI) {
       return this;
     }
     double normalized = Platform.IEEEremainder(radians, 2.0 * PI);

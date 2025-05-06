@@ -28,8 +28,8 @@ import java.util.function.Consumer;
  * edge into a chain of edges in a given 2D projection such that the maximum distance between the
  * geodesic edge and the chain of projected edges is at most "tolerance".
  *
- * <p>Tessellation is implemented by subdividing the edge until the estimated maximum error is
- * below the given tolerance. Estimating error is a hard problem, especially when the only methods
+ * <p>Tessellation is implemented by subdividing the edge until the estimated maximum error is below
+ * the given tolerance. Estimating error is a hard problem, especially when the only methods
  * available are point evaluation of the projection and its inverse. (These are the only methods
  * that {@link Projection} provides, which makes it easier and less error-prone to implement new
  * projections.)
@@ -120,12 +120,12 @@ import java.util.function.Consumer;
  * geodesic edge point (90 - 45 * abs(x), 90 * sgn(x)). Using the Haversine formula, the
  * corresponding function E1 (normalized to have a maximum value of 1) is:
  *
- * <pre>{@code
- *   E1(x) =
- *     asin(sqrt(sin(Pi / 8 * (1 - x)) ^ 2 +
- *               sin(Pi / 4 * (1 - x)) ^ 2 * cos(Pi / 4) * sin(Pi / 4 * x))) /
- *     asin(sqrt((1 - 1 / sqrt(2)) / 2))
- * }</pre>
+ * {@snippet :
+ * E1(x) =
+ *   asin(sqrt(sin(Pi / 8 * (1 - x)) ^ 2 +
+ *             sin(Pi / 4 * (1 - x)) ^ 2 * cos(Pi / 4) * sin(Pi / 4 * x))) /
+ *   asin(sqrt((1 - 1 / sqrt(2)) / 2))
+ * }
  *
  * <p>Note that this function does not need to be evaluated at runtime, it simply affects the
  * calculation of the value x0 where E1(x0) = E2(x0) and the corresponding scaling factor C = 1 /
@@ -143,15 +143,17 @@ import java.util.function.Consumer;
  *
  * <p>For random edges with a tolerance of 1 meter, the expected amount of overtessellation is as
  * follows:
+ *
  * <ul>
- * <li>Plate Caree Midpoint: 1.8%
- * <li>Plate Caree Cubic: 3.0%
- * <li>Mercator Midpoint: 15.8%
- * <li>Mercator Cubic: 17.4%
+ *   <li>Plate Caree Midpoint: 1.8%
+ *   <li>Plate Caree Cubic: 3.0%
+ *   <li>Mercator Midpoint: 15.8%
+ *   <li>Mercator Cubic: 17.4%
  * </ul>
  */
 @CheckReturnValue
-final class S2EdgeTessellator {
+@SuppressWarnings("Assertion")
+public final class S2EdgeTessellator {
 
   /**
    * The interpolation fraction at which the two edges are evaluated in order to measure the error
@@ -205,6 +207,7 @@ final class S2EdgeTessellator {
       vertices.add(pa);
     } else {
       pa = projection.wrapDestination(Iterables.getLast(vertices), pa);
+      assert vertices.get(vertices.size() - 1).equals(pa) : "Appended edges must form a chain";
     }
     R2Vector pb = projection.project(b);
     appendProjectedHelper(pa, a, pb, b, vertices::add);
@@ -229,10 +232,21 @@ final class S2EdgeTessellator {
     S2Point b = projection.unproject(pb);
     if (vertices.isEmpty()) {
       vertices.add(a);
+    } else {
+      // Note that coordinate wrapping can create a small amount of error. For example in the edge
+      // chain "0:-175, 0:179, 0:-177", the first edge is transformed into "0:-175, 0:-181" while
+      // the second is transformed into "0:179, 0:183".  The two coordinate pairs for the middle
+      // vertex ("0:-181" and "0:179") may not yield exactly the same S2Point.
+      assert S2.approxEquals(vertices.get(vertices.size() - 1), a)
+          : "Appended edges must form a chain";
     }
     appendUnprojectedHelper(pa, a, pb, b, vertices::add);
   }
 
+  /**
+   * Given a geodesic edge AB, split the edge as necessary and append all projected vertices except
+   * the first to "vertices". The maximum recursion depth is (M_PI / kMinTolerance()) < 45.
+   */
   private void appendProjectedHelper(
       R2Vector pa, S2Point a, R2Vector pbIn, S2Point b, Consumer<R2Vector> vertexAdder) {
     R2Vector pb = projection.wrapDestination(pa, pbIn);

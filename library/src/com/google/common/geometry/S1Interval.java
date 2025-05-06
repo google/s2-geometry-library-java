@@ -32,6 +32,8 @@ import jsinterop.annotations.JsType;
  * sphere). It is capable of representing the empty interval (containing no points), the full
  * interval (containing all points), and zero-length intervals (containing a single point).
  *
+ * <p>S1Interval is only mutable by package-private methods.
+ *
  * <p>Points are represented by the angle they make with the positive x-axis in the range [-Pi, Pi].
  * An interval is represented by its lower and upper bounds (both inclusive, since the interval is
  * closed). The lower bound may be greater than the upper bound, in which case the interval is
@@ -46,7 +48,8 @@ import jsinterop.annotations.JsType;
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S1Interval implements Cloneable, Serializable {
+@SuppressWarnings("Assertion")
+public final class S1Interval implements Cloneable, Serializable {
   private double lo;
   private double hi;
 
@@ -86,6 +89,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    *
    * <p>Note that because S1Interval has invariants to maintain after each update, values cannot be
    * set singly, both endpoints must be set together.
+   *
+   * <p>Package private since only S2 code may mutate S1Intervals.
    */
   void set(double newLo, double newHi, boolean checked) {
     this.lo = newLo;
@@ -103,7 +108,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   /**
    * Sets the range of this interval to the empty interval.
    *
-   * <p>Package private since only S2 code needs to mutate S1Intervals for now.
+   * <p>Package private since only S2 code may mutate S1Intervals.
    */
   void setEmpty() {
     lo = PI;
@@ -113,7 +118,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   /**
    * Sets the range of this interval to the full interval.
    *
-   * <p>Package private since only S2 code needs to mutate S1Intervals for now.
+   * <p>Package private since only S2 code may mutate S1Intervals.
    */
   void setFull() {
     lo = -PI;
@@ -146,12 +151,18 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * efficient.
    */
   public static S1Interval fromPointPair(double p1, double p2) {
-    // assert abs(p1) <= PI && abs(p2) <= PI;
+    assert abs(p1) <= PI;
+    assert abs(p2) <= PI;
     S1Interval result = new S1Interval();
     result.initFromPointPair(p1, p2);
     return result;
   }
 
+  /**
+   * Initializes the interval from the two given points on the unit circle.
+   *
+   * <p>Package private since only S2 code may mutate S1Intervals.
+   */
   void initFromPointPair(double p1, double p2) {
     if (p1 == -PI) {
       p1 = PI;
@@ -186,12 +197,12 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
 
   /** Returns true if the interval contains all points on the unit circle. */
   public boolean isFull() {
-    return hi - lo == 2 * PI;
+    return lo == -PI && hi == PI;
   }
 
   /** Returns true if the interval is empty, i.e. it contains no points. */
   public boolean isEmpty() {
-    return lo - hi == 2 * PI;
+    return lo == PI && hi == -PI;
   }
 
   /** Returns true if {@code lo() > hi()}. (This is true for empty intervals.) */
@@ -252,7 +263,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   @JsMethod(name = "containsPoint")
   public boolean contains(double p) {
     // Works for empty, full, and singleton intervals.
-    // assert abs(p) <= PI;
+    assert abs(p) <= PI;
     if (p == -PI) {
       p = PI;
     }
@@ -296,7 +307,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   @JsMethod(name = "interiorContainsPoint")
   public boolean interiorContains(double p) {
     // Works for empty, full, and singleton intervals.
-    // assert abs(p) <= PI;
+    assert abs(p) <= PI;
     if (p == -PI) {
       p = PI;
     }
@@ -391,18 +402,18 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
           new S1Interval(yComplementCenter, y.lo()).contains(lo())
               ? positiveDistance(lo(), y.lo())
               : 0;
-      // assert hiHi > 0 || loLo > 0;
+      assert hiHi > 0 || loLo > 0;
       return max(hiHi, loLo);
     }
   }
 
   /**
-   * Expands the interval by the minimum amount necessary so that it contains the point {@code p}
-   * (an angle in the range [-Pi, Pi]).
+   * Returns a new interval with this interval but expanded by the minimum amount necessary so that
+   * it contains the point {@code p} (an angle in the range [-Pi, Pi]).
    */
   @CheckReturnValue
   public S1Interval addPoint(double p) {
-    // assert abs(p) <= PI;
+    assert abs(p) <= PI;
     if (p == -PI) {
       p = PI;
     }
@@ -431,8 +442,8 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
    * non-empty.
    */
   public double clampPoint(double p) {
-    // assert !isEmpty();
-    // assert abs(p) <= PI;
+    assert !isEmpty();
+    assert abs(p) <= PI;
     if (p == -PI) {
       p = PI;
     }
@@ -461,12 +472,12 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Expands this interval on each side by the distance {@code margin}. If "margin" is negative,
-   * then shrink the interval on each side by "margin" instead. The resulting interval may be empty
-   * or full. Any expansion (positive or negative) of a full interval remains full, and any
+   * Mutates this interval, expanding it on each side by the distance {@code margin}. If "margin" is
+   * negative, then shrink the interval on each side by "margin" instead. The resulting interval may
+   * be empty or full. Any expansion (positive or negative) of a full interval remains full, and any
    * expansion of an empty interval remains empty.
    *
-   * <p>Package private since only S2 code should be mutating S1Intervals for now.
+   * <p>Package private since only S2 code may mutate S1Intervals.
    */
   void expandedInternal(double margin) {
     if (margin >= 0) {
@@ -509,9 +520,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Sets this interval to the union of the current interval and {@code y}.
+   * Mutates this interval, setting it to the union of the current interval and {@code y}.
    *
-   * <p>Package private since only S2 classes are intended to mutate S1Intervals for now.
+   * <p>Package private since only S2 classes may mutate S1Intervals.
    */
   void unionInternal(S1Interval y) {
     // The y.isFull() case is handled correctly in all cases by the code below, but can follow three
@@ -571,9 +582,9 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
   }
 
   /**
-   * Sets this interval to the intersection of the current interval and {@code y}.
+   * Mutates this interval, setting it to the intersection of the current interval and {@code y}.
    *
-   * <p>Package private since only S2 classes are intended to mutate S1Intervals for now.
+   * <p>Package private since only S2 classes may mutate S1Intervals.
    */
   void intersectionInternal(final S1Interval y) {
     // The y.isFull() case is handled correctly in all cases by the code below, but can follow three
@@ -599,7 +610,7 @@ public final strictfp class S1Interval implements Cloneable, Serializable {
       // This interval contains neither endpoint of y. This means that either y contains all of this
       // interval, or the two intervals are disjoint.
       if (!y.fastContains(lo)) {
-        // assert !intersects(y);
+        assert !intersects(y);
         this.setEmpty();
       }
     }

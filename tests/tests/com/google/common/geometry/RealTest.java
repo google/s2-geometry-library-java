@@ -17,66 +17,21 @@ package com.google.common.geometry;
 
 import static java.lang.Math.PI;
 import static java.lang.Math.scalb;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
-import com.google.common.collect.Lists;
 import java.math.BigDecimal;
-import java.util.Iterator;
-import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link Real}. */
-public strictfp class RealTest extends GeometryTestCase {
-  public void benchmark() {
-    // Naive: 0.07320955800000001 sec
-    // Robust: 1.408399374 sec
-    // Biggie D: 8.373768562 sec
-
-    @SuppressWarnings("unused")
-    int total = 0;
-    int reps = 1000000;
-    long start;
-
-    List<S2Point> points = Lists.newArrayList();
-    for (int i = 0; i < reps; i++) {
-      S2Point a = data.getRandomPoint();
-      S2Point c = data.getRandomPoint();
-      S2Point b = S2Point.normalize(S2Point.add(a, c));
-      points.add(a);
-      points.add(b);
-      points.add(c);
-    }
-
-    Iterator<S2Point> it = points.iterator();
-    start = System.nanoTime();
-    while (it.hasNext()) {
-      S2Point a = it.next();
-      S2Point b = it.next();
-      S2Point c = it.next();
-      total += (int) Math.signum(S2Point.crossProd(a, b).dotProd(c));
-    }
-    System.out.println("Naive: " + 1e-9 * (System.nanoTime() - start) + " sec");
-
-    it = points.iterator();
-    start = System.nanoTime();
-    while (it.hasNext()) {
-      S2Point a = it.next();
-      S2Point b = it.next();
-      S2Point c = it.next();
-      total += sign(a, b, c);
-    }
-    System.out.println("Robust: " + 1e-9 * (System.nanoTime() - start) + " sec");
-
-    it = points.iterator();
-    start = System.nanoTime();
-    while (it.hasNext()) {
-      S2Point a = it.next();
-      S2Point b = it.next();
-      S2Point c = it.next();
-      total += bigSign(a, b, c);
-    }
-    System.out.println("Biggie D: " + 1e-9 * (System.nanoTime() - start) + " sec");
-  }
+@RunWith(JUnit4.class)
+public class RealTest extends GeometryTestCase {
 
   /** Check for long-running summation error. */
+  @Test
   public void testSerialArithmetic() {
     BigDecimal bigSum = new BigDecimal(0);
     Real realSum = new Real(0);
@@ -94,6 +49,7 @@ public strictfp class RealTest extends GeometryTestCase {
   }
 
   /** Check adding all ranges of values, without risking overflow. */
+  @Test
   public void testSplitArithmetic() {
     double mantissa = PI / 4;
     for (int a = -400; a <= 400; a += 16) {
@@ -111,6 +67,7 @@ public strictfp class RealTest extends GeometryTestCase {
   /**
    * Verifies that naive and robust techniques produce nearly equal results all around the sphere.
    */
+  @Test
   public void testRandomCCW() {
     for (int i = 0; i < 1000; i++) {
       S2Point a = data.getRandomPoint();
@@ -131,6 +88,7 @@ public strictfp class RealTest extends GeometryTestCase {
    * inexact arithmetic, but that all combinations of arguments return logically consistent sign
    * results (e.g. if [a,b,c] forms a left turn at b, then [c,b,a] must form a right turn at b.)
    */
+  @Test
   public void testNearlyCollinearCCW() {
     int collinearPoints = 0;
     for (int i = 0; i < 1000; i++) {
@@ -157,8 +115,9 @@ public strictfp class RealTest extends GeometryTestCase {
    * Verifies that exactly collinear points have sign()==0, and form left or right turns if any
    * nudge is applied.
    */
+  @Test
   public void testExactlyCollinearCCW() {
-    double spacing = scalb(1, -3);
+    double spacing = scalb((double) 1, -3);
     // For a variety of power-of-2 coordinates.
     for (double x1 = -1; x1 <= 1; x1 += spacing) {
       for (double y1 = -1; x1 <= 1; x1 += spacing) {
@@ -203,11 +162,31 @@ public strictfp class RealTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testStrictMul() {
+    // Check first situation where error is 0 but the output is equal to one of the operands.
     double a = -2.594E-321;
     double b = 0.9991685425907498;
+
+    // Check that non-strict Real multiplication does not error.
+    Real nonStrict = Real.mul(a, b);
+    assertAlmostEquals(nonStrict.doubleValue(), a);
+
+    // Check that strict Real multiplication does error.
     try {
       Real unused = Real.strictMul(a, b);
+      fail();
+    } catch (ArithmeticException e) {
+      assertEquals("twoProductError underflowed", e.getMessage());
+    }
+
+    // Check first situation where error is 0 but the output is equal to one of the operands.
+    double eps = 2.594E-321;
+    Real nonStrictZero = Real.mul(eps, eps);
+    assertAlmostEquals(nonStrictZero.doubleValue(), 0.0);
+
+    try {
+      Real unused = Real.strictMul(eps, eps);
       fail();
     } catch (ArithmeticException e) {
       assertEquals("twoProductError underflowed", e.getMessage());
@@ -229,6 +208,7 @@ public strictfp class RealTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testStrictMulScale() {
     Real realA = new Real(-2.594E-321);
     double scaleA = 0.9991685425907498;
@@ -277,28 +257,4 @@ public strictfp class RealTest extends GeometryTestCase {
     return det(a, b, c).signum();
   }
 
-  private static int bigSign(S2Point a, S2Point b, S2Point c) {
-    BigDecimal ax = new BigDecimal(a.x);
-    BigDecimal ay = new BigDecimal(a.y);
-    BigDecimal az = new BigDecimal(a.z);
-    BigDecimal bx = new BigDecimal(b.x);
-    BigDecimal by = new BigDecimal(b.y);
-    BigDecimal bz = new BigDecimal(b.z);
-    BigDecimal cx = new BigDecimal(c.x);
-    BigDecimal cy = new BigDecimal(c.y);
-    BigDecimal cz = new BigDecimal(c.z);
-    BigDecimal bycz = by.multiply(cz);
-    BigDecimal bzcy = bz.multiply(cy);
-    BigDecimal bzcx = bz.multiply(cx);
-    BigDecimal bxcz = bx.multiply(cz);
-    BigDecimal bxcy = bx.multiply(cy);
-    BigDecimal bycx = by.multiply(cx);
-    BigDecimal bcx = bycz.subtract(bzcy);
-    BigDecimal bcy = bzcx.subtract(bxcz);
-    BigDecimal bcz = bxcy.subtract(bycx);
-    BigDecimal x = bcx.multiply(ax);
-    BigDecimal y = bcy.multiply(ay);
-    BigDecimal z = bcz.multiply(az);
-    return x.add(y).add(z).signum();
-  }
 }

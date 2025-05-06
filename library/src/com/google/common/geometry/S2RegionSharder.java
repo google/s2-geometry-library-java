@@ -15,7 +15,9 @@
  */
 package com.google.common.geometry;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,30 +30,39 @@ import java.util.Map;
  * regions are often contained by a single cell of the shard's covering).
  */
 public class S2RegionSharder {
-  private final S2CellIndex index = new S2CellIndex();
+  private final S2CellIndex index;
 
   /**
    * Creates a new sharder.
+   *
    * @param boundaries the boundaries of each shard indexed by shard ID
    */
   public S2RegionSharder(List<S2CellUnion> boundaries) {
+    index = new S2CellIndex();
     for (int i = 0; i < boundaries.size(); i++) {
       index.add(boundaries.get(i), i);
     }
     index.build();
   }
 
+  /** Creates a new sharder from the given index. */
+  public S2RegionSharder(S2CellIndex index) {
+    this.index = index;
+  }
+
   /**
    * Returns an index into the original list of {@code S2CellUnion} given to the constructor, which
-   * indicates the shard whose covering has the most overlap with {@code region}, or returns
-   * {@code defaultShard} if no shard overlaps the region.
+   * indicates the shard whose covering has the most overlap with {@code region}, or returns {@code
+   * defaultShard} if no shard overlaps the region.
    */
   public int getMostIntersectingShard(S2Region region, int defaultShard) {
     // Return the best shard by intersection area.
     Map<Integer, S2CellUnion> shardCoverings = intersections(region);
     int bestShard = defaultShard;
     long bestSum = 0;
-    for (int shardId : shardCoverings.keySet()) {
+    // Sort the keys to make the selection deterministic.
+    ImmutableList<Integer> sortedKeys = ImmutableList.sortedCopyOf(shardCoverings.keySet());
+    for (int shardId : sortedKeys) {
       S2CellUnion shardCovering = shardCoverings.get(shardId);
       long sum = 0;
       for (S2CellId id : shardCovering.cellIds()) {
@@ -69,25 +80,26 @@ public class S2RegionSharder {
    * Returns a list of shard numbers which intersect with {@code region}. Shard numbers are not
    * guaranteed to be sorted in any particular order. If no shards overlap, returns an empty list.
    */
-  public Iterable<Integer> getIntersectingShards(S2Region region) {
+  public Collection<Integer> getIntersectingShards(S2Region region) {
     return intersections(region).keySet();
   }
 
   private Map<Integer, S2CellUnion> intersections(S2Region region) {
     // Compute the intersection between the region covering and each shard covering.
     S2CellUnion regionCovering = new S2CellUnion();
-    // TODO(eengle): use GetCellUnionBound when available.
-    S2RegionCoverer.DEFAULT.getFastCovering(region.getCapBound(), regionCovering.cellIds());
+    region.getCellUnionBound(regionCovering.cellIds());
     Map<Integer, S2CellUnion> shardCoverings = new HashMap<>();
-    index.visitIntersectingCells(regionCovering, (cell, shardId) -> {
-      S2CellUnion shard = shardCoverings.get(shardId);
-      if (shard == null) {
-        shard = new S2CellUnion();
-        shardCoverings.put(shardId, shard);
-      }
-      shard.cellIds().add(cell);
-      return true;
-    });
+    index.visitIntersectingCells(
+        regionCovering,
+        (cell, shardId) -> {
+          S2CellUnion shard = shardCoverings.get(shardId);
+          if (shard == null) {
+            shard = new S2CellUnion();
+            shardCoverings.put(shardId, shard);
+          }
+          shard.cellIds().add(cell);
+          return true;
+        });
 
     // The fast covering is very loose, but typically it only intersects one shard.
     if (shardCoverings.size() == 1) {

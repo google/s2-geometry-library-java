@@ -52,6 +52,11 @@
       <artifactId>jsinterop-annotations</artifactId>
       <version>${jsinterop.version}</version>
     </dependency>
+    <dependency>
+      <groupId>it.unimi.dsi</groupId>
+      <artifactId>fastutil</artifactId>
+      <version>${fastutil.version}</version>
+    </dependency>
   </dependencies>
 
   <build>

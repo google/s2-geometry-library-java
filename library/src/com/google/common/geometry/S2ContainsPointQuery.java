@@ -16,14 +16,14 @@
 
 package com.google.common.geometry;
 
-import com.google.common.base.Predicate;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
+import com.google.common.geometry.S2ShapeUtil.IntPredicate;
+import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Iterator;
 
 /**
  * A query for whether one or more shapes in an {@link S2ShapeIndex} contain a given S2Point.
@@ -46,9 +46,10 @@ public class S2ContainsPointQuery {
     public static final Options CLOSED = new Options(S2VertexModel.CLOSED);
     private final S2VertexModel vertexModel;
 
-    private Options(S2VertexModel vertexModel) {
+    public Options(S2VertexModel vertexModel) {
       this.vertexModel = vertexModel;
     }
+
     /** Returns the vertex model in this options. */
     public S2VertexModel vertexModel() {
       return vertexModel;
@@ -72,63 +73,32 @@ public class S2ContainsPointQuery {
 
     /** In the CLOSED model, all shapes contain their vertices (including points and polylines). */
     CLOSED;
-
-    /**
-     * Returns true if the clipped portion of a shape 'clipped' from a cell with center 'cellCenter'
-     * contains the point 'p' according to this vertex model.
-     */
-    public boolean shapeContains(S2Point cellCenter, S2ClippedShape clipped, S2Point p) {
-      boolean inside = clipped.containsCenter();
-      int numEdges = clipped.numEdges();
-      if (numEdges > 0) {
-        // Points and polylines can be ignored unless the vertex model is CLOSED.
-        S2Shape shape = clipped.shape();
-        if (!shape.hasInterior() && this != S2VertexModel.CLOSED) {
-          return false;
-        }
-        // Test containment by drawing a line segment from the cell center to the given point and
-        // counting edge crossings.
-        EdgeCrosser crosser = new EdgeCrosser(cellCenter, p);
-        MutableEdge edge = new MutableEdge();
-        boolean crossing;
-        for (int i = 0; i < numEdges; ++i) {
-          shape.getEdge(clipped.edge(i), edge);
-          switch (crosser.robustCrossing(edge.a, edge.b)) {
-            case -1:
-              // Disjoint, so advance to next edge.
-              continue;
-            case 1:
-              // Definitely crossing.
-              crossing = true;
-              break;
-            default:
-              // Shared vertex, test if we have a vertex crossing.
-              // For the OPEN and CLOSED models, check whether "p" is a vertex.
-              if (this != S2VertexModel.SEMI_OPEN && edge.isEndpoint(p)) {
-                return this == S2VertexModel.CLOSED;
-              }
-              crossing = S2EdgeUtil.vertexCrossing(cellCenter, p, edge.a, edge.b);
-              break;
-          }
-          inside ^= crossing;
-        }
-      }
-      return inside;
-    }
   }
 
   private final Options options;
-  private final S2Iterator<S2ShapeIndex.Cell> it;
+  private S2ShapeIndex index;
+  private S2Iterator<S2ShapeIndex.Cell> it;
 
-  /** Constructs a semi-open contains-point query from the given iterator. */
+  /** Create a query with options but no index. Must call {@link #init} before making queries. */
+  public S2ContainsPointQuery(Options options) {
+    this.options = options;
+  }
+
+  /** Constructs a semi-open contains-point query from the given index. */
   public S2ContainsPointQuery(S2ShapeIndex index) {
     this(index, Options.SEMI_OPEN);
   }
 
-  /** Constructs a contains-point query from the given iterator, with the specified options. */
+  /** Constructs a contains-point query from the given index, with the specified options. */
   public S2ContainsPointQuery(S2ShapeIndex index, Options options) {
-    this.it = index.iterator();
     this.options = options;
+    init(index);
+  }
+
+  /** Sets the index to use for queries. */
+  public void init(S2ShapeIndex index) {
+    this.index = index;
+    this.it = index.iterator();
   }
 
   /** Returns the options used to build this query. */
@@ -137,7 +107,7 @@ public class S2ContainsPointQuery {
   }
 
   /**
-   * Returns true if any shape in the given iterator contains {@code p} under the specified {@link
+   * Returns true if any shape in the current index contains {@code p} under the specified {@link
    * S2VertexModel}.
    */
   public boolean contains(S2Point p) {
@@ -148,7 +118,7 @@ public class S2ContainsPointQuery {
     S2Point center = it.center();
     int numClipped = cell.numShapes();
     for (int s = 0; s < numClipped; ++s) {
-      if (options.vertexModel().shapeContains(center, cell.clipped(s), p)) {
+      if (shapeContains(center, cell.clipped(s), p)) {
         return true;
       }
     }
@@ -158,33 +128,76 @@ public class S2ContainsPointQuery {
   /**
    * Returns true if the given shape contains {@code p} under the specified {@link S2VertexModel}.
    */
-  public boolean shapeContains(S2Shape shape, S2Point p) {
+  public boolean shapeContains(int shapeId, S2Point p) {
     if (!it.locate(p)) {
       return false;
     }
-    S2ClippedShape clipped = it.entry().findClipped(shape);
+    S2ClippedShape clipped = it.entry().findClipped(shapeId);
     if (clipped == null) {
       return false;
     }
-    return options.vertexModel().shapeContains(it.center(), clipped, p);
+    return shapeContains(it.center(), clipped, p);
   }
 
   /**
-   * A visitor that receives each shape that contains a query point, returning true to continue
+   * Returns true if the clipped portion of a shape 'clipped' from a cell with center 'cellCenter'
+   * contains the point 'p' according to this vertex model.
+   */
+  public boolean shapeContains(S2Point cellCenter, S2ClippedShape clipped, S2Point p) {
+    boolean inside = clipped.containsCenter();
+    int numEdges = clipped.numEdges();
+    if (numEdges > 0) {
+      // Points and polylines can be ignored unless the vertex model is CLOSED.
+      S2Shape shape = index.getShapes().get(clipped.shapeId());
+      if (!shape.hasInterior() && options.vertexModel != S2VertexModel.CLOSED) {
+        return false;
+      }
+      // Test containment by drawing a line segment from the cell center to the given point and
+      // counting edge crossings.
+      EdgeCrosser crosser = new EdgeCrosser(cellCenter, p);
+      MutableEdge edge = new MutableEdge();
+      boolean crossing;
+      for (int i = 0; i < numEdges; ++i) {
+        shape.getEdge(clipped.edge(i), edge);
+        switch (crosser.robustCrossing(edge.a, edge.b)) {
+          case -1:
+            // Disjoint, so advance to next edge.
+            continue;
+          case 1:
+            // Definitely crossing.
+            crossing = true;
+            break;
+          default:
+            // Shared vertex, test if we have a vertex crossing.
+            // For the OPEN and CLOSED models, check whether "p" is a vertex.
+            if (options.vertexModel != S2VertexModel.SEMI_OPEN && edge.isEndpoint(p)) {
+              return options.vertexModel == S2VertexModel.CLOSED;
+            }
+            crossing = S2EdgeUtil.vertexCrossing(cellCenter, p, edge.a, edge.b);
+            break;
+        }
+        inside ^= crossing;
+      }
+    }
+    return inside;
+  }
+
+  /**
+   * A visitor that receives each shapeId that contains a query point, returning true to continue
    * receiving shapes or false to terminate early.
    */
-  interface ShapeVisitor extends Predicate<S2Shape> {}
+  public interface ShapeVisitor extends IntPredicate {}
 
   /**
    * Visits each shape in this query's underlying index that contains {@code p} under the specified
    * {@link S2VertexModel} exactly once, and returns true, or terminates early and returns false if
-   * any invocation of {@link ShapeVisitor#apply(S2Shape)} returns false.
+   * any invocation of the visitor returns false.
    *
    * <p>Also see {@link S2ShapeIndexRegion#visitIntersectingShapes}, which allows visiting all
    * shapes in an S2ShapeIndex that intersect or contain a given target S2Cell.
    */
   @CanIgnoreReturnValue
-  boolean visitContainingShapes(S2Point p, ShapeVisitor visitor) {
+  public boolean visitContainingShapes(S2Point p, ShapeVisitor visitor) {
     // This function returns false only if the algorithm terminates early because the "visitor"
     // function returned false.
     if (!it.locate(p)) {
@@ -195,15 +208,14 @@ public class S2ContainsPointQuery {
     int numClipped = cell.numShapes();
     for (int s = 0; s < numClipped; ++s) {
       S2ClippedShape clipped = cell.clipped(s);
-      if (options.vertexModel().shapeContains(center, clipped, p)
-          && !visitor.apply(clipped.shape())) {
+      if (shapeContains(center, clipped, p) && !visitor.test(clipped.shapeId())) {
         return false;
       }
     }
     return true;
   }
 
-  /** A convenience function that returns all the shapes that contain {@code p}. */
+  /** A convenience function that provides iteration over all the shapes that contain {@code p}. */
   public Iterable<S2Shape> getContainingShapes(final S2Point p) {
     if (!it.locate(p)) {
       return ImmutableList.of();
@@ -212,26 +224,41 @@ public class S2ContainsPointQuery {
       // has been repositioned.
       final S2ShapeIndex.Cell cell = it.entry();
       final S2Point center = it.center();
-      return new Iterable<S2Shape>() {
-        @Override
-        public Iterator<S2Shape> iterator() {
-          return new AbstractIterator<S2Shape>() {
+      return () ->
+          new AbstractIterator<>() {
             int i = 0;
 
             @Override
             protected S2Shape computeNext() {
               while (i < cell.numShapes()) {
                 S2ClippedShape clipped = cell.clipped(i++);
-                if (options.vertexModel().shapeContains(center, clipped, p)) {
-                  return clipped.shape();
+                if (shapeContains(center, clipped, p)) {
+                  return index.getShapes().get(clipped.shapeId());
                 }
               }
               return endOfData();
             }
           };
-        }
-      };
     }
+  }
+
+  /** A convenience function that returns the shape ids that contain {@code p}. */
+  public IntVector getContainingShapeIds(final S2Point p) {
+    if (!it.locate(p)) {
+      return IntVector.empty();
+    }
+    final S2ShapeIndex.Cell cell = it.entry();
+    final S2Point center = it.center();
+
+    IntVector ret = new IntVector();
+    int i = 0;
+    while (i < cell.numShapes()) {
+      S2ClippedShape clipped = cell.clipped(i++);
+      if (shapeContains(center, clipped, p)) {
+        ret.add(clipped.shapeId());
+      }
+    }
+    return ret;
   }
 
   /** A visitor that receives each edge that has some query point p as an endpoint. */
@@ -239,12 +266,12 @@ public class S2ContainsPointQuery {
     /**
      * Returns true if the next edge should be received, or false to terminate early.
      *
-     * @param shape The shape of this edge
-     * @param edgeId The edge ID in 'shape' that produced this edge
+     * @param shapeId The shape id of this edge
+     * @param edgeId The edge id of this edge
      * @param a The startpoint of the edge
      * @param b The endpoint of the edge
      */
-    boolean test(S2Shape shape, int edgeId, S2Point a, S2Point b);
+    boolean test(int shapeId, int edgeId, S2Point a, S2Point b);
   }
 
   /**
@@ -253,6 +280,7 @@ public class S2ContainsPointQuery {
    * where {@code p} is one of the edge endpoints. The visitor requires the edge endpoints, and so
    * this method requires a temporary mutable edge to store edges in.
    */
+  @CanIgnoreReturnValue
   boolean visitIncidentEdges(S2Point p, EdgeVisitor visitor, MutableEdge tmp) {
     // This function returns "false" only if the algorithm terminates early because the "visitor"
     // function returned false.
@@ -263,15 +291,16 @@ public class S2ContainsPointQuery {
     int numClipped = cell.numShapes();
     for (int s = 0; s < numClipped; s++) {
       S2ClippedShape clipped = cell.clipped(s);
+      int shapeId = clipped.shapeId();
       int numEdges = clipped.numEdges();
       if (numEdges == 0) {
         continue;
       }
-      S2Shape shape = clipped.shape();
+      S2Shape shape = index.getShapes().get(shapeId);
       for (int i = 0; i < numEdges; i++) {
         int edgeId = clipped.edge(i);
         shape.getEdge(edgeId, tmp);
-        if (tmp.isEndpoint(p) && !visitor.test(shape, edgeId, tmp.a, tmp.b)) {
+        if (tmp.isEndpoint(p) && !visitor.test(shapeId, edgeId, tmp.a, tmp.b)) {
           return false;
         }
       }

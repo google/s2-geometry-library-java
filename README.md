@@ -57,6 +57,50 @@ varying degrees of completeness and maturity. This Java implementation is
 heavily used within Google and is generally mature, aside from the newest
 features, but is not as complete as C++.
 
+## 2025 Q2 Release Highlights
+
+Over 100 additional classes have been ported from C++, as well as more methods
+on existing classes. There have been performance improvements and bug fixes, as
+well as many Javadoc improvements. Some changes are not backward compatible.
+
+A few highlights:
+
+*   S2Builder, S2BooleanOperation, and supporting classes have been ported from
+    C++.
+
+*   S2RobustCellClipper and its supporting classes have been ported from C++.
+
+*   S2ValidationQueries has been ported from C++, with internal classes
+    S2ValidQuery (for validating that geometry is compatible with
+    S2BooleanOperation) and S2LegacyValidQuery (for validating that geometry is
+    compatible with the S2Polygon and S2Polyline isValid() methods).
+
+*   S2 now depends on Fastutil (https://fastutil.di.unimi.it/) and Guava's
+    Truth library (https://truth.dev/).
+
+*   S2 used to support three possible projections from cell space to cube space:
+    linear, tangent, and quadratic. In practice, only quadratic was used, and it
+    is now the only supported option. See S2Projections.java for more details.
+
+*   Many Java assertions that were formerly commented out are now present. These
+    typically match DCHECKs in the C++ implementation. Work is ongoing to enable
+    more of these.
+
+*   A global boolean "S2.skipAssertions" is provided to allow deliberate
+    construction of invalid S2 Objects when Java assertions are enabled, for
+    testing. Use via GeometryTestCase.unsafeCreate() and related methods.
+
+*   The "robustCrossProd" implementation is now truly robust.
+
+*   An internal "primitives" subpackage provides some low-level collections and
+    other utility classes. These are not intended to be used by clients. They
+    may be removed in future releases.
+
+*   S2Polyline no longer implements S2Shape directly, but provides a shape()
+    method. Also, single-vertex S2Polylines are now considered to represent
+    degenerate lines, which are not empty. When viewed as a S2Shape, they have
+    one edge with two identical vertices.
+
 ## 2022 Q4 Release Highlights
 
 Many improvements have been made to the Java implementation of S2 since the last

@@ -34,8 +34,8 @@ import java.math.BigDecimal;
  *       (-1), colinear (0), or counter-clockwise (1).
  * </ul>
  */
-@SuppressWarnings("assertions")
-public final strictfp class S2Predicates {
+@SuppressWarnings("Assertion")
+public final class S2Predicates {
   /** Maximum rounding error of a 64 bit double. */
   public static final double DBL_ERR = DBL_EPSILON / 2;
 
@@ -89,10 +89,11 @@ public final strictfp class S2Predicates {
   /**
    * If precomputed cross-product of A and B is available, this version of sign is more efficient.
    * Otherwise use the version above. Note that aCrossB must be computed using {@link
-   * S2Point#crossProd(S2Point)} rather than {@link S2#robustCrossProd(S2Point, S2Point)}.
+   * S2Point#crossProd(S2Point)} rather than {@link S2RobustCrossProd#robustCrossProd(S2Point,
+   * S2Point)}.
    */
   public static int sign(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
-    int sign = Sign.triage(a, b, c, aCrossB);
+    int sign = Sign.triage(aCrossB, c);
     if (sign == 0) {
       sign = Sign.expensive(a, b, c, true);
     }
@@ -142,9 +143,9 @@ public final strictfp class S2Predicates {
 
     /**
      * This version of Sign.triage takes a precomputed 'aCrossB', which must be computed by {@link
-     * S2Point#crossProd(S2Point)} rather than {@link S2#robustCrossProd(S2Point, S2Point)}. This is
-     * faster than the version above if 'aCrossB' is already available, but the version of triage
-     * above is faster than computing aCrossB and then calling this triage().
+     * S2Point#crossProd(S2Point)} rather than {@link S2RobustCrossProd#robustCrossProd(S2Point,
+     * S2Point)}. This is faster than the version above if 'aCrossB' is already available, but the
+     * version of triage above is faster than computing aCrossB and then calling this triage().
      *
      * <p>As above, triage() returns +1 if the points are definitely CCW, -1 if they are definitely
      * CW, and 0 if two points are identical or the result is uncertain. Uncertain cases can be
@@ -153,7 +154,7 @@ public final strictfp class S2Predicates {
      * <p>The purpose of this method is to allow additional cheap tests to be done, where possible,
      * in order to avoid calling more expensive operations unnecessarily.
      */
-    public static int triage(S2Point a, S2Point b, S2Point c, S2Point aCrossB) {
+    public static int triage(S2Point aCrossB, S2Point c) {
       // kMaxDetError is the maximum error in computing (AxB).C where all vectors are unit length.
       // Using standard inequalities, it can be shown that
       //
@@ -198,12 +199,11 @@ public final strictfp class S2Predicates {
      * Simplicity, to provide a logically consistent non-zero result for all inputs.
      */
     public static int sign(S2Point a, S2Point b, S2Point c, boolean perturb) {
-      // assert (isUnitLength(a) && isUnitLength(b) && isUnitLength(c));
-      int ccw = triage(a, b, c);
-      if (ccw == 0) {
-        ccw = expensive(a, b, c, perturb);
+      int sign = triage(a, b, c);
+      if (sign == 0) {
+        sign = expensive(a, b, c, perturb);
       }
-      return ccw;
+      return sign;
     }
 
     /**
@@ -517,13 +517,52 @@ public final strictfp class S2Predicates {
   }
 
   /**
+   * Returns true if the angle ABC contains its vertex B. Containment is defined such that if
+   * several polygons tile the region around a vertex, then exactly one of those polygons contains
+   * that vertex. Returns false for degenerate angles of the form ABA.
+   *
+   * <p>Note that this method is not sufficient to determine vertex containment in polygons with
+   * duplicate vertices (such as the polygon ABCADE). Use S2ContainsVertexQuery for such polygons.
+   * S2.angleContainsVertex(a, b, c) is equivalent to using S2ContainsVertexQuery as follows:
+   *
+   * {@snippet :
+   *  S2ContainsVertexQuery query = new S2ContainsVertexQuery(b);
+   *  query.addEdge(a, -1);  // incoming
+   *  query.addEdge(c, 1);   // outgoing
+   * return query.containsSign() > 0;
+   * }
+   *
+   * <p>Useful properties of angleContainsVertex:
+   *
+   * <ol>
+   *   <li>angleContainsVertex(a,b,a) == false
+   *   <li>angleContainsVertex(a,b,c) == !angleContainsVertex(c,b,a) unless a == c
+   *   <li>Given vertices v_1 ... v_k ordered cyclically CCW around vertex b,
+   *       angleContainsVertex(v_{i+1}, b, v_i) is true for exactly one value of i.
+   * </ol>
+   *
+   * REQUIRES: {@code a != b && b != c}.
+   */
+  public static boolean angleContainsVertex(S2Point a, S2Point b, S2Point c) {
+    // A loop with consecutive vertices A, B, C contains vertex B if and only if the fixed vector
+    // R = S2.ortho(B) is contained by the wedge ABC. The wedge is closed at A and open at C, i.e.
+    // the point B is inside the loop if A = R but not if C = R.
+    //
+    // Note that the test below is written so as to get correct results when the angle ABC is
+    // degenerate. If A = C or C = R it returns false, and otherwise if A = R it returns true.
+    assert !a.equalsPoint(b);
+    assert !b.equalsPoint(c);
+    return !orderedCCW(S2.refDir(b), c, a, b);
+  }
+
+  /**
    * Returns -1, 0, or +1 according to whether {@code AX < BX, A == B}, or {@code AX > BX}
    * respectively. Distances are measured with respect to the positions of X, A, and B as though
    * they were reprojected to lie exactly on the surface of the unit sphere. Furthermore, this
-   * method uses symbolic perturbations to ensure that the result is non-zero whenever
-   * {@code A != B}, even when {@code AX == BX} exactly, or even when A and B project to the same
-   * point on the sphere. Such results are guaranteed to be self-consistent, i.e. if {@code AB < BC}
-   * and {@code BC < AC}, then {@code AB < AC}.
+   * method uses symbolic perturbations to ensure that the result is non-zero whenever {@code A !=
+   * B}, even when {@code AX == BX} exactly, or even when A and B project to the same point on the
+   * sphere. Such results are guaranteed to be self-consistent, i.e. if {@code AB < BC} and {@code
+   * BC < AC}, then {@code AB < AC}.
    */
   public static int compareDistances(S2Point x, S2Point a, S2Point b) {
     // We start by comparing distances using dot products (i.e., cosine of the angle), because (1)
@@ -737,9 +776,8 @@ public final strictfp class S2Predicates {
    * <p>Distances are measured with respect to the positions of all points as though they were
    * projected to lie exactly on the surface of the unit sphere.
    *
-   * <p>Requires that {@code A} and {@code B} do not project to antipodal points (e.g.,
-   * {@code A != -B}). This can occur if for example {@code A == S * B}, for some constant
-   * {@code S < 0}.
+   * <p>Requires that {@code A} and {@code B} do not project to antipodal points (e.g., {@code A !=
+   * -B}). This can occur if for example {@code A == S * B}, for some constant {@code S < 0}.
    *
    * <p>Note all of the predicates defined here could be extended to handle edges consisting of
    * antipodal points by implementing additional symbolic perturbation logic (similar to {@link
@@ -956,8 +994,8 @@ public final strictfp class S2Predicates {
    * Given two edges AB and CD that cross a great circle defined by a normal vector M, orders the
    * crossings of AB and CD relative to another great circle N representing a zero point.
    *
-   * <p>This predicate can be used in any circumstance where we have an exact normal
-   * vector to order edge crossings relative to some zero point.
+   * <p>This predicate can be used in any circumstance where we have an exact normal vector to order
+   * edge crossings relative to some zero point.
    *
    * <p>As an example, if we have edges AB and CD that cross boundary 2 of a cell:
    *
@@ -969,45 +1007,44 @@ public final strictfp class S2Predicates {
    *                            A C
    * </pre>
    *
-   * <p>We could order them by using the normal of boundary 2 as M, and the normal of
-   * either boundary 1 or 3 as N.  If we use boundary 1 as N, then:
+   * <p>We could order them by using the normal of boundary 2 as M, and the normal of either
+   * boundary 1 or 3 as N. If we use boundary 1 as N, then:
    *
-   * {@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == +1}
+   * <p>{@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == +1}
    *
-   * <p>Indicating that CD is closer to boundary 1 than AB is. But, if we use boundary 3 as N,
-   * then:
+   * <p>Indicating that CD is closer to boundary 1 than AB is. But, if we use boundary 3 as N, then:
    *
-   * {@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == -1}
+   * <p>{@code circleEdgeIntersectionOrdering(A, B, C, D, M, N) == -1}
    *
    * <p>Indicating that AB is closer to boundary 3 than CD is.
    *
-   * <p>These results are consistent but one needs to bear in mind what boundary is
-   * being used as the reference.
+   * <p>These results are consistent but one needs to bear in mind what boundary is being used as
+   * the reference.
    *
-   * <p>Requirements</p>
+   * <p>Requirements
+   *
    * <ul>
-   * <li>A and B are not equal or antipodal.
-   * <li>C and D are not equal or antipodal.
-   * <li>M and N are not equal or antipodal.
-   * <li>AB crosses M (vertices have opposite dot product signs with M)
-   * <li>CD crosses M (vertices have opposite dot product signs with M)
-   * <li>A and C are on the positive side of M
-   * <li>B and D are on the negative side of M
-   * <li>Intersection of AB and N is on the positive side of N
-   * <li>Intersection of CD and N is on the positive side of N
+   *   <li>A and B are not equal or antipodal.
+   *   <li>C and D are not equal or antipodal.
+   *   <li>M and N are not equal or antipodal.
+   *   <li>AB crosses M (vertices have opposite dot product signs with M)
+   *   <li>CD crosses M (vertices have opposite dot product signs with M)
+   *   <li>A and C are on the positive side of M
+   *   <li>B and D are on the negative side of M
+   *   <li>Intersection of AB and N is on the positive side of N
+   *   <li>Intersection of CD and N is on the positive side of N
    * </ul>
    *
    * <p>Returns:
+   *
    * <ul>
-   * <li>-1 if crossing AB is closer to N than crossing CD
-   * <li>0 if the two edges cross at exactly the same position
-   * <li>+1 if crossing AB is further from N than crossing CD
+   *   <li>-1 if crossing AB is closer to N than crossing CD
+   *   <li>0 if the two edges cross at exactly the same position
+   *   <li>+1 if crossing AB is further from N than crossing CD
    * </ul>
    */
   public static int circleEdgeIntersectionOrdering(
-      S2Point a, S2Point b,
-      S2Point c, S2Point d,
-      S2Point m, S2Point n) {
+      S2Point a, S2Point b, S2Point c, S2Point d, S2Point m, S2Point n) {
     int ans = triageIntersectionOrdering(a, b, c, d, m, n);
     if (ans != 0) {
       return ans;
@@ -1024,9 +1061,7 @@ public final strictfp class S2Predicates {
 
   @VisibleForTesting
   static int triageIntersectionOrdering(
-      S2Point a, S2Point b,
-      S2Point c, S2Point d,
-      S2Point m, S2Point n) {
+      S2Point a, S2Point b, S2Point c, S2Point d, S2Point m, S2Point n) {
     assert !a.equalsPoint(b);
     assert !a.equalsPoint(b.neg());
     assert !c.equalsPoint(d);
@@ -1044,7 +1079,7 @@ public final strictfp class S2Predicates {
     // further than some error from each other, we can rely on the comparison, otherwise we fall
     // back to more exact arithmetic.
     //
-    // ((A×B)×M)•N is a quadruple product.  We can expand this out using Lagrange's formula for a
+    // ((A×B)×M)•N is a quadruple product. We can expand this out using Lagrange's formula for a
     // vector triple product and then distribute the dot product, which eliminates all the cross
     // products:
     //
@@ -1094,9 +1129,7 @@ public final strictfp class S2Predicates {
   }
 
   private static int exactIntersectionOrdering(
-      BigPoint a, BigPoint b,
-      BigPoint c, BigPoint d,
-      BigPoint m, BigPoint n) {
+      BigPoint a, BigPoint b, BigPoint c, BigPoint d, BigPoint m, BigPoint n) {
     assert !a.equals(b);
     assert !a.equals(b.neg());
     assert !c.equals(d);
@@ -1135,8 +1168,7 @@ public final strictfp class S2Predicates {
    *
    * <p>Edges may not consist of antipodal points (e.g., A != -B). See {@link #compareEdgeDistance}.
    */
-  // TODO(user): Make this public once the library has moved onto it.
-  static int compareEdgeDirections(S2Point a, S2Point b, S2Point c, S2Point d) {
+  public static int compareEdgeDirections(S2Point a, S2Point b, S2Point c, S2Point d) {
     // Check that no edge consists of antipodal points. This catches the most common case; a full
     // test is in CompareEdgeDirections.exact.)
     // assert !a.equals(b.neg());
@@ -1189,6 +1221,150 @@ public final strictfp class S2Predicates {
       // assert !c.isAntipodal(d);
       return a.crossProd(b).dotProd(c.crossProd(d)).signum();
     }
+  }
+
+  /**
+   * Computes the exact sign of the dot product between A and B.
+   *
+   * <p>Requires that {@code |a|^2 <= 2} and {@code |b|^2 <= 2}.
+   */
+  public static int signDotProd(S2Point a, S2Point b) {
+    int sign = triageSignDotProd(a, b);
+    if (sign != 0) {
+      return sign;
+    }
+
+    return exactSignDotProd(big(a), big(b));
+  }
+
+  @VisibleForTesting
+  static int triageSignDotProd(S2Point a, S2Point b) {
+    assert a.norm2() <= 2;
+    assert b.norm2() <= 2;
+
+    // The dot product error can be bounded as 1.01nu|a||b| assuming nu < .01, where u is the
+    // rounding unit (epsilon/2). n=3 because we have 3 components, and we require that our vectors
+    // be <= sqrt(2) in length (so that we can support the un-normalized edge normals for cells).
+    //
+    // So we have 1.01*3*ε/2*2 = 3.03ε, which we'll round up to 3.046875ε which is exactly
+    // representable.
+    //
+    // Reference:
+    //   Error Estimation Of Floating-Point Summation And Dot Product, Rump 2011
+    double kMaxError = 3.046875 * DBL_EPSILON;
+
+    double na = a.dotProd(b);
+    if (abs(na) <= kMaxError) {
+      return 0;
+    }
+    return na > 0 ? +1 : -1;
+  }
+
+  private static int exactSignDotProd(BigPoint a, BigPoint b) {
+    BigDecimal dot = a.dotProd(b);
+    if (dot.compareTo(BigDecimal.ZERO) == 0) {
+      return 0;
+    }
+    return dot.signum() > 0 ? +1 : -1;
+  }
+
+  /**
+   * Forms the intersection of edge AB with the great circle specified by normal N as (A×B)×N and
+   * computes the sign of that point dotted with X.
+   *
+   * <p>When you have an edge you know crosses a cell boundary corresponding to N, then this
+   * function can tell you whether the intersection point is to the positive, negative, or exactly
+   * on an adjacent side X. Two such tests can determine if the intersection is in range of the
+   * S2Cell along the crossed boundary.
+   *
+   * <pre>
+   *                            |     A  |
+   *                            | N   •  |
+   *                      ------┌────╱───┐------
+   *                            │ ↓ •   ←│X
+   *                                B
+   * </pre>
+   *
+   * <p>The intersection of AxB and N results in two (antipodal) points. This method allows either
+   * of those points to test as contained in the lune, so the ambiguity must be resolved externally.
+   *
+   * <p>Fortunately, if we have an edge on a face, and it crosses some great circle we take from
+   * that face, then we know it can't cross on the antipodal side too, because the edge would be
+   * greater than 180 degrees in length. So checking manually for an edge crossing before calling is
+   * sufficient to avoid any issues.
+   *
+   * <p>REQUIRES: A and B are not equal or antipodal.
+   *
+   * <p>REQUIRES: A and B are not coplanar with the plane specified by N
+   *
+   * <p>REQUIRES: AB crosses N (vertices have opposite dot product signs with N)
+   *
+   * <pre>
+   * Returns:
+   *   -1 - Intersection was on the negative side of X
+   *    0 - Intersection was exactly on X
+   *   +1 - Intersection was on the positive side of X
+   * </pre>
+   */
+  public static int circleEdgeIntersectionSign(S2Point a, S2Point b, S2Point n, S2Point x) {
+    int ans = triageCircleEdgeIntersectionSign(a, b, n, x);
+    if (ans != 0) {
+      return ans;
+    }
+
+    return exactCircleEdgeIntersectionSign(big(a), big(b), big(n), big(x));
+  }
+
+  @VisibleForTesting
+  static int triageCircleEdgeIntersectionSign(S2Point a, S2Point b, S2Point n, S2Point x) {
+    assert !a.equalsPoint(b);
+    assert !a.equalsPoint(b.neg());
+
+    // The normal vector for the edge is A×B. The vector for the line of intersection between the
+    // plane defined by N and A×B is (A×B)×N. We then want to dot this with the normals of the other
+    // great circles X and compute the sign.
+    //
+    // So the full formula for the test is ((A×B)×N)•X which is a quadruple product. We can expand
+    // this out using Lagrange's formula for a triple product, and then distribute the dot product:
+    //
+    // = ((A×B)×N)•X
+    // = ((N•A)B - (N•B)A)•X
+    // = (N•A)(X•B) - (N•B)(X•A)
+    //
+    // We can compute this with a maximum absolute error of 14ε (see the gappa proof in the C++
+    // implementation).
+    double kMaxError = 14 * DBL_EPSILON;
+
+    double ndota = n.dotProd(a);
+    double ndotb = n.dotProd(b);
+    double xdota = x.dotProd(a);
+    double xdotb = x.dotProd(b);
+
+    double prod = ndota * xdotb - ndotb * xdota;
+
+    // If we're too close to the plane of X we'll have to use more precision.
+    if (abs(prod) <= kMaxError) {
+      return 0;
+    }
+    return prod < 0 ? -1 : +1;
+  }
+
+  private static int exactCircleEdgeIntersectionSign(
+      BigPoint a, BigPoint b, BigPoint n, BigPoint x) {
+    assert a.compareTo(b) != 0;
+    assert a.compareTo(b.neg()) != 0;
+
+    BigDecimal ndota = n.dotProd(a);
+    BigDecimal ndotb = n.dotProd(b);
+    BigDecimal xdota = x.dotProd(a);
+    BigDecimal xdotb = x.dotProd(b);
+
+    BigDecimal prod = ndota.multiply(xdotb).subtract(ndotb.multiply(xdota));
+
+    if (prod.compareTo(BigDecimal.ZERO) == 0) {
+      return 0;
+    }
+    return prod.signum() > 0 ? +1 : -1;
   }
 
   /**

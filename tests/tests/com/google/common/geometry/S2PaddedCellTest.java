@@ -17,11 +17,18 @@ package com.google.common.geometry;
 
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.geometry.R2Rect.Axis;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2PaddedCell. */
+@RunWith(JUnit4.class)
 public class S2PaddedCellTest extends GeometryTestCase {
+  @Test
   public void testS2CellMethods() {
     // Test the S2PaddedCell methods that have approximate S2Cell equivalents.
     final int iters = 1000;
@@ -41,6 +48,7 @@ public class S2PaddedCellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetEntryExitVertices() {
     final int iters = 1000;
     for (int iter = 0; iter < iters; ++iter) {
@@ -71,6 +79,7 @@ public class S2PaddedCellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testShrinkToFit() {
     final int iters = 1000;
     for (int iter = 0; iter < iters; ++iter) {
@@ -119,7 +128,7 @@ public class S2PaddedCellTest extends GeometryTestCase {
   private static void compareS2CellToPadded(S2Cell cell, S2PaddedCell pcell, double padding) {
     assertEquals(cell.id(), pcell.id());
     assertEquals(cell.level(), pcell.level());
-    assertEquals(padding, pcell.padding());
+    assertExactly(padding, pcell.padding());
     assertEquals(cell.getBoundUV().expanded(padding), pcell.bound());
     R2Vector uvCenter = cell.id().getCenterUV();
     assertEquals(R2Rect.fromPoint(uvCenter).expanded(padding), pcell.middle());

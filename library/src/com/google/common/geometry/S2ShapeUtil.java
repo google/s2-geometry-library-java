@@ -21,10 +21,7 @@ import static java.lang.Math.abs;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Multimaps;
-import com.google.common.collect.Sets;
+import com.google.common.geometry.S2CrossingEdgesQuery.CrossingType;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
 import com.google.common.geometry.S2Error.Code;
@@ -36,23 +33,28 @@ import com.google.common.geometry.S2ShapeIndex.CellRelation;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** Utilities for working with S2Shape. */
-public strictfp class S2ShapeUtil {
+@SuppressWarnings("Assertion")
+public class S2ShapeUtil {
   /** Utility methods only. */
   private S2ShapeUtil() {}
 
   /** A visitor that receives points. */
-  interface PointVisitor extends Predicate<S2Point> {}
+  public interface PointVisitor extends Predicate<S2Point> {}
 
   /**
-   * S2EdgeVectorShape is an S2Shape representing a set of unrelated edges. It contains no area and
-   * has no interior. Although it implements {@code List<S2Edge>}, only the {@link #add(S2Point,
-   * S2Point)} method can mutate the list of edges.
+   * S2EdgeVectorShape is a one-dimensional S2Shape representing a set of unrelated edges. Each edge
+   * is in its own chain. As a one-dimensional shape, it contains no area and has no interior. Edges
+   * may be degenerate, with equal start and end points.
+   *
+   * <p>Although it implements {@code List<S2Edge>}, only the {@link #add(S2Point, S2Point)} and
+   * {@link #addDegenerate(S2Point)} methods can mutate the list of edges.
    *
    * <p>It is mainly used for testing, but it can also be useful if you have, say, a collection of
    * polylines and don't care about memory efficiency (since this class would store most of the
@@ -72,10 +74,18 @@ public strictfp class S2ShapeUtil {
       add(a, b);
     }
 
-    /** Adds an edge to the vector. */
+    /** Adds an edge to the vector. Degenerate edges are not allowed here. */
     public void add(S2Point a, S2Point b) {
       Preconditions.checkArgument(!a.equalsPoint(b));
       edges.add(new S2Edge(a, b));
+    }
+
+    /**
+     * Adds a degenerate edge to the vector. Note that degenerate edges are invalid in some
+     * contexts. They may be differentiated from points as they have dimension 1.
+     */
+    public void addDegenerate(S2Point a) {
+      edges.add(new S2Edge(a, a));
     }
 
     @Override
@@ -130,7 +140,8 @@ public strictfp class S2ShapeUtil {
 
     @Override
     public S2Point getChainVertex(int chainId, int edgeOffset) {
-      Preconditions.checkElementIndex(edgeOffset, getChainLength(chainId));
+      // Every chain has two vertices.
+      Preconditions.checkElementIndex(edgeOffset, 2);
       S2Edge edge = edges.get(chainId);
       return edgeOffset == 0 ? edge.getStart() : edge.getEnd();
     }
@@ -151,17 +162,173 @@ public strictfp class S2ShapeUtil {
     }
   }
 
+  /** Returns true if any shape in the given index has dimension 2. */
+  public static boolean hasInterior(S2ShapeIndex index) {
+    for (int s = index.getShapes().size(); --s >= 0; ) {
+      S2Shape shape = index.getShapes().get(s);
+      if (shape.dimension() == 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Returns true if and only if the given shape has a single degenerate edge. */
+  public static boolean isDegenerateSingleEdge(S2Shape shape) {
+    return shape.numEdges() == 1
+        && shape.getChainVertex(0, 0).equalsPoint(shape.getChainVertex(0, 1));
+  }
+
   /**
    * Given an S2ShapeIndex containing a single loop, return true if the loop has a self-intersection
    * (including duplicate vertices) and set "error" to a human-readable error message. Otherwise
    * return false and leave "error" unchanged.
    */
   static boolean findSelfIntersection(S2ShapeIndex index, S2Loop loop, S2Error error) {
-    Preconditions.checkArgument(1 == index.shapes.size());
+    Preconditions.checkArgument(index.shapes.size() == 1);
     for (S2Iterator<S2ShapeIndex.Cell> it = index.iterator(); !it.done(); it.next()) {
       if (findSelfIntersection(it.entry().clipped(0), loop, error)) {
         return true;
       }
+    }
+    return false;
+  }
+
+  /**
+   * Given an S2ShapeIndex containing a single shape, return true if any chain in the shape has a
+   * self-intersection (including duplicate vertices) or crosses any other chain (including vertex
+   * crossings and duplicate edges) and set "error" to a human-readable error message. Otherwise
+   * return false and leave "error" unchanged.
+   */
+  public static boolean findSelfIntersection(S2ShapeIndex index, S2Error error) {
+    if (index.shapes.size() == 0) {
+      return false;
+    }
+    assert index.shapes.size() == 1;
+    S2Shape shape = index.shapes.get(0);
+
+    S2CrossingEdgesQuery query =
+        new S2CrossingEdgesQuery(CrossingType.ALL, /* needAdjacent= */ false);
+    return !query.visitCrossingEdgePairs(
+        index,
+        (aShapeId, aEdgeId, aSrc, aDst, bShapeId, bEdgeId, bSrc, bDst, isInterior) ->
+            !findCrossingError(shape, aEdgeId, aSrc, aDst, bEdgeId, bSrc, bDst, isInterior, error));
+  }
+
+  /**
+   * Helper function that formats a loop error message. If the loop belongs to a multi-loop polygon,
+   * adds a prefix indicating which loop is affected.
+   */
+  private static void initLoopError(
+      S2Error.Code code,
+      String format,
+      ChainPosition ap,
+      ChainPosition bp,
+      boolean isPolygon,
+      S2Error error) {
+    error.init(code, format, ap.offset, bp.offset);
+    if (isPolygon) {
+      error.init(code, "Loop %d: %s", ap.chainId, error.text());
+    }
+  }
+
+  /**
+   * Given two loop edges that cross (including at a shared vertex), return true if there is a
+   * crossing error and set "error" to a human-readable message.
+   */
+  private static boolean findCrossingError(
+      S2Shape shape,
+      int aEdgeId,
+      S2Point aSrc,
+      S2Point aDst,
+      int bEdgeId,
+      S2Point bSrc,
+      S2Point bDst,
+      boolean isInterior,
+      S2Error error) {
+    ChainPosition ap = new ChainPosition();
+    ChainPosition bp = new ChainPosition();
+    MutableEdge aEdge = new MutableEdge();
+    MutableEdge bEdge = new MutableEdge();
+
+    boolean isPolygon = shape.numChains() > 1;
+    shape.getChainPosition(aEdgeId, ap);
+    shape.getChainPosition(bEdgeId, bp);
+
+    if (isInterior) {
+      if (ap.chainId != bp.chainId) {
+        error.init(
+            S2Error.Code.POLYGON_LOOPS_CROSS,
+            "Loop %d edge %d crosses loop %d edge %d",
+            ap.chainId,
+            ap.offset,
+            bp.chainId,
+            bp.offset);
+      } else {
+        initLoopError(
+            S2Error.Code.LOOP_SELF_INTERSECTION,
+            "Edge %d crosses edge %d",
+            ap,
+            bp,
+            isPolygon,
+            error);
+      }
+      return true;
+    }
+    // Loops are not allowed to have duplicate vertices, and separate loops are not allowed to share
+    // edges or cross at vertices. We only need to check a given vertex once, so we also require
+    // that the two edges have the same end vertex.
+    if (!aDst.equalsPoint(bDst)) {
+      return false;
+    }
+
+    if (ap.chainId == bp.chainId) {
+      initLoopError(
+          S2Error.Code.DUPLICATE_VERTICES,
+          "Edge %d has duplicate vertex with edge %d",
+          ap,
+          bp,
+          isPolygon,
+          error);
+      return true;
+    }
+    int aLen = shape.getChainLength(ap.chainId);
+    int bLen = shape.getChainLength(bp.chainId);
+    int aNext = (ap.offset + 1 == aLen) ? 0 : ap.offset + 1;
+    int bNext = (bp.offset + 1 == bLen) ? 0 : bp.offset + 1;
+    shape.getChainEdge(ap.chainId, aNext, aEdge);
+    shape.getChainEdge(bp.chainId, bNext, bEdge);
+    S2Point a2 = aEdge.b;
+    S2Point b2 = bEdge.b;
+    if (aSrc.equalsPoint(bSrc) || aSrc.equalsPoint(b2)) {
+      // The second edge index is sometimes off by one, hence "near".
+      error.init(
+          S2Error.Code.POLYGON_LOOPS_SHARE_EDGE,
+          "Loop %d edge %d has duplicate near loop %d edge %d",
+          ap.chainId,
+          ap.offset,
+          bp.chainId,
+          bp.offset);
+      return true;
+    }
+    // Since S2ShapeIndex loops are oriented such that the polygon interior is always on the left,
+    // we need to handle the case where one wedge contains the complement of the other wedge. This
+    // is not specifically detected by getWedgeRelation, so there are two cases to check for.
+    //
+    // Note that we don't need to maintain any state regarding loop crossings because duplicate
+    // edges are detected and rejected above.
+    if (S2EdgeUtil.getWedgeRelation(aSrc, aDst, a2, bSrc, b2)
+            == WedgeRelation.WEDGE_PROPERLY_OVERLAPS
+        && S2EdgeUtil.getWedgeRelation(aSrc, aDst, a2, b2, bSrc)
+            == WedgeRelation.WEDGE_PROPERLY_OVERLAPS) {
+      error.init(
+          S2Error.Code.POLYGON_LOOPS_CROSS,
+          "Loop %d edge %d crosses loop %d edge %d",
+          ap.chainId,
+          ap.offset,
+          bp.chainId,
+          bp.offset);
+      return true;
     }
     return false;
   }
@@ -285,6 +452,85 @@ public strictfp class S2ShapeUtil {
     return low;
   }
 
+  /** A reusable container for loading and visiting the clipped edges of a clipped shape. */
+  static class LoadedShape {
+    /** The index to load from. */
+    private S2ShapeIndex index;
+
+    /** The source points of the clipped shape edges. */
+    public final ArrayList<S2Point> srcs = new ArrayList<>();
+
+    /** The destination points of the clipped shape edges. */
+    public final ArrayList<S2Point> dsts = new ArrayList<>();
+
+    /**
+     * The edge ids of the clipped shape edges. To avoid reallocation, the array may be larger than
+     * required. The number of elements actually used is equal to srcs.size() (and dsts.size()).
+     */
+    public int[] ids = new int[0];
+
+    /** A MutableEdge used to load edge end points. */
+    private final MutableEdge edge = new MutableEdge();
+
+    /** The S2Shape underlying the current clipped shape. */
+    public S2Shape shape;
+
+    /** The shape id of the current clipped shape. */
+    public int shapeId;
+
+    /** Initializes a LoadedShape for working with the given index. */
+    public void init(S2ShapeIndex index) {
+      this.index = index;
+    }
+
+    /** Loads the edges of the given clipped shape, replacing the current content. */
+    public void load(S2ClippedShape clipped) {
+      shapeId = clipped.shapeId();
+      shape = index.getShapes().get(shapeId);
+      srcs.clear();
+      dsts.clear();
+
+      // Only (re)allocate the ids array if required.
+      if (ids.length < clipped.numEdges()) {
+        ids = Arrays.copyOf(ids, clipped.numEdges());
+      }
+
+      for (int i = 0; i < clipped.numEdges(); i++) {
+        int id = clipped.edge(i);
+        shape.getEdge(id, edge);
+        ids[i] = id;
+        srcs.add(edge.getStart());
+        dsts.add(edge.getEnd());
+      }
+    }
+
+    /** How many clipped edges does this LoadedShape currently contain? */
+    public int size() {
+      return srcs.size();
+    }
+
+    /**
+     * Visits the loaded clipped edges until the visitor returns false, in which case false is
+     * returned, or all edges have been visited, in which case true is returned.
+     */
+    public boolean visit(Visitor visitor) {
+      for (int i = 0; i < srcs.size(); i++) {
+        if (!visitor.visit(shapeId, ids[i], srcs.get(i), dsts.get(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /**
+     * A visitor for the contents of a LoadedShape. May return false to indicate that no more
+     * clipped edges should be visited.
+     */
+    public interface Visitor {
+      boolean visit(int shapeId, int edgeId, S2Point src, S2Point dst);
+    }
+  }
+
   /**
    * Returns true if any of the given loops has a self-intersection (including a duplicate vertex),
    * and set "error" to a human-readable error message. Otherwise return false and leave "error"
@@ -293,9 +539,9 @@ public strictfp class S2ShapeUtil {
   static boolean findSelfIntersection(List<S2Loop> loops, Cell cell, S2Error error) {
     for (int a = 0; a < cell.numShapes(); a++) {
       S2ClippedShape aClipped = cell.clipped(a);
-      S2Loop loop = (S2Loop) aClipped.shape();
+      S2Loop loop = loops.get(aClipped.shapeId());
       if (findSelfIntersection(aClipped, loop, error)) {
-        error.init(error.code(), "Loop %d: %s", indexOf(loops, loop), error.text());
+        error.init(error.code(), "Loop %d: %s", aClipped.shapeId(), error.text());
         return true;
       }
     }
@@ -329,23 +575,25 @@ public strictfp class S2ShapeUtil {
         // The second edge index is sometimes off by one, hence "near".
         error.init(
             Code.POLYGON_LOOPS_SHARE_EDGE,
-            "Loop %d edge %d has duplicate near loop %d edge %d",
+            "Loop %d edge %d has duplicate near loop %d edge %d: (%s)-(%s)",
             indexOf(loops, aLoop),
             ai,
             indexOf(loops, bLoop),
-            bj);
+            bj,
+            aLoop.vertex(ai).toDegreesString(),
+            aLoop.vertex(ai + 1).toDegreesString());
         return true;
       }
 
       // Note that we don't need to maintain any state regarding loop crossings because duplicate
       // edges are not allowed.
-      if (WedgeRelation.WEDGE_PROPERLY_OVERLAPS
-          == S2EdgeUtil.getWedgeRelation(
+      if (S2EdgeUtil.getWedgeRelation(
               aLoop.vertex(ai),
               aLoop.vertex(ai + 1),
               aLoop.vertex(ai + 2),
               bLoop.vertex(bj),
-              bLoop.vertex(bj + 2))) {
+              bLoop.vertex(bj + 2))
+          == WedgeRelation.WEDGE_PROPERLY_OVERLAPS) {
         error.init(
             Code.POLYGON_LOOPS_CROSS,
             "Loop %d edge %d crosses loop %d edge %d",
@@ -379,14 +627,14 @@ public strictfp class S2ShapeUtil {
     // and 8*3=24 otherwise.
     for (int a = 0; a < cell.numShapes() - 1; a++) {
       S2ClippedShape aClipped = cell.clipped(a);
-      S2Loop aLoop = (S2Loop) aClipped.shape();
+      S2Loop aLoop = loops.get(aClipped.shapeId());
       int aNumClipped = aClipped.numEdges();
       for (int i = 0; i < aNumClipped; i++) {
         int ai = aClipped.edge(i);
         EdgeCrosser crosser = new EdgeCrosser(aLoop.vertex(ai), aLoop.vertex(ai + 1));
         for (int b = a + 1; b < cell.numShapes(); b++) {
           S2ClippedShape bClipped = cell.clipped(b);
-          S2Loop bLoop = (S2Loop) bClipped.shape();
+          S2Loop bLoop = loops.get(bClipped.shapeId());
           int bjPrev = -2;
           int bNumClipped = bClipped.numEdges();
           for (int j = 0; j < bNumClipped; j++) {
@@ -526,15 +774,6 @@ public strictfp class S2ShapeUtil {
       return false;
     }
 
-    // In order to test that the shapes referenced by all clipped shapes of all cells in each index
-    // are equal, we build a Multimap<S2Shape,S2Shape> where each S2Shape is distinguished by its
-    // identity hash code.
-    Multimap<S2Shape, S2Shape> shapes =
-        Multimaps.newSetMultimap(Maps.newIdentityHashMap(), Sets::newIdentityHashSet);
-    for (int i = 0; i < a.getShapes().size(); i++) {
-      shapes.put(a.getShapes().get(i), b.getShapes().get(i));
-    }
-
     // Check that both indexes have identical cell contents.
     S2Iterator<S2ShapeIndex.Cell> aIt = a.iterator();
     S2Iterator<S2ShapeIndex.Cell> bIt = b.iterator();
@@ -547,7 +786,7 @@ public strictfp class S2ShapeUtil {
       }
       // Check that each clipped shape references the same shape.
       for (int i = 0; i < aIt.entry().numShapes(); i++) {
-        if (!shapes.containsEntry(aIt.entry().clipped(i).shape(), bIt.entry().clipped(i).shape())) {
+        if (aIt.entry().clipped(i).shapeId() != bIt.entry().clipped(i).shapeId()) {
           return false;
         }
       }
@@ -560,14 +799,15 @@ public strictfp class S2ShapeUtil {
   }
 
   /** Compares edges by start point, and then by end point. */
-  private static final Comparator<S2Edge> EDGE_ORDER = (e1, e2) -> {
-    int result = e1.getStart().compareTo(e2.getStart());
-    if (result != 0) {
-      return result;
-    } else {
-      return e1.getEnd().compareTo(e2.getEnd());
-    }
-  };
+  private static final Comparator<S2Edge> EDGE_ORDER =
+      (e1, e2) -> {
+        int result = e1.getStart().compareTo(e2.getStart());
+        if (result != 0) {
+          return result;
+        } else {
+          return e1.getEnd().compareTo(e2.getEnd());
+        }
+      };
 
   /**
    * Returns true if the given shape contains the given point. Most clients should not use this
@@ -586,7 +826,7 @@ public strictfp class S2ShapeUtil {
     if (refPoint.equalsPoint(point)) {
       return refPoint.contained();
     }
-    EdgeCrosser crosser = new EdgeCrosser(refPoint, point);
+    EdgeCrosser crosser = new EdgeCrosser(refPoint.point(), point);
     boolean inside = refPoint.contained();
     MutableEdge edge = new MutableEdge();
     for (int i = 0; i < shape.numEdges(); i++) {
@@ -629,7 +869,7 @@ public strictfp class S2ShapeUtil {
     MutableEdge edge = new MutableEdge();
     shape.getEdge(0, edge);
     Boolean result;
-    if (null != (result = getReferencePointAtVertex(shape, edge.a))) {
+    if ((result = getReferencePointAtVertex(shape, edge.a)) != null) {
       return ReferencePoint.create(edge.a, result);
     }
 
@@ -679,8 +919,7 @@ public strictfp class S2ShapeUtil {
    * Returns null if 'vtest' is balanced (see definition above), otherwise 'vtest' is unbalanced and
    * the return value indicates whether it is contained by 'shape'.
    */
-  @Nullable
-  private static Boolean getReferencePointAtVertex(S2Shape shape, S2Point vtest) {
+  private static @Nullable Boolean getReferencePointAtVertex(S2Shape shape, S2Point vtest) {
     // Let P be an unbalanced vertex. Vertex P is defined to be inside the region if the region
     // contains a particular direction vector starting from P, namely the direction of
     // S2.ortho(target). This can be calculated using S2ContainsVertexQuery.
@@ -705,20 +944,7 @@ public strictfp class S2ShapeUtil {
     }
   }
 
-  /**
-   * Returns a multimap of {@link S2Shape} from {@code index} to the shape's ID (i.e., its position
-   * within {@code index.shapes}).
-   */
-  public static Multimap<S2Shape, Integer> shapeToShapeId(S2ShapeIndex index) {
-    Multimap<S2Shape, Integer> shapeToShapeId =
-        Multimaps.newListMultimap(Maps.newIdentityHashMap(), Lists::newArrayList);
-    for (S2Shape shape : index.shapes) {
-      shapeToShapeId.put(shape, shapeToShapeId.size());
-    }
-    return shapeToShapeId;
-  }
-
-  /** Returns the number of vertices in the given shape index. */
+  /** Returns the number of vertices in all the shapes in the given shape index. */
   public static int numVertices(S2ShapeIndex index) {
     int sum = 0;
     for (S2Shape shape : index.getShapes()) {
@@ -844,7 +1070,7 @@ public strictfp class S2ShapeUtil {
         S2Point oldOrigin = origin;
         if (origin.equalsPoint(v0)) {
           // The following point is well-separated from V_i and V_0 (and therefore V_i+1 as well).
-          origin = S2.robustCrossProd(v0, v1).normalize();
+          origin = S2RobustCrossProd.robustCrossProd(v0, v1).normalize();
         } else if (v1.angle(v0) < maxLength) {
           // All edges of tri (O, V_0, V_i) are stable, so we can revert to using V_0 as the origin.
           origin = v0;
@@ -993,5 +1219,36 @@ public strictfp class S2ShapeUtil {
       }
     }
     return numEdges;
+  }
+
+  /**
+   * Converts a 2-dimensional S2Shape into an S2Polygon. Each chain is converted to an S2Loop and
+   * the vector of loops is used to construct the S2Polygon.
+   *
+   * <p>Polygons are only validated if assertions are enabled, as is normally the case for unit
+   * tests. Callers should use {@link S2Polygon#isValid()} or {@link
+   * S2Polygon#findValidationError(S2Error)} unless they can be certain that the polygon will be
+   * valid. When Java assertions are enabled, invalid S2Polygons will cause an AssertionError to be
+   * thrown.
+   */
+  public static S2Polygon shapeToS2Polygon(S2Shape poly) {
+    Preconditions.checkState(poly.dimension() == 2);
+    var output = new S2Polygon();
+    // TODO(torrey): S2Polygon.init* shouldn't require mutable lists.
+    var loops = new ArrayList<S2Loop>(poly.numChains());
+    if (poly.isFull()) {
+      loops.add(S2Loop.full());
+      output.initNested(loops);
+      return output;
+    }
+    for (int i = 0; i < poly.numChains(); ++i) {
+      loops.add(new S2Loop(poly.chain(i)));
+    }
+    if (loops.size() == 1) {
+      output.initNested(loops);
+    } else {
+      output.initOriented(loops);
+    }
+    return output;
   }
 }

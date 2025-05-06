@@ -65,8 +65,8 @@ public interface DistanceCollector<T extends S1Distance<T>>
   boolean update(S2Point p1, S2Point p2);
 
   /**
-   * Update this collector to the better of the current distance, and the distance between the
-   * given point and edge. Returns true if this distance was updated, false otherwise.
+   * Update this collector to the better of the current distance, and the distance between the given
+   * point and edge. Returns true if this distance was updated, false otherwise.
    */
   @JsMethod(name = "updatePointToEdge")
   boolean update(S2Point p, S2Point v0, S2Point v1);
@@ -79,15 +79,15 @@ public interface DistanceCollector<T extends S1Distance<T>>
   boolean update(S2Point v0, S2Point v1, S2Point w0, S2Point w1);
 
   /**
-   * Update this collector to the better of the current distance, and the distance between the
-   * given point and cell. Returns true if this distance was updated, false otherwise.
+   * Update this collector to the better of the current distance, and the distance between the given
+   * point and cell. Returns true if this distance was updated, false otherwise.
    */
   @JsMethod(name = "updatePointToCell")
   boolean update(S2Point p, S2Cell c);
 
   /**
-   * Update this collector to the better of the current distance, and the distance between the
-   * given edge and cell. Returns true if this distance was updated, false otherwise.
+   * Update this collector to the better of the current distance, and the distance between the given
+   * edge and cell. Returns true if this distance was updated, false otherwise.
    */
   @JsMethod(name = "updateEdgeToCell")
   boolean update(S2Point v0, S2Point v1, S2Cell c);

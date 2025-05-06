@@ -18,7 +18,8 @@ package com.google.common.geometry;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;
-import static junit.framework.TestCase.assertEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.Iterables;
 import com.google.common.geometry.Projection.MercatorProjection;
@@ -26,8 +27,13 @@ import com.google.common.geometry.Projection.PlateCarreeProjection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
+/** Unit tests for {@link S2EdgeTessellator}. */
+@RunWith(JUnit4.class)
+public class S2EdgeTessellatorTest extends GeometryTestCase {
 
   private static final Logger logger = Platform.getLoggerForClass(S2EdgeTessellatorTest.class);
 
@@ -61,8 +67,8 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     }
   }
 
-  // Determines whether the distance between the two edges is measured
-  // geometrically or parameterically
+  // Determines whether the distance between the two edges is measured geometrically or
+  // parametrically
   enum DistanceType {
     PARAMETRIC,
     GEOMETRIC
@@ -194,6 +200,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     return stats;
   }
 
+  @Test
   public void testProjectedNoTessellation() {
     Projection plateCarree = new PlateCarreeProjection(180.0);
     S2EdgeTessellator tessellator = new S2EdgeTessellator(plateCarree, S1Angle.degrees(0.01));
@@ -203,6 +210,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertEquals(2, vertices.size());
   }
 
+  @Test
   public void testUnrojectedNoTessellation() {
     Projection plateCarree = new PlateCarreeProjection(180.0);
     S2EdgeTessellator tessellator = new S2EdgeTessellator(plateCarree, S1Angle.degrees(0.01));
@@ -212,6 +220,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertEquals(2, vertices.size());
   }
 
+   @Test
   public void testUnprojectedWrapping() {
     // This tests that a projected edge that crosses the 180 degree meridian
     // goes the "short way" around the sphere.
@@ -224,6 +233,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testProjectedWrapping() {
     // This tests that a projected edge that crosses the 180 degree meridian
     // goes the "short way" around the sphere.
@@ -237,6 +247,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testUnprojectedWrappingMultipleCrossings() {
     // Tests an edge chain that crosses the 180 degree meridian multiple times.
     // Note that due to coordinate wrapping, the last vertex of one edge may not
@@ -257,6 +268,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testProjectedWrappingMultipleCrossings() {
     // The following loop crosses the 180 degree meridian four times (twice in
     // each direction).
@@ -281,6 +293,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertEquals(640, maxLongitude, 0.001);
   }
 
+  @Test
   public void testInfiniteRecursionBug() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle oneMicron = S1Angle.radians(1e-6 / 6371.0);
@@ -291,6 +304,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertEquals(36, vertices.size());
   }
 
+  @Test
   public void testUnprojectedAccuracy() {
     MercatorProjection proj = new MercatorProjection(180);
     S1Angle tolerance = S1Angle.degrees(1e-5);
@@ -301,6 +315,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
   }
 
   // Repro case for b/110719057.
+  @Test
   public void testUnprojectedAccuracyCrossEquator() {
     MercatorProjection proj = new MercatorProjection(180);
     S1Angle tolerance = S1Angle.degrees(1e-5);
@@ -310,6 +325,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertLessOrEqual(stats.max(), 1.0);
   }
 
+  @Test
   public void testProjectedAccuracy() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.e7(1);
@@ -319,6 +335,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertLessOrEqual(stats.max(), 1.0);
   }
 
+  @Test
   public void testUnprojectedAccuracyMidpointEquator() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(1));
@@ -328,6 +345,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertLessOrEqual(stats.max(), 1.0);
   }
 
+  @Test
   public void testProjectedAccuracyMidpointEquator() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(1));
@@ -338,6 +356,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
   }
 
   /// Repro case for b/110719057.
+  @Test
   public void testProjectedAccuracyCrossEquator() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(1));
@@ -347,6 +366,7 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertLessOrEqual(stats.max(), 1.0);
   }
 
+  @Test
   public void testProjectedAccuracySeattleToNewYork() {
     PlateCarreeProjection proj = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(1));
@@ -423,11 +443,13 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
   // The interpolation parameter actually used in the .java file.
   private static final double BEST_FRACTION = 0.31215691082248315;
 
+  @Test
   public void testMaxEdgeErrorPlateCarree() {
     PlateCarreeProjection projection = new PlateCarreeProjection(180);
     testEdgeError(projection, BEST_FRACTION);
   }
 
+  @Test
   public void testMaxEdgeErrorMercator() {
     MercatorProjection projection = new MercatorProjection(180);
     testEdgeError(projection, BEST_FRACTION);
@@ -463,15 +485,57 @@ public strictfp class S2EdgeTessellatorTest extends GeometryTestCase {
     assertLessOrEqual(maxS2, 1.0);
   }
 
+  @Test
   public void testRandomEdgesPlateCarree() {
     PlateCarreeProjection projection = new PlateCarreeProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(100));
     testRandomEdges(projection, tolerance);
   }
 
+  @Test
   public void testRandomEdgesMercator() {
     MercatorProjection projection = new MercatorProjection(180);
     S1Angle tolerance = S1Angle.radians(S2Earth.metersToRadians(100));
     testRandomEdges(projection, tolerance);
   }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++ test.
+  @Test
+  public void testUnwrappingAssertionRegression() {
+    // Before it was fixed, this series of points would cause an assertion to be thrown when
+    // tessellating due to rounding in the unwrapping code.
+    double[][] kPoints = {
+        { -16.876721435218865253, -179.986547984808964884 },
+        { -16.874909244632696925, -179.991889238369623172 },
+        { -16.880241814330226191, -179.990858688466971671 },
+        { -16.883762104047619346, -179.995169553755403058 },
+        { -16.881949690252106677, +179.999489074621124018 },
+        { -16.876617071405430437, +179.998458788144517939 },
+        { -16.880137137875717457, +179.994147804931060364 },
+        { -16.878324446969305228, +179.988806637264332267 },
+        { -16.872991774409559440, +179.987776672537478362 },
+        { -16.869471841739493101, +179.992087611973005323 },
+        { -16.867659097232969856, +179.986746766061799008 },
+        { -16.862326415537093993, +179.985716917832945683 },
+        { -16.858806527326652969, +179.990027652027180238 },
+        { -16.860619186956174786, +179.995368278278732532 },
+        { -16.855286549828541354, +179.994338224830613626 },
+        { -16.851766483129139829, +179.998648636203512297 },
+        { -16.849953908374558864, +179.993308229628894424 }
+    };
+
+    MercatorProjection projection = new MercatorProjection(0.5);
+
+    S2EdgeTessellator tessellator = new S2EdgeTessellator(projection, S1Angle.e7(1));
+    List<R2Vector> vertices = new ArrayList<>();
+
+    for (int i = 0; i + 1 < kPoints.length; ++i) {
+      tessellator.appendProjected(
+          S2LatLng.fromDegrees(kPoints[i + 0][0], kPoints[i + 0][1]).toPoint(),
+          S2LatLng.fromDegrees(kPoints[i + 1][0], kPoints[i + 1][1]).toPoint(),
+          vertices);
+    }
+    assertEquals(17, vertices.size());
+  }
+
 }

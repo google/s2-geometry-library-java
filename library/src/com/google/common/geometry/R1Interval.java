@@ -26,15 +26,16 @@ import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 
 /**
- * An R1Interval represents a closed, bounded interval on the real line. It is capable of
- * representing the empty interval (containing no points) and zero-length intervals (containing a
- * single point).
+ * An R1Interval represents a closed, bounded interval on the real line. R1Intervals are mutable,
+ * but only by package-private methods. It is capable of representing the empty interval (containing
+ * no points) and zero-length intervals (containing a single point).
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class R1Interval implements Serializable {
+@SuppressWarnings("Assertion")
+public final class R1Interval implements Serializable {
   private double lo;
   private double hi;
 
@@ -81,6 +82,11 @@ public final strictfp class R1Interval implements Serializable {
     return result;
   }
 
+  /**
+   * Sets this interval to the given two values, ordering them to ensure that lo <= hi.
+   *
+   * <p>Package private since only the S2 libraries have a current need to mutate R1Intervals.
+   */
   void initFromPointPair(double p1, double p2) {
     if (p1 <= p2) {
       lo = p1;
@@ -301,7 +307,7 @@ public final strictfp class R1Interval implements Serializable {
    * non-empty.
    */
   public double clampPoint(double p) {
-    // assert (!isEmpty());
+    assert !isEmpty();
     return max(lo, min(hi, p));
   }
 

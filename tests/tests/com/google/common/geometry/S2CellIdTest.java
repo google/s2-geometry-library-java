@@ -17,12 +17,19 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2CellId.MAX_LEVEL;
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2Projections.MAX_EDGE;
+import static com.google.common.geometry.S2Projections.uvToST;
 import static java.lang.Math.abs;
 import static java.lang.Math.min;
 import static java.lang.Math.round;
-import static junit.framework.TestCase.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -32,22 +39,29 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Unit tests for S2CellId.
+ *
  * @author ericv@google.com (Eric Veach)
  */
-public strictfp class S2CellIdTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2CellIdTest extends GeometryTestCase {
   private static S2CellId getCellId(double latDegrees, double lngDegrees) {
     return S2CellId.fromLatLng(S2LatLng.fromDegrees(latDegrees, lngDegrees));
   }
 
+  @Test
   public void testDefaultConstructor() {
     S2CellId id = new S2CellId();
     assertEquals(0, id.id());
     assertFalse(id.isValid());
   }
 
+  @Test
   public void testFaceDefinitions() {
     assertEquals(0, getCellId(0, 0).face());
     assertEquals(1, getCellId(0, 90).face());
@@ -57,12 +71,36 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(5, getCellId(-90, 0).face());
   }
 
+  @Test
+  public void testIsValidToken() {
+    assertTrue(S2CellId.isValidToken("1"));
+    assertTrue(S2CellId.isValidToken("123456789abcdef1"));
+
+    assertFalse(S2CellId.isValidToken(null));
+    assertFalse(S2CellId.isValidToken(""));
+    assertFalse(S2CellId.isValidToken("0"));
+    assertFalse(S2CellId.isValidToken("A"));
+    assertFalse(S2CellId.isValidToken("0x"));
+    assertFalse(S2CellId.isValidToken("0123456789abcdef1"));
+    assertFalse(S2CellId.isValidToken("0123456789abcdef123456789abcdef1"));
+
+    // "X" is a special case. It is the encoding of the canonical invalid cell id.
+    assertFalse(S2CellId.isValidToken("X"));
+    assertTrue(S2CellId.isValidOrNoneToken("X"));
+
+    // Adjacent ints are not generally both valid cell ids.
+    assertTrue(S2CellId.isValidToken("89c25"));
+    assertFalse(S2CellId.isValidToken("89c26"));
+  }
+
+  @Test
   public void testFromFace() {
     for (int face = 0; face < 6; ++face) {
       assertEquals(S2CellId.fromFace(face), S2CellId.fromFacePosLevel(face, 0, 0));
     }
   }
 
+  @Test
   public void testParentChildRelationships() {
     S2CellId id = S2CellId.fromFacePosLevel(3, 0x12345678, MAX_LEVEL - 4);
     assertTrue(id.isValid());
@@ -71,6 +109,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(MAX_LEVEL - 4, id.level());
     assertFalse(id.isLeaf());
 
+    assertEquals(id, id.parent(id.level()));
     assertEquals(0x12345610, id.childBegin(id.level() + 2).pos());
     assertEquals(0x12345640, id.childBegin().pos());
     assertEquals(0x12345400, id.parent().pos());
@@ -87,6 +126,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(2 * id.id(), id.rangeMin().id() + id.rangeMax().id());
   }
 
+  @Test
   public void testCenterSiTi() {
     S2CellId id = S2CellId.fromFacePosLevel(3, 0x12345678, MAX_LEVEL);
     // Check that the (si, ti) coordinates of the center end in a 1 followed by (30 - level) 0s.
@@ -123,6 +163,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
   }
 
   /** Check wrapping from beginning of Hilbert curve to end and vice versa. */
+  @Test
   public void testWrapping() {
     assertEquals(S2CellId.end(0).prev(), S2CellId.begin(0).prevWrap());
     assertEquals(
@@ -141,6 +182,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(1, S2CellId.fromFacePosLevel(1, 0x9e5bd23c2e4b694L, 29).prevWrap().face());
   }
 
+  @Test
   public void testAdvance() {
     S2CellId id = S2CellId.fromFacePosLevel(3, 0x12345678, MAX_LEVEL - 4);
     // Check basic properties of advance().
@@ -167,6 +209,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
         S2CellId.fromFacePosLevel(5, 0, MAX_LEVEL).advanceWrap(2L << (2 * MAX_LEVEL)));
   }
 
+  @Test
   public void testDistanceFromBegin() {
     assertEquals(6, S2CellId.end(0).distanceFromBegin());
     assertEquals(6 * (1L << (2 * MAX_LEVEL)), S2CellId.end(MAX_LEVEL).distanceFromBegin());
@@ -178,6 +221,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     assertEquals(id, S2CellId.begin(id.level()).advance(id.distanceFromBegin()));
   }
 
+  @Test
   public void testInverses() {
     // Check the conversion of random leaf cells to S2LatLngs and back.
     for (int i = 0; i < 200000; ++i) {
@@ -189,6 +233,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetCommonAncestorLevel() {
     // Two identical cell ids.
     S2CellId face0 = S2CellId.fromFace(0);
@@ -218,6 +263,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
         1, face0child2.childBegin(30).getCommonAncestorLevel(face0child2.next().childBegin(5)));
   }
 
+  @Test
   public void testTokens() {
     // Test random cell ids at all levels.
     for (int i = 0; i < 10000; ++i) {
@@ -230,6 +276,35 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     // Check that invalid cell ids can be encoded.
     String token = S2CellId.none().toToken();
     assertEquals(S2CellId.none(), S2CellId.fromToken(token));
+  }
+
+  @Test
+  public void testFromToken_tokenEmpty_throwsAssertionError() {
+    AssertionError expected = assertThrows(AssertionError.class, () -> S2CellId.fromToken(""));
+
+    assertTrue(expected.getMessage().contains("Invalid token"));
+  }
+
+  @Test
+  public void testFromToken_tokenNull_throwsAssertionError() {
+    AssertionError expected = assertThrows(AssertionError.class, () -> S2CellId.fromToken(null));
+
+    assertTrue(expected.getMessage().contains("Invalid token"));
+  }
+
+  @Test
+  public void testFromToken_tokenTooLong_throwsAssertionError() {
+    AssertionError expected =
+        assertThrows(AssertionError.class, () -> S2CellId.fromToken("123456789abcdef12"));
+
+    assertTrue(expected.getMessage().contains("Invalid token"));
+  }
+
+  @Test
+  public void testFromToken_leading0x_trimsAndConverts() {
+    String token = "123456789abcdef1";
+    String tokenWithLeading0x = "0X123456789abcdef1";
+    assertEquals(S2CellId.fromToken(token), S2CellId.fromToken(tokenWithLeading0x));
   }
 
   private static final int MAX_EXPAND_LEVEL = 3;
@@ -255,6 +330,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
   }
 
   /** Test contains() and intersects(). */
+  @Test
   public void testContainment() {
     Map<S2CellId, S2CellId> parentMap = Maps.newHashMap();
     List<S2CellId> cells = Lists.newArrayList();
@@ -286,8 +362,9 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
    * Verifies that sequentially increasing cell ids form a continuous path over the surface of the
    * sphere, i.e. there are no discontinuous jumps from one region to another.
    */
+  @Test
   public void testContinuity() {
-    double maxDist = PROJ.maxEdge.getValue(MAX_WALK_LEVEL);
+    double maxDist = MAX_EDGE.getValue(MAX_WALK_LEVEL);
     S2CellId end = S2CellId.end(MAX_WALK_LEVEL);
     for (S2CellId id = S2CellId.begin(MAX_WALK_LEVEL); !id.equals(end); id = id.next()) {
       assertTrue(id.toPointRaw().angle(id.nextWrap().toPointRaw()) <= maxDist);
@@ -299,8 +376,8 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
       int face = S2Projections.xyzToFace(p);
       R2Vector uv = S2Projections.validFaceXyzToUv(face, p);
       final double cellSize = 1.0 / (1 << MAX_WALK_LEVEL);
-      assertEquals(0.0, drem(PROJ.uvToST(uv.x()), 0.5 * cellSize), 1e-15);
-      assertEquals(0.0, drem(PROJ.uvToST(uv.y()), 0.5 * cellSize), 1e-15);
+      assertEquals(0.0, drem(uvToST(uv.x()), 0.5 * cellSize), 1e-15);
+      assertEquals(0.0, drem(uvToST(uv.y()), 0.5 * cellSize), 1e-15);
     }
   }
 
@@ -314,8 +391,9 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
    * sphere associated with adjacent values of "i" or "j". (It is sqrt(2/3) rather than 1/2 because
    * the cells at the corners of each face are stretched -- they have 60 and 120 degree angles.)
    */
+  @Test
   public void testCoverage() {
-    double maxDist = 0.5 * PROJ.maxDiag.getValue(MAX_LEVEL);
+    double maxDist = 0.5 * MAX_DIAG.getValue(MAX_LEVEL);
     for (int i = 0; i < 1000000; ++i) {
       S2Point p = data.getRandomPoint();
       S2Point q = S2CellId.fromPoint(p).toPointRaw();
@@ -344,6 +422,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
   }
 
   /** Checks the edge neighbors of face 1. */
+  @Test
   public void testNeighbors() {
     final int[] outFaces = {5, 3, 2, 0};
     S2CellId[] faceNbrs = new S2CellId[4];
@@ -402,6 +481,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetAllNeighbors() {
     // A level 3 cell at a face corner.
     S2CellId id = FACE_CELLS[1].child(1).child(1).child(1);
@@ -435,11 +515,12 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testToLoop() {
     try {
       S2CellId.FACE_CELLS[0].child(0).toLoop(0);
       fail();
-    } catch (Exception e) {
+    } catch (IllegalStateException e) {
       // pass.
     }
 
@@ -472,6 +553,7 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
    * Tests that invalid face arguments for {@link S2Projections#validFaceXyzToUv(int, S2Point)}
    * result in index out of bounds exceptions.
    */
+  @Test
   public void testInvalidFaceValuesThrow() {
     S2Point arbitrary = S2Point.X_POS;
 
@@ -498,13 +580,16 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
     }
   }
 
-  public void testCoder()  {
-    List<S2Coder<S2CellId>> coders = ImmutableList.of(S2CellId.CODER, S2CellId.TOKEN_CODER);
+  @Test
+  public void testCoder() {
+    ImmutableList<S2Coder<S2CellId>> coders =
+        ImmutableList.of(S2CellId.CODER, S2CellId.TOKEN_CODER);
     for (S2Coder<S2CellId> coder : coders) {
       assertEquals(S2CellId.FACE_CELLS[5], roundtrip(coder, S2CellId.FACE_CELLS[5]));
     }
   }
 
+  @Test
   public void testS2CellIdExpandedByDistanceUV() {
     double maxDistDegrees = 10;
     for (int iter = 0; iter < 100; ++iter) {
@@ -570,5 +655,11 @@ public strictfp class S2CellIdTest extends GeometryTestCase {
         }
       }
     }
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2CellIdSerialization() {
+    doSerializationTest(new S2CellId(1234567890123L));
   }
 }

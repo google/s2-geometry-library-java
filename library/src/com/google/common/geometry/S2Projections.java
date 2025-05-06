@@ -15,19 +15,15 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2.M_1_PI;
-import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.S2.M_PI_4;
+import static com.google.common.geometry.S2.DBL_EPSILON;
 import static java.lang.Math.PI;
-import static java.lang.Math.atan;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.round;
 import static java.lang.Math.sqrt;
-import static java.lang.Math.tan;
 
 import com.google.common.geometry.S2.Metric;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * This class specifies the coordinate systems and transforms used to project points from the sphere
@@ -74,19 +70,24 @@ import javax.annotation.Nullable;
  * <p>Note that the (i, j), (s, t), (si, ti), and (u, v) coordinate systems are right-handed on all
  * six faces.
  *
- * <p>We have implemented three different projections from cell-space (s,t) to cube-space (u,v):
- * {@link S2Projections#S2_LINEAR_PROJECTION}, {@link S2Projections#S2_TAN_PROJECTION}, and {@link
- * S2Projections#S2_QUADRATIC_PROJECTION}. The default is in {@link S2Projections#PROJ}, and uses
- * the quadratic projection since it has the best overall behavior.
+ * <p>Historically, S2 provided implementations of three different projections from cell-space (s,t)
+ * to cube-space (u,v): a linear projection, a tangent projection, and a quadratic projection. In
+ * practice the only projection that was ever used was the quadratic projection, which has the best
+ * overall behavior. The quadratic projection approximates the tangent projection, but is much
+ * faster and produces cells that are almost as uniform in size. It is about 3 times faster than the
+ * tangent projection for converting cell IDs to points or vice versa. Cell areas vary by a maximum
+ * ratio of about 2.1.
  *
- * <p>Here is a table comparing the cell uniformity using each projection. "Area Ratio" is the
- * maximum ratio over all subdivision levels of the largest cell area to the smallest cell area at
- * that level, "Edge Ratio" is the maximum ratio of the longest edge of any cell to the shortest
- * edge of any cell at the same level, and "Diag Ratio" is the ratio of the longest diagonal of any
- * cell to the shortest diagonal of any cell at the same level. "ToPoint" and "FromPoint" are the
- * times in microseconds required to convert cell IDs to and from points (unit vectors)
- * respectively. "ToPointRaw" is the time to convert to a non-unit-length vector, which is all that
- * is needed for some purposes.
+ * <p>The quadratic projection is now the only provided projection.
+ *
+ * <p>For historical interest, here is a table comparing the cell uniformity using each projection.
+ * "Area Ratio" is the maximum ratio over all subdivision levels of the largest cell area to the
+ * smallest cell area at that level, "Edge Ratio" is the maximum ratio of the longest edge of any
+ * cell to the shortest edge of any cell at the same level, and "Diag Ratio" is the ratio of the
+ * longest diagonal of any cell to the shortest diagonal of any cell at the same level. "ToPoint"
+ * and "FromPoint" are the times in microseconds required to convert cell IDs to and from points
+ * (unit vectors) respectively. "ToPointRaw" is the time to convert to a non-unit-length vector,
+ * which is all that is needed for some purposes.
  *
  * <table>
  * <caption>Cell Metrics</caption>
@@ -137,117 +138,147 @@ import javax.annotation.Nullable;
  * @author eengle@google.com (Eric Engle) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-public strictfp enum S2Projections {
-  // All of the values below were obtained by a combination of hand analysis and Mathematica. In
-  // general, S2_TAN_PROJECTION produces the most uniform shapes and sizes of cells,
-  // S2_LINEAR_PROJECTION is considerably worse, and S2_QUADRATIC_PROJECTION is somewhere in between
-  // (but generally closer to the tangent projection than the linear one).
+@SuppressWarnings({"FloatingPointLiteralPrecision", "Assertion"})
+public final class S2Projections {
 
-  /**
-   * This is the fastest transformation, but also produces the least uniform cell sizes. Cell areas
-   * vary by a factor of about 5.2, with the largest cells at the center of each face and the
-   * smallest cells in the corners.
+  /*
+   * <h1>HISTORICAL PROJECTIONS</h1>
+   *
+   * All of the values below were obtained by a combination of hand analysis and Mathematica. In
+   * general, S2_TAN_PROJECTION produces the most uniform shapes and sizes of cells,
+   * S2_LINEAR_PROJECTION is considerably worse, and S2_QUADRATIC_PROJECTION is somewhere in between
+   * (but generally closer to the tangent projection than the linear one).
+   *
+   * <h2>S2_LINEAR_PROJECTION</h2>
+   *
+   * <p>The LINEAR projection is no longer provided. It is the fastest transformation, but also
+   * produces the least uniform cell sizes. Cell areas vary by a factor of about 5.2, with the
+   * largest cells at the center of each face and the smallest cells in the corners.
+   *
+   * <pre>
+   *   4 / (3 * sqrt(3)),    // MIN_AREA_DERIV 0.770
+   *   4,                    // MAX_AREA_DERIV 4.000
+   *   1.0,                  // MIN_ANGLE_SPAN_DERIV 1.000
+   *   2,                    // MAX_ANGLE_SPAN_DERIV 2.000
+   *   sqrt(2. / 3),         // MIN_WIDTH_DERIV 0.816
+   *   1.411459345844456965, // AVG_WIDTH_DERIV 1.411
+   *   2 * sqrt(2) / 3,      // MIN_EDGE_DERIV 0.943
+   *   1.440034192955603643, // AVG_EDGE_DERIV 1.440
+   *   2 * sqrt(2) / 3,      // MIN_DIAG_DERIV 0.943
+   *   2 * sqrt(2),          // MAX_DIAG_DERIV 2.828
+   *   2.031817866418812674, // AVG_DIAG_DERIV 2.032
+   *   sqrt(2)               // MAX_EDGE_ASPECT 1.414
+   *
+   *  public double stToUV(double s) {
+   *    return 2 * s - 1;
+   *  }
+   *
+   *  public double uvToST(double u) {
+   *    return 0.5 * (u + 1);
+   *  }
+   * </pre>
+   *
+   * <h2>S2_TAN_PROJECTION</h2>
+   *
+   * <p>The TANGENT projection is no longer provided. Transforming the coordinates via atan() makes
+   * the cell sizes more uniform. The areas vary by a maximum ratio of 1.4 as opposed to a maximum
+   * ratio of 5.2. However, each call to atan() is about as expensive as all of the other
+   * calculations combined when converting from points to cell IDs, i.e. it reduces performance by
+   * a factor of 3.
+   *
+   * <pre>
+   *   (PI * PI) / (4 * sqrt(2)), // MIN_AREA_DERIV 1.745
+   *   PI * PI / 4,               // MAX_AREA_DERIV 2.467
+   *   PI / 2,                    // MIN_ANGLE_SPAN_DERIV 1.571
+   *   PI / 2,                    // MAX_ANGLE_SPAN_DERIV 1.571
+   *   PI / (2 * sqrt(2)),        // MIN_WIDTH_DERIV 1.111
+   *   1.437318638925160885,      // AVG_WIDTH_DERIV 1.437
+   *   PI / (2 * sqrt(2)),        // MIN_EDGE_DERIV 1.111
+   *   1.461667032546739266,      // AVG_EDGE_DERIV 1.462
+   *   PI * sqrt(2) / 3,          // MIN_DIAG_DERIV 1.481
+   *   PI * sqrt(2. / 3),         // MAX_DIAG_DERIV 2.565
+   *   2.063623197195635753,      // AVG_DIAG_DERIV 2.064
+   *   sqrt(2)                    // MAX_EDGE_ASPECT 1.414
+   *
+   *  public double stToUV(double s) {
+   *    // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
+   *    // implementation of tan(), it's because the derivative of tan(x) at x=pi/4 is 2, and it
+   *    // happens that the two adjacent floating point numbers on either side of the infinite-
+   *    // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
+   *    // rounded to the nearest double-precision result.
+   *    s = tan(M_PI_2 * s - M_PI_4);
+   *    return s + (1.0 / (1L << 53)) * s;
+   *  }
+   *  public double uvToST(double u) {
+   *    return (2 * M_1_PI) * (atan(u) + M_PI_4);
+   *  }
+   * </pre>
    */
-  S2_LINEAR_PROJECTION(
-      4 / (3 * sqrt(3)),    // minArea 0.770
-      4,                    // maxArea 4.000
-      1.0,                  // minAngleSpan 1.000
-      2,                    // maxAngleSpan 2.000
-      sqrt(2. / 3),         // minWidth 0.816
-      1.411459345844456965, // avgWidth 1.411
-      2 * sqrt(2) / 3,      // minEdge 0.943
-      1.440034192955603643, // avgEdge 1.440
-      2 * sqrt(2) / 3,      // minDiag 0.943
-      2 * sqrt(2),          // maxDiag 2.828
-      2.031817866418812674, // avgDiag 2.032
-      sqrt(2)) {            // maxEdgeAspect 1.414
-    @Override
-    public double stToUV(double s) {
-      return 2 * s - 1;
-    }
 
-    @Override
-    public double uvToST(double u) {
-      return 0.5 * (u + 1);
-    }
-  },
-  /**
-   * Transforming the coordinates via atan() makes the cell sizes more uniform. The areas vary by a
-   * maximum ratio of 1.4 as opposed to a maximum ratio of 5.2. However, each call to atan() is
-   * about as expensive as all of the other calculations combined when converting from points to
-   * cell IDs, i.e. it reduces performance by a factor of 3.
-   */
-  S2_TAN_PROJECTION(
-      (PI * PI) / (4 * sqrt(2)), // minArea 1.745
-      PI * PI / 4,               // maxArea 2.467
-      PI / 2,                    // minAngleSpan 1.571
-      PI / 2,                    // maxAngleSpan 1.571
-      PI / (2 * sqrt(2)),        // minWidth 1.111
-      1.437318638925160885,      // avgWidth 1.437
-      PI / (2 * sqrt(2)),        // minEdge 1.111
-      1.461667032546739266,      // avgEdge 1.462
-      PI * sqrt(2) / 3,          // minDiag 1.481
-      PI * sqrt(2. / 3),         // maxDiag 2.565
-      2.063623197195635753,      // avgDiag 2.064
-      sqrt(2)) {                 // maxEdgeAspect 1.414
-    @Override
-    public double stToUV(double s) {
-      // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
-      // implementation of tan(), it's because the derivative of tan(x) at x=pi/4 is 2, and it
-      // happens that the two adjacent floating point numbers on either side of the infinite-
-      // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
-      // rounded to the nearest double-precision result.
-      s = tan(M_PI_2 * s - M_PI_4);
-      return s + (1.0 / (1L << 53)) * s;
-    }
-
-    @Override
-    public double uvToST(double u) {
-      return (2 * M_1_PI) * (atan(u) + M_PI_4);
-    }
-  },
-  /**
-   * This is an approximation of the tangent projection that is much faster and produces cells that
-   * are almost as uniform in size. It is about 3 times faster than the tangent projection for
+  /*
+   * S2_QUADRATIC_PROJECTION
+   *
+   *<p>This is an approximation of the tangent projection that is much faster and produces cells
+   * that are almost as uniform in size. It is about 3 times faster than the tangent projection for
    * converting cell IDs to points or vice versa. Cell areas vary by a maximum ratio of about 2.1.
+   * It is now the only supported projection.
    */
-  S2_QUADRATIC_PROJECTION(
-      8 * sqrt(2) / 9,        // minArea 1.257
-      2.635799256963161491,   // maxArea 2.636
-      4. / 3,                 // minAngleSpan 1.333
-      1.704897179199218452,   // maxAngleSpan 1.705
-      2 * sqrt(2) / 3,        // minWidth 0.943
-      1.434523672886099389,   // avgWidth 1.435
-      2 * sqrt(2) / 3,        // minEdge 0.943
-      1.459213746386106062,   // avgEdge 1.459
-      8 * sqrt(2) / 9,        // minDiag 1.257
-      2.438654594434021032,   // maxDiag 2.439
-      2.060422738998471683,   // avgDiag 2.060
-      1.442615274452682920) { // maxEdgeAspect 1.443
-    @Override
-    public double stToUV(double s) {
-      if (s >= 0.5) {
-        return (1 / 3.) * (4 * s * s - 1);
-      } else {
-        return (1 / 3.) * (1 - 4 * (1 - s) * (1 - s));
-      }
-    }
+  private static final double MIN_AREA_DERIV = 8 * sqrt(2) / 9; // 1.257
+  private static final double MAX_AREA_DERIV = 2.635799256963161491; // 2.636
+  private static final double MIN_ANGLE_SPAN_DERIV = 4. / 3; // 1.333
+  private static final double MAX_ANGLE_SPAN_DERIV = 1.704897179199218452; // 1.705
+  private static final double MIN_WIDTH_DERIV = 2 * sqrt(2) / 3; // 0.943
+  private static final double AVG_WIDTH_DERIV = 1.434523672886099389; // 1.435
+  private static final double MIN_EDGE_DERIV = 2 * sqrt(2) / 3; // 0.943
+  private static final double AVG_EDGE_DERIV = 1.459213746386106062; // 1.459
+  private static final double MIN_DIAG_DERIV = 8 * sqrt(2) / 9; // 1.257
+  private static final double MAX_DIAG_DERIV = 2.438654594434021032; // 2.439
+  private static final double AVG_DIAG_DERIV = 2.060422738998471683; // 2.060
+  private static final double MAX_EDGE_ASPECT_QUADRATIC = 1.442615274452682920; // 1.443
 
-    @Override
-    public double uvToST(double u) {
-      if (u >= 0) {
-        return 0.5 * sqrt(1 + 3 * u);
-      } else {
-        return 1 - 0.5 * sqrt(1 - 3 * u);
-      }
+  /**
+   * Convert an s- or t-value to the corresponding u- or v-value. This is a non-linear
+   * transformation from [0,1] to [-1,1] that attempts to make the cell sizes more uniform.
+   */
+  public static double stToUV(double s) {
+    if (s >= 0.5) {
+      return (1 / 3.) * (4 * s * s - 1);
+    } else {
+      return (1 / 3.) * (1 - 4 * (1 - s) * (1 - s));
     }
-  };
+  }
+
+  /**
+   * The inverse of {@link #stToUV(double)}. Note that it is not always true that {@code
+   * uvToST(stToUV(x)) == x} due to numerical errors.
+   */
+  public static double uvToST(double u) {
+    if (u >= 0) {
+      return 0.5 * sqrt(1 + 3 * u);
+    } else {
+      return 1 - 0.5 * sqrt(1 - 3 * u);
+    }
+  }
+
+  /**
+   * The maximum index of a valid leaf cell plus one. The range of valid leaf cell indices is
+   * [0..LIMIT_IJ - 1].
+   */
+  public static final int LIMIT_IJ = 1 << S2CellId.MAX_LEVEL; // == S2CellId.MAX_SIZE
 
   /**
    * The maximum value of an si- or ti-coordinate. The range of valid (si,ti) values is
-   * [0..MAX_SiTi].
+   * [0..MAX_SITI].
    */
   public static final long MAX_SITI = 1L << (S2CellId.MAX_LEVEL + 1);
+
+  /**
+   * The maximum absolute error in U/V coordinates when converting from XYZ.
+   *
+   * <p>The XYZ -> UV conversion is a single division per coordinate, which is promised to be at
+   * most {@code 0.5*DBL_EPSILON} absolute error for values with magnitude less than two.
+   */
+  public static final double MAX_XYZ_TO_UV_ERROR = 0.5 * DBL_EPSILON;
 
   /** The U,V,W axes for each face. */
   private static final S2Point[][] FACE_UVW_AXES = {
@@ -508,13 +539,13 @@ public strictfp enum S2Projections {
   };
 
   /** Minimum area of a cell at level k. */
-  public final Metric minArea;
+  public static final Metric MIN_AREA = new Metric(2, MIN_AREA_DERIV);
 
   /** Maximum area of a cell at level k. */
-  public final Metric maxArea;
+  public static final Metric MAX_AREA = new Metric(2, MAX_AREA_DERIV);
 
   /** Average area of a cell at level k. */
-  public final Metric avgArea;
+  public static final Metric AVG_AREA = new Metric(2, 4 * PI / 6); // ~2.094
 
   /**
    * Minimum angular separation between opposite edges of a cell at level k. Each cell is bounded by
@@ -522,13 +553,13 @@ public strictfp enum S2Projections {
    * relate to the angle between each pair of opposite bounding planes, or equivalently, between the
    * planes corresponding to two different s-values or two different t-values.
    */
-  public final Metric minAngleSpan;
+  public static final Metric MIN_ANGLE_SPAN = new Metric(1, MIN_ANGLE_SPAN_DERIV);
 
   /** Maximum angular separation between opposite edges of a cell at level k. */
-  public final Metric maxAngleSpan;
+  public static final Metric MAX_ANGLE_SPAN = new Metric(1, MAX_ANGLE_SPAN_DERIV);
 
   /** Average angular separation between opposite edges of a cell at level k. */
-  public final Metric avgAngleSpan;
+  public static final Metric AVG_ANGLE_SPAN = new Metric(1, PI / 2); // ~1.571
 
   /**
    * Minimum perpendicular angular separation between opposite edges of a cell at level k.
@@ -539,19 +570,19 @@ public strictfp enum S2Projections {
    * our purposes we redefine the width of a cell as the perpendicular distance between a pair of
    * opposite edges. A cell therefore has two widths, one in each direction. The minimum width
    * according to this definition agrees with the classic geometric one, but the maximum width is
-   * different. (The maximum geometric width corresponds to {@link #maxDiag}.)
+   * different. (The maximum geometric width corresponds to {@link #MAX_DIAG}.)
    *
    * <p>This is useful for bounding the minimum or maximum distance from a point on one edge of a
    * cell to the closest point on the opposite edge. For example, this is useful when "growing"
    * regions by a fixed distance.
    */
-  public final Metric minWidth;
+  public static final Metric MIN_WIDTH = new Metric(1, MIN_WIDTH_DERIV);
 
   /** Maximum perpendicular angular separation between opposite edges of a cell at level k. */
-  public final Metric maxWidth;
+  public static final Metric MAX_WIDTH = new Metric(1, MAX_ANGLE_SPAN_DERIV);
 
   /** Average perpendicular angular separation between opposite edges of a cell at level k. */
-  public final Metric avgWidth;
+  public static final Metric AVG_WIDTH = new Metric(1, AVG_WIDTH_DERIV);
 
   /**
    * Minimum angular length of any cell edge at level k. The edge length metrics can also be used to
@@ -559,16 +590,16 @@ public strictfp enum S2Projections {
    * one of its edge neighbors. In particular, it can be used to bound the distance between adjacent
    * cell centers along the space-filling Hilbert curve for cells at any given level.
    */
-  public final Metric minEdge;
+  public static final Metric MIN_EDGE = new Metric(1, MIN_EDGE_DERIV);
 
   /** Maximum angular length of any cell edge at level k. */
-  public final Metric maxEdge;
+  public static final Metric MAX_EDGE = new Metric(1, MAX_ANGLE_SPAN_DERIV);
 
   /** Average angular length of any cell edge at level k. */
-  public final Metric avgEdge;
+  public static final Metric AVG_EDGE = new Metric(1, AVG_EDGE_DERIV);
 
   /** Minimum diagonal size of cells at level k. */
-  public final Metric minDiag;
+  public static final Metric MIN_DIAG = new Metric(1, MIN_DIAG_DERIV);
 
   /**
    * Maximum diagonal size of cells at level k. The maximum diagonal also happens to be the maximum
@@ -576,60 +607,23 @@ public strictfp enum S2Projections {
    * an arbitrary point to the closest cell center at a given level is at most half the maximum
    * diagonal length.
    */
-  public final Metric maxDiag;
+  public static final Metric MAX_DIAG = new Metric(1, MAX_DIAG_DERIV);
 
   /** Average diagonal size of cells at level k. */
-  public final Metric avgDiag;
+  public static final Metric AVG_DIAG = new Metric(1, AVG_DIAG_DERIV);
 
   /**
    * Maximum edge aspect ratio over all cells at any level, where the edge aspect ratio of a cell is
    * defined as the ratio of its longest edge length to its shortest edge length.
    */
-  public final double maxEdgeAspect;
+  public static final double MAX_EDGE_ASPECT = MAX_EDGE_ASPECT_QUADRATIC;
 
   /**
    * This is the maximum diagonal aspect ratio over all cells at any level, where the diagonal
    * aspect ratio of a cell is defined as the ratio of its longest diagonal length to its shortest
    * diagonal length.
    */
-  public final double maxDiagAspect = sqrt(3); // 1.732
-
-  S2Projections(
-      double minAreaDeriv,
-      double maxAreaDeriv,
-      double minAngleSpanDeriv,
-      double maxAngleSpanDeriv,
-      double minWidthDeriv,
-      double avgWidthDeriv,
-      double minEdgeDeriv,
-      double avgEdgeDeriv,
-      double minDiagDeriv,
-      double maxDiagDeriv,
-      double avgDiagDeriv,
-      double maxEdgeAspect) {
-    this.minArea = new Metric(2, minAreaDeriv);
-    this.maxArea = new Metric(2, maxAreaDeriv);
-    this.avgArea = new Metric(2, 4 * PI / 6); // ~2.094
-    this.minAngleSpan = new Metric(1, minAngleSpanDeriv);
-    this.maxAngleSpan = new Metric(1, maxAngleSpanDeriv);
-    this.avgAngleSpan = new Metric(1, PI / 2); // ~1.571
-    this.minWidth = new Metric(1, minWidthDeriv);
-    this.maxWidth = new Metric(1, maxAngleSpanDeriv);
-    this.avgWidth = new Metric(1, avgWidthDeriv);
-    this.minEdge = new Metric(1, minEdgeDeriv);
-    this.maxEdge = new Metric(1, maxAngleSpanDeriv);
-    this.avgEdge = new Metric(1, avgEdgeDeriv);
-    this.minDiag = new Metric(1, minDiagDeriv);
-    this.maxDiag = new Metric(1, maxDiagDeriv);
-    this.avgDiag = new Metric(1, avgDiagDeriv);
-    this.maxEdgeAspect = maxEdgeAspect;
-  }
-
-  /**
-   * Convert an s- or t-value to the corresponding u- or v-value. This is a non-linear
-   * transformation from [0,1] to [-1,1] that attempts to make the cell sizes more uniform.
-   */
-  public abstract double stToUV(double s);
+  public static final double MAX_DIAG_ASPECT = sqrt(3); // 1.732
 
   /**
    * Returns the i- or j-index of the leaf cell containing the given s- or t-value. If the argument
@@ -646,7 +640,7 @@ public strictfp enum S2Projections {
    * normal range of valid leaf cell indices.
    */
   public static double ijToStMin(int i) {
-    // assert i >= 0 && i <= S2CellId.MAX_SIZE;
+    assert i >= 0 && i <= S2CellId.MAX_SIZE;
     return (1.0 / S2CellId.MAX_SIZE) * i;
   }
 
@@ -654,13 +648,13 @@ public strictfp enum S2Projections {
    * Converts the specified i- or j-coordinate into its corresponding u- or v-coordinate,
    * respectively, for the given cell size.
    */
-  public double ijToUV(int ij, int cellSize) {
+  public static double ijToUV(int ij, int cellSize) {
     return stToUV(ijToStMin(ij & -cellSize));
   }
 
   /** Returns the s- or t-value corresponding to the given si- or ti-value. */
   public static double siTiToSt(long si) {
-    // assert si >= 0 && si <= MAX_SITI;
+    assert si >= 0 && si <= MAX_SITI;
     return (1.0 / MAX_SITI) * si;
   }
 
@@ -671,12 +665,6 @@ public strictfp enum S2Projections {
   public static long stToSiTi(double s) {
     return round(s * MAX_SITI);
   }
-
-  /**
-   * The inverse of {@link #stToUV(double)}. Note that it is not always true that {@code
-   * uvToST(stToUV(x)) == x} due to numerical errors.
-   */
-  public abstract double uvToST(double u);
 
   /**
    * Convert (face, u, v) coordinates to a direction vector (not necessarily unit length).
@@ -712,8 +700,7 @@ public strictfp enum S2Projections {
    * If the dot product of p with the given face normal is positive, set the corresponding u and v
    * values (which may lie outside the range [-1,1]) and return true. Otherwise return null.
    */
-  @Nullable
-  public static R2Vector faceXyzToUv(int face, S2Point p) {
+  public static @Nullable R2Vector faceXyzToUv(int face, S2Point p) {
     if (face < 3) {
       if (p.get(face) <= 0) {
         return null;
@@ -788,8 +775,10 @@ public strictfp enum S2Projections {
   static final class FaceSiTi {
     /** The face on which the position exists. */
     public final int face;
+
     /** The si coordinate. See {@link S2Projections} for details. */
     public final long si;
+
     /** The ti coordinate. See {@link S2Projections} for details. */
     public final long ti;
 
@@ -802,14 +791,14 @@ public strictfp enum S2Projections {
   }
 
   /** Convert (face, si, ti) coordinates to a direction vector (not necessarily unit length.) */
-  public S2Point faceSiTiToXyz(int face, long si, long ti) {
+  public static S2Point faceSiTiToXyz(int face, long si, long ti) {
     double u = stToUV(siTiToSt(si));
     double v = stToUV(siTiToSt(ti));
     return faceUvToXyz(face, u, v);
   }
 
   /** Convert a direction vector (not necessarily unit length) to (face, si, ti) coordinates. */
-  FaceSiTi xyzToFaceSiTi(S2Point p) {
+  public static FaceSiTi xyzToFaceSiTi(S2Point p) {
     int face = xyzToFace(p);
     R2Vector uv = validFaceXyzToUv(face, p);
     long si = stToSiTi(uvToST(uv.x()));
@@ -818,7 +807,7 @@ public strictfp enum S2Projections {
   }
 
   /** If p is exactly a cell center, returns the level of the cell, -1 otherwise. */
-  int levelIfCenter(FaceSiTi fst, S2Point p) {
+  public static int levelIfCenter(FaceSiTi fst, S2Point p) {
     // If the levels corresponding to si,ti are not equal, then p is not a cell center. The si,ti
     // values 0 and MAX_SITI need to be handled specially because they do not correspond to cell
     // centers at any valid level; they are mapped to level -1 by the code below.
@@ -826,7 +815,7 @@ public strictfp enum S2Projections {
     if (level < 0 || level != siTiToLevel(fst.ti)) {
       return -1;
     } else {
-      // assert level <= S2CellId.MAX_LEVEL;
+      assert level <= S2CellId.MAX_LEVEL;
       // In infinite precision, this test could be changed to ST == SiTi. However, due to rounding
       // errors, UVtoST(XYZtoFaceUV(FaceUVtoXYZ(STtoUV(...)))) is not idempotent. On the other hand,
       // centerRaw is computed exactly the same way p was originally computed (if it is indeed the
@@ -932,12 +921,11 @@ public strictfp enum S2Projections {
    * that is adjacent to face 4 in the positive u-axis direction.
    */
   static int getUVWFace(int face, int axis, int direction) {
-    // assert face >= 0 && face <= 5;
-    // assert axis >= 0 && axis <= 2;
-    // assert direction >= 0 && direction <= 1;
+    assert face >= 0 && face <= 5;
+    assert axis >= 0 && axis <= 2;
+    assert direction >= 0 && direction <= 1;
     return FACE_UVW_FACES[face][axis][direction];
   }
 
-  /** The default transformation between ST and UV coordinates. */
-  public static final S2Projections PROJ = S2Projections.S2_QUADRATIC_PROJECTION;
+  private S2Projections() {}
 }

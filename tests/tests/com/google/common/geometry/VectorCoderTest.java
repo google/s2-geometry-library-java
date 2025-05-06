@@ -15,17 +15,23 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.base.Strings;
+import static org.junit.Assert.assertEquals;
+
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public class VectorCoderTest extends TestCase {
+/** Tests for {@link VectorCoder}. */
+@RunWith(JUnit4.class)
+public class VectorCoderTest {
 
+  @Test
   public void testDecodeFromByteString() throws IOException {
     List<String> expected = Lists.newArrayList("fuji", "mutsu");
 
@@ -36,29 +42,34 @@ public class VectorCoderTest extends TestCase {
     assertEquals(expected, v);
   }
 
+  @Test
   public void testEmpty() throws IOException {
     checkEncodedStringVector(Lists.newArrayList(), 1);
   }
 
+  @Test
   public void testEmptyString() throws IOException {
     checkEncodedStringVector(Lists.newArrayList(""), 2);
   }
 
+  @Test
   public void testRepeatedEmptyStrings() throws IOException {
     checkEncodedStringVector(Lists.newArrayList("", "", ""), 4);
   }
 
+  @Test
   public void testOneString() throws IOException {
     checkEncodedStringVector(Lists.newArrayList("apples"), 8);
   }
 
+  @Test
   public void testTwoStrings() throws IOException {
     checkEncodedStringVector(Lists.newArrayList("fuji", "mustu"), 12);
   }
 
+  @Test
   public void testTwoBigStrings() throws IOException {
-    checkEncodedStringVector(
-        Lists.newArrayList(Strings.repeat("x", 10000), Strings.repeat("y", 100000)), 110007);
+    checkEncodedStringVector(Lists.newArrayList("x".repeat(10000), "y".repeat(100000)), 110007);
   }
 
   private void checkEncodedStringVector(List<String> input, int expectedBytes) throws IOException {

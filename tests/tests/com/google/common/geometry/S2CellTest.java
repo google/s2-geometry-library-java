@@ -15,7 +15,23 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.AVG_ANGLE_SPAN;
+import static com.google.common.geometry.S2Projections.AVG_AREA;
+import static com.google.common.geometry.S2Projections.AVG_DIAG;
+import static com.google.common.geometry.S2Projections.AVG_EDGE;
+import static com.google.common.geometry.S2Projections.AVG_WIDTH;
+import static com.google.common.geometry.S2Projections.MAX_ANGLE_SPAN;
+import static com.google.common.geometry.S2Projections.MAX_AREA;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2Projections.MAX_DIAG_ASPECT;
+import static com.google.common.geometry.S2Projections.MAX_EDGE;
+import static com.google.common.geometry.S2Projections.MAX_EDGE_ASPECT;
+import static com.google.common.geometry.S2Projections.MAX_WIDTH;
+import static com.google.common.geometry.S2Projections.MIN_ANGLE_SPAN;
+import static com.google.common.geometry.S2Projections.MIN_AREA;
+import static com.google.common.geometry.S2Projections.MIN_DIAG;
+import static com.google.common.geometry.S2Projections.MIN_EDGE;
+import static com.google.common.geometry.S2Projections.MIN_WIDTH;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.log;
@@ -24,21 +40,30 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2Cell. */
-public strictfp class S2CellTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2CellTest extends GeometryTestCase {
 
   public static final boolean DEBUG_MODE = true;
 
+  @Test
   public void testFaces() {
-    Map<S2Point, Integer> edgeCounts = new HashMap<S2Point, Integer>();
-    Map<S2Point, Integer> vertexCounts = new HashMap<S2Point, Integer>();
+    Map<S2Point, Integer> edgeCounts = new HashMap<>();
+    Map<S2Point, Integer> vertexCounts = new HashMap<>();
     for (int face = 0; face < 6; ++face) {
       S2CellId id = S2CellId.fromFacePosLevel(face, 0, 0);
       S2Cell cell = new S2Cell(id);
@@ -60,9 +85,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
         } else {
           vertexCounts.put(cell.getVertexRaw(k), 1);
         }
-        assertDoubleEquals(cell.getVertexRaw(k).dotProd(cell.getEdgeRaw(k)), 0);
-        assertDoubleEquals(cell.getVertexRaw(k + 1).dotProd(cell.getEdgeRaw(k)), 0);
-        assertDoubleEquals(
+        assertAlmostEquals(cell.getVertexRaw(k).dotProd(cell.getEdgeRaw(k)), 0);
+        assertAlmostEquals(cell.getVertexRaw(k + 1).dotProd(cell.getEdgeRaw(k)), 0);
+        assertAlmostEquals(
             cell.getVertexRaw(k).crossProd(cell.getVertexRaw(k + 1)).normalize()
                 .dotProd(cell.getEdge(k)),
             1.0);
@@ -382,6 +407,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     assertDoubleNear(avgMetric.getValue(level), avgValue, 10 * tolerance);
   }
 
+  @Test
   public void testSubdivide() {
     for (int face = 0; face < 6; ++face) {
       checkSubdivide(S2Cell.fromFace(face));
@@ -441,9 +467,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
           s.minArea,
           s.maxArea,
           s.avgArea,
-          PROJ.minArea,
-          PROJ.maxArea,
-          PROJ.avgArea);
+          MIN_AREA,
+          MAX_AREA,
+          AVG_AREA);
       checkMinMaxAvg(
           "width",
           i,
@@ -452,9 +478,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
           s.minWidth,
           s.maxWidth,
           s.avgWidth,
-          PROJ.minWidth,
-          PROJ.maxWidth,
-          PROJ.avgWidth);
+          MIN_WIDTH,
+          MAX_WIDTH,
+          AVG_WIDTH);
       checkMinMaxAvg(
           "edge",
           i,
@@ -463,9 +489,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
           s.minEdge,
           s.maxEdge,
           s.avgEdge,
-          PROJ.minEdge,
-          PROJ.maxEdge,
-          PROJ.avgEdge);
+          MIN_EDGE,
+          MAX_EDGE,
+          AVG_EDGE);
       checkMinMaxAvg(
           "diagonal",
           i,
@@ -474,9 +500,9 @@ public strictfp class S2CellTest extends GeometryTestCase {
           s.minDiag,
           s.maxDiag,
           s.avgDiag,
-          PROJ.minDiag,
-          PROJ.maxDiag,
-          PROJ.avgDiag);
+          MIN_DIAG,
+          MAX_DIAG,
+          AVG_DIAG);
       checkMinMaxAvg(
           "angle span",
           i,
@@ -485,17 +511,18 @@ public strictfp class S2CellTest extends GeometryTestCase {
           s.minAngleSpan,
           s.maxAngleSpan,
           s.avgAngleSpan,
-          PROJ.minAngleSpan,
-          PROJ.maxAngleSpan,
-          PROJ.avgAngleSpan);
+          MIN_ANGLE_SPAN,
+          MAX_ANGLE_SPAN,
+          AVG_ANGLE_SPAN);
 
       // The aspect ratio calculations are ratios of lengths and are therefore less accurate at
       // higher subdivision levels.
-      assertTrue(s.maxEdgeAspect <= PROJ.maxEdgeAspect + 1e-15 * (1 << i));
-      assertTrue(s.maxDiagAspect <= PROJ.maxDiagAspect + 1e-15 * (1 << i));
+      assertTrue(s.maxEdgeAspect <= MAX_EDGE_ASPECT + 1e-15 * (1 << i));
+      assertTrue(s.maxDiagAspect <= MAX_DIAG_ASPECT + 1e-15 * (1 << i));
     }
   }
 
+  @Test
   public void testCellVsLoopRectBound() {
     // This test verifies that the S2Cell and S2Loop bounds contain each other to within their
     // maximum errors.
@@ -522,6 +549,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testRectBoundIsLargeEnough() {
     // Construct many points that are nearly on an S2Cell edge, and verify that whenever the cell
     // contains a point P then its bound contains S2LatLng(P).
@@ -540,6 +568,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testConsistentWithS2CellIdFromPoint() {
     // Construct many points that are nearly on an S2Cell edge, and verify that
     // S2Cell(S2CellId(p)).Contains(p) is always true.
@@ -558,6 +587,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testAmbiguousContainsPoint() {
     // This tests a case where S2CellId returns the "wrong" cell for a point that is very close to
     // the cell edge. (testConsistentWithS2CellIdFromPoint generates more examples like this.)
@@ -575,6 +605,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     assertTrue(cell.contains(p));
   }
 
+  @Test
   public void testGetDistanceToPoint() {
     for (int iter = 0; iter < 1000; ++iter) {
       S2Cell cell = new S2Cell(data.getRandomCellId());
@@ -599,6 +630,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetDistanceMax() {
     for (int iter = 0; iter < 1000; ++iter) {
       S2Cell cell = new S2Cell(data.getRandomCellId());
@@ -612,6 +644,24 @@ public strictfp class S2CellTest extends GeometryTestCase {
         assertEquals(expected.radians(), actual.radians(), 1e-15);
       }
     }
+  }
+
+  @Test
+  public void testGetDistanceToCell() {
+    // Adjacent S2Cells on the same face have distance exactly zero.
+    S2Cell a = new S2Cell(new S2CellId(0x8ac0000000000000L)); // Level 3, corner of face
+    S2Cell b = new S2Cell(new S2CellId(0x8b40000000000000L)); // Level 3, one below 'a'
+
+    // Cells on the same face sharing an edge.
+    assertEquals(S1ChordAngle.ZERO, a.getDistance(b));
+
+    // Adjacent S2Cells on different faces should also have distance exactly zero.
+    S2Cell c = new S2Cell(new S2CellId(0x0ac0000000000000L)); // Level 3, corner of adjacent face
+
+    // Sharing an edge on the face boundary.
+    assertEquals(S1ChordAngle.ZERO, a.getDistance(c));
+    // Sharing a point on the face boundary.
+    assertEquals(S1ChordAngle.ZERO, b.getDistance(c));
   }
 
   private static S1ChordAngle getDistanceToCellBruteForce(S2Cell cell, S2Point target) {
@@ -637,6 +687,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     return maxDistance;
   }
 
+  @Test
   public void testGetDistanceToEdge() {
     for (int iter = 0; iter < 1000; ++iter) {
       S2Cell cell = new S2Cell(data.getRandomCellId());
@@ -683,6 +734,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     return minDist;
   }
 
+  @Test
   public void testGetMaxDistanceToEdge() {
     // Test an edge for which its antipode crosses the cell. Validates both the standard and brute
     // force implementations for this case.
@@ -743,6 +795,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetMaxDistanceToCellAntipodal() {
     S2Point p = S2LatLng.fromDegrees(0, 0).toPoint();
     S2Cell cell = new S2Cell(p);
@@ -751,6 +804,7 @@ public strictfp class S2CellTest extends GeometryTestCase {
     assertEquals(S1ChordAngle.STRAIGHT, dist);
   }
 
+  @Test
   public void testGetMaxDistanceToCell() {
     double tolerance = 1e-8;
     for (int i = 0; i < 1000; i++) {
@@ -766,5 +820,11 @@ public strictfp class S2CellTest extends GeometryTestCase {
       S1ChordAngle distFromMax = cell.getMaxDistance(testCell);
       assertEquals(distFromMin.radians(), distFromMax.radians(), tolerance);
     }
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2CellSerialization() {
+    doSerializationTest(new S2Cell(S2LatLng.fromDegrees(0.1, 0.2)));
   }
 }

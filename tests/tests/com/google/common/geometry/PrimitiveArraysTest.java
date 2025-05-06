@@ -15,6 +15,9 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.BufferUtils.createBytes;
+import static org.junit.Assert.assertEquals;
+
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
@@ -23,13 +26,18 @@ import com.google.common.primitives.ImmutableLongArray;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link PrimitiveArrays}. */
+@RunWith(JUnit4.class)
 public class PrimitiveArraysTest extends GeometryTestCase {
   @GwtIncompatible("Uses ByteBuffer")
-  public void testBytesFromByteBuffer() {
+  @Test
+  public void testCreateBytes() {
     byte[] b = new byte[] {0, 1, 2};
-    Bytes data = Bytes.fromByteBuffer(ByteBuffer.wrap(b));
+    Bytes data = createBytes(ByteBuffer.wrap(b));
 
     assertEquals(3, b.length);
     for (int i = 0; i < b.length; i++) {
@@ -37,6 +45,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testBytesFromByteArray() {
     byte[] b = new byte[] {0, 1, 2};
     Bytes data = Bytes.fromByteArray(b);
@@ -47,6 +56,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testBytesToInputStream() throws IOException {
     byte[] b = new byte[] {0, 1, 2, 3, 4, 5};
     Bytes data = Bytes.fromByteArray(b);
@@ -58,6 +68,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
         com.google.common.primitives.Bytes.asList(actual));
   }
 
+  @Test
   public void testBytesReadVarint64() {
     byte[] b = new byte[] {(byte) 0b10101100, (byte) 0b00000010};
     Bytes data = Bytes.fromByteArray(b);
@@ -67,6 +78,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     assertEquals(2, cursor.position);
   }
 
+  @Test
   public void testBytesReadVarint64_malformed() {
     byte[] b = new byte[11];
     Arrays.fill(b, (byte) 0b11111111);
@@ -82,6 +94,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testBytesReadUintWithLength() {
     byte[] b = new byte[] {(byte) 0b11111111, (byte) 0b11111111};
     Bytes data = Bytes.fromByteArray(b);
@@ -91,6 +104,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     assertEquals(b.length, cursor.position);
   }
 
+  @Test
   public void testBytesReadLittleEndianDouble() {
     byte[] b = new byte[] {0, 0, 0, 0, 0, -64, 94, 64};
     Bytes data = Bytes.fromByteArray(b);
@@ -100,6 +114,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     assertEquals(123.0, data.readLittleEndianDouble(position), tolerance);
   }
 
+  @Test
   public void testLongsFromImmutableLongArray() {
     ImmutableLongArray expected = ImmutableLongArray.of(1, 2, 3);
     Longs actual = Longs.fromImmutableLongArray(expected);
@@ -110,6 +125,7 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testLongsToIntArray() {
     Longs actual = Longs.fromImmutableLongArray(ImmutableLongArray.of(1, 2, 3));
     int[] expected = actual.toIntArray();

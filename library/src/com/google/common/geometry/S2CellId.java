@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
 import static java.lang.Math.abs;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -33,6 +32,7 @@ import com.google.common.collect.UnmodifiableIterator;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.primitives.UnsignedLongs;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.Immutable;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -40,7 +40,9 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
@@ -73,14 +75,15 @@ import jsinterop.annotations.JsType;
  *
  * <p>Leaf cells are often used to represent points on the unit sphere, and this class provides
  * methods for converting directly between these two representations. For cells that represent 2D
- * regions rather than discrete point, it is better to use the S2Cell class.
+ * regions rather than discrete points, it is better to use the S2Cell class.
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @Immutable
 @JsType
-public final strictfp class S2CellId implements Comparable<S2CellId>, Serializable {
+@SuppressWarnings("Assertion")
+public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, Serializable {
   // Although only 60 bits are needed to represent the index of a leaf cell, the extra position bit
   // lets us encode each cell as its Hilbert curve position at the cell center, which is halfway
   // along the portion of the Hilbert curve that fills that cell.
@@ -126,8 +129,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   private static final int[] LOOKUP_POS = new int[1 << (2 * LOOKUP_BITS + 2)];
   private static final int[] LOOKUP_IJ = new int[1 << (2 * LOOKUP_BITS + 2)];
 
-  private static final S2CellId NONE = new S2CellId();
-  private static final S2CellId SENTINEL = new S2CellId(MAX_UNSIGNED);
+  public static final S2CellId NONE = new S2CellId();
+  public static final S2CellId SENTINEL = new S2CellId(MAX_UNSIGNED);
+  public static final String NONE_TOKEN = "X";
 
   /**
    * This is the offset required to wrap around from the beginning of the Hilbert curve to the end
@@ -192,7 +196,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
         if (bytes.length != data.toInputStream(cursor).read(bytes)) {
           throw new IOException("Insufficient input.");
         }
-        return S2CellId.fromToken(new String(bytes, CHARSET));
+        String token = new String(bytes, CHARSET);
+        if (!S2CellId.isValidToken(token)) {
+          throw new IOException("Invalid input, token " + token);
+        }
+        return S2CellId.fromToken(token);
       } catch (ArrayIndexOutOfBoundsException | NumberFormatException e) {
         throw new IOException("Invalid input ", e);
       }
@@ -205,7 +213,10 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   /** The id of the cell. */
   private final long id;
 
-  /** Constructs an S2CellId with the given cell id. */
+  /**
+   * Constructs an S2CellId with the given cell id. Does not check validity, but many S2CellId
+   * methods require valid cell ids. If you are unsure, use {@link #isValid()} to check.
+   */
   public S2CellId(long id) {
     this.id = id;
   }
@@ -216,7 +227,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     this(0);
   }
 
-  /** Returns a canonical invalid cell id. */
+  /** Returns the canonical invalid S2CellId, with id zero. */
   public static S2CellId none() {
     return NONE;
   }
@@ -247,28 +258,36 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /**
    * Return a leaf cell containing the given point (a direction vector, not necessarily unit
-   * length). Usually there is is exactly one such cell, but for points along the edge of a cell,
+   * length). Usually there is is exactly one such cell, but for points along the edges of cells,
    * any adjacent cell may be (deterministically) chosen. This is because S2CellIds are considered
    * to be closed sets. The returned cell will always contain the given point, i.e.
    *
-   * <pre>{@code
+   * {@snippet :
    *    new S2Cell(S2CellId.fromPoint(p)).contains(p)
-   * }</pre>
+   * }
    *
    * <p>is always true. The point "p" does not need to be normalized.
    *
    * <p>If instead you want every point to be contained by exactly one S2Cell, you will need to
-   * convert the S2CellIds to S2Loops, which implement point containment this way.
+   * convert from S2CellIds to S2Loops, which implement point containment this way. Note that such
+   * loops must include every vertex they "logically" pass through that are used by other loops of
+   * the set. For example, if you have a cell at level N, surrounded by 12 neighbors at level N+1,
+   * the loop for the center cell will have 8 vertices. You can construct such a loop by using
+   * {@link S2CellId#toLoop(int)}, setting 'level' to the maximum level of any cell in the set.
    */
   public static S2CellId fromPoint(S2Point p) {
     int face = S2Projections.xyzToFace(p);
     S2Projections.UvTransform t = S2Projections.faceToUvTransform(face);
-    int i = S2Projections.stToIj(PROJ.uvToST(t.xyzToU(p.x, p.y, p.z)));
-    int j = S2Projections.stToIj(PROJ.uvToST(t.xyzToV(p.x, p.y, p.z)));
+    int i = S2Projections.stToIj(S2Projections.uvToST(t.xyzToU(p.x, p.y, p.z)));
+    int j = S2Projections.stToIj(S2Projections.uvToST(t.xyzToV(p.x, p.y, p.z)));
     return fromFaceIJ(face, i, j);
   }
 
-  /** Return the leaf cell containing the given S2LatLng. */
+  /**
+   * Return the leaf cell containing the given S2LatLng. The latitude and longitude must be finite.
+   * Non-normalized latlngs will be wrapped around the sphere as would be expected based on their
+   * definition as spherical angles.
+   */
   public static S2CellId fromLatLng(S2LatLng ll) {
     return fromPoint(ll.toPoint());
   }
@@ -281,8 +300,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   public R2Vector getCenterUV() {
     long center = getCenterSiTi();
     return new R2Vector(
-        PROJ.stToUV(S2Projections.siTiToSt(getSi(center))),
-        PROJ.stToUV(S2Projections.siTiToSt(getTi(center))));
+        S2Projections.stToUV(S2Projections.siTiToSt(getSi(center))),
+        S2Projections.stToUV(S2Projections.siTiToSt(getTi(center))));
   }
 
   /** Returns the center of the cell in (s,t) coordinates. */
@@ -322,32 +341,37 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   public S2Point toPointRaw() {
     long center = getCenterSiTi();
-    return PROJ.faceSiTiToXyz(face(), getSi(center), getTi(center));
+    return S2Projections.faceSiTiToXyz(face(), getSi(center), getTi(center));
   }
 
   /**
    * Returns a loop along the boundary of this cell, with vertices at intersections with the cell
    * grid at {@code level}. Equivalent to the union of new S2Polygon(new S2Cell(child)), for each
    * child in {@link #childrenAtLevel(int)} for the given level, but radically faster.
+   *
+   * @throws IllegalStateException if the given level is less than this cell's level.
    */
   public S2Loop toLoop(int level) {
-    S2Projections p = S2Projections.PROJ;
     int depth = level - level();
     Preconditions.checkState(depth >= 0);
     R2Rect rect = getBoundST();
     int face = face();
     int n = 1 << depth;
-    double step = scalb(1, -depth);
+    double step = scalb((double) 1, -depth);
     List<S2Point> points = Lists.newArrayListWithCapacity(4 * n);
     R2Vector b = rect.getVertex(3);
     for (int corner = 0; corner < 4; corner++) {
       R2Vector a = b;
       b = rect.getVertex(corner);
-      points.add(S2Projections.faceUvToXyz(face, p.stToUV(a.x), p.stToUV(a.y)).normalize());
+      points.add(
+          S2Projections.faceUvToXyz(face, S2Projections.stToUV(a.x), S2Projections.stToUV(a.y))
+              .normalize());
       for (double d = step; d < 1; d += step) {
         double s = (1 - d) * a.x + d * b.x;
         double t = (1 - d) * a.y + d * b.y;
-        points.add(S2Projections.faceUvToXyz(face, p.stToUV(s), p.stToUV(t)).normalize());
+        points.add(
+            S2Projections.faceUvToXyz(face, S2Projections.stToUV(s), S2Projections.stToUV(t))
+                .normalize());
       }
     }
     return new S2Loop(points);
@@ -413,8 +437,14 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   }
 
   /** The 64-bit unique identifier for this cell. */
+  @Override
   public long id() {
     return id;
+  }
+
+  /** Return true if the given 'id' is a valid S2Cell id. */
+  public static boolean isValid(long id) {
+    return face(id) < NUM_FACES && ((lowestOnBit(id) & 0x1555555555555555L) != 0);
   }
 
   /** Return true if id() represents a valid cell. */
@@ -424,6 +454,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /** Which cube face this cell belongs to, in the range 0..5. */
   public int face() {
+    return (int) (id >>> POS_BITS);
+  }
+
+  /** Which cube face the given cell id belongs to, in the range 0..5. */
+  public static int face(long id) {
     return (int) (id >>> POS_BITS);
   }
 
@@ -438,9 +473,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   /** Return the subdivision level of the cell (range 0..MAX_LEVEL). */
   public int level() {
     // Fast path for leaf cells (benchmarking shows this is worthwhile.)
-    if (isLeaf()) {
-      return MAX_LEVEL;
-    }
+    return isLeaf() ? MAX_LEVEL : levelFromLong(id);
+  }
+
+  /** Returns the subdivision level of the cell given the raw uint64 ID (range 0..MAX_LEVEL). */
+  public static int levelFromLong(long id) {
     return MAX_LEVEL - (Long.numberOfTrailingZeros(id) >> 1);
   }
 
@@ -476,6 +513,14 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * 0).
    */
   public boolean isFace() {
+    return isFace(id);
+  }
+
+  /**
+   * Return true if the given id is a top-level face cell (more efficient than checking whether
+   * level() == 0).
+   */
+  public static boolean isFace(long id) {
     return (id & (lowestOnBitForLevel(0) - 1)) == 0;
   }
 
@@ -514,11 +559,11 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * <p>Note that because the range max is inclusive, care should be taken to iterate accordingly,
    * for example:
    *
-   * <pre>{@code
+   * {@snippet :
    * for (S2CellId min = x.rangeMin(); min.compareTo(x.rangeMax()) <= 0; min = min.next()) {
    *   ...
    * }
-   * }</pre>
+   * }
    *
    * If you need to convert the range to a semi-open interval [min, limit), for example to use a
    * key-value store that only supports semi-open range queries, then do not attempt to define
@@ -543,41 +588,47 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /** Return true if the given cell is contained within this one. */
   public boolean contains(S2CellId other) {
-    // assert (isValid() && other.isValid());
+    assert isValid();
+    assert other.isValid();
     return unsignedLongGreaterOrEquals(other.id, rangeMinAsLong(id))
         && unsignedLongLessOrEquals(other.id, rangeMaxAsLong(id));
   }
 
-  /** Return true if the given cell intersects this one. */
+  /** Returns true if the given cell intersects this one. */
   public boolean intersects(S2CellId other) {
-    // assert (isValid() && other.isValid());
+    assert isValid();
+    assert other.isValid();
     return unsignedLongLessOrEquals(rangeMinAsLong(other.id), rangeMaxAsLong(id))
         && unsignedLongGreaterOrEquals(rangeMaxAsLong(other.id), rangeMinAsLong(id));
   }
 
   /** Return the cell id of this cell's parent at the previous level. */
   public S2CellId parent() {
-    // assert (isValid() && level() > 0);
+    assert isValid();
+    assert level() > 0;
     return new S2CellId(parentAsLong(id));
   }
 
   /**
    * Return the cell id of this cell's parent at the given level, which must be less than or equal
-   * to the current level.
+   * to the current level. If the level is equal to the current level, an equal cell id is returned.
    */
   @JsMethod(name = "parentAtLevel")
   public S2CellId parent(int level) {
-    // assert (isValid() && level >= 0 && level <= this.level());
+    assert isValid();
+    assert level >= 0;
+    assert level <= this.level();
     return new S2CellId(parentAsLong(id, level));
   }
 
   /**
    * Returns the immediate child of this cell at the given traversal order position (in the range 0
-   * to 3). Results are undefined if this is a leaf cell.
+   * to 3). If this is a leaf cell, attempting to get a child is invalid. If assertions are enabled,
+   * an assertion exception is thrown, otherwise results are undefined.
    */
   public S2CellId child(int position) {
-    // assert (isValid());
-    // assert (!isLeaf());
+    assert isValid();
+    assert !isLeaf();
     // To change the level, we need to move the least-significant bit two positions downward. We do
     // this by subtracting (4 * new_lsb) and adding new_lsb. Then to advance to the given child
     // cell, we add (2 * position * new_lsb).
@@ -646,7 +697,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * Returns the first child in a traversal of the children of this cell, in Hilbert curve order.
    */
   public S2CellId childBegin() {
-    // assert (isValid() && level() < MAX_LEVEL);
+    assert isValid();
+    assert level() < MAX_LEVEL;
     return new S2CellId(childBeginAsLong(id));
   }
 
@@ -656,7 +708,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   @JsMethod(name = "childBeginAtLevel")
   public S2CellId childBegin(int level) {
-    // assert (isValid() && level >= this.level() && level <= MAX_LEVEL);
+    assert isValid();
+    assert level >= this.level();
+    assert level <= MAX_LEVEL;
     return new S2CellId(childBeginAsLong(id, level));
   }
 
@@ -665,7 +719,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * This cell can be invalid.
    */
   public S2CellId childEnd() {
-    // assert (isValid() && level() < MAX_LEVEL);
+    assert isValid();
+    assert level() < MAX_LEVEL;
     return new S2CellId(childEndAsLong(id));
   }
 
@@ -675,7 +730,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    */
   @JsMethod(name = "childEndAtLevel")
   public S2CellId childEnd(int level) {
-    // assert (isValid() && level >= this.level() && level <= MAX_LEVEL);
+    assert isValid();
+    assert level >= this.level();
+    assert level <= MAX_LEVEL;
     return new S2CellId(childEndAsLong(id, level));
   }
 
@@ -780,7 +837,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * faces as necessary. The S2CellId instance must be valid.
    */
   public S2CellId advanceWrap(long steps) {
-    // assert (isValid());
+    assert isValid();
     if (steps == 0) {
       return this;
     }
@@ -831,27 +888,55 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * Decodes the cell id from a compact text string suitable for display or indexing. Cells at lower
    * levels (i.e. larger cells) are encoded into fewer characters. The maximum token length is 16.
    *
+   * <p>If the string cannot be parsed, throws AssertionError if Java assertions are enabled,
+   * otherwise returns {@link #none()}. If the string encodes an invalid cell id other than {@link
+   * #none()}, throws AssertionError if Java assertions are enabled, otherwise returns the invalid
+   * encoded id.
+   *
    * @param token the token to decode
    * @return the S2CellId for that token
-   * @throws NumberFormatException if the token is not formatted correctly
+   * @throws AssertionError if Java assertions are enabled on invalid inputs, as described above.
    */
   public static S2CellId fromToken(String token) {
-    return fromTokenImpl(token, true);
+    S2CellId result = fromTokenImpl(token, true);
+    assert result.isValid() || Objects.equals(token, NONE_TOKEN) : "Invalid token: " + token;
+    return result;
+  }
+
+  /**
+   * Returns true if the given token is either an encoding of a valid S2CellId, or the encoding of
+   * the canonical invalid cell id {@link #none()}.
+   */
+  public static boolean isValidOrNoneToken(String token) {
+    return Objects.equals(token, NONE_TOKEN) || fromTokenImpl(token, true).isValid();
+  }
+
+  /** Returns true if the given token is an encoding of a valid S2CellId. */
+  public static boolean isValidToken(String token) {
+    return fromTokenImpl(token, true).isValid();
   }
 
   /**
    * Returns the cell id for the given token, which will be implicitly zero-right-padded to length
-   * 16 if 'implicitZeroes' is true.
+   * 16 if 'implicitZeroes' is true. The token can optionally begin with "0x", which is skipped if
+   * present. Returns {@link #none()} for unparsable tokens, including null or empty strings. Does
+   * not assert that the decoded cell id is valid.
    */
   private static S2CellId fromTokenImpl(String token, boolean implicitZeroes) {
     if (token == null) {
-      throw new NumberFormatException("Null string in S2CellId.fromToken");
+      return none();
     }
     if (token.isEmpty()) {
-      throw new NumberFormatException("Empty string in S2CellId.fromToken");
+      return none();
+    }
+    if (token.equals(NONE_TOKEN)) {
+      return none();
+    }
+    if (token.toLowerCase(Locale.ROOT).startsWith("0x")) {
+      token = token.substring(2);
     }
     int length = token.length();
-    if (length > 16 || "X".equals(token)) {
+    if (length > 16) {
       return none();
     }
 
@@ -859,7 +944,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     for (int pos = 0; pos < length; pos++) {
       int digitValue = Character.digit(token.charAt(pos), 16);
       if (digitValue == -1) {
-        throw new NumberFormatException(token);
+        return none();
       }
       value = value * 16 + digitValue;
     }
@@ -875,6 +960,9 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * Encodes the cell id to compact text strings suitable for display or indexing. Cells at lower
    * levels (i.e. larger cells) are encoded into fewer characters. The maximum token length is 16.
    *
+   * <p>The cell id should be valid or {@link #none()}. Otherwise, if Java assertions are enabled,
+   * throws AssertionError. If assertions are not enabled, encodes the invalid ID.
+   *
    * <p>Simple implementation: convert the id to hex and strip trailing zeros. We could use base-32
    * or base-64, but assuming the cells used for indexing regions are at least 100 meters across
    * (level 16 or less), the savings would be at most 3 bytes (9 bytes hex vs. 6 bytes base-64).
@@ -882,9 +970,10 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * @return the encoded cell id
    */
   public String toToken() {
-    if (id == 0) {
-      return "X";
+    if (id == NONE.id) {
+      return NONE_TOKEN;
     }
+    assert isValid();
 
     // Convert to a hex string with as many digits as necessary.
     String hex = Ascii.toLowerCase(Long.toHexString(id));
@@ -931,7 +1020,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
   public void getVertexNeighbors(int level, Collection<S2CellId> output) {
     // "level" must be strictly less than this cell's level so that we can determine which vertex
     // this cell is closest to.
-    // assert (level < this.level());
+    assert level < this.level();
     long ijo = toIJOrientation();
     int i = getI(ijo);
     int j = getJ(ijo);
@@ -973,14 +1062,42 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   /**
    * Append all neighbors of this cell at the given level, which must be at least this.level(), to
-   * "output". Two cells X and Y are neighbors if their boundaries intersect but their interiors do
-   * not. In particular, two cells that intersect at a single point are neighbors. Note that for
-   * cells adjacent to a face vertex, the same neighbor may be appended more than once. Also
-   * requires that this cell id is valid.
+   * "output". Two cells X and Y are neighbors if they share a vertex, edge, or part of an edge on
+   * their boundaries, but do not intersect.
+   *
+   * <p>Also note that for cells adjacent to a face vertex, the same neighbor may be appended more
+   * than once. Also requires that this cell id is valid.
+   *
+   * <p>Consider {@link #visitNeighbors(int, CellIdVisitor)}, which may be more efficient.
    *
    * @throws IllegalArgumentException if {@code nbrLevel < this.level()}.
    */
   public void getAllNeighbors(int nbrLevel, List<S2CellId> output) {
+    visitNeighbors(nbrLevel, output::add);
+  }
+
+  /** A visitor for S2CellIds. */
+  @JsType
+  public interface CellIdVisitor {
+    /**
+     * Visits the given S2CellId. Cells may be visited more than once. The visit method returns
+     * false to indicate that visiting should stop, otherwise returns true.
+     */
+    boolean visit(S2CellId cellId);
+  }
+
+  /**
+   * Visits all neighbors of this cell at the given level, which must be at least this.level(),
+   * passing the neighbor ids to the given visitor. Two cells X and Y are neighbors if they share a
+   * vertex, edge, or part of an edge on their boundaries, but do not intersect.
+   *
+   * <p>Stops visiting neighbors and returns false if visitor.visit() returns false. Otherwise
+   * returns true.
+   *
+   * @throws IllegalArgumentException if {@code nbrLevel < this.level()}.
+   */
+  @CanIgnoreReturnValue
+  public boolean visitNeighbors(int nbrLevel, CellIdVisitor visitor) {
     Preconditions.checkArgument(nbrLevel >= this.level());
     long ijo = toIJOrientation();
 
@@ -992,7 +1109,7 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     int j = getJ(ijo) & -size;
 
     int nbrSize = getSizeIJ(nbrLevel);
-    // assert (nbrSize <= size);
+    assert nbrSize <= size;
 
     // We compute the top-bottom, left-right, and diagonal neighbors in one pass. The loop test is
     // at the end of the loop to avoid 32-bit overflow.
@@ -1005,18 +1122,25 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
       } else {
         sameFace = true;
         // Top and bottom neighbors.
-        output.add(fromFaceIJSame(face, i + k, j - nbrSize, j - size >= 0).parent(nbrLevel));
-        output.add(fromFaceIJSame(face, i + k, j + size, j + size < MAX_SIZE).parent(nbrLevel));
+        if (!visitor.visit(fromFaceIJSame(face, i + k, j - nbrSize, j - size >= 0).parent(nbrLevel))
+            || !visitor.visit(
+                fromFaceIJSame(face, i + k, j + size, j + size < MAX_SIZE).parent(nbrLevel))) {
+          return false;
+        }
       }
       // Left, right, and diagonal neighbors.
-      output.add(
-          fromFaceIJSame(face, i - nbrSize, j + k, sameFace && i - size >= 0).parent(nbrLevel));
-      output.add(
-          fromFaceIJSame(face, i + size, j + k, sameFace && i + size < MAX_SIZE).parent(nbrLevel));
+      if (!visitor.visit(
+              fromFaceIJSame(face, i - nbrSize, j + k, sameFace && i - size >= 0).parent(nbrLevel))
+          || !visitor.visit(
+              fromFaceIJSame(face, i + size, j + k, sameFace && i + size < MAX_SIZE)
+                  .parent(nbrLevel))) {
+        return false;
+      }
       if (k >= size) {
         break;
       }
     }
+    return true;
   }
 
   // ///////////////////////////////////////////////////////////////////
@@ -1115,8 +1239,6 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     // the suffix is just "1" and has no effect. Otherwise, it consists of "10", followed by
     // (MAX_LEVEL-n-1) repetitions of "00", followed by "0". The "10" has no effect, while each
     // occurrence of "00" has the effect of reversing the SWAP_MASK bit.
-    // assert (S2.POS_TO_ORIENTATION[2] == 0);
-    // assert (S2.POS_TO_ORIENTATION[0] == S2.SWAP_MASK);
     if ((lowestOnBit() & 0x1111111111111110L) != 0) {
       bits ^= S2.SWAP_MASK;
     }
@@ -1195,8 +1317,8 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
 
   private static void setAxisRange(int ij, int cellSize, R1Interval interval) {
     interval.set(
-        S2Projections.PROJ.ijToUV(ij, cellSize),
-        S2Projections.PROJ.ijToUV(ij + cellSize, cellSize));
+        S2Projections.ijToUV(ij, cellSize),
+        S2Projections.ijToUV(ij + cellSize, cellSize));
   }
 
   /**
@@ -1226,13 +1348,13 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
    * method to expand the (u,v)-bound of an S2CellId so that it contains all points within 5km of
    * the original cell. You can then test whether a point lies within the expanded bounds like this:
    *
-   * <pre>{@code
+   * {@snippet :
    * R2Rect bounds = expandedByDistance(cellId.getBoundUV(), S1Angle.fromEarthDistance(5000));
    * R2Vector uv = S2Projections.faceXyztoUv(face, point);
    * if (bounds.contains(uv)) {
    *   ...
    * }
-   * }</pre>
+   * }
    *
    * Limitations:
    *
@@ -1432,29 +1554,29 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return (((long) face) << POS_BITS) + lowestOnBitForLevel(0);
   }
 
-  private static long childBeginAsLong(long id) {
+  static long childBeginAsLong(long id) {
     long oldLsb = lowestOnBit(id);
     return id - oldLsb + (oldLsb >>> 2);
   }
 
-  private static long childBeginAsLong(long id, int level) {
+  static long childBeginAsLong(long id, int level) {
     return id - lowestOnBit(id) + lowestOnBitForLevel(level);
   }
 
-  private static long childEndAsLong(long id) {
+  static long childEndAsLong(long id) {
     long oldLsb = lowestOnBit(id);
     return id + oldLsb + (oldLsb >>> 2);
   }
 
-  private static long childEndAsLong(long id, int level) {
+  static long childEndAsLong(long id, int level) {
     return id + lowestOnBit(id) + lowestOnBitForLevel(level);
   }
 
-  private static long rangeMinAsLong(long id) {
+  static long rangeMinAsLong(long id) {
     return id - (lowestOnBit(id) - 1);
   }
 
-  private static long rangeMaxAsLong(long id) {
+  static long rangeMaxAsLong(long id) {
     return id + (lowestOnBit(id) - 1);
   }
 
@@ -1462,12 +1584,12 @@ public final strictfp class S2CellId implements Comparable<S2CellId>, Serializab
     return Long.lowestOneBit(id);
   }
 
-  private static long parentAsLong(long id) {
+  static long parentAsLong(long id) {
     long newLsb = lowestOnBit(id) << 2;
     return (id & -newLsb) | newLsb;
   }
 
-  private static long parentAsLong(long id, int level) {
+  static long parentAsLong(long id, int level) {
     long newLsb = lowestOnBitForLevel(level);
     return (id & -newLsb) | newLsb;
   }

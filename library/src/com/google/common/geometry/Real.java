@@ -22,9 +22,9 @@ import java.math.BigDecimal;
  * without loss of precision. It stores an array of double values, and operations that require
  * additional bits of precision return Reals with larger arrays.
  *
- * <p>Converting a sequence of a dozen strictfp arithmetic operations to use Real can take up to 20
- * times longer than the natural but imprecise approach of using built in double operators like +
- * and *. Compared to other approaches like BigDecimal that consume more memory and typically slow
+ * <p>Converting a sequence of a dozen arithmetic operations to use Real can take up to 20 times
+ * longer than the natural but imprecise approach of using built in double operators like + and *.
+ * Compared to other approaches like BigDecimal that consume more memory and typically slow
  * operations down by a factor of 100, that's great, but use of this class should still be avoided
  * when imprecise results will suffice.
  *
@@ -45,7 +45,7 @@ import java.math.BigDecimal;
  *
  * <p>Faster adaptive techniques are also presented in that paper, but are not implemented here.
  */
-strictfp class Real extends Number {
+class Real extends Number {
   private static final long serialVersionUID = 1L;
 
   /**
@@ -380,7 +380,7 @@ strictfp class Real extends Number {
   }
 
   /**
-   * Check if {@link #twoProductError} underflows. Currently, only checks one situation:
+   * Returns true iff {@link #twoProductError} underflows. Currently, only checks two situations:
    *
    * <ol>
    *   <li>If the {@code error} is 0.0 and
@@ -388,15 +388,29 @@ strictfp class Real extends Number {
    *   <li>Neither {@code a} nor {@code b }are equal to 1.0.
    * </ol>
    *
+   * or
+   *
+   * <ol>
+   *   <li>If the {@code error} is 0.0 and
+   *   <li>Neither {@code a == 0} or {@code b == 0}
+   *   <li>But a*b gives us 0.0.
+   * </ol>
+   *
    * <p>One example is if {@code a = -2.594E-321} and {@code b = 0.9991685425907498}. The {@code
    * error} from {@link #twoProductError} is 0.0 even though there should be some non-zero error.
    */
   private static boolean twoProductUnderflowCheck(double a, double b, double x, double error) {
     if (error == 0.0) {
+      // First situation.
       boolean operandEqualsOutput = (a == x) || (b == x);
       boolean operandsNotOne = (a != 1.0) && (b != 1.0);
       boolean operandsNotZero = (a != 0.0) && (b != 0.0);
       if (operandEqualsOutput && operandsNotOne && operandsNotZero) {
+        return true;
+      }
+      // Second situation.
+      boolean xIsZero = x == 0.0;
+      if (operandsNotZero && xIsZero) {
         return true;
       }
     }

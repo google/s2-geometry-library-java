@@ -55,17 +55,25 @@ public interface S2IndexingHelper {
   /** An index term. */
   interface Term {
 
-    /** @return The type of the term */
+    /**
+     * @return The type of the term
+     */
     TermType type();
 
-    /** @return The cell ID of the term */
+    /**
+     * @return The cell ID of the term
+     */
     long cellId();
   }
 
-  /** @return The minimum level in use (the one closest to the root of the hierarchy) */
+  /**
+   * @return The minimum level in use (the one closest to the root of the hierarchy)
+   */
   public int minLevel();
 
-  /** @return The maximum level in use (the one closest to the leaves of the hierarchy) */
+  /**
+   * @return The maximum level in use (the one closest to the leaves of the hierarchy)
+   */
   public int maxLevel();
 
   /**

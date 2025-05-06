@@ -15,12 +15,16 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2Projections.PROJ;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
-import static com.google.common.geometry.TestDataGenerator.makePolyline;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.pow;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
@@ -28,12 +32,18 @@ import com.google.common.geometry.S2EdgeQuery.Edges;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public strictfp class S2EdgeQueryTest extends GeometryTestCase {
+/** Unit tests for {@link S2EdgeQuery}. */
+@RunWith(JUnit4.class)
+public class S2EdgeQueryTest extends GeometryTestCase {
   public S2Point perturbAtDistance(S1Angle distance, S2Point a0, S2Point b0) {
-    S2Point p = S2EdgeUtil.interpolateAtDistance(distance, a0, b0);
+    S2Point p = S2EdgeUtil.getPointOnLine(a0, b0, distance);
     if (data.oneIn(2)) {
       p =
           new S2Point(
@@ -100,13 +110,12 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       S2Point b = edges.get(i).getEnd();
       S2EdgeQuery query = new S2EdgeQuery(index);
       // Shape id has to be 0 because only one shape was inserted.
-      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, index.shapes.get(0));
+      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, 0);
 
-      Map<S2Shape, S2EdgeQuery.Edges> edgeMap = query.getCandidates(a, b);
-      assertEquals(1, edgeMap.size());
-      assertTrue(edgeMap.containsKey(shape));
+      Edges result = Iterables.getOnlyElement(query.getCandidates(a, b));
+      assertEquals(0, result.shapeId());
       List<Integer> candidatesList = edgesToList(candidates);
-      List<Integer> edgeMapList = edgesToList(edgeMap.get(shape));
+      List<Integer> edgeMapList = edgesToList(result);
       assertEquals(edgeMapList, candidatesList);
       assertFalse(candidatesList.isEmpty());
 
@@ -129,7 +138,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
             missingCandidates.add(i);
           }
         } else {
-          double maxDist = PROJ.maxDiag.getValue(S2CellId.MAX_LEVEL);
+          double maxDist = MAX_DIAG.getValue(S2CellId.MAX_LEVEL);
           if (S2EdgeUtil.getDistance(a, c, d).radians() < maxDist
               || S2EdgeUtil.getDistance(b, c, d).radians() < maxDist
               || S2EdgeUtil.getDistance(c, a, b).radians() < maxDist
@@ -141,13 +150,12 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       assertTrue(missingCandidates.isEmpty());
 
       // Test that GetCrossings() returns only the actual crossing edges.
-      assertEquals(expectedCrossings, edgesToList(query.getCrossings(a, b, shape)));
+      assertEquals(expectedCrossings, edgesToList(query.getCrossings(a, b, 0)));
 
       // Verify that the second version of GetCrossings returns the same result.
-      Map.Entry<S2Shape, Edges> result =
-          Iterables.getOnlyElement(query.getCrossings(a, b).entrySet());
-      assertEquals(shape, result.getKey());
-      assertEquals(expectedCrossings, edgesToList(result.getValue()));
+      result = Iterables.getOnlyElement(query.getCrossings(a, b));
+      assertEquals(0, result.shapeId());
+      assertEquals(expectedCrossings, edgesToList(result));
     }
 
     // There is nothing magical about this particular ratio; this check exists to catch changes that
@@ -172,6 +180,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
    * <p>This test is sufficient to demonstrate that padding the cell boundaries is necessary for
    * correctness. (It fails if S2ShapeIndex.CELL_PADDING is set to zero.)
    */
+  @Test
   public void testPerturbedCubeEdges() {
     for (int iter = 0; iter < 10; ++iter) {
       int face = data.nextInt(6);
@@ -189,6 +198,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
    * because one coordinate is zero, and they lie on the boundaries between the immediate child
    * cells of the cube face.
    */
+  @Test
   public void testPerturbedCubeFaceAxes() {
     for (int iter = 0; iter < 5; ++iter) {
       int face = data.nextInt(6);
@@ -204,12 +214,14 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
    * Tests a random collection of edges near the S2 cube vertex where the Hilbert curve starts and
    * ends.
    */
+  @Test
   public void testCapEdgesNearCubeVertex() {
     S2Point p = new S2Point(-1, -1, 1).normalize();
     checkAllCrossings(
         getCapEdges(S2Cap.fromAxisAngle(p, S1Angle.radians(1e-3)), S1Angle.radians(1e-4), 1000));
   }
 
+  @Test
   public void testCollinearEdgesOnCellBoundaries() {
     // 9 * 8 / 2 = 36 edges
     int numEdgeIntervals = 8;
@@ -230,6 +242,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testGetCandidatesMultipleShapes() {
     S2Point a = data.getRandomPoint();
     S2Point b = data.getRandomPoint();
@@ -246,14 +259,15 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       index.add(shape);
     }
 
-    S2EdgeQuery edgeQuery = new S2EdgeQuery(index);
-    Map<S2Shape, S2EdgeQuery.Edges> edgeMap = edgeQuery.getCandidates(a, b);
-    assertEquals(numShapes, edgeMap.size());
+    Set<Integer> expected = new HashSet<>();
     for (int i = 0; i < index.shapes.size(); ++i) {
-      assertTrue(edgeMap.containsKey(index.shapes.get(i)));
+      expected.add(i);
     }
+    Iterable<Edges> results = new S2EdgeQuery(index).getCandidates(a, b);
+    assertEquals(expected, ImmutableSet.copyOf(Iterables.transform(results, Edges::shapeId)));
   }
 
+  @Test
   public void testPolylineCrossings() {
     // Three zig-zag lines near the equator.
     List<S2Polyline> polylines =
@@ -272,11 +286,11 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       index.add(line);
     }
     S2EdgeQuery query = new S2EdgeQuery(index);
-    for (Map.Entry<S2Shape, Edges> entry : query.getCrossings(a0, a1).entrySet()) {
+    for (Edges edges : query.getCrossings(a0, a1)) {
       // Shapes with no crossings should be filtered out by this method.
-      S2Polyline polyline = (S2Polyline) entry.getKey();
-      assertFalse(edgesToList(query.getCrossings(a0, a1, polyline)).isEmpty());
-      for (Edges edges = entry.getValue(); !edges.isEmpty(); ) {
+      S2Polyline polyline = polylines.get(edges.shapeId());
+      assertFalse(edgesToList(query.getCrossings(a0, a1, edges.shapeId())).isEmpty());
+      while (!edges.isEmpty()) {
         int j = edges.nextEdge();
         S2Point b0 = polyline.vertex(j);
         S2Point b1 = polyline.vertex(j + 1);
@@ -284,10 +298,11 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
       }
     }
     // Also test that every edge with a crossing is in the results exactly once.
-    for (S2Polyline line : polylines) {
-      for (int i = 0; i < line.numVertices() - 1; i++) {
-        if (S2EdgeUtil.robustCrossing(a0, a1, line.vertex(i), line.vertex(i + 1)) >= 0) {
-          assertEquals(1, Collections.frequency(edgesToList(query.getCrossings(a0, a1, line)), i));
+    for (int i = 0; i < polylines.size(); i++) {
+      S2Polyline line = polylines.get(i);
+      for (int j = 0; j < line.numVertices() - 1; j++) {
+        if (S2EdgeUtil.robustCrossing(a0, a1, line.vertex(j), line.vertex(j + 1)) >= 0) {
+          assertEquals(1, Collections.frequency(edgesToList(query.getCrossings(a0, a1, i)), j));
         }
       }
     }
@@ -297,6 +312,7 @@ public strictfp class S2EdgeQueryTest extends GeometryTestCase {
    * Tests that {@link S2EdgeQuery#getCells(S2Point, R2Vector, S2Point, R2Vector, S2PaddedCell,
    * List)} returns the correct value.
    */
+  @Test
   public void testGetCellsRegression() {
     int numTests = 10;
     for (int n = 0; n < numTests; ++n) {

@@ -31,7 +31,7 @@ import jsinterop.annotations.JsType;
  */
 @SuppressWarnings("AmbiguousMethodReference")
 @JsType
-public final strictfp class R2Vector implements Serializable {
+public final class R2Vector implements Serializable {
   double x;
   double y;
 
@@ -192,6 +192,11 @@ public final strictfp class R2Vector implements Serializable {
     return false;
   }
 
+  /** Returns true if the given R2Vector "that" has exactly the same x and y coordinates as this. */
+  public boolean isEqualTo(R2Vector that) {
+    return this.x == that.x && this.y == that.y;
+  }
+
   /** Returns true if that object is an R2Vector with exactly the same x and y coordinates. */
   @Override
   public boolean equals(Object that) {
@@ -203,7 +208,7 @@ public final strictfp class R2Vector implements Serializable {
   }
 
   /**
-   * Calcualates hashcode based on stored coordinates. Since we want +0.0 and -0.0 to be treated the
+   * Calculates hashcode based on stored coordinates. Since we want +0.0 and -0.0 to be treated the
    * same, we ignore the sign of the coordinates.
    */
   @Override

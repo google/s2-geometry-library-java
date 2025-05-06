@@ -17,19 +17,27 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2TextFormat.makePointOrDie;
 import static com.google.common.geometry.S2TextFormat.parsePointsOrDie;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/** Tests for {@link S2MaxDistanceTargets}. */
+/** Tests for {@link S2FurthestEdgeQuery} targets. */
+@RunWith(JUnit4.class)
 public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   /**
-   * Verifies that the overloads of updateBestDistance on {@link S2MaxDistanceTargets.PointTarget}
+   * Verifies that the overloads of updateBestDistance on {@link S2FurthestEdgeQuery.PointTarget}
    * work as expected with S1ChordAngle.maxCollector for distances from points, edges, and cells.
    */
+  @Test
   public void testUpdateMaxDistanceToPointTarget() {
     S2Point targetPoint = makePointOrDie("0:0");
-    S2MaxDistanceTargets.PointTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.PointTarget<>(targetPoint);
+    S2FurthestEdgeQuery.PointTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.PointTarget<>(targetPoint);
     DistanceCollector<S1ChordAngle> dist0 = S1ChordAngle.maxCollector();
     dist0.set(S1ChordAngle.fromDegrees(0));
     DistanceCollector<S1ChordAngle> dist10 = S1ChordAngle.maxCollector();
@@ -62,13 +70,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that the overloads of updateBestDistance on {@link S2MaxDistanceTargets.EdgeTarget}
+   * Verifies that the overloads of updateBestDistance on {@link S2FurthestEdgeQuery.EdgeTarget}
    * work as expected with S1ChordAngle.maxCollector for distances from points, edges, and cells.
    */
+  @Test
   public void testUpdateMaxDistanceToEdgeTarget() {
     List<S2Point> targetEdge = parsePointsOrDie("0:-1, 0:1");
-    S2MaxDistanceTargets.EdgeTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.EdgeTarget<>(targetEdge.get(0), targetEdge.get(1));
+    S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.EdgeTarget<>(targetEdge.get(0), targetEdge.get(1));
     DistanceCollector<S1ChordAngle> dist0 = S1ChordAngle.maxCollector();
     dist0.set(S1ChordAngle.fromDegrees(0));
     DistanceCollector<S1ChordAngle> dist10 = S1ChordAngle.maxCollector();
@@ -100,13 +109,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that the overloads of updateBestDistance on {@link S2MaxDistanceTargets.CellTarget}
+   * Verifies that the overloads of updateBestDistance on {@link S2FurthestEdgeQuery.CellTarget}
    * work as expected with S1ChordAngle.maxCollector for distances from points, edges, and cells.
    */
+  @Test
   public void testUpdateMaxDistanceToCellTarget() {
     S2Cell targetCell = new S2Cell(makePointOrDie("0:1"));
-    S2MaxDistanceTargets.CellTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.CellTarget<>(targetCell);
+    S2FurthestEdgeQuery.CellTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.CellTarget<>(targetCell);
     DistanceCollector<S1ChordAngle> dist0 = S1ChordAngle.maxCollector();
     dist0.set(S1ChordAngle.fromDegrees(0));
     DistanceCollector<S1ChordAngle> dist10 = S1ChordAngle.maxCollector();
@@ -135,13 +145,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from an edge to a {@link S2MaxDistanceTargets.PointTarget}
-   * with a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the
-   * edge to the point target is greater than the old distance, not greater than or equal to.
+   * Verifies that updateBestDistance from an edge to a {@link S2FurthestEdgeQuery.PointTarget} with
+   * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
+   * the point target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromEdgeToPointWhenEqual() {
-    S2MaxDistanceTargets.PointTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.PointTarget<>(makePointOrDie("1:0"));
+    S2FurthestEdgeQuery.PointTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.PointTarget<>(makePointOrDie("1:0"));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     List<S2Point> edge = parsePointsOrDie("0:-1, 0:1");
     assertTrue(target.updateBestDistance(edge.get(0), edge.get(1), dist));
@@ -149,14 +160,15 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from an edge to a {@link S2MaxDistanceTargets.PointTarget}
-   * with a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the
-   * edge to the point target is greater than the old distance, not greater than or equal to.
+   * Verifies that updateBestDistance from an edge to a {@link S2FurthestEdgeQuery.PointTarget} with
+   * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
+   * the point target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromCellToPointWhenEqual() {
     S2Point targetPoint = makePointOrDie("1:0");
-    S2MaxDistanceTargets.PointTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.PointTarget<>(targetPoint);
+    S2FurthestEdgeQuery.PointTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.PointTarget<>(targetPoint);
 
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     S2Cell cell = new S2Cell(makePointOrDie("0:0"));
@@ -165,13 +177,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from an edge to a {@link S2MaxDistanceTargets.EdgeTarget} with
+   * Verifies that updateBestDistance from an edge to a {@link S2FurthestEdgeQuery.EdgeTarget} with
    * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
    * the edge target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromEdgeToEdgeWhenEqual() {
-    S2MaxDistanceTargets.EdgeTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.EdgeTarget<>(makePointOrDie("1:0"), makePointOrDie("1:1"));
+    S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.EdgeTarget<>(makePointOrDie("1:0"), makePointOrDie("1:1"));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     List<S2Point> edge = parsePointsOrDie("0:-1, 0:1");
     assertTrue(target.updateBestDistance(edge.get(0), edge.get(1), dist));
@@ -180,12 +193,13 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
 
   /**
    * Verifies that updateBestDistance from a degenerate edge (a point) to an antipodal {@link
-   * S2MaxDistanceTargets.EdgeTarget} with a {@link S1ChordAngle#maxCollector()} returns true, and
+   * S2FurthestEdgeQuery.EdgeTarget} with a {@link S1ChordAngle#maxCollector()} returns true, and
    * that the distance is the maximum.
    */
+  @Test
   public void testUpdateMaxDistanceFromEdgeToEdgeAntipodal() {
-    S2MaxDistanceTargets.EdgeTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.EdgeTarget<>(makePointOrDie("0:89"), makePointOrDie("0:91"));
+    S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.EdgeTarget<>(makePointOrDie("0:89"), makePointOrDie("0:91"));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     List<S2Point> edge = parsePointsOrDie("1:-90, -1:-90");
     assertTrue(target.updateBestDistance(edge.get(0), edge.get(1), dist));
@@ -193,13 +207,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from a cell to a {@link S2MaxDistanceTargets.EdgeTarget} with
-   * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
+   * Verifies that updateBestDistance from a cell to a {@link S2FurthestEdgeQuery.EdgeTarget} with a
+   * {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
    * the edge target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromCellToEdgeWhenEqual() {
-    S2MaxDistanceTargets.EdgeTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.EdgeTarget<>(makePointOrDie("1:0"), makePointOrDie("1:1"));
+    S2FurthestEdgeQuery.EdgeTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.EdgeTarget<>(makePointOrDie("1:0"), makePointOrDie("1:1"));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     S2Cell cell = new S2Cell(makePointOrDie("0:0"));
     assertTrue(target.updateBestDistance(cell, dist));
@@ -207,16 +222,17 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies the consistency of {@link S2MaxDistanceTargets.CellTarget#getCapBound()} and {@link
+   * Verifies the consistency of {@link S2FurthestEdgeQuery.CellTarget#getCapBound()} and {@link
    * S2Cell#getMaxDistance()}.
    */
+  @Test
   public void testMaxDistanceGetCapBound() {
     for (int i = 0; i < 100; i++) {
       // Random cells at uniformly distributed random levels.
       S2Cell cell = new S2Cell(data.getRandomCellId());
       // We'll get the maximum distance to these randomly located and sized cells.
-      S2MaxDistanceTargets.CellTarget<S1ChordAngle> target =
-          new S2MaxDistanceTargets.CellTarget<>(cell);
+      S2FurthestEdgeQuery.CellTarget<S1ChordAngle> target =
+          new S2FurthestEdgeQuery.CellTarget<>(cell);
 
       // Get a cap bounding the area of best possible (maximum) distance to the target cell.
       S2Cap cap = target.getCapBound();
@@ -235,13 +251,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from an edge to a {@link S2MaxDistanceTargets.CellTarget} with
+   * Verifies that updateBestDistance from an edge to a {@link S2FurthestEdgeQuery.CellTarget} with
    * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the edge to
    * the cell target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromEdgeToCellWhenEqual() {
-    S2MaxDistanceTargets.CellTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.CellTarget<>(new S2Cell(makePointOrDie("0:1")));
+    S2FurthestEdgeQuery.CellTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.CellTarget<>(new S2Cell(makePointOrDie("0:1")));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     List<S2Point> edge = parsePointsOrDie("0:-1, 0:1");
     assertTrue(target.updateBestDistance(edge.get(0), edge.get(1), dist));
@@ -249,13 +266,14 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
   }
 
   /**
-   * Verifies that updateBestDistance from a cell to a {@link S2MaxDistanceTargets.CellTarget} with
-   * a {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the cell to
+   * Verifies that updateBestDistance from a cell to a {@link S2FurthestEdgeQuery.CellTarget} with a
+   * {@link S1ChordAngle#maxCollector()} only returns true when the new distance from the cell to
    * the cell target is greater than the old distance, not greater than or equal to.
    */
+  @Test
   public void testUpdateMaxDistanceFromCellToCellWhenEqual() {
-    S2MaxDistanceTargets.CellTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.CellTarget<>(new S2Cell(makePointOrDie("0:1")));
+    S2FurthestEdgeQuery.CellTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.CellTarget<>(new S2Cell(makePointOrDie("0:1")));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     S2Cell cell = new S2Cell(makePointOrDie("0:0"));
     assertTrue(target.updateBestDistance(cell, dist));
@@ -266,10 +284,11 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
    * Verifies that updateBestDistance for the distance from a cell target to an antipodal cell is
    * the maximum distance.
    */
+  @Test
   public void testUpdateMaxDistanceToCellAntipodal() {
     S2Point p = makePointOrDie("0:0");
-    S2MaxDistanceTargets.CellTarget<S1ChordAngle> target =
-        new S2MaxDistanceTargets.CellTarget<>(new S2Cell(p));
+    S2FurthestEdgeQuery.CellTarget<S1ChordAngle> target =
+        new S2FurthestEdgeQuery.CellTarget<>(new S2Cell(p));
     DistanceCollector<S1ChordAngle> dist = S1ChordAngle.maxCollector();
     S2Cell cell = new S2Cell(p.neg());
     assertTrue(target.updateBestDistance(cell, dist));

@@ -15,7 +15,9 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePoint;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -26,14 +28,18 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for S2CellIdVectorCoder. */
-public class S2CellIdVectorCoderTest extends TestCase {
+@RunWith(JUnit4.class)
+public class S2CellIdVectorCoderTest {
 
   private static final S2CellId NONE = S2CellId.none();
   private static final S2CellId SENTINEL = S2CellId.sentinel();
 
+  @Test
   public void testDecodeFromByteString() throws IOException {
     List<S2CellId> expected = Lists.newArrayList(SENTINEL, SENTINEL);
 
@@ -43,64 +49,77 @@ public class S2CellIdVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testEmpty() throws IOException {
     checkEncodeDecode(Lists.newArrayList(), 2);
   }
 
+  @Test
   public void testNone() throws IOException {
     checkEncodeDecode(Lists.newArrayList(NONE.id()), 3);
   }
 
+  @Test
   public void testNoneNone() throws IOException {
     checkEncodeDecode(Lists.newArrayList(NONE.id(), NONE.id()), 4);
   }
 
+  @Test
   public void testSentinel() throws IOException {
     checkEncodeDecode(Lists.newArrayList(SENTINEL.id()), 10);
   }
 
+  @Test
   public void testMaximumShiftCell() throws IOException {
     // Tests the encoding of a single cell at level 2, which corresponds to the maximum encodable
     // shift value (56).
     checkEncodeDecode(Lists.newArrayList(S2CellId.fromDebugString("0/00").id()), 3);
   }
 
+  @Test
   public void testSentinelSentinel() throws IOException {
     checkEncodeDecode(Lists.newArrayList(SENTINEL.id(), SENTINEL.id()), 11);
   }
 
+  @Test
   public void testNoneSentinelNone() throws IOException {
     checkEncodeDecode(Lists.newArrayList(NONE.id(), SENTINEL.id(), NONE.id()), 26);
   }
 
+  @Test
   public void testInvalidCells() throws IOException {
     // Tests that cells with an invalid LSB can be encoded.
     checkEncodeDecode(Lists.newArrayList(0x6L, 0xeL, 0x7eL), 5);
   }
 
+  @Test
   public void testOneByteLeafCells() throws IOException {
     // Tests that (1) if all cells are leaf cells, the low bit is not encoded, and (2) this can be
     // indicated using the standard 1-byte header.
     checkEncodeDecode(Lists.newArrayList(0x3L, 0x7L, 0x177L), 5);
   }
 
+  @Test
   public void testOneByteLevel29Cells() throws IOException {
     // Tests that (1) if all cells are at level 29, the low bit is not encoded, and (2) this can be
     // indicated using the standard 1-byte header.
     checkEncodeDecode(Lists.newArrayList(0xcL, 0x1cL, 0x47cL), 5);
   }
 
+  @Test
   public void testOneByteLevel28Cells() throws IOException {
     // Tests that (1) if all cells are at level 28, the low bit is not encoded, and (2) this can be
     // indicated using the extended 2-byte header.
     checkEncodeDecode(Lists.newArrayList(0x30L, 0x70L, 0x1770L), 6);
   }
 
+  @Test
   public void testOneByteMixedCellLevels() throws IOException {
     // Tests that cells at mixed levels can be encoded in one byte.
     checkEncodeDecode(Lists.newArrayList(0x300L, 0x1c00L, 0x7000L, 0xff00L), 6);
   }
 
+  @Test
   public void testOneByteMixedCellLevelsWithPrefix() throws IOException {
     // Tests that cells at mixed levels can be encoded in one byte even when they share a multi-byte
     // prefix.
@@ -111,6 +130,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
         10);
   }
 
+  @Test
   public void testOneByteRangeWithBaseValue() throws IOException {
     // Tests that cells can be encoded in one byte by choosing a base value whose bit range overlaps
     // the delta values.
@@ -122,6 +142,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
         9);
   }
 
+  @Test
   public void testSixFaceCells() throws IOException {
     List<Long> expected = new ArrayList<>();
     for (int face = 0; face < 6; face++) {
@@ -130,6 +151,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
     checkEncodeDecode(expected, 8);
   }
 
+  @Test
   public void testFourLevel10Children() throws IOException {
     List<Long> expected = new ArrayList<>();
     S2CellId parent = S2CellId.fromDebugString("3/012301230");
@@ -139,6 +161,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
     checkEncodeDecode(expected, 8);
   }
 
+  @Test
   public void testFractalS2ShapeIndexCells() throws IOException {
     S2FractalBuilder fractalBuilder = new S2FractalBuilder(new Random(1));
     fractalBuilder.setLevelForApproxMaxEdges(3 * 1024);
@@ -155,6 +178,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
     checkEncodeDecode(expected, 2911);
   }
 
+  @Test
   public void testCoveringCells() throws IOException {
     List<Long> expected =
         Lists.newArrayList(
@@ -258,12 +282,14 @@ public class S2CellIdVectorCoderTest extends TestCase {
     checkEncodeDecode(expected, 488);
   }
 
+  @Test
   public void testShift() throws IOException {
     // Test shift values which are larger than int32 (to test code paths like 1 << shift, where
     // shift >= 32).
     checkEncodeDecode(Lists.newArrayList(0x1689100000000000L), 5);
   }
 
+  @Test
   public void testLowerBoundLimits() throws IOException {
     // Test seeking before the beginning and past the end of the vector.
     S2CellId first = S2CellId.begin(S2CellId.MAX_LEVEL);
@@ -284,6 +310,7 @@ public class S2CellIdVectorCoderTest extends TestCase {
   }
 
   // See EncodedS2CellIdVectorInitNeverCrashesRegression in encoded_s2cell_id_vector_test.cc.
+  @Test
   public void testEncodedS2CellIdVectorInitNeverCrashesRegression() throws IOException {
     // Previously, this would overflow the 32-bit multiplies of (size * bytesPerWord) and/or
     // (position * bytesPerWord) in UintVectorCoder.decode(), causing an

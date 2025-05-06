@@ -15,7 +15,6 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Doubles;
 import com.google.common.primitives.ImmutableLongArray;
@@ -23,7 +22,6 @@ import com.google.common.primitives.Ints;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
 
@@ -41,7 +39,7 @@ public final class PrimitiveArrays {
    *
    * <p>Implementations may support arrays &gt; 2GB in size like so:
    *
-   * <pre>{@code
+   * {@snippet :
    * new Bytes() {
    *   byte get(long position) {
    *     if (position < b1.length) {
@@ -51,7 +49,7 @@ public final class PrimitiveArrays {
    *   }
    *   long length() { return b1.length + b2.length; }
    * }
-   * }</pre>
+   * }
    */
   @JsType
   public interface Bytes {
@@ -70,6 +68,23 @@ public final class PrimitiveArrays {
     default Cursor cursor(long position, long limit) {
       Preconditions.checkArgument(position <= limit && position <= length());
       return new Cursor(position, limit);
+    }
+
+    /** Returns true if this Bytes contains the same bytes as {@code other}. */
+    default boolean isEqualTo(Bytes other) {
+      if (other == null) {
+        return false;
+      }
+      long length = length();
+      if (other.length() != length) {
+        return false;
+      }
+      for (long i = 0; i < length; i++) {
+        if (other.get(i) != get(i)) {
+          return false;
+        }
+      }
+      return true;
     }
 
     /**
@@ -91,32 +106,6 @@ public final class PrimitiveArrays {
     @JsIgnore // overload.
     default Cursor cursor() {
       return cursor(0);
-    }
-
-    /**
-     * Returns a {@link Bytes} wrapping {@code buffer}.
-     *
-     * <p>The returned array starts from index 0 of buffer, and its length is {@code
-     * buffer.limit()}.
-     */
-    // TODO(torrey): Consider removing ByteBuffer from PrimitiveArrays to avoid J2CL problems.
-    // Provide another implementation for J2CL?
-    @GwtIncompatible("ByteBuffer") // JsIgnore is insufficient.
-    static Bytes fromByteBuffer(ByteBuffer buffer) {
-      // TODO(user): Buffer positions > 0 trip bugs in the various methods. Exclude this
-      // case.
-      Preconditions.checkState(buffer.position() == 0);
-      return new Bytes() {
-        @Override
-        public byte get(long position) {
-          return buffer.get(Ints.checkedCast(position));
-        }
-
-        @Override
-        public long length() {
-          return (long) buffer.limit();
-        }
-      };
     }
 
     /** Returns a {@link Bytes} wrapping {@code bytes}. */

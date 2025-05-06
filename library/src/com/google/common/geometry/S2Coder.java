@@ -15,14 +15,16 @@
  */
 package com.google.common.geometry;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
-import com.google.common.geometry.S2.SerializableFunction;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
-import java.nio.charset.Charset;
+import java.util.function.Supplier;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
 
@@ -35,28 +37,46 @@ import jsinterop.annotations.JsType;
  */
 @JsType
 public interface S2Coder<T> extends Serializable {
-  /** A delimited string coder that converts to/from UTF8, writing a varint length before it. */
-  S2Coder<String> STRING =
-      new S2Coder<String>() {
-        /** The charset to use. Note the StandardCharsets constant is not available in Android. */
-        private final Charset charset = Charset.forName("UTF-8");
+
+  /** A serializable function from type A to type B that may throw an IOException. */
+  @JsType
+  public interface SerializableFunction<A, B> extends Serializable {
+    B apply(A input) throws IOException;
+  }
+
+  /** A coder of an unboxed varint. */
+  @SuppressWarnings("CheckedExceptionNotThrown")
+  S2Coder<Long> UNBOXED_VARINT =
+      new S2Coder<>() {
+        @Override
+        public void encode(Long value, OutputStream output) throws IOException {
+          EncodedInts.writeVarint64(output, value);
+        }
 
         @Override
-        public void encode(String value, OutputStream output) throws IOException {
-          byte[] bytes = value.getBytes(charset);
+        public Long decode(Bytes data, Cursor cursor) throws IOException {
+          return data.readVarint64(cursor);
+        }
+      };
+
+  /** An encoder of byte[] that writes the varint length of the byte array before it. */
+  S2Coder<byte[]> BYTES =
+      new S2Coder<>() {
+        @Override
+        public void encode(byte[] bytes, OutputStream output) throws IOException {
           EncodedInts.writeVarint64(output, bytes.length);
           output.write(bytes);
         }
 
         @Override
-        public String decode(PrimitiveArrays.Bytes data, Cursor cursor) {
+        public byte[] decode(Bytes data, Cursor cursor) {
           int length = data.readVarint32(cursor);
-          Preconditions.checkArgument(length <= cursor.remaining(), "String too long");
+          Preconditions.checkArgument(length <= cursor.remaining(), "Length too long");
           byte[] b = new byte[length];
           for (int i = 0; i < b.length; i++) {
             b[i] = data.get(cursor.position++);
           }
-          return new String(b, charset);
+          return b;
         }
 
         @Override
@@ -65,9 +85,68 @@ public interface S2Coder<T> extends Serializable {
         }
       };
 
+  /** A delimited string coder that converts to/from UTF8 and delegates to {@link #BYTES}. */
+  S2Coder<String> STRING = BYTES.delegating(
+      value -> value.getBytes(UTF_8),
+      b -> new String(b, UTF_8));
+
   /** Encodes {@code value} to {@code output}. */
   @JsIgnore // OutputStream is not available to J2CL.
   void encode(T value, OutputStream output) throws IOException;
+
+  @JsIgnore
+  default byte[] encode(T value) throws IOException {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    encode(value, bytes);
+    return bytes.toByteArray();
+  }
+
+  /** As {@link #encode(T)} but wraps any exceptions in IllegalArgumentException. */
+  default byte[] unsafeEncode(T value) {
+    try {
+      return encode(value);
+    } catch (IOException e) {
+      throw new IllegalArgumentException(e);
+    }
+  }
+
+  /** As {@link #decode(Bytes)} but wraps any exceptions in IllegalArgumentException. */
+  default T unsafeDecode(Bytes data) {
+    try {
+      return decode(data);
+    } catch (IOException e) {
+      throw new IllegalArgumentException(e);
+    }
+  }
+
+  /**
+   * Returns a supplier that wraps the given value and serializes itself with this coder, decoding
+   * afterward on first access. The resulting supplier is serializable but not thread-safe.
+   */
+  default SerializableSupplier<T> memoize(T value) {
+    return new MemoizeEncoded<>(this, value);
+  }
+
+  /** A memoized value that serializes itself in terms of the encoded representation. */
+  final class MemoizeEncoded<T> implements SerializableSupplier<T> {
+    private final S2Coder<T> coder;
+    private transient T decoded;
+    private final byte[] encoded;
+    MemoizeEncoded(S2Coder<T> coder, T value) {
+      this.coder = coder;
+      this.decoded = value;
+      this.encoded = coder.unsafeEncode(value);
+    }
+    @Override public T get() {
+      if (decoded == null) {
+        return decoded = coder.unsafeDecode(Bytes.fromByteArray(encoded));
+      }
+      return decoded;
+    }
+  }
+
+  /** A serializable supplier that can be returned by memoize. */
+  interface SerializableSupplier<T> extends Supplier<T>, Serializable {}
 
   /**
    * Decodes a value of type {@link T} from {@code data} starting at {@code cursor.position}. {@code
@@ -96,24 +175,30 @@ public interface S2Coder<T> extends Serializable {
     return true;
   }
 
-  /** Returns a coder that delegates to this coder via the given encode/decode transforms. */
+  /**
+   * Returns a coder that delegates to this coder via the given encode/decode transforms, which may
+   * throw IOExceptions on invalid input.
+   */
   default <U> S2Coder<U> delegating(
       SerializableFunction<U, T> encode,
       SerializableFunction<T, U> decode) {
     S2Coder<T> base = this;
     return new S2Coder<U>() {
       @JsIgnore // OutputStream is not available to J2CL.
-      @Override public void encode(U value, OutputStream output) throws IOException {
+      @Override
+      public void encode(U value, OutputStream output) throws IOException {
         base.encode(encode.apply(value), output);
       }
 
-      @Override public U decode(Bytes data, Cursor cursor) throws IOException {
+      @Override
+      public U decode(Bytes data, Cursor cursor) throws IOException {
         // Note: When delegation passes through an AbstractList wrapper, and the data is short,
         // AbstractList may convert an IndexOutOfBoundsException into a NoSuchElementException.
         return decode.apply(base.decode(data, cursor));
       }
 
-      @Override public boolean isLazy() {
+      @Override
+      public boolean isLazy() {
         return base.isLazy();
       }
     };

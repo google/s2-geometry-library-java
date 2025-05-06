@@ -31,7 +31,6 @@ import com.google.common.geometry.S2Loop;
 import com.google.common.geometry.S2Point;
 import com.google.common.geometry.S2ShapeIndex;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import java.util.List;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -73,7 +72,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       loop =
           indexLoop(
@@ -100,7 +99,7 @@ public class S2LoopBenchmark {
     public boolean index() {
       S2ShapeIndex index = new S2ShapeIndex();
       index.add(loop);
-      index.iterator(); // force an index update.
+      index.applyUpdates();
       return index.isFresh();
     }
   }
@@ -128,7 +127,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       loop = indexLoop(
           S2Loop.makeRegularLoop(data.getRandomPoint(), DEFAULT_LOOP_RADIUS, numVertices));
@@ -178,7 +177,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           nested,
@@ -223,7 +222,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           disjoint,
@@ -271,7 +270,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           crosses,
@@ -323,7 +322,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           nestedGap,
@@ -362,7 +361,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           loops,
@@ -407,7 +406,7 @@ public class S2LoopBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       setIndexedLoops(
           loops,

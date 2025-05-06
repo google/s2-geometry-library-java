@@ -24,7 +24,6 @@ import com.google.common.geometry.S2Cap;
 import com.google.common.geometry.S2CellIndex;
 import com.google.common.geometry.S2CellUnion;
 import com.google.common.geometry.S2RegionCoverer;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -94,7 +93,7 @@ public class S2CellIndexBenchmark {
     /** Setup only needs to be done once, and can be reused for all iterations. */
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       // Build a query cap.
       S2Cap queryCap = S2Cap.fromAxisAngle(data.getRandomPoint(), kQueryCapRadius);

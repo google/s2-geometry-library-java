@@ -15,6 +15,8 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.S2Projections.levelIfCenter;
+import static com.google.common.geometry.S2Projections.xyzToFaceSiTi;
 import static java.lang.Math.min;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -58,7 +60,7 @@ import java.util.List;
  * <p>To encode leaf cells, this requires 8 bytes for the first vertex plus an average of 3.8 bytes
  * for each additional vertex.
  */
-public final strictfp class S2PointCompression {
+public final class S2PointCompression {
 
   private S2PointCompression() {}
 
@@ -83,8 +85,8 @@ public final strictfp class S2PointCompression {
   }
 
   /**
-   * If the list of points is empty, no faces will be encoded, and no (pi, qi) coordinates, but
-   * a single Varint32 of value zero will be written for the number of off-center points.
+   * If the list of points is empty, no faces will be encoded, and no (pi, qi) coordinates, but a
+   * single Varint32 of value zero will be written for the number of off-center points.
    */
   static void encodePointsCompressed(List<S2Point> points, int level, LittleEndianOutput encoder)
       throws IOException {
@@ -94,11 +96,11 @@ public final strictfp class S2PointCompression {
     int[] verticesQi = new int[points.size()];
     List<Integer> offCenter = new ArrayList<>();
     for (int i = 0; i < points.size(); i++) {
-      FaceSiTi faceSiTi = S2Projections.PROJ.xyzToFaceSiTi(points.get(i));
+      FaceSiTi faceSiTi = xyzToFaceSiTi(points.get(i));
       faces.addFace(faceSiTi.face);
       verticesPi[i] = siTiToPiQi(faceSiTi.si, level);
       verticesQi[i] = siTiToPiQi(faceSiTi.ti, level);
-      if (S2Projections.PROJ.levelIfCenter(faceSiTi, points.get(i)) != level) {
+      if (levelIfCenter(faceSiTi, points.get(i)) != level) {
         offCenter.add(i);
       }
     }
@@ -242,8 +244,9 @@ public final strictfp class S2PointCompression {
   private static S2Point facePiQiToXyz(int face, int pi, int qi, int level) {
     return S2Projections.faceUvToXyz(
             face,
-            S2Projections.PROJ.stToUV(piQiToST(pi, level)),
-            S2Projections.PROJ.stToUV(piQiToST(qi, level))).normalize();
+            S2Projections.stToUV(piQiToST(pi, level)),
+            S2Projections.stToUV(piQiToST(qi, level)))
+        .normalize();
   }
 
   private static class FaceRunCoder {

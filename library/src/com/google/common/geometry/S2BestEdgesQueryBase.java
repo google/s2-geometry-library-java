@@ -22,16 +22,17 @@ import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.common.geometry.S2ShapeUtil.PointVisitor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.CheckReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArraySet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.function.Predicate;
 import java.util.logging.Logger;
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * S2BestEdgesQueryBase is an abstract class for finding the best edge(s) between two geometries. It
@@ -69,37 +70,62 @@ import javax.annotation.Nullable;
  * tuples.
  */
 @CheckReturnValue
+@SuppressWarnings("Assertion")
 public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   private static final Logger log = Platform.getLoggerForClass(S2BestEdgesQueryBase.class);
 
+  private static final int PRIORITY_QUEUE_INITIAL_SIZE = 16;
+
   /**
-   * When considering enqueing an index cell, if it has a sufficiently small number of edges, then
+   * When considering enqueuing an index cell, if it has a sufficiently small number of edges, then
    * it is faster to check them directly rather than computing the minimum distance to the S2Cell,
-   * enqueing it, and possibly later dequeing it.
+   * enqueuing it, and possibly later dequeuing it.
    */
   // TODO(user): Adjust this using benchmarks.
   private static final int MIN_EDGES_TO_ENQUEUE = 10;
 
   /** Compares results by distance only, using the abstract distanceComparator(). */
   private final Comparator<Result<D>> resultDistanceComparator =
-      Comparator.comparing((Result<D> result) -> result.distance, distanceComparator());
+      (Result<D> result1, Result<D> result2) ->
+          distanceComparator().compare(result1.distance, result2.distance);
+
+  /** Compares results by distance only, using the abstract distanceComparator(). */
+  private final Comparator<Result<D>> resultDistanceComparatorReversed =
+      (Result<D> result1, Result<D> result2) ->
+          distanceComparator().compare(result2.distance, result1.distance);
 
   /** Compares results by shape identity, breaking ties by edge id. */
   private final Comparator<Result<D>> resultShapeEdgeComparator =
-      Comparator.comparingInt((Result<D> result) -> System.identityHashCode(result.shape))
-          .thenComparingInt((Result<D> result) -> result.edgeId);
+      (result1, result2) -> {
+        int diff = Integer.compare(result1.shapeId, result2.shapeId);
+        return diff != 0 ? diff : Integer.compare(result1.edgeId, result2.edgeId);
+      };
 
   /**
    * Compares Results by distance, then shape, then edge id. This breaks ties for distance in an
    * unpredictable but stable (per JVM instance) way.
    */
   private final Comparator<Result<D>> resultDistanceStableComparator =
-      resultDistanceComparator.thenComparing(resultShapeEdgeComparator);
+      (Result<D> result1, Result<D> result2) -> {
+        int compareByDistance = resultDistanceComparator.compare(result1, result2);
+        if (compareByDistance != 0) {
+          return compareByDistance;
+        }
+        return resultShapeEdgeComparator.compare(result1, result2);
+      };
+
+  /** Compares QueueEntry<D>s by distance. */
+  private final Comparator<QueueEntry<D>> queueComparator =
+      new Comparator<QueueEntry<D>>() {
+        @Override
+        public int compare(QueueEntry<D> qe1, QueueEntry<D> qe2) {
+          return distanceComparator().compare(qe1.distance, qe2.distance);
+        }
+      };
 
   // A queue of unprocessed S2CellIds, ordered by best distance to the target.
   private final PriorityQueue<QueueEntry<D>> queue =
-      new PriorityQueue<>(
-          Comparator.comparing((QueueEntry<D> arg) -> arg.distance, distanceComparator()));
+      new PriorityQueue<>(PRIORITY_QUEUE_INITIAL_SIZE, queueComparator);
 
   /**
    * Initial set of S2 cells to be searched for results, obtained by intersecting a covering of the
@@ -120,8 +146,16 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   /** The geometry we are measuring distance to. */
   protected S2BestDistanceTarget<D> target;
 
+  /**
+   * The optional shape filter applied to Results. If shapeFilter.test(shapeId) returns true,
+   * results from that shape should be included in the output. If shapeFilter is null, edges are not
+   * filtered by shape. The shapeFilter reference is not retained beyond the method calls it is
+   * supplied to.
+   */
+  protected @Nullable ShapeFilter shapeFilter;
+
   /** Polygon shapes with interiors at the best possible distance to the target. */
-  private final IdentityHashMap<S2Shape, Boolean> shapeInteriors = new IdentityHashMap<>();
+  private final IntArraySet shapeInteriors = new IntArraySet();
 
   /**
    * This is a temporary value, containing the maximum number of results that should be returned for
@@ -136,7 +170,6 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
    * Options#maxError()}.
    */
   protected D maxError;
-
 
   /**
    * This is a temporary value, computed from the target and current options. It is true if priority
@@ -185,16 +218,35 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   protected D distanceLimit;
 
   /**
-   * The accumulating result set is stored in a queue ordered by resultDistanceComparator reversed,
-   * which places the worst distance result at the head of the queue.
+   * If maxResults > 1, the accumulating result set is stored in this queue, ordered by
+   * resultDistanceComparator.reversed(). Thus the worst distance result is at the head of the
+   * queue.
    */
   protected final PriorityQueue<Result<D>> resultQueue =
-      new PriorityQueue<>(resultDistanceComparator.reversed());
+      new PriorityQueue<>(PRIORITY_QUEUE_INITIAL_SIZE, resultDistanceComparatorReversed);
 
   /**
-   * Some (shape, edge) pairs may be discovered as potential results multiple times, with the same
-   * or different distances. As each potential Result is found, we check if it has already been
-   * added to the resultQueue before computing the distance to it and adding it to the queue.
+   * If maxResults == 1, the single best result seen so far is stored in 'bestResult', which is null
+   * if no result has yet been found.
+   */
+  protected Result<D> bestResult;
+
+  /**
+   * If maxResults == 1, bestResultCollector is used to compare the current bestResult distance to
+   * new candidate results.
+   */
+  private final DistanceCollector<D> bestResultCollector = newDistanceCollector();
+
+  /**
+   * Whether the brute force algorithm is being used or not. Will be true if options.useBruteForce
+   * is true, or heuristics indicate that brute force is likely faster.
+   */
+  private boolean usingBruteForce;
+
+  /**
+   * When not using the brute force algorithm, some (shape, edge) pairs may be discovered as
+   * potential results multiple times, with the same or different distances. As each potential
+   * Result is found, we check if it has already been considered using this HashSet.
    */
   private final HashSet<ShapeEdgeId> testedEdges = new HashSet<>();
 
@@ -208,9 +260,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   protected abstract DistanceCollector<D> newDistanceCollector();
 
   /**
-   * Returns true if the given {@link DistanceCollector#distance()} has reached the best
-   * possible distance, and therefore no further calls to update the DistanceCollector will change
-   * the value.
+   * Returns true if the given {@link DistanceCollector#distance()} has reached the best possible
+   * distance, and therefore no further calls to update the DistanceCollector will change the value.
    */
   protected abstract boolean atBestLimit(DistanceCollector<D> distanceCollector);
 
@@ -238,7 +289,7 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
 
   /**
    * Returns the "distance to beat" for new results by adjusting the given 'value' towards
-   * bestDistance() by {@link maxError}.
+   * bestDistance() by {@link #maxError}.
    */
   protected abstract D errorBoundedDistance(D value);
 
@@ -253,36 +304,41 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
       S2BestDistanceTarget<D> target, S2ContainsPointQuery.ShapeVisitor visitor);
 
   /**
+   * While finding best edges, results can be filtered by shape id. A ShapeFilter takes an integer
+   * shapeId and returns true if edges from that shape should be returned.
+   */
+  public static interface ShapeFilter extends Predicate<Integer> {}
+
+  /**
    * A Result represents an edge of an S2Shape in the underlying index and its distance to a query
    * target. Note the following special case:
    *
    * <p>An {@code edgeId() < 0} represents the interior of a shape. Such results may be returned
    * when {@link Options#includeInteriors()} is true. Such results can be identified using the
-   * {@link isInterior()} method.
+   * {@link #isInterior()} method.
    */
   public static class Result<D extends S1Distance<D>> {
     private D distance;
-    private S2Shape shape;
+    private int shapeId;
     private int edgeId;
 
     /**
      * Constructs a Result for the given arguments.
      *
-     * @param distance The distance from the indexed shape to the target.
-     * @param shape The S2Shape in the underlying S2ShapeIndex of the query.
-     * @param edgeId The edge of the indexed shape, or -1 if this Result represents the shape
-     *     interior.
+     * @param distance The distance from the indexed shape to the target
+     * @param shapeId The index of the S2Shape in the underlying S2ShapeIndex of the query
+     * @param edgeId The edge of the shape or -1 if this Result represents the shape interior
      */
-    public Result(D distance, S2Shape shape, int edgeId) {
+    public Result(D distance, int shapeId, int edgeId) {
       this.distance = distance;
-      this.shape = shape;
+      this.shapeId = shapeId;
       this.edgeId = edgeId;
     }
 
     /** Updates this Result to have the given values. */
-    public void set(D distance, S2Shape shape, int edgeId) {
+    public void set(D distance, int shapeId, int edgeId) {
       this.distance = distance;
-      this.shape = shape;
+      this.shapeId = shapeId;
       this.edgeId = edgeId;
     }
 
@@ -291,7 +347,7 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
      * when options.includeInteriors() is true.)
      */
     public boolean isInterior() {
-      return shape != null && edgeId < 0;
+      return shapeId >= 0 && edgeId < 0;
     }
 
     /** The distance to the target from this shape edge. */
@@ -300,8 +356,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     }
 
     /** Returns the indexed shape. */
-    public S2Shape shape() {
-      return shape;
+    public int shapeId() {
+      return shapeId;
     }
 
     /** Identifies an edge within the shape. */
@@ -310,12 +366,12 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     }
 
     /**
-     * Returns true if this Result is equal to the other, where equality means the same S2Shape (by
-     * identity), the same edge id, and an exactly equal S1Distance of the same type.
+     * Returns true if this Result is equal to the other, where equality means the same shape ID,
+     * the same edge id, and an exactly equal S1Distance of the same type.
      */
     public boolean equalsResult(Result<D> other) {
       return (this.distance.equals(other.distance)
-          && this.shape == other.shape
+          && this.shapeId == other.shapeId
           && this.edgeId == other.edgeId);
     }
   }
@@ -326,15 +382,16 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
    */
   public interface ResultVisitor<D> {
     /**
-     * Each call to accept() indicates that the given 'edge' of the given 'shape' in the query index
-     * is at the given 'distance' to the query target.
+     * Provides a distance result and returns true if the distance query should continue.
+     *
+     * @param distance the distance from target to index
+     * @param shapeId the shape ID in the index
+     * @param edgeId the edge ID in the shape, or -1 if the distance is to the shape interior
      */
-    boolean accept(D distance, S2Shape shape, int edgeId);
+    boolean accept(D distance, int shapeId, int edgeId);
   }
 
-  /**
-   * The base class Builder. Subclasses provide additional constructors and setters.
-   */
+  /** The base class Builder. Subclasses provide additional constructors and setters. */
   public abstract static class Builder<D extends S1Distance<D>> {
     protected int maxResults;
     protected D distanceLimit;
@@ -409,18 +466,18 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     /**
      * A non-zero maxError specifies that edges with distance up to maxError further than the true
      * closest edges may be substituted in the result set, as long as such edges satisfy all the
-     * the remaining search criteria. This option only has an effect if {@link maxResults()} is
-     * also specified; otherwise all edges that satisfy the maxDistance() will be returned.
+     * remaining search criteria. This option only has an effect if {@link #maxResults()} is also
+     * specified; otherwise all edges that satisfy the maxDistance() will be returned.
      *
-     * <p>Note that this does not affect how the distance between edges is computed; it simply
-     * gives the algorithm permission to stop the search early, as soon as the best possible
-     * improvement drops below {@link maxError()}.
+     * <p>Note that this does not affect how the distance between edges is computed; it simply gives
+     * the algorithm permission to stop the search early, as soon as the best possible improvement
+     * drops below {@link #maxError()}.
      *
      * <p>This can be used to implement distance predicates efficiently. For example, to determine
      * whether the minimum distance is less than minDist, set {@code maxResults == 1} and {@code
-     * maxDistance() == maxError() == minDist}. This causes the algorithm to terminate as soon as
-     * it finds any edge whose distance is less than minDist, rather than continuing to search for
-     * an edge that is even closer.
+     * maxDistance() == maxError() == minDist}. This causes the algorithm to terminate as soon as it
+     * finds any edge whose distance is less than minDist, rather than continuing to search for an
+     * edge that is even closer.
      */
     @CanIgnoreReturnValue
     public Builder<D> setMaxError(D maxError) {
@@ -438,11 +495,11 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
      *
      * <p>When true, polygons that contain the target have a distance of zero. (For targets
      * consisting of multiple connected components, the distance is zero if any component is
-     * contained.) This is indicated in the results by returning a (shape, edgeId) pair with
-     * {@code edgeId == -1}, i.e. this value denotes the polygons's interior.
+     * contained.) This is indicated in the results by returning a (shape, edgeId) pair with {@code
+     * edgeId == -1}, i.e. this value denotes the polygons's interior.
      *
-     * <p>Note that this does not control if the interiors of _target_ polygons should be
-     * included; that is a separate option on targets.
+     * <p>Note that this does not control if the interiors of _target_ polygons should be included;
+     * that is a separate option on targets.
      *
      * <p>Note that for efficiency, any polygon that intersects the target may or may not have an
      * (edgeId == -1) result. Such results are optional because in that case the distance from the
@@ -477,7 +534,7 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
 
   /**
    * Options control the set of edges returned by S2BestEdgesQueryBase. You will usually want to
-   * provide Options that set a {@link distanceLimit()}, or limit {@link maxResults()} or both,
+   * provide Options that set a {@link #distanceLimit}, or limit {@link #maxResults} or both,
    * otherwise all edges will be returned.
    *
    * <p>Options are intended to be immutable, and created from a Builder.
@@ -528,12 +585,12 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     /**
      * A non-zero maxError specifies that edges with distance up to maxError worse than the true
      * best-distance edges may be substituted in the result set, as long as such edges satisfy all
-     * the remaining search criteria. This option only has an effect if {@link maxResults()} is also
+     * the remaining search criteria. This option only has an effect if {@link #maxResults} is also
      * specified; otherwise all edges that satisfy the distanceLimit() will be returned.
      *
      * <p>Note that this does not affect how the distance between edges is computed; it simply gives
      * the algorithm permission to stop the search early, as soon as the best possible improvement
-     * drops below {@link maxError()}.
+     * drops below {@link #maxError}.
      *
      * <p>This can be used to implement distance predicates efficiently. For example, to determine
      * whether the minimum distance is less than minDist, set {@code maxResults == 1} and {@code
@@ -640,14 +697,14 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     protected final S2Point b;
 
     /**
-     * Constructs a new EdgeTarget.
-     *
-     * @param a One endpoint of the edge defining this target.
-     * @param b The other endpoint of the edge defining this target.
+     * Constructs a new EdgeTarget from the given points defining an edge. The points must be unit
+     * length.
      */
     public EdgeTarget(S2Point a, S2Point b) {
-      this.a = a.normalize();
-      this.b = b.normalize();
+      assert S2.isUnitLength(a);
+      assert S2.isUnitLength(b);
+      this.a = a;
+      this.b = b;
     }
 
     /**
@@ -754,6 +811,99 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     }
   }
 
+  /** A base class for targets that are shape indexes. */
+  protected abstract static class ShapeIndexTarget<D extends S1Distance<D>>
+      implements S2BestDistanceTarget<D> {
+    protected final S2ShapeIndex index;
+    protected final S2BestEdgesQueryBase.Builder<D> queryBuilder;
+    protected S2BestEdgesQueryBase<D> bestDistanceQuery = null;
+
+    public ShapeIndexTarget(S2ShapeIndex index, S2BestEdgesQueryBase.Builder<D> queryBuilder) {
+      this.index = index;
+      this.queryBuilder = queryBuilder;
+    }
+
+    /**
+     * Note that changing the maxError option after a ShapeIndexTarget has been used requires
+     * rebuilding the internal query.
+     */
+    @Override
+    public boolean setMaxError(D maxError) {
+      queryBuilder.setMaxError(maxError);
+      bestDistanceQuery = null;
+      return true;
+    }
+
+    /**
+     * Note that changing the maxError option after a ShapeIndexTarget has been used requires
+     * rebuilding the internal query.
+     */
+    @Override
+    public void setIncludeInteriors(boolean includeInteriors) {
+      queryBuilder.setIncludeInteriors(includeInteriors);
+      bestDistanceQuery = null;
+    }
+
+    @Override
+    public boolean includeInteriors() {
+      return queryBuilder.includeInteriors();
+    }
+
+    /**
+     * If the distance to the given Target from this ShapeIndexTarget's indexed geometry is better
+     * than the current value in {@code collector}, update maxDist and return true. Otherwise return
+     * false.
+     */
+    protected boolean updateBestDistance(
+        S2BestDistanceTarget<D> target, DistanceCollector<D> collector) {
+      if (bestDistanceQuery == null) {
+        bestDistanceQuery = queryBuilder.build(index);
+      }
+
+      if (bestDistanceQuery.atBestLimit(collector)) {
+        return false; // No better result is possible.
+      }
+
+      // Is there a result farther than the current maxDist?
+      return bestDistanceQuery.updateBestDistance(target, collector);
+    }
+
+    @CanIgnoreReturnValue
+    @Override
+    public boolean visitConnectedComponentPoints(PointVisitor visitor) {
+      for (S2Shape shape : index.getShapes()) {
+        if (shape == null) {
+          continue;
+        }
+        // Shapes that don't have any edges require a special case (below).
+        boolean testedPoint = false;
+        for (int chain = 0; chain < shape.numChains(); ++chain) {
+          if (shape.getChainLength(chain) == 0) {
+            continue;
+          }
+          // Visit the first vertex of the shape chain.
+          testedPoint = true;
+          if (!visitor.apply(shape.getChainVertex(chain, 0))) {
+            return false;
+          }
+        }
+
+        if (!testedPoint) {
+          // Special case to handle full polygons.
+          S2Shape.ReferencePoint ref = shape.getReferencePoint();
+          if (!ref.contained()) {
+            continue;
+          }
+          // Visit the reference point for the full polygon.
+          if (!visitor.apply(ref.point())) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+  }
+
   /**
    * The algorithm maintains a priority queue of unprocessed S2CellIds, sorted in order with best
    * cells first.
@@ -786,23 +936,20 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   /**
    * ShapeEdgeId is a unique identifier for an edge within an {@link S2ShapeIndex}, consisting of a
    * shape and edgeId pair. These are stored in the testedEdges HashSet.
-   *
-   * TODO(torrey): Could this be optimized by encoding the shape and edge id into a Long? This may
-   * require ShapeIndex to provide shape ids.
    */
   private static class ShapeEdgeId {
-    private final S2Shape shape;
+    private final int shapeId;
     private final int edgeId;
 
     /** Constructs a new ShapeEdgeId for the given shape and edge id. */
-    public ShapeEdgeId(S2Shape shape, int edgeId) {
-      this.shape = shape;
+    public ShapeEdgeId(int shapeId, int edgeId) {
+      this.shapeId = shapeId;
       this.edgeId = edgeId;
     }
 
     @Override
     public int hashCode() {
-      return System.identityHashCode(shape) + (17 * edgeId);
+      return shapeId + (17 * edgeId);
     }
 
     @Override
@@ -813,7 +960,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
       if (!(obj instanceof ShapeEdgeId)) {
         return false;
       }
-      return (shape.equals(((ShapeEdgeId) obj).shape) && edgeId == ((ShapeEdgeId) obj).edgeId);
+      ShapeEdgeId ids = (ShapeEdgeId) obj;
+      return shapeId == ids.shapeId && edgeId == ids.edgeId;
     }
   }
 
@@ -851,120 +999,225 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   }
 
   /**
-   * Convenience method that returns the one best edge, if one is found that satisfies the current
-   * search options. Otherwise, if none satisfies the options, the {@code Optional<Result>} will be
-   * empty.
+   * Convenience method that returns the closest (shape, edge, distance) Result for the given target
+   * that satisfies the current query options, if any such edge exists. Otherwise, the {@code
+   * Optional<Result>} will be empty.
+   *
+   * <p>See {@link #findBestEdges(S2BestDistanceTarget, ShapeFilter, ResultVisitor)} for more
+   * details.
    */
   public Optional<Result<D>> findBestEdge(S2BestDistanceTarget<D> target) {
+    return findBestEdge(target, null);
+  }
+
+  /**
+   * Convenience method that returns the closest (shape, edge, distance) Result for the given target
+   * satisfying the current query options, and with a shape accepted by the given shapeFilter, if
+   * any such edge exists. Otherwise, the {@code Optional<Result>} will be empty.
+   *
+   * <p>See {@link #findBestEdges(S2BestDistanceTarget, ShapeFilter, ResultVisitor)} for more
+   * details.
+   */
+  public Optional<Result<D>> findBestEdge(
+      S2BestDistanceTarget<D> target, @Nullable ShapeFilter shapeFilter) {
     // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
     // not the same-named Options fields.
     distanceLimit = options.distanceLimit();
     maxResults = 1;
     maxError = options.maxError;
+    this.shapeFilter = shapeFilter;
 
-    // Find best edge and put it in resultQueue.
+    // Find the best edge and put it in 'bestResult'.
     findBestEdgesInternal(target);
+    this.shapeFilter = null;
 
-    Optional<Result<D>> result =
-        resultQueue.isEmpty() ? Optional.empty() : Optional.of(resultQueue.poll());
-    resultQueue.clear();
-    return result;
+    return Optional.ofNullable(bestResult);
   }
 
   /**
-   * Returns true if the distance to "target" is better than the current value in the given
-   * DistanceCollector, and updates the DistanceCollector with that smaller distance. Otherwise
-   * returns false.
+   * Gets the edge endpoints for the given Result, which must not be interior. Requires that the
+   * given Result was obtained from the current index, i.e. the query has not been re-initialized
+   * with a new index.
+   */
+  public void getEdge(Result<?> result, S2Shape.MutableEdge edge) {
+    index.getShapes().get(result.shapeId()).getEdge(result.edgeId(), edge);
+  }
+
+  /**
+   * Returns true if the distance to "target" from any indexed edge is better than the current value
+   * in the given DistanceCollector. If so, updates the DistanceCollector with that smaller
+   * distance. Otherwise returns false.
    */
   public boolean updateBestDistance(
       S2BestDistanceTarget<D> target, DistanceCollector<D> collector) {
+    return updateBestDistance(target, null, collector);
+  }
+
+  /**
+   * Returns true if the distance to "target" from an indexed edge of a shape passing the
+   * shapeFilter is better than the current value in the given DistanceCollector. If so, updates the
+   * DistanceCollector with that smaller distance. Otherwise returns false.
+   */
+  public boolean updateBestDistance(
+      S2BestDistanceTarget<D> target,
+      @Nullable ShapeFilter shapeFilter,
+      DistanceCollector<D> collector) {
     // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
     // not the same-named Options fields.
     maxResults = 1;
     maxError = options.maxError;
     distanceLimit = collector.distance();
+    this.shapeFilter = shapeFilter;
 
     findBestEdgesInternal(target);
-    if (resultQueue.isEmpty()) {
-      resultQueue.clear();
+    this.shapeFilter = null;
+
+    if (bestResult == null) {
       return false;
     }
 
-    Result<D> result = resultQueue.peek();
-    resultPool.add(result);
-    resultQueue.clear();
-    return collector.update(result.distance());
+    resultPool.add(bestResult);
+    return collector.update(bestResult.distance());
   }
 
   /**
-   * Returns the best-distance shape edges from the query index to the given target that satisfy the
-   * current options. This method may be called multiple times. If no shape edges satisfy the
-   * current options, an empty list is returned.
+   * Returns the best-distance (shape, edge, distance) Results to the given target that satisfy the
+   * current options. This method may be called multiple times with different targets and options.
+   * If no matching shape edges satisfy the current options, an empty list is returned.
    *
-   * <p>Note that if {@link Options#includeInteriors()} is true, the results may include some
-   * entries with {@code edgeId == -1}. This indicates that some point on a connected component of
-   * the target is at the best possible distance from the interior of the {@link Result#shape()}.
-   *
-   * <p>If the target has s2 cells, or polygons with
-   * {@link S2BestDistanceTarget#includeInteriors()}, then the results will include entries for any
-   * indexed shape edges that have the best possible distance target polygon or s2 cell interiors.
+   * <p>See {@link #findBestEdges(S2BestDistanceTarget, ShapeFilter, ResultVisitor)} for more
+   * details.
    */
   public List<Result<D>> findBestEdges(S2BestDistanceTarget<D> target) {
+    return findBestEdges(target, (ShapeFilter) null);
+  }
+
+  /**
+   * Returns the best-distance (shape, edge, distance) Results to the given 'target' that satisfy
+   * the current options, and with shapes accepted by the given ShapeFilter. This method may be
+   * called multiple times with different targets, options, and shape filters. If no matching shape
+   * edges satisfy the current options, an empty list is returned.
+   *
+   * <p>See {@link #findBestEdges(S2BestDistanceTarget, ShapeFilter, ResultVisitor)} for more
+   * details.
+   */
+  public List<Result<D>> findBestEdges(
+      S2BestDistanceTarget<D> target, @Nullable ShapeFilter shapeFilter) {
     // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
     // not the same-named Options fields.
     distanceLimit = options.distanceLimit();
     maxResults = options.maxResults();
     maxError = options.maxError;
+    this.shapeFilter = shapeFilter;
 
-    // Find best edges and put them in resultQueue, reusing Results from the pool.
+    // Find the best edge or edges. If maxResults == 1, put it in bestResult. Otherwise put them in
+    // resultQueue.
     findBestEdgesInternal(target);
+    this.shapeFilter = null;
 
-    // Copy the resultQueue into a list and sort it to return.
-    List<Result<D>> results = new ArrayList<>(resultQueue);
-    Collections.sort(results, resultDistanceStableComparator);
-    resultQueue.clear();
+    // If more than one result was requested, the queue contains any results found.
+    if (maxResults > 1) {
+      List<Result<D>> results = new ArrayList<>(resultQueue);
+      Collections.sort(results, resultDistanceStableComparator);
+      resultQueue.clear();
+      return results;
+    }
+
+    // Otherwise, a single best result was requested. If one was found, return it.
+    List<Result<D>> results = new ArrayList<>();
+    if (bestResult != null) {
+      results.add(bestResult);
+    }
+    bestResult = null;
     return results;
   }
 
   /**
-   * This version of findBestEdges calls the provided ResultVisitor with the best (shape, edge)
-   * pairs and their distances to the target.
+   * Visits the best-distance (shape, edge, distance) Results to the given 'target' that satisfy the
+   * current options. This method may be called multiple times with different targets and options.
+   *
+   * <p>See {@link #findBestEdges(S2BestDistanceTarget, ShapeFilter, ResultVisitor)} for more
+   * details.
    */
   public void findBestEdges(S2BestDistanceTarget<D> target, ResultVisitor<D> visitor) {
+    findBestEdges(target, null, visitor);
+  }
+
+  /**
+   * Visits the best-distance (shape, edge, distance) Results to the given 'target' that satisfy the
+   * current options, and with shapes accepted by the given ShapeFilter. This method may be called
+   * multiple times with different targets, options, and shape filters.
+   *
+   * <p>Note that if {@link Options#includeInteriors()} is true, the results may include some
+   * entries with {@code edgeId == -1}. This indicates that some point on the target is at the best
+   * possible distance from the interior of the {@link Result#shapeId()}.
+   *
+   * <p>If the target has S2Cells or polygons with {@link S2BestDistanceTarget#includeInteriors()},
+   * then the results will include entries for filtered indexed shape edges that have the best
+   * possible distance to target polygons or S2 cell interiors.
+   *
+   * <p>The ShapeFilter may return different values for the same shapeId as it is repeatedly called.
+   * For instance, the filter could accept a given shapeId the first time it's seen, and false
+   * afterwards. If you only need to find the best-distance shapes to a target, this technique can
+   * speed up the query significantly by returning fewer edges, especially for large indexes.
+   *
+   * <p>However, the shapeFilter isn't called for every edge: a single passed filter test may
+   * produce Results for many or even all the edges of that shape. Also, the Results produced would
+   * not necessarily be the best possible Results, as edges are not discovered in distance order.
+   * Finally, note that filtering shapes and visiting results are not interleaved in the current
+   * implementation. First, shapes are filtered and Results collected. Then Results are visited.
+   */
+  public void findBestEdges(
+      S2BestDistanceTarget<D> target, @Nullable ShapeFilter shapeFilter, ResultVisitor<D> visitor) {
     // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
     // not the same-named Options fields.
     distanceLimit = options.distanceLimit();
     maxResults = options.maxResults();
     maxError = options.maxError;
+    this.shapeFilter = shapeFilter;
 
-    // Find best edges and put them in resultQueue, reusing Results from the pool.
+    // Find the best edge or edges. If maxResults == 1, put it in bestResult. Otherwise put them in
+    // resultQueue.
     findBestEdgesInternal(target);
+    this.shapeFilter = null;
 
-    // Copy the resultQueue into a list and sort it before visiting.
-    List<Result<D>> results = new ArrayList<>(resultQueue);
-    Collections.sort(results, resultDistanceStableComparator);
-    resultQueue.clear();
+    // If more than one result was requested, the queue contains any results found.
+    if (maxResults > 1) {
+      List<Result<D>> results = new ArrayList<>(resultQueue);
+      Collections.sort(results, resultDistanceStableComparator);
+      resultQueue.clear();
 
-    for (Result<D> result : results) {
-      if (!visitor.accept(result.distance, result.shape, result.edgeId)) {
-        break;
+      for (Result<D> result : results) {
+        if (!visitor.accept(result.distance, result.shapeId, result.edgeId)) {
+          break;
+        }
       }
+      // Return Results to the pool for reuse.
+      resultPool.addAll(results);
+      return;
     }
-    // Return Results to the pool for reuse.
-    resultPool.addAll(results);
+
+    // Otherwise, a single best result was requested. If one was found, visit it.
+    if (bestResult != null) {
+      boolean unused = visitor.accept(bestResult.distance, bestResult.shapeId, bestResult.edgeId);
+      resultPool.add(bestResult);
+      bestResult = null;
+    }
   }
 
   /**
-   * Finds the best distance shape edges from the query index to the given target that satisfy the
-   * given values of the temporary maxResults, maxError, and distanceLimit fields. Results matching
-   * those (and options.includeInteriors and options.useBruteForce) are added to the resultQueue.
+   * Finds the best distance shape edge or edges from the query index to the given target that
+   * satisfy the given values of the temporary maxResults, maxError, and distanceLimit fields.
+   * Results matching those (and options.includeInteriors and options.useBruteForce) are added to
+   * the resultQueue if maxResults > 1, otherwise stored in bestResult.
    */
   protected void findBestEdgesInternal(S2BestDistanceTarget<D> target) {
-    // assert resultQueue.isEmpty();
-    // assert target.maxBruteForceIndexSize() >= 0;
+    assert resultQueue.isEmpty();
+    assert target.maxBruteForceIndexSize() >= 0;
 
     this.target = target;
     testedEdges.clear();
+    bestResult = null;
 
     // If the distance limit is the best possible distance, no results can be added.
     if (distanceLimit.equals(bestDistance())) {
@@ -976,23 +1229,27 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
       log.fine("Returning all edges! maxResults and distanceLimit set no limits.");
     }
 
-    // If polygon interiors in the query index are included, then we collect indexed polygons with
-    // interiors at the best possible distance to a point on a connected component of the target.
+    // If polygon interiors in the query index are included, and the query index contains polygons,
+    // then we collect indexed polygons with interiors at the best possible distance to a point on
+    // a connected component of the target.
     if (options.includeInteriors()) {
       shapeInteriors.clear();
       visitBestDistanceContainingShapes(
           target,
-          (shape) -> {
-            if (!shapeInteriors.containsKey(shape)) {
-              shapeInteriors.put(shape, true);
-              addResult(bestDistance(), shape, -1);
-
-              // If the distance limit is the best possible, no more results can be added.
-              if (distanceLimit.equals(bestDistance())) {
-                return false;
-              }
+          shapeId -> {
+            // Record that we've seen this shape interior and stop now if we had seen it before.
+            if (!shapeInteriors.add(shapeId)) {
+              return true;
             }
-            return true;
+
+            // The first time we see a shape interior, maybe add an interior result.
+            if (shapeFilter == null || shapeFilter.test(shapeId)) {
+              addResult(bestDistance(), shapeId, -1);
+            }
+
+            // If we have received the max possible results or the distance limit is the best it
+            // can be, then no more results can be added so stop the visit call.
+            return !distanceLimit.equals(bestDistance());
           });
     }
 
@@ -1020,39 +1277,75 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
 
     useConservativeCellDistance =
         targetUsesMaxError
-            && (distanceLimit.equals(beyondWorstDistance())
-                || maxError.lessThan(distanceLimit));
+            && (distanceLimit.equals(beyondWorstDistance()) || maxError.lessThan(distanceLimit));
 
-    // Use the brute force algorithm if the index is small enough. To avoid spending too much time
-    // counting edges and points when there are many shapes, we stop counting once there are too
-    // many. We may need to recount if we later see a target with a larger brute force threshold.
-    // Note that points are represented and counted as degenerate edges.
+    // Now we need to decide if we should build the index or use brute force. This currently depends
+    // on options, the type of the target and the number of edges in the index.
+
+    // Use the brute force algorithm if forced to.
+    if (options.useBruteForce()) {
+      findBestEdgesBruteForce();
+      return;
+    }
+
+    // To avoid spending too much time counting edges and points when there are many shapes, we
+    // stop counting once there are too many. We may need to recount if we later see a target with
+    // a larger brute force threshold. Note that points are represented as degenerate edges.
     int minOptimizedEdges = target.maxBruteForceIndexSize() + 1;
     if (minOptimizedEdges > indexNumEdgesLimit && indexNumEdges >= indexNumEdgesLimit) {
       indexNumEdges = S2ShapeUtil.countEdgesUpTo(index, minOptimizedEdges);
       indexNumEdgesLimit = minOptimizedEdges;
     }
 
-    if (options.useBruteForce() || indexNumEdges < minOptimizedEdges) {
-      findBestEdgesBruteForce();
-    } else {
+    if (indexNumEdges >= minOptimizedEdges) {
+      // There are enough edges that the optimized algorithm is worthwhile, even for one target.
       findBestEdgesOptimized();
+      return;
     }
+
+    // TODO(torrey): Benchmark and tune this threshold.
+    //
+    // The values for minOptimizedEdges are computed as including the cost of building the index,
+    // which is a significant part of the cost of the optimized algorithm, so if we have already
+    // built the index and it has more than a significant number of edges, go ahead and use it.
+    // However, the optimized algorithm also has overhead setting up the queue of cells to process,
+    // so even if the index has been built, it is not worthwhile to use it if the number of edges
+    // in the index is small. At the very least, the index needs to have more edges than would fit
+    // in once cell.
+    //
+    // The strategy here aims to consider the usefulness of the index to the specific target type,
+    // as well as the usefulness of the index in general. It sets the threshold as the geometric
+    // mean of the target specific limit and the expected number edges per index cell, estimated as
+    // half the max, with a default of 10. So for a target with maxBruteForceIndexSize = 40, and
+    // default index options, minOptimizedEdges will be sqrt(40 * 5) = 14.
+    minOptimizedEdges =
+        (int) sqrt(0.5 * target.maxBruteForceIndexSize() * index.options().getMaxEdgesPerCell());
+    if (index.isFresh() && indexNumEdges >= minOptimizedEdges) {
+      findBestEdgesOptimized();
+      return;
+    }
+
+    // Otherwise the index is too small for the optimized algorithm to be worthwhile.
+    findBestEdgesBruteForce();
   }
 
   private void findBestEdgesBruteForce() {
-    for (S2Shape shape : index.getShapes()) {
-      if (shape == null) {
-        continue;
-      }
-      int numEdges = shape.numEdges();
-      for (int e = 0; e < numEdges; ++e) {
-        maybeAddResult(shape, e);
+    usingBruteForce = true;
+    List<S2Shape> shapes = index.getShapes();
+    for (int shapeId = 0; shapeId < shapes.size(); shapeId++) {
+      if (shapeFilter == null || shapeFilter.test(shapeId)) {
+        S2Shape shape = shapes.get(shapeId);
+        if (shape != null) {
+          for (int e = 0, numEdges = shape.numEdges(); e < numEdges; ++e) {
+            maybeAddResult(shapeId, e);
+          }
+        }
       }
     }
   }
 
   private void findBestEdgesOptimized() {
+    usingBruteForce = false;
     S2Iterator<Cell> iter = initQueue();
 
     // Repeatedly find the best-distance S2Cell to "target" and either split it into its four
@@ -1095,7 +1388,7 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
 
   /** Enqueue the given cell id. Requires that iter is positioned at a cell contained by "id". */
   private void processOrEnqueueChild(S2CellId id, S2Iterator<Cell> iter) {
-    // assert id.contains(iter.id());
+    assert id.contains(iter.id());
     if (iter.id().equals(id)) {
       processOrEnqueue(id, iter.entry());
     } else {
@@ -1103,8 +1396,13 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     }
   }
 
+  /**
+   * Builds the underlying shape index if necessary, and then initializes the queue of cells to
+   * process, if any. Returns an iterator over the index cells, positioned at the index cell that is
+   * at the head of the queue if a queue was initialized, or at the first index cell otherwise.
+   */
   private S2Iterator<Cell> initQueue() {
-    // assert queue.isEmpty();
+    assert queue.isEmpty();
     S2Iterator<Cell> iter = index.iterator();
 
     // Optimization: if the user is searching for just one best edge, and the center of the target's
@@ -1118,6 +1416,8 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     // distanceLimit.
 
     // Obtain a bound on points with the best possible distance to the target.
+    // TODO(torrey): For an S2ShapeIndex target, getCapBound builds an index, even if it has very
+    // few edges. A brute force option for a small number of edges would be faster.
     S2Cap targetCap = target.getCapBound();
     if (targetCap.isEmpty()) {
       // If the target has no points, no results are possible.
@@ -1244,9 +1544,9 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
         }
         // Find the range of index cells contained by this top-level cell and then shrink the cell
         // if necessary so that it just covers them.
-        S2Iterator<Cell> cellFirst = S2Iterator.copy(next);
+        S2Iterator<Cell> cellFirst = next.copy();
         next.seek(id.rangeMax().next());
-        S2Iterator<Cell> cellLast = S2Iterator.copy(next);
+        S2Iterator<Cell> cellLast = next.copy();
         cellLast.prev();
         addInitialRange(cellFirst, cellLast);
       }
@@ -1266,41 +1566,97 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
     } else {
       // Add the lowest common ancestor of the given range.
       int level = first.id().getCommonAncestorLevel(last.id());
-      // assert level >= 0; // Ensure that they do in fact have a common ancestor.
+      assert level >= 0; // Ensure that they do in fact have a common ancestor.
       indexCovering.add(first.id().parent(level));
       indexCells.add(null);
     }
   }
 
-  private void maybeAddResult(S2Shape shape, int edgeId) {
-    if (!testedEdges.add(new ShapeEdgeId(shape, edgeId))) {
+  /** Allocated once here, but used only by maybeAddResult */
+  private final S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
+
+  /** Allocated once here, but used only by maybeAddResult */
+  private final DistanceCollector<D> collector = newDistanceCollector();
+
+  /**
+   * If the given shape edge has not already been tested, and the edge has a better distance than
+   * the current distanceLimit, add it as a new result.
+   */
+  private void maybeAddResult(int shapeId, int edgeId) {
+    // The optimized algorithm may visit a given shape and edge more than once, but the brute force
+    // algorithm does not.
+    if (!usingBruteForce && !testedEdges.add(new ShapeEdgeId(shapeId, edgeId))) {
       return;
     }
 
-    // TODO(user): If we knew when the shape edges are actually points, we could call
-    // updateBestDistance(point, distance) instead, which might be meaningfully more efficient.
-    S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
-    shape.getEdge(edgeId, edge);
-
     // Determine if the distance to the edge is better than the limit beyond which edges may be
-    // ignored. If so, add (or visit) a new result with that edge and distance.
-    DistanceCollector<D> collector = newDistanceCollector();
+    // ignored. If so, add a new result with that edge and distance.
     collector.set(distanceLimit);
-    if (target.updateBestDistance(edge.a, edge.b, collector)) {
-      addResult(collector.distance(), shape, edgeId);
+    S2Shape shape = index.getShapes().get(shapeId);
+    shape.getEdge(edgeId, edge);
+    if (shape.dimension() == 0) {
+      // The edge is actually a point, so use the single point variant of updateBestDistance.
+      if (target.updateBestDistance(edge.a, collector)) {
+        addResult(collector.distance(), shapeId, edgeId);
+      }
+    } else {
+      if (target.updateBestDistance(edge.a, edge.b, collector)) {
+        addResult(collector.distance(), shapeId, edgeId);
+      }
     }
   }
 
-  // Add the new result to the queue, and update the distance limit based on the worst-distance
-  // result remaining in the queue.
-  private void addResult(D distance, S2Shape shape, int edgeId) {
+  /**
+   * The given candidate distance, shape, and edge are at a distance better than the current
+   * distance limit. Update the best result or results with this candidate.
+   */
+  protected void addResult(D distance, int shapeId, int edgeId) {
+    if (maxResults == 1) {
+      updateBestResult(distance, shapeId, edgeId);
+    } else {
+      updateBestResults(distance, shapeId, edgeId);
+    }
+  }
+
+  /**
+   * A single best result was requested, and the given candidate distance, shape, and edge are at a
+   * distance better than the current distance limit. If the candidate is better than the current
+   * bestResult, updateBestResult and the distanceLimit.
+   */
+  private void updateBestResult(D distance, int shapeId, int edgeId) {
+    // If there is no bestResult yet, create one.
+    if (bestResult == null) {
+      if (resultPool.isEmpty()) {
+        bestResult = new Result<>(distance, shapeId, edgeId);
+      } else {
+        bestResult = resultPool.remove(resultPool.size() - 1);
+        bestResult.set(distance, shapeId, edgeId);
+      }
+      bestResultCollector.set(distance);
+      distanceLimit = errorBoundedDistance(distance);
+      return;
+    }
+
+    // If the current 'bestResult' is not as good as the new candidate, update it.
+    if (bestResultCollector.update(distance)) {
+      bestResult.set(distance, shapeId, edgeId);
+      distanceLimit = errorBoundedDistance(bestResult.distance());
+    }
+  }
+
+  /**
+   * Multiple best results were requested, and the given candidate distance, shape, and edge are at
+   * a distance better than the current distance limit. Add the candidate to the queue. Trim the
+   * queue and update the distanceLimit if needed.
+   */
+  private void updateBestResults(D distance, int shapeId, int edgeId) {
     Result<D> result;
     if (resultPool.isEmpty()) {
-      result = new Result<>(distance, shape, edgeId);
+      result = new Result<>(distance, shapeId, edgeId);
     } else {
       // Remove and reuse a result object from the pool.
       result = resultPool.remove(resultPool.size() - 1);
-      result.set(distance, shape, edgeId);
+      result.set(distance, shapeId, edgeId);
     }
     resultQueue.add(result);
 
@@ -1331,9 +1687,14 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
   private void processEdges(Cell shapeIndexCell) {
     for (int s = 0; s < shapeIndexCell.numShapes(); ++s) {
       S2ShapeIndex.S2ClippedShape clipped = shapeIndexCell.clipped(s);
-      S2Shape shape = clipped.shape();
-      for (int j = 0; j < clipped.numEdges(); ++j) {
-        maybeAddResult(shape, clipped.edge(j));
+      int shapeId = clipped.shapeId();
+      if (shapeFilter == null || shapeFilter.test(shapeId)) {
+        for (int j = 0; j < clipped.numEdges(); ++j) {
+          maybeAddResult(shapeId, clipped.edge(j));
+          // TODO(torrey): a potential optimization to benchmark: If the updated distance limit is
+          // now the best possible distance, stop processing edges in this cell.
+          // if (distanceLimit.equals(bestDistance()) return;
+        }
       }
     }
   }
@@ -1355,6 +1716,21 @@ public abstract class S2BestEdgesQueryBase<D extends S1Distance<D>> {
       if (numEdges < MIN_EDGES_TO_ENQUEUE) {
         processEdges(indexCell);
         return;
+      }
+
+      // If we have a shape filter, we can skip cells where all shapes would be filtered out.
+      if (shapeFilter != null) {
+        boolean skipCell = true;
+        for (int s = 0; s < indexCell.numShapes(); ++s) {
+          S2ShapeIndex.S2ClippedShape clipped = indexCell.clipped(s);
+          if (shapeFilter.test(clipped.shapeId())) {
+            skipCell = false;
+            break;
+          }
+        }
+        if (skipCell) {
+          return;
+        }
       }
     }
 

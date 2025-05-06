@@ -15,7 +15,7 @@
  */
 package com.google.common.geometry.benchmarks;
 
-import static com.google.common.geometry.S2Projections.PROJ;
+import static com.google.common.geometry.S2Projections.MAX_DIAG;
 import static com.google.common.geometry.TestDataGenerator.generateEvenlySpacedIds;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -29,7 +29,6 @@ import com.google.common.geometry.S2Cell;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2LatLngRect;
 import com.google.common.geometry.S2Point;
-import java.io.IOException;
 import java.util.ArrayList;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -83,7 +82,7 @@ public class S2CellBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       leafCellIds = generateEvenlySpacedIds(NUM_IDS);
       leafCells = new S2Cell[NUM_IDS];
@@ -357,13 +356,13 @@ public class S2CellBenchmark {
      */
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       for (int i = 0; i < NUM_CASES; ++i) {
         S2CellId cellId = data.getRandomCellId();
         cells1.add(new S2Cell(cellId));
         cells2.add(new S2Cell(data.getRandomCellId()));
-        S1Angle radius = S1Angle.radians(2 * PROJ.maxDiag.getValue(cellId.level()));
+        S1Angle radius = S1Angle.radians(2 * MAX_DIAG.getValue(cellId.level()));
         S2Cap cap = S2Cap.fromAxisAngle(cellId.toPoint(), radius);
         points1.add(data.samplePoint(cap));
         points2.add(data.samplePoint(cap));

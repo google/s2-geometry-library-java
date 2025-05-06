@@ -25,6 +25,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.errorprone.annotations.Immutable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -38,14 +39,15 @@ import jsinterop.annotations.JsType;
 
 /**
  * An S2Point represents a point on the unit sphere as a 3D vector. Usually points are normalized to
- * be unit length, but some methods do not require this.
+ * be unit length, but some methods do not require this. S2Points are immutable.
  *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-@SuppressWarnings("AmbiguousMethodReference")
+@SuppressWarnings({"AmbiguousMethodReference", "Assertion"})
 @JsType
-public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializable {
+@Immutable
+public final class S2Point implements S2Region, Comparable<S2Point>, Serializable {
   /** Origin of the coordinate system, [0,0,0]. */
   public static final S2Point ORIGIN = new S2Point(0, 0, 0);
 
@@ -81,7 +83,8 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
           return S2Point.decode(data.toInputStream(cursor));
         }
 
-        @Override public boolean isLazy() {
+        @Override
+        public boolean isLazy() {
           return false;
         }
       };
@@ -207,17 +210,18 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   }
 
   /**
-   * Returns crossProd(this,p). Note that S2.robustCrossProd() may be a better choice when the two
-   * vectors are nearly parallel, are equal, or one is the negation of the other.
+   * Returns crossProd(this,p). Note that {@link S2RobustCrossProd#robustCrossProd(S2Point,
+   * S2Point)} may be a better choice when the two vectors are nearly parallel, are equal, or one is
+   * the negation of the other.
    */
   public S2Point crossProd(S2Point p) {
     return crossProd(this, p);
   }
 
   /**
-   * Returns the R3 vector cross product of 'p1' and 'p2'. Note that S2.robustCrossProd(p1, p2) may
-   * be a better choice when the two vectors are nearly parallel, are equal, or one is the negation
-   * of the other.
+   * Returns the R3 vector cross product of 'p1' and 'p2'. Note that {@link
+   * S2RobustCrossProd#robustCrossProd(S2Point, S2Point)} may be a better choice when the two
+   * vectors are nearly parallel, are equal, or one is the negation of the other.
    */
   @JsIgnore
   public static final S2Point crossProd(final S2Point p1, final S2Point p2) {
@@ -247,12 +251,18 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return new S2Point(abs(p.x), abs(p.y), abs(p.z));
   }
 
-  /** Returns a copy of 'this' rescaled to be unit-length. */
+  /**
+   * Returns a copy of 'this' rescaled to be unit-length, unless the {@link #norm()} is zero, in
+   * which case {@link #ORIGIN} is returned.
+   */
   public S2Point normalize() {
     return S2Point.normalize(this);
   }
 
-  /** Returns a copy of 'p' rescaled to be unit-length. */
+  /**
+   * Returns a copy of 'p' rescaled to be unit-length, unless the {@link #norm()} is zero, in which
+   * case {@link #ORIGIN} is returned.
+   */
   @JsIgnore
   public static final S2Point normalize(S2Point p) {
     double norm = p.norm();
@@ -262,12 +272,12 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return S2Point.mul(p, norm);
   }
 
-  /** Returns the vector magnitude {@code sqrt(x*x+y*y+z*z)}. */
+  /** Returns the vector magnitude {@code sqrt(x*x + y*y + z*z)}. */
   public double norm() {
     return sqrt(norm2());
   }
 
-  /** Returns the square of the vector magnitude {@code x*x+y*y+z*z}. */
+  /** Returns the square of the vector magnitude {@code x*x + y*y + z*z}. */
   public final double norm2() {
     return x * x + y * y + z * z;
   }
@@ -282,33 +292,37 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     double y = b.z * c.x - b.x * c.z;
     double z = b.x * c.y - b.y * c.x;
     double result = a.x * x + a.y * y + a.z * z;
-    // assert result == a.dotProd(S2Point.crossProd(b, c));
+    assert result == a.dotProd(S2Point.crossProd(b, c))
+        || (Double.isNaN(result) && Double.isNaN(a.dotProd(S2Point.crossProd(b, c))));
     return result;
   }
 
   /**
-   * Returns the distance in 3D coordinates from this to that.
+   * Returns the 3D Cartesian distance (also called the slant distance) between this and that. This
+   * is not the same as the distance on the surface of the sphere. The points do not need to be
+   * normalized.
    *
    * <p>Equivalent to {@code a.sub(b).norm()}, but significantly faster.
    *
    * <p>If ordering points by angle, this is faster than {@link #norm}, and much faster than {@link
    * #angle}, but consider using {@link S1ChordAngle}.
    *
-   * <p>Returns the 3D Cartesian distance (also called the slant distance) between this and that,
-   * which are normal vectors on the surface of a unit sphere. If the S2Points represent points on
-   * Earth, use {@link S2Earth#getDistanceMeters(S2Point, S2Point)} to get distance in meters.
+   * <p>If the S2Points represent points on Earth and you want distance along the curved surface of
+   * the Earth, use {@link S2Earth#getDistanceMeters(S2Point, S2Point)} to get distance in meters.
    */
   public double getDistance(S2Point that) {
     return sqrt(getDistance2(that));
   }
 
   /**
-   * Returns the square of the distance in 3D coordinates from this to that.
+   * Returns the square of the distance in 3D coordinates from this to that. The points do not need
+   * to be normalized, as the distance is not the distance on the surface of the sphere, but the 3D
+   * Cartesian distance.
    *
    * <p>Equivalent to {@code getDistance(that)<sup>2</sup>}, but significantly faster.
    *
-   * <p>If ordering points by angle, this is much faster than {@link #angle}, but consider using
-   * {@link S1ChordAngle}.
+   * <p>If ordering points by angle, this is much faster than {@link #angle(S2Point)}, but consider
+   * using {@link S1ChordAngle}.
    */
   public double getDistance2(S2Point that) {
     double dx = this.x - that.x;
@@ -319,9 +333,9 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
 
   /**
    * Return a vector orthogonal to this one, on one of the X-Y, Y-Z, or X-Z planes. Consider using
-   * the alternate implementation in S2.ortho(S2Point), which avoids result coordinates that are
-   * zero. These may cause degeneracies and consequently poor performance in functions that handle
-   * degeneracies.
+   * the alternate implementation in {@link S2#ortho(S2Point)}, which avoids result coordinates that
+   * are zero. These may cause degeneracies and consequently poor performance in functions that
+   * handle degeneracies.
    */
   public final S2Point ortho() {
     switch (largestAbsComponent()) {
@@ -356,18 +370,19 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     double y = this.z * va.x - this.x * va.z;
     double z = this.x * va.y - this.y * va.x;
     double result = sqrt(x * x + y * y + z * z);
-    // assert result == S2Point.crossProd(this, va).norm();
+    assert result == crossProd(this, va).norm();
     return result;
   }
 
   /**
-   * Rotates this point around an arbitrary axis. This point and the provided axis are not
-   * required to be normalized. However, if you already have a normalized point and axis, you can
-   * use the static method {@link #rotate(S2Point, S2Point, double)} below to avoid the cost of
-   * normalizing again. The returned result is normalized.
+   * Rotates this point around an arbitrary axis. This point and the provided axis are not required
+   * to be normalized. However, if you already have a normalized point and axis, you can use the
+   * static method {@link #rotate(S2Point, S2Point, double)} below to avoid the cost of normalizing
+   * again. The returned result is normalized.
    *
    * @param axis point around which rotation should be performed
-   * @param radians radians to rotate the point counterclockwise around the given axis
+   * @param radians radians to rotate the point around the given axis, clockwise if radians is
+   *     negative and counter-clockwise if radians is positive.
    */
   public S2Point rotate(S2Point axis, double radians) {
     return rotate(normalize(), axis.normalize(), radians);
@@ -379,7 +394,8 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
    *
    * @param point which should be rotated
    * @param axis point around which rotation should be performed
-   * @param radians radians to rotate the point counterclockwise around the given axis
+   * @param radians radians to rotate the point around the given axis, clockwise if radians is
+   *     negative and counter-clockwise if radians is positive.
    */
   public static S2Point rotate(S2Point point, S2Point axis, double radians) {
     assert S2.isUnitLength(point);
@@ -391,10 +407,8 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     // Explicitly normalize the result because there are cases where the accumulated error is
     // a bit larger than the tolerance of isUnitLength().
     return S2Point.sum(
-        axisToCenter.mul(cos(radians)),
-        axis.crossProd(point).mul(sin(radians)),
-        center)
-      .normalize();
+            axisToCenter.mul(cos(radians)), axis.crossProd(point).mul(sin(radians)), center)
+        .normalize();
   }
 
   /**
@@ -467,10 +481,9 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     return "(" + x + ", " + y + ", " + z + ")";
   }
 
-  /** Returns a string withe the representation of this point as a lat,lng in degrees. */
+  /** Returns a string with the representation of this point as a lat,lng in degrees. */
   public String toDegreesString() {
-    S2LatLng s2LatLng = new S2LatLng(this);
-    return "(" + s2LatLng.latDegrees() + ", " + s2LatLng.lngDegrees() + ")";
+    return new S2LatLng(this).toStringDegrees();
   }
 
   /** Returns a new Builder initialized to a copy of this point. */
@@ -522,15 +535,15 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   /** Writes this point to the given output stream. */
   @JsIgnore
   public void encode(OutputStream os) throws IOException {
-    encode(new LittleEndianOutput(os));
+    LittleEndianOutput.writeDouble(os, x);
+    LittleEndianOutput.writeDouble(os, y);
+    LittleEndianOutput.writeDouble(os, z);
   }
 
   /** Writes this point to the given little endian output stream. */
   @JsIgnore
   void encode(LittleEndianOutput os) throws IOException {
-    os.writeDouble(x);
-    os.writeDouble(y);
-    os.writeDouble(z);
+    encode(os.output());
   }
 
   /** Returns a new S2Point decoded from the given input stream. */
@@ -546,8 +559,9 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   }
 
   /**
-   * An S2Shape representing a list of S2Points. Each point is represented as a degenerate edge with
-   * the same starting and ending vertices.
+   * An S2Shape representing a list of S2Points. Since S2Shapes consist only of edges, each point is
+   * represented as a degenerate edge with the same starting and ending vertices. However, unlike a
+   * degenerate S2Edge, S2Point.Shapes have dimension 0.
    *
    * <p>This class is useful for adding a collection of points to an S2ShapeIndex.
    */
@@ -556,14 +570,14 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
     private static final long serialVersionUID = 1L;
 
     /**
-     * A fast {@link S2Coder} of a shape of multiple points. Decodes points on demand, i.e.
-     * {@link S2Coder#isLazy()} is true.
+     * A fast {@link S2Coder} of a shape of multiple points. Decodes points on demand, i.e. {@link
+     * S2Coder#isLazy()} is true.
      */
     public static final S2Coder<Shape> FAST_CODER =
         S2PointVectorCoder.FAST.delegating(s -> s, Shape::fromList);
 
     /**
-     * A compact {@link S2Coder} of a shape of multiple points.  Decodes points on demand, i.e.
+     * A compact {@link S2Coder} of a shape of multiple points. Decodes points on demand, i.e.
      * {@link S2Coder#isLazy()} is true.
      */
     public static final S2Coder<Shape> COMPACT_CODER =
@@ -676,7 +690,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
 
       /**
        * An instance of {@link Coder} which encodes/decodes {@link S2Point.Shape}s in the {@code
-       * COMPACT} format.  Decodes on demand, i.e. {@link S2Coder#isLazy()} is true.
+       * COMPACT} format. Decodes on demand, i.e. {@link S2Coder#isLazy()} is true.
        */
       static final Coder COMPACT = new Coder(S2PointVectorCoder.COMPACT);
 
@@ -706,6 +720,7 @@ public strictfp class S2Point implements S2Region, Comparable<S2Point>, Serializ
   /** A builder of {@link S2Point} instances. */
   @JsType
   public static final class Builder {
+    // TODO(user): Unify this with MutableS2Point in MutableS2PointList.
     private double x;
     private double y;
     private double z;

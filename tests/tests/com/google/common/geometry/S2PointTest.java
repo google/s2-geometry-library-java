@@ -17,19 +17,28 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.TestDataGenerator.makePoint;
+import static com.google.common.geometry.S2TextFormat.makePoint;
 import static java.lang.Math.PI;
 import static java.lang.Math.asin;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Verifies S2Point. */
+@RunWith(JUnit4.class)
 public class S2PointTest extends GeometryTestCase {
+  @Test
   public void testAddition() {
     S2Point a = new S2Point(1, 2, 3);
     S2Point b = new S2Point(1, 1, 1);
@@ -37,6 +46,7 @@ public class S2PointTest extends GeometryTestCase {
     assertEquals(new S2Point(2, 3, 4), aPlusB);
   }
 
+  @Test
   public void testSubtraction() {
     S2Point a = new S2Point(1, 2, 3);
     S2Point b = new S2Point(1, 1, 1);
@@ -44,26 +54,31 @@ public class S2PointTest extends GeometryTestCase {
     assertEquals(new S2Point(0, 1, 2), aMinusB);
   }
 
+  @Test
   public void testScalarMultiplication() {
     S2Point a = new S2Point(1, 2, 3);
     assertEquals(new S2Point(5, 10, 15), a.mul(5.0));
   }
 
+  @Test
   public void testScalarDivision() {
     S2Point a = new S2Point(3, 6, 9);
     assertEquals(new S2Point(1, 2, 3), a.div(3));
   }
 
+  @Test
   public void testNegation() {
     S2Point a = new S2Point(3, 6, 9);
     assertEquals(new S2Point(-3, -6, -9), a.neg());
   }
 
+  @Test
   public void testComponentWiseAbs() {
     S2Point a = new S2Point(-3, 6, -9);
     assertEquals(new S2Point(3, 6, 9), a.fabs());
   }
 
+  @Test
   public void testVectorMethods() {
     S2Point a = new S2Point(1, 2, 3);
     S2Point b = new S2Point(0, 1, 0);
@@ -78,12 +93,13 @@ public class S2PointTest extends GeometryTestCase {
     assertEquals(S2Point.Y_NEG, S2Point.X_POS.ortho());
   }
 
+  @Test
   public void testRotateSimple() {
     // Check simple axial cases.
     S2Point p = makePoint("0:0");
-    assertEquals(makePoint("0:90"), p.rotate(S2Point.Z_POS, M_PI_2), 1e-15);
-    assertEquals(makePoint("-90:0"), p.rotate(S2Point.Y_POS, M_PI_2), 1e-15);
-    assertEquals(makePoint("0:0"), p.rotate(S2Point.X_POS, M_PI_2), 1e-15);
+    assertPointsWithinDistance(makePoint("0:90"), p.rotate(S2Point.Z_POS, M_PI_2), 1e-15);
+    assertPointsWithinDistance(makePoint("-90:0"), p.rotate(S2Point.Y_POS, M_PI_2), 1e-15);
+    assertPointsWithinDistance(makePoint("0:0"), p.rotate(S2Point.X_POS, M_PI_2), 1e-15);
     // Verify rotations in the plane containing the origin and two random points.
     for (int i = 0; i < 1000; i++) {
       S2Point a = data.getRandomPoint();
@@ -91,15 +107,31 @@ public class S2PointTest extends GeometryTestCase {
       S2Point axis = a.crossProd(b);
       double angle = a.angle(b);
       // Rotate 'a' onto 'b'.
-      assertEquals(b, a.rotate(axis, angle), 1e-15);
+      assertPointsWithinDistance(b, a.rotate(axis, angle), 1e-15);
       // Rotate 'b' onto 'a'.
-      assertEquals(a, b.rotate(axis, -angle), 1e-15);
+      assertPointsWithinDistance(a, b.rotate(axis, -angle), 1e-15);
       // Rotate 'a' to the midpoint of 'a' and 'b'.
       // TODO(user): This test is fragile.
-      assertEquals(a.add(b).normalize(), a.rotate(axis, angle / 2), 1e-14);
+      assertPointsWithinDistance(a.add(b).normalize(), a.rotate(axis, angle / 2), 1e-14);
       // Rotate 'b' to the antipodal point of 'a'.
-      assertEquals(a.neg(), b.rotate(axis, PI - angle), 1e-14);
+      assertPointsWithinDistance(a.neg(), b.rotate(axis, PI - angle), 1e-14);
     }
+  }
+
+  @Test
+  public void testRotateDirection() {
+    // A point at the corner of Oregon, California, and Nevada that we will rotate around.
+    S2Point axis = makePoint("42:-120");
+    // A point one degree east of 'axis' that will be rotated clockwise and counter-clockwise.
+    S2Point p = makePoint("42:-119");
+
+    // Verify that rotation by a positive radians is counter-clockwise. Starting a degree east of
+    // 'axis', rotating +90 degrees or Pi/2 radians should end up approximately a degree north.
+    assertPointsWithinDegrees(makePoint("43:-120"), p.rotate(axis, PI / 2), 0.26);
+
+    // Verify that rotation by a negative radians is clockwise. Starting a degree east of 'axis',
+    // rotating -90 degrees or -Pi/2 radians should end up approximately a degree south of 'axis'.
+    assertPointsWithinDegrees(makePoint("41:-120.0"), p.rotate(axis, -PI / 2), 0.26);
   }
 
   private static void checkRotate(S2Point p, S2Point axis, double angle) {
@@ -126,6 +158,7 @@ public class S2PointTest extends GeometryTestCase {
     assertLessOrEqual(rotationError, maxRotationError);
   }
 
+  @Test
   public void testRotate() {
     for (int iter = 0; iter < 1000; ++iter) {
       S2Point axis = data.getRandomPoint();
@@ -149,6 +182,7 @@ public class S2PointTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testScalarTripleProduct() {
     for (int i = 0; i < 1000; i++) {
       S2Point a = data.getRandomPoint();
@@ -158,6 +192,7 @@ public class S2PointTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCrossProdNorm() {
     for (int i = 0; i < 1000; i++) {
       S2Point a = data.getRandomPoint();
@@ -166,6 +201,7 @@ public class S2PointTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testS2Region() {
     S2Point point = new S2Point(1, 0, 0);
 
@@ -182,6 +218,7 @@ public class S2PointTest extends GeometryTestCase {
     assertTrue(point.mayIntersect(cell));
   }
 
+  @Test
   public void testShape() {
     List<S2Point> points = ImmutableList.of(makePoint("0:0"), makePoint("1:1"), makePoint("2:2"));
     for (int j = 0; j < points.size(); j++) {
@@ -212,36 +249,43 @@ public class S2PointTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testSerialization() throws IOException {
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     S2Point.X_NEG.encode(bos);
     assertEquals(S2Point.X_NEG, S2Point.decode(new ByteArrayInputStream(bos.toByteArray())));
   }
 
+  @Test
   public void testCoder() throws IOException {
     assertEquals(S2Point.Y_NEG, roundtrip(S2Point.CODER, S2Point.Y_NEG));
   }
 
+  @Test
   public void testShapeCoderFast() {
     S2Point.Shape shape = S2Point.Shape.singleton(S2Point.Z_POS);
     assertShapesEqual(shape, roundtrip(S2Point.Shape.FAST_CODER, shape));
   }
 
+  @Test
   public void testShapeCoderCompact() {
     S2Point.Shape shape = S2Point.Shape.singleton(S2Point.Z_POS);
     assertShapesEqual(shape, roundtrip(S2Point.Shape.COMPACT_CODER, shape));
   }
 
+  @Test
   public void testBuilder_origin() {
     assertEquals(S2Point.ORIGIN, new S2Point.Builder().build());
   }
 
+  @Test
   public void testBuilder_single() {
     S2Point base = new S2Point(0.1, 0.2, 0.3);
     S2Point built = new S2Point.Builder().add(base).build();
     assertEquals(base, built);
   }
 
+  @Test
   public void testBuilder_multiple() {
     assertEquals(
         new S2Point(0.51, -2.23, 2.73),
@@ -252,11 +296,18 @@ public class S2PointTest extends GeometryTestCase {
             .build());
   }
 
+  @Test
   public void testToBuilder() {
     S2Point base = new S2Point(0.25, 0.3, 0.5);
     S2Point.Builder builder = base.toBuilder();
     builder.add(new S2Point(0.1, 0.25, -0.5));
     assertEquals(new S2Point(0.35, 0.55, 0.0), builder.build());
     assertEquals(new S2Point(0.25, 0.3, 0.5), base); // Builder has a copy, not original
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2PointSerialization() {
+    doSerializationTest(new S2Point(0.1, 0.2, 0.3));
   }
 }

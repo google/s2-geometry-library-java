@@ -17,15 +17,21 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2CellId.MAX_LEVEL;
+import static com.google.common.geometry.S2CellId.fromFacePosLevel;
 import static com.google.common.geometry.S2DensityTree.VERSION;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder;
 import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder.CellWeightFunction;
 import com.google.common.geometry.S2DensityTree.Cell;
+import com.google.common.geometry.S2DensityTree.CellDensityFunction;
 import com.google.common.geometry.S2DensityTree.CellVisitor.Action;
 import com.google.common.geometry.S2DensityTree.DecodedPath;
 import com.google.common.geometry.S2DensityTree.IndexCellWeightFunction;
@@ -52,10 +58,15 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+/** Unit tests for {@link S2DensityTree}. */
+@RunWith(JUnit4.class)
 public class S2DensityTreeTest extends GeometryTestCase {
   private final S2Shape point = S2Point.Shape.singleton(
-      S2CellId.fromFacePosLevel(3, S2CellId.POS_BITS / 2, 30).toPoint());
+      fromFacePosLevel(3, S2CellId.POS_BITS / 2, 30).toPoint());
   private final S2Shape line = S2LaxPolylineShape.create(
       ImmutableList.of(S2Point.X_POS, S2Point.Y_POS, S2Point.X_NEG));
   private final S2Shape polygon = S2LaxPolygonShape.create(
@@ -72,11 +83,15 @@ public class S2DensityTreeTest extends GeometryTestCase {
 
   private final S2CellId cell22 = S2CellId.fromFace(2).child(2);
 
-  /** A simple S2DensityTree containing two leaves that are children of cell22. */
+  /**
+   * A simple S2DensityTree containing two leaves that are children 2 and 3 of cell22 (child 2 of
+   * face 2), with weights 110 and 120, respectively.
+   */
   private final S2DensityTree cell22Tree = encode(sumToRoot(ImmutableMap.of(
       cell22.child(2), 100L,
       cell22.child(3), 120L)));
 
+  @Test
   public void testReversibleBytes() {
     ReversibleBytes bytes = new ReversibleBytes();
     bytes.write(VERSION.getBytes(StandardCharsets.ISO_8859_1));
@@ -86,6 +101,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertEquals(VERSION, new String(bytes.reversedCopy(), StandardCharsets.ISO_8859_1));
   }
 
+  @Test
   public void testReversibleBytesClear() {
     ReversibleBytes bytes = new ReversibleBytes();
     bytes.write(1);
@@ -94,6 +110,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertEquals(0, bytes.size());
   }
 
+  @Test
   public void testReversedLengthsWriter() throws IOException {
     // Create an output with some data in it before we get started.
     ReversibleBytes out = new ReversibleBytes();
@@ -129,34 +146,41 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertEquals(-1, in.read());
   }
 
+  @Test
   public void testEncoderWeightTooLarge() {
     assertThrows("Weight out of range", IllegalArgumentException.class,
         () -> new BreadthFirstTreeBuilder(100, 1).build(cell -> Long.MAX_VALUE));
   }
 
+  @Test
   public void testEncodeEmpty() {
     checkEncoding(ImmutableMap.of());
   }
 
+  @Test
   public void testEncodeOneFace() {
     checkEncoding(ImmutableMap.of(FACE_CELLS[3], 17L));
   }
 
+  @Test
   public void testEncodeOneLeaf() {
     checkEncoding(sumToRoot(ImmutableMap.of(S2CellId.fromPoint(S2Point.Y_POS), 123L)));
   }
 
+  @Test
   public void testEncodeOneBranch() {
     // A pair of level 20 cells with a shared ancestor at level 10.
     S2CellId split = S2CellId.fromFaceIJ(1, 1 << 10, 2 << 10).parent(10);
     checkEncoding(sumToRoot(ImmutableMap.of(split.childBegin(20), 1L, split.childEnd(20), 17L)));
   }
 
+  @Test
   public void testEncodeEachFace() {
     checkEncoding(IntStream.range(0, 6).boxed()
         .collect(Collectors.toMap(i -> FACE_CELLS[i], i -> 10L + i)));
   }
 
+  @Test
   public void testVisitWhile() {
     S2DensityTree tree = encode(sumToRoot(ImmutableMap.of(
         S2CellId.fromPoint(new S2Point(1, 2, 3).normalize()), 1L)));
@@ -165,6 +189,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertEquals(4, cells.size());
   }
 
+  @Test
   public void testSelect() {
     // Create a base map of 6*4^4 entries of weight 1.
     Map<S2CellId, Long> base = new TreeMap<>();
@@ -184,6 +209,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies that random more heavily populated maps work, and that a builder can be reused. */
+  @Test
   public void testEncodeRandomBranches() {
     TreeEncoder encoder = new TreeEncoder();
     for (long weight = 1; weight < 1000; weight++) {
@@ -198,31 +224,37 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies an empty shape. */
+  @Test
   public void testShapeIndexEmpty() {
     checkCoverings(ImmutableMap.of(S2Loop.empty(), 1L));
   }
 
   /** Verifies a point. */
+  @Test
   public void testShapeIndexPoint() {
     checkCoverings(ImmutableMap.of(point, 1L));
   }
 
   /** Verifies a face center point. */
+  @Test
   public void testShapeIndexFacePoint() {
     checkCoverings(ImmutableMap.of(S2Point.Shape.singleton(FACE_CELLS[2].toPoint()), 1L));
   }
 
   /** Verifies a line. */
+  @Test
   public void testShapeIndexLine() {
     checkCoverings(ImmutableMap.of(line, 1L));
   }
 
   /** Verifies a polygon. */
+  @Test
   public void testShapeIndexPolygon() {
     checkCoverings(ImmutableMap.of(polygon, 1L));
   }
 
   /** Verifies a collection of multiple types. */
+  @Test
   public void testShapeIndexMultiple() {
     checkCoverings(ImmutableMap.of(line, 1L, polygon, 2L));
   }
@@ -273,6 +305,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     return sum;
   }
 
+  @Test
   public void testFeatureDensity() {
     S2ShapeIndex shapes = new S2ShapeIndex();
     IdentityHashMap<S2Shape, String> features = new IdentityHashMap<>();
@@ -306,6 +339,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Tests accessing tree leaves with DecodedPath. */
+  @Test
   public void testDecodedPathAccessLeaves() {
     S2DensityTree.DecodedPath decoder = new S2DensityTree.DecodedPath(cell22Tree);
 
@@ -316,22 +350,29 @@ public class S2DensityTreeTest extends GeometryTestCase {
     }
   }
 
-  /** Verifies that DecodedPath returns empty nodes when cells are not present in the tree. */
-  public void testDecodedPathNodesNotPresentAreEmpty() {
+  /**
+   * Verifies that DecodedPath.cell() returns empty nodes when cells are not present in the tree,
+   * except for those with an ancestor in the tree that is a leaf.
+   */
+  @Test
+  public void testDecodedPathNodes() {
     S2DensityTree.DecodedPath decoder = new S2DensityTree.DecodedPath(cell22Tree);
 
-    // Face nodes not in the tree should return an empty cell.
+    // Face ids not in the tree should return an empty cell.
     assertTrue(decoder.cell(S2CellId.fromFace(0)).isEmpty());
+    assertFalse(decoder.cell(S2CellId.fromFace(2)).isEmpty());
     assertTrue(decoder.cell(S2CellId.fromFace(1)).isEmpty());
     assertTrue(decoder.cell(S2CellId.fromFace(5)).isEmpty());
 
-    // Level 1 nodes of a face that isn't in the tree
+    // Level 1 children of a face that isn't in the tree.
     assertTrue(decoder.cell(S2CellId.fromFace(1).child(0)).isEmpty());
     assertTrue(decoder.cell(S2CellId.fromFace(1).child(1)).isEmpty());
 
     // Level 1 nodes of the face that is in the tree
     assertTrue(decoder.cell(S2CellId.fromFace(2).child(0)).isEmpty());
     assertTrue(decoder.cell(S2CellId.fromFace(2).child(1)).isEmpty());
+    assertFalse(decoder.cell(S2CellId.fromFace(2).child(2)).isEmpty());
+    assertTrue(decoder.cell(S2CellId.fromFace(2).child(3)).isEmpty());
 
     // A child of a level 1 node that is not present, is also not present.
     assertTrue(decoder.cell(S2CellId.fromFace(2).child(3).child(0)).isEmpty());
@@ -339,24 +380,49 @@ public class S2DensityTreeTest extends GeometryTestCase {
     // cell22 and its children in positions 2 and 3 are in the tree, all others are not.
     assertTrue(decoder.cell(cell22.child(0)).isEmpty());
     assertTrue(decoder.cell(cell22.child(1)).isEmpty());
+    assertFalse(decoder.cell(cell22.child(2)).isEmpty());
+    assertFalse(decoder.cell(cell22.child(3)).isEmpty());
 
+    // cell22's children in positions 2 and 3 are in the tree, as leaves.
     assertTrue(decoder.cell(cell22.child(1).child(0)).isEmpty());
     assertTrue(decoder.cell(cell22.child(1).child(1)).isEmpty());
+
+    // For all four of its children, cell() returns cell22.child(2), because it is a leaf.
+    assertFalse(decoder.cell(cell22.child(2).child(1)).isEmpty());
+    assertFalse(decoder.cell(cell22.child(2).child(2)).isEmpty());
+    assertFalse(decoder.cell(cell22.child(2).child(3)).isEmpty());
+    assertFalse(decoder.cell(cell22.child(2).child(4)).isEmpty());
   }
 
-  /** Verifies that DecodedPath returns the expected weights for nodes that are in the tree. */
+  /** Verifies that DecodedPath.cell().weight returns the expected values. */
+  @Test
   public void testDecodedPathNodesHaveExpectedWeights() {
     S2DensityTree.DecodedPath decoder = new S2DensityTree.DecodedPath(cell22Tree);
 
-    // Face 2 should be present with the sum of the leaf weights.
+    // Face 1 is not in the tree, so should have weight 0.
+    assertEquals(0, decoder.cell(S2CellId.fromFace(1)).weight);
+
+    // Face 2 and its child 2 should both be present with the sum of the leaf weights.
     assertEquals(220, decoder.cell(S2CellId.fromFace(2)).weight);
     assertEquals(220, decoder.cell(S2CellId.fromFace(2).child(2)).weight);
 
+    // Face 2, child 1 is not in the tree.
+    assertEquals(0, decoder.cell(S2CellId.fromFace(2).child(1)).weight);
+
+    // Verify the weights of the four children of cell22. Two are leaves, the other two are not in
+    // the tree.
+    assertEquals(0, decoder.cell(cell22.child(0)).weight);
+    assertEquals(0, decoder.cell(cell22.child(1)).weight);
     assertEquals(100, decoder.cell(cell22.child(2)).weight);
     assertEquals(120, decoder.cell(cell22.child(3)).weight);
+
+    // Getting the weight of children of leaf cells returns the weight of the leaf cells.
+    assertEquals(100, decoder.cell(cell22.child(2).child(1)).weight);
+    assertEquals(120, decoder.cell(cell22.child(3).child(2)).weight);
   }
 
   /** Verifies that we get no density from no inputs. */
+  @Test
   public void testEmptyInputs() {
     checkSum(ImmutableMap.of(), weights);
     checkIntersection(ImmutableMap.of(), weights);
@@ -366,6 +432,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
    * Verifies that we get the same tree back for the sum of one tree, or intersection of a tree with
    * itself (but with twice the weight).
    */
+  @Test
   public void testCombineOne() {
     checkSum(
         ImmutableMap.of(FACE_CELLS[1], 3L,
@@ -385,6 +452,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies that we get proper results when one tree contains the other. */
+  @Test
   public void testSumNested() {
     checkSum(
         ImmutableMap.of(FACE_CELLS[1], 4L, // 3 + 1
@@ -403,6 +471,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Tests intersection of leaves of two trees. */
+  @Test
   public void testIntersectionOfLeavesTwoWay() {
     ImmutableMap<S2CellId, Long> weightsLeft =
         ImmutableMap.<S2CellId, Long>builder()
@@ -432,6 +501,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies that combining trees caps cell weights at MAX_WEIGHT. */
+  @Test
   public void testCombinationExceedingMaxWeight() {
     // A map of cells to weights that are each less than the per-cell MAX_WEIGHT, but large enough
     // that adding together the weights will exceed the max.
@@ -460,6 +530,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies two disjoint trees don't affect each other. */
+  @Test
   public void testCombineDisjoint() {
     checkSum(
         ImmutableMap.of(
@@ -475,6 +546,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies the intersection of two trees is empty if they only have internal nodes in common. */
+  @Test
   public void testIntersection() {
     // Despite both having weight in face cell 1, the intersection of the trees is empty.
     checkIntersection(
@@ -483,6 +555,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
         FACE_CELLS[1].child(1), FACE_CELLS[1].child(2));
   }
 
+  @Test
   public void testSumMaxLevel() {
     S2CellId cell = S2CellId.FACE_CELLS[5].child(2).child(1).child(0);
     for (int maxLevel = 0; maxLevel <= cell.level(); maxLevel++) {
@@ -493,6 +566,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testDecoderWithMissingUncle() {
     TreeEncoder encoder = new TreeEncoder();
     // Create two trees with 4000 weight total in the same level 2 cell. The last child at level 1
@@ -590,9 +664,10 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /**
-   * Dilate a tree with level 2 leaves, with dilation constrained to level 2, which are much
-   * larger cells than necessary for the dilation radius.
+   * Dilate a tree with level 2 leaves, with dilation constrained to level 2, which are much larger
+   * cells than necessary for the dilation radius.
    */
+  @Test
   public void testSmallDilationConstrainedToLeafLevel() {
     // A density tree with two leaves at level 2.
     final ImmutableMap<S2CellId, Long> twoLevelTwo =
@@ -648,6 +723,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
    * Dilate a tree with level 2 leaves with dilation constrained to level 3, which are still much
    * larger cells than necessary for the dilation radius.
    */
+  @Test
   public void testSmallDilationRelativeToLeafSize() {
     // A density tree with two leaves at level 2.
     final ImmutableMap<S2CellId, Long> twoLevelTwo =
@@ -671,10 +747,11 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /**
-   * Dilate two versions of a tree with level 2 leaves that share a neighbor, and make sure that
-   * the maximum weight is used in dilated nodes, regardless of what order they are added during
+   * Dilate two versions of a tree with level 2 leaves that share a neighbor, and make sure that the
+   * maximum weight is used in dilated nodes, regardless of what order they are added during
    * dilation.
    */
+  @Test
   public void testDilationUsesMaximum() {
     // Two density trees with two leaves at level 2 with a common neighbor "3b" not in the tree.
     // The only difference is the distribution of weight.
@@ -719,6 +796,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
    * Dilate a tree with level 5 leaves, which average about 288 km across, by 1000 km, which
    * requires using dilation with cells at level 2.
    */
+  @Test
   public void testDilationLargerThanLeafSize() {
     // A density tree with two leaves at level 5.
     final ImmutableMap<S2CellId, Long> twoLevelFive =
@@ -776,6 +854,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
    * Checks sumDensity and sumIntersectionDensity with dilated trees, with dilation constrained to
    * at most the leaf level of the input trees (maxLevelDiff == 0).
    */
+  @Test
   public void testDilateAtLeafLevelAndCombineDensity() {
     // A density tree with one leaf at level 2.
     final ImmutableMap<S2CellId, Long> oneLevelTwo =
@@ -798,15 +877,15 @@ public class S2DensityTreeTest extends GeometryTestCase {
     S2DensityTree tree1 = encode(oneLevelTwo);
     S2DensityTree tree2 = encode(twoLevelTwo);
 
-    assertEquals(toTokenSet(tree1.getLeaves()), ImmutableSet.of("33"));
-    assertEquals(toTokenSet(tree2.getLeaves()), ImmutableSet.of("3f", "2b"));
+    assertEquals(ImmutableSet.of("33"), toTokenSet(tree1.getLeaves()));
+    assertEquals(ImmutableSet.of("3f", "2b"), toTokenSet(tree2.getLeaves()));
 
     // Dilate both trees.
     ImmutableList<S2DensityTree> trees = ImmutableList.of(
         S2DensityTree.dilate(tree1, metersToAngle(1000), 0),
         S2DensityTree.dilate(tree2, metersToAngle(1000), 0));
 
-    String message = String.format(
+    String message = Strings.lenientFormat(
         "Pre-Dilation Tree1 Leaves: \n%s\n"
         + "\nDilated Tree1 Leaves: \n%s\n"
         + "\nPre-Dilation Tree2 Leaves: \n%s\n"
@@ -820,8 +899,8 @@ public class S2DensityTreeTest extends GeometryTestCase {
     // and its 8 neighbors. Every node has weight 2.
     assertEquals(
         message,
-        toTokenSet(trees.get(0).getLeaves()),
-        ImmutableSet.of("61", "2d", "35", "69", "33", "2f", "37", "67", "31"));
+        ImmutableSet.of("61", "2d", "35", "69", "33", "2f", "37", "67", "31"),
+        toTokenSet(trees.get(0).getLeaves()));
     trees.get(0).visitCells((cellId, node) -> {
       assertEquals("Node " + cellId.toToken(), 2, node.weight());
       return S2DensityTree.CellVisitor.Action.ENTER_CELL;
@@ -832,10 +911,10 @@ public class S2DensityTreeTest extends GeometryTestCase {
     // All the nodes have weight 2, except for the face with weight 4,
     assertEquals(
         message,
-        toTokenSet(trees.get(1).getLeaves()),
         ImmutableSet.of(
             "3b", "69", "ad", "2b", "41", "15", "3d", "2d",
-            "43", "6b", "17", "39", "3f", "29", "2f", "ab"));
+            "43", "6b", "17", "39", "3f", "29", "2f", "ab"),
+        toTokenSet(trees.get(1).getLeaves()));
     trees.get(1).visitCells((cellId, node) -> {
       int expectedWeight = cellId.toToken().equals("3") ? 4 : 2;
       assertEquals("Node " + cellId.toToken(), expectedWeight, node.weight());
@@ -850,7 +929,6 @@ public class S2DensityTreeTest extends GeometryTestCase {
     // are also the three dilated cells north of "2b" (Western Australia). So the summed tree has a
     // total of 16 + 9 - 3 = 22 leaves, where those three have weight 4 and all the others have
     // weight 2.
-    // Face 0
     Set<String> actualLeaves = toTokenSet(dilatedSum.getLeaves());
     ImmutableSet<String> expectedUnionLeaves = ImmutableSet.of(
             "2d", "2f", "69", // The three neighbors shared between "33" and "2b"
@@ -906,6 +984,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** A test case with geometry from HD roads. */
+  @Test
   public void testIntersectionFromIndexes() {
     final int maxLevel = 20;
 
@@ -936,7 +1015,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
             S2DensityTree.dilate(rightTree, dilationAngle, 0));
 
     String message =
-        String.format(
+        Strings.lenientFormat(
             "Pre-Dilation LeftTree Leaves: \n%s\n"
                 + "\nDilated LeftTree Leaves: \n%s\n"
                 + "\nPre-Dilation RightTree Leaves: \n%s\n"
@@ -952,6 +1031,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertFalse(message, dilatedIntersection.getLeaves().isEmpty());
   }
 
+  @Test
   public void testVisitCellsAtFaceCenter() {
     // Two Level 16 cells near the center of face 0, in different level 1 cells.
     String[] tokens = { "0ffffffd5", "10000002b" };
@@ -971,12 +1051,15 @@ public class S2DensityTreeTest extends GeometryTestCase {
     Set<S2CellId> expected = new HashSet<>();
     for (String token : tokens) {
       S2CellId cellId = S2CellId.fromToken(token);
-      while (cellId.level() >= 0) {
+      if (cellId.level() <= 14) {
+        expected.add(cellId);
+      }
+      while (cellId.level() > 0) {
+        assertTrue(treeCellIds.contains(cellId));
+        cellId = cellId.parent();
         if (cellId.level() <= 14) {
           expected.add(cellId);
         }
-        assertTrue(treeCellIds.contains(cellId));
-        cellId = cellId.parent();
       }
     }
 
@@ -994,6 +1077,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     assertEquals(toTokenSet(expected), toTokenSet(actual));
   }
 
+  @Test
   public void testDilationAtFaceCenter() {
     // Two Level 16 cells near the center of face 0, in different level 1 cells.
     String[] tokens = { "0ffffffd5", "10000002b" };
@@ -1019,7 +1103,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
     Set<String> expected = new HashSet<>(Arrays.asList(expectedDilatedLeaves));
 
     String message =
-        String.format(
+        Strings.lenientFormat(
             "Pre-dilated tree = %s \nwith leaves: %s\nDilated tree = %s \nwith leaves: %s\n",
             toTokenSet(tree),
             toTokenSet(tree.getLeaves()),
@@ -1034,6 +1118,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
    * Verifies cells with weight intersect, and unsplit nodes with weight are contained by the
    * S2Region for a tree.
    */
+  @Test
   public void testDensityRegion() {
     S2DensityTree tree = encode(weights);
     S2Region region = tree.asRegion();
@@ -1045,6 +1130,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies a large random set of cells. */
+  @Test
   public void testDensitySize() {
     // Build a large random weights map and a function that measures intersecting weights from it.
     // We may get slightly fewer than the desired number of cells since duplicates overwrite.
@@ -1078,6 +1164,7 @@ public class S2DensityTreeTest extends GeometryTestCase {
   }
 
   /** Verifies that the sum operator treats leaves and only leaves as contained. */
+  @Test
   public void testSumAtLeaf() {
     S2DensityTree tree = encode(weights);
     SumDensity sum = new SumDensity();
@@ -1087,6 +1174,64 @@ public class S2DensityTreeTest extends GeometryTestCase {
       Cell node = path.cell(cell);
       assertEquals(node.hasChildren(), sum.applyAsLong(cell) > 0);
     });
+  }
+
+  /** Verifies that children with more weight than their parent are linearly rebalanced. */
+  @Test
+  public void testNormalize() {
+    // Sum children where the 1st child has half the weight of the 2nd with parent that makes them
+    // both too heavy.
+    S2DensityTree tree = encode(sumToRoot(ImmutableMap.of(
+        FACE_CELLS[0], 3L, // sums to 9 with children,
+        FACE_CELLS[0].child(0), 2L,
+        FACE_CELLS[0].child(1), 4L)));
+    ImmutableMap<S2CellId, Long> expected = ImmutableMap.of(
+        FACE_CELLS[0], 9L,
+        FACE_CELLS[0].child(0), 3L, // Siblings sum to parent weight, with same fraction of parent
+        FACE_CELLS[0].child(1), 6L);
+    assertEquals(expected, tree.normalize().decode());
+  }
+
+  /** Verifies that 3 disjoint paths are unaffected by normalize. */
+  @Test
+  public void testNormalizeDisjoint() {
+    S2CellId face0 = S2CellId.fromFace(0);
+    S2DensityTree tree = encode(sumToRoot(ImmutableMap.of(
+        face0.child(0), 1L,
+        face0.child(1).child(2), 1L,
+        face0.child(2), 1L)));
+    assertEquals(tree.decode(), tree.normalize().decode());
+  }
+
+  /** Verifies that perfectly divided large weights normalize without overflow. */
+  @Test
+  public void testNormalizeLargeWeight() {
+    S2CellId face0 = S2CellId.fromFace(0);
+    // Define a tree with Long.MAX_VALUE weight in total and no overlap so normalize should change
+    // nothing.
+    S2DensityTree tree = encode(sumToRoot(ImmutableMap.of(
+        face0.child(1).child(2), (long) Integer.MAX_VALUE,
+        face0.child(1).child(3), Long.MAX_VALUE - Integer.MAX_VALUE - 1,
+        face0.child(2), 1L)));
+    assertEquals(tree.decode(), tree.normalize().decode());
+  }
+
+  @Test
+  public void testCellDensity() {
+    S2CellId[][] features = {
+        {FACE_CELLS[0].child(0)},
+        {FACE_CELLS[1].child(1), FACE_CELLS[1].child(2)}};
+    assertEquals(
+        ImmutableMap.of(
+            FACE_CELLS[0], 1L,
+            FACE_CELLS[0].child(0), 1L,
+            FACE_CELLS[1], 2L,
+            FACE_CELLS[1].child(1), 2L,
+            FACE_CELLS[1].child(2), 2L),
+        CellDensityFunction.density(Arrays.asList(features),
+            ids -> S2CellUnion.copyFrom(Arrays.asList(ids)),
+            ids -> ids.length,
+            new BreadthFirstTreeBuilder(10, 2)).decode());
   }
 
   /** Returns the result of encoding the given weights into a tree. */

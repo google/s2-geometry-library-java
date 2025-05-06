@@ -18,17 +18,25 @@ package com.google.common.geometry;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.Math.PI;
 import static java.lang.Math.min;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for {@link S2RegionCoverer}. */
-public strictfp class S2RegionCovererTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S2RegionCovererTest extends GeometryTestCase {
 
+  @Test
   public void testRandomCells() {
     S2RegionCoverer coverer = S2RegionCoverer.builder().setMaxCells(1).build();
 
@@ -43,9 +51,8 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
   }
 
   public void checkCovering(
-      S2RegionCoverer coverer, S2Region region, ArrayList<S2CellId> covering, boolean interior) {
-
-    // Keep track of how many cells have the same coverer.min_level() ancestor.
+      S2RegionCoverer coverer, S2Region region, List<S2CellId> covering, boolean interior) {
+    // Keep track of how many cells have the same coverer.minLevel() ancestor.
     HashMap<S2CellId, Integer> minLevelCells = new HashMap<>();
     for (int i = 0; i < covering.size(); ++i) {
       int level = covering.get(i).level();
@@ -72,12 +79,12 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
         assertTrue(region.contains(new S2Cell(covering.get(i))));
       }
     } else {
-      S2CellUnion cellUnion = new S2CellUnion();
-      cellUnion.initFromCellIds(Lists.newArrayList(covering));
+      S2CellUnion cellUnion = new S2CellUnion().initFromCellIds(Lists.newArrayList(covering));
       checkCovering(region, cellUnion, true, new S2CellId());
     }
   }
 
+  @Test
   public void testRandomCaps() {
     final int kMaxLevel = S2CellId.MAX_LEVEL;
     for (int i = 0; i < 1000; ++i) {
@@ -108,14 +115,14 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
       // Also check S2CellUnion.denormalize(). The denormalized covering may still be different and
       // smaller than "covering" because S2RegionCoverer does not guarantee that it will not output
       // all four children of the same parent.
-      S2CellUnion cells = new S2CellUnion();
-      cells.initFromCellIds(covering);
+      S2CellUnion cells = new S2CellUnion().initFromCellIds(covering);
       ArrayList<S2CellId> denormalized = new ArrayList<>();
       cells.denormalize(coverer.minLevel(), coverer.levelMod(), denormalized);
       checkCovering(coverer, cap, denormalized, false);
     }
   }
 
+  @Test
   public void testSimpleCoverings() {
     final int kMaxLevel = S2CellId.MAX_LEVEL;
     for (int i = 0; i < 1000; ++i) {
@@ -134,6 +141,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testPolylineCovering() {
     S2RegionCoverer coverer = S2RegionCoverer.DEFAULT;
     S2Polyline line =
@@ -157,6 +165,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
             "1aaaaaaaaaaaaaab"));
   }
 
+  @Test
   public void testPolylineCoveringJavaCcConsistency() {
     // This test ensures S2RegionCoverer implementation is consistent between Java and C++.
     S2Polyline polyline =
@@ -219,6 +228,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     assertEquals(expected, ret.stream().map(S2CellId::toToken).collect(toImmutableList()));
   }
 
+  @Test
   public void testInteriorCovering() {
     // We construct the region the following way. Start with S2 cell of level l. Remove from it
     // one of its grandchildren (level l+2). If we then set:
@@ -232,12 +242,6 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     S2CellId smallCell = S2CellId.fromPoint(data.getRandomPoint()).parent(level + 2);
     S2CellId largeCell = smallCell.parent(level);
 
-    S2CellUnion smallCellUnion = new S2CellUnion();
-    smallCellUnion.initFromCellIds(Lists.newArrayList(smallCell));
-
-    S2CellUnion largeCellUnion = new S2CellUnion();
-    largeCellUnion.initFromCellIds(Lists.newArrayList(largeCell));
-
     // Because the Java S2CellUnion doesn't have getDifference(), we construct it manually by
     // taking all grandchildren except the missing one.
     ArrayList<S2CellId> diffList = Lists.newArrayList();
@@ -249,8 +253,7 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
       }
     }
 
-    S2CellUnion diff = new S2CellUnion();
-    diff.initFromCellIds(diffList);
+    S2CellUnion diff = new S2CellUnion().initFromCellIds(diffList);
 
     S2RegionCoverer.Builder covererBuilder =
         S2RegionCoverer.builder().setMaxCells(3).setMaxLevel(level + 3).setMinLevel(level);
@@ -275,5 +278,18 @@ public strictfp class S2RegionCovererTest extends GeometryTestCase {
     assertEquals(2, moreInterior.size());
     assertEquals(level + 2, moreInterior.get(0).level());
     assertEquals(level + 2, moreInterior.get(1).level());
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS2RegionCovererSerialization() {
+    S2RegionCoverer coverer =
+        S2RegionCoverer.builder()
+            .setLevelMod(2)
+            .setMaxCells(100)
+            .setMinLevel(10)
+            .setMaxLevel(20)
+            .build();
+    doSerializationTest(coverer);
   }
 }

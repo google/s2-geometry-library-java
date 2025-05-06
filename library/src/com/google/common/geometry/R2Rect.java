@@ -26,7 +26,8 @@ import jsinterop.annotations.JsType;
  * allow iteratively constructing bounds via e.g. {@link #addPoint(R2Vector)}.
  */
 @JsType
-public final strictfp class R2Rect implements Serializable {
+@SuppressWarnings("Assertion")
+public final class R2Rect implements Serializable {
   private final R1Interval x;
   private final R1Interval y;
 
@@ -35,14 +36,14 @@ public final strictfp class R2Rect implements Serializable {
   public R2Rect() {
     // The default R1Interval constructor creates an empty interval.
     this(new R1Interval(), new R1Interval());
-    // assert (isValid());
+    assert isValid();
   }
 
   /** Constructs a rectangle from the given lower-left and upper-right points. */
   @JsIgnore
   public R2Rect(R2Vector lo, R2Vector hi) {
     this(new R1Interval(lo.x(), hi.x()), new R1Interval(lo.y(), hi.y()));
-    // assert (isValid());
+    assert isValid();
   }
 
   /**
@@ -52,7 +53,7 @@ public final strictfp class R2Rect implements Serializable {
   public R2Rect(R1Interval x, R1Interval y) {
     this.x = x;
     this.y = y;
-    // assert (isValid());
+    assert isValid();
   }
 
   /** Copy constructor. */

@@ -13,7 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.google.common.geometry;
+
+import static org.junit.Assert.assertEquals;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -26,10 +29,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for UintVectorCoder. */
-public class UintVectorCoderTest extends TestCase {
+@RunWith(JUnit4.class)
+public class UintVectorCoderTest {
 
   List<Long> decodeLongsFromBytes(Bytes data, int offset) throws IOException {
     Longs longs = UintVectorCoder.UINT64.decode(data, data.cursor(offset));
@@ -40,6 +46,7 @@ public class UintVectorCoderTest extends TestCase {
     return actual;
   }
 
+  @Test
   public void testDecodeLongsFromByteString() throws IOException {
     List<Long> expected = Lists.newArrayList(0L, 0L, 0L);
 
@@ -50,6 +57,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testEmpty_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList();
 
@@ -60,6 +68,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testEmpty_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList();
 
@@ -70,6 +79,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testZero_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0L);
 
@@ -80,6 +90,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testZero_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0);
 
@@ -90,6 +101,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testRepeatedZeros_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0L, 0L, 0L);
 
@@ -100,6 +112,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testRepeatedZeros_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0, 0, 0);
 
@@ -110,6 +123,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testMaxInt_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(~0L);
 
@@ -120,6 +134,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testMaxInt_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(~0);
 
@@ -130,6 +145,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testOneByte_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0L, 255L, 1L, 254L);
 
@@ -140,6 +156,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testOneByte_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0, 255, 1, 254);
 
@@ -150,6 +167,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testTwoBytes_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0L, 255L, 256L, 254L);
 
@@ -160,6 +178,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testTwoBytes_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0, 255, 256, 254);
 
@@ -170,6 +189,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testThreeBytes_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0xffffffL, 0x0102L, 0L, 0x050403L);
 
@@ -180,6 +200,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testThreeBytes_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0xffffff, 0x0102, 0, 0x050403);
 
@@ -190,6 +211,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testFourBytes_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(0xffffffffL, (long) Integer.MAX_VALUE);
 
@@ -200,6 +222,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testFourBytes_uint32() throws IOException {
     List<Integer> expected = Lists.newArrayList(0xffffffff, Integer.MAX_VALUE);
 
@@ -210,6 +233,7 @@ public class UintVectorCoderTest extends TestCase {
     assertEquals(expected, actual);
   }
 
+  @Test
   public void testEightBytes_uint64() throws IOException {
     List<Long> expected = Lists.newArrayList(~0L, 0L, 0x0102030405060708L, Long.MAX_VALUE);
 

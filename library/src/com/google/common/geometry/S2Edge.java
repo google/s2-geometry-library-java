@@ -21,25 +21,29 @@ import java.io.Serializable;
 import jsinterop.annotations.JsType;
 
 /**
- * An abstract directed edge from one S2Point to another S2Point.
+ * An immutable directed edge from one S2Point to another S2Point.
  *
  * @author kirilll@google.com (Kirill Levin)
  */
 @JsType
-public final class S2Edge implements Serializable, S2Shape {
+@SuppressWarnings("Assertion")
+public class S2Edge implements Serializable, S2Shape {
 
   private final S2Point start;
   private final S2Point end;
 
+  /** Creates an edge from {@code start} to {@code end}. */
   public S2Edge(S2Point start, S2Point end) {
     this.start = start;
     this.end = end;
   }
 
+  /** Returns the start point of the edge. */
   public S2Point getStart() {
     return start;
   }
 
+  /** Returns the end point of the edge. */
   public S2Point getEnd() {
     return end;
   }
@@ -70,6 +74,7 @@ public final class S2Edge implements Serializable, S2Shape {
 
   @Override
   public void getEdge(int index, MutableEdge result) {
+    assert index == 0;
     result.set(start, end);
   }
 

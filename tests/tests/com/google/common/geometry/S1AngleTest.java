@@ -15,12 +15,23 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.geometry.Platform.nextAfter;
 import static java.lang.Math.PI;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import com.google.common.annotations.GwtIncompatible;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /** Tests for {@link S1Angle}. */
-public strictfp class S1AngleTest extends GeometryTestCase {
+@RunWith(JUnit4.class)
+public class S1AngleTest extends GeometryTestCase {
 
+  @Test
   public void testBasic() {
     // Check that the conversion between Pi radians and 180 degrees is exact.
     assertExactly(PI, S1Angle.radians(PI).radians());
@@ -46,24 +57,28 @@ public strictfp class S1AngleTest extends GeometryTestCase {
     assertEquals(-123456789, S1Angle.degrees(-12.3456789).e7());
   }
 
+  @Test
   public void testMath() {
-    assertDoubleEquals(30, S1Angle.degrees(10).add(S1Angle.degrees(20)).degrees());
-    assertDoubleEquals(-10, S1Angle.degrees(10).sub(S1Angle.degrees(20)).degrees());
-    assertDoubleEquals(20, S1Angle.degrees(10).mul(2.0).degrees());
-    assertDoubleEquals(5, S1Angle.degrees(10).div(2.0).degrees());
-    assertDoubleEquals(1.0, S1Angle.degrees(0).cos());
-    assertDoubleEquals(1.0, S1Angle.degrees(90).sin());
-    assertDoubleEquals(1.0, S1Angle.degrees(45).tan());
+    // 29.999999999999996
+    assertAlmostEquals(30.0, S1Angle.degrees(10).add(S1Angle.degrees(20)).degrees());
+    assertExactly(-10, S1Angle.degrees(10).sub(S1Angle.degrees(20)).degrees());
+    assertExactly(20, S1Angle.degrees(10).mul(2.0).degrees());
+    assertExactly(5, S1Angle.degrees(10).div(2.0).degrees());
+    assertExactly(1.0, S1Angle.degrees(0).cos());
+    assertExactly(1.0, S1Angle.degrees(90).sin());
+    assertAlmostEquals(1.0, S1Angle.degrees(45).tan()); // 0.9999999999999999
   }
 
   @SuppressWarnings("deprecation") // earthDistance and fromEarthDistance are deprecated but tested.
+  @Test
   public void testDistance() {
     // Check distance accessor for arbitrary sphere
-    assertDoubleEquals(100.0 * PI, S1Angle.radians(PI).distance(100.0));
-    assertDoubleEquals(50.0 * PI, S1Angle.radians(PI / 2).distance(100.0));
-    assertDoubleEquals(25.0 * PI, S1Angle.radians(PI / 4).distance(100.0));
+    assertExactly(100.0 * PI, S1Angle.radians(PI).distance(100.0));
+    assertExactly(50.0 * PI, S1Angle.radians(PI / 2).distance(100.0));
+    assertExactly(25.0 * PI, S1Angle.radians(PI / 4).distance(100.0));
   }
 
+  @Test
   public void testE7Overflow() {
     // Normalized angles should never overflow.
     assertEquals(-1800000000, S1Angle.degrees(-180.0).e7());
@@ -85,48 +100,57 @@ public strictfp class S1AngleTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testNormalize() {
-    assertDoubleEquals(0.0, S1Angle.degrees(360.0).normalize().degrees());
-    assertDoubleEquals(-90.0, S1Angle.degrees(-90.0).normalize().degrees());
-    assertDoubleEquals(180.0, S1Angle.degrees(-180.0).normalize().degrees());
-    assertDoubleEquals(90.0, S1Angle.degrees(90.0).normalize().degrees());
-    assertDoubleEquals(180.0, S1Angle.degrees(180.0).normalize().degrees());
-    assertDoubleEquals(-90.0, S1Angle.degrees(270.0).normalize().degrees());
-    assertDoubleEquals(180.0, S1Angle.degrees(540.0).normalize().degrees());
-    assertDoubleEquals(90.0, S1Angle.degrees(-270.0).normalize().degrees());
+    assertExactly(0.0, S1Angle.degrees(360.0).normalize().degrees());
+    assertExactly(-90.0, S1Angle.degrees(-90.0).normalize().degrees());
+    assertExactly(180.0, S1Angle.degrees(-180.0).normalize().degrees());
+    assertExactly(90.0, S1Angle.degrees(90.0).normalize().degrees());
+    assertExactly(180.0, S1Angle.degrees(180.0).normalize().degrees());
+    assertExactly(-90.0, S1Angle.degrees(270.0).normalize().degrees());
+    assertExactly(180.0, S1Angle.degrees(540.0).normalize().degrees());
+    assertExactly(90.0, S1Angle.degrees(-270.0).normalize().degrees());
 
-    assertDoubleEquals(PI, S1Angle.radians(PI).normalize().radians());
-    // Should wrap around.
-    assertDoubleEquals(-PI, S1Angle.radians(Platform.nextAfter(PI, 4.0)).normalize().radians());
-    assertDoubleEquals(PI, S1Angle.radians(Platform.nextAfter(PI, 0.0)).normalize().radians());
+    // PI is unchanged.
+    assertExactly(PI, S1Angle.radians(PI).normalize().radians());
 
-    // -PI maps to PI.
-    assertDoubleEquals(PI, S1Angle.radians(-PI).normalize().radians());
-    // Should wrap around.
-    assertDoubleEquals(PI, S1Angle.radians(Platform.nextAfter(-PI, -4.0)).normalize().radians());
-    assertDoubleEquals(-PI, S1Angle.radians(Platform.nextAfter(-PI, 0.0)).normalize().radians());
+    // nextAfter PI should wrap around to _exactly_ nextAfter -Pi.
+    assertExactly(
+        nextAfter(-PI, 0.0),
+        S1Angle.radians(nextAfter(PI, 4.0)).normalize().radians());
+
+    // -PI is wrapped around to _exactly_ PI.
+    assertExactly(PI, S1Angle.radians(-PI).normalize().radians());
+
+    // nextAfter (downwards) -PI should wrap around to _exactly_ nextAfter (downwards) PI.
+    assertExactly(nextAfter(PI, 0.0), S1Angle.radians(nextAfter(-PI, -4.0)).normalize().radians());
   }
 
+  @Test
   public void testAlreadyNormalizedIsIdentity() {
     final S1Angle angle = S1Angle.degrees(90.0);
     assertSame(angle.normalize(), angle);
   }
 
   @SuppressWarnings("SelfEquals")
+  @Test
   public void testInfinity() {
     assertTrue(S1Angle.radians(1e30).compareTo(S1Angle.INFINITY) < 0);
     assertTrue(S1Angle.INFINITY.neg().compareTo(S1Angle.ZERO) < 0);
     assertTrue(S1Angle.INFINITY.equals(S1Angle.INFINITY));
   }
 
+  @Test
   public void testBuilder_zero() {
     assertEquals(S1Angle.ZERO, new S1Angle.Builder().build());
   }
 
+  @Test
   public void testBuilder_radians() {
     assertExactly(1.5, new S1Angle.Builder().add(0.5).add(0.75).add(0.25).build().radians());
   }
 
+  @Test
   public void testBuilder_angles() {
     S1Angle angle =
         new S1Angle.Builder()
@@ -138,6 +162,7 @@ public strictfp class S1AngleTest extends GeometryTestCase {
     assertExactly(180.0, angle.degrees());
   }
 
+  @Test
   public void testBuilder_mixed() {
     S1Angle.Builder builder = new S1Angle.Builder();
     builder.add(PI / 2);
@@ -151,11 +176,18 @@ public strictfp class S1AngleTest extends GeometryTestCase {
     assertExactly(0.75 * PI, angle1.radians());
   }
 
+  @Test
   public void testToBuilder() {
     S1Angle base = S1Angle.radians(PI);
     S1Angle.Builder builder = base.toBuilder();
     builder.add(S1Angle.degrees(90));
     assertExactly(1.5 * PI, builder.build().radians());
     assertExactly(PI, base.radians()); // Builder uses a copy, not original
+  }
+
+  @GwtIncompatible("Javascript doesn't support Java serialization.")
+  @Test
+  public void testS1AngleSerialization() {
+    doSerializationTest(S1Angle.radians(0.234));
   }
 }

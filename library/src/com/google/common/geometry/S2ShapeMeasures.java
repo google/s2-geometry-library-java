@@ -33,7 +33,7 @@ import java.util.List;
  * S2Polygon} and {@link S2Polyline} methods, these methods allow the underlying data to be
  * represented arbitrarily.
  */
-final strictfp class S2ShapeMeasures {
+public final class S2ShapeMeasures {
 
   private S2ShapeMeasures() {}
 
@@ -137,7 +137,7 @@ final strictfp class S2ShapeMeasures {
   /**
    * Like loopArea(), except that this method is faster and has more error. The result is between 0
    * and 4*Pi steradians. The maximum error is 2.22e-15 steradians per loop vertex, which works out
-   * to about 0.09 square meters per vertex on the Earth's surface.  For example, a loop with 100
+   * to about 0.09 square meters per vertex on the Earth's surface. For example, a loop with 100
    * vertices has a maximum error of about 9 square meters. (The actual error is typically much
    * smaller than this.) The error bound can be computed using getTurningAngleMaxError(), which
    * returns the maximum error in steradians.
@@ -173,7 +173,8 @@ final strictfp class S2ShapeMeasures {
    * is between -2*Pi and 2*Pi steradians. This method is used to accurately compute the area of
    * polygons consisting of multiple loops.
    *
-   * The following cases are handled specially:
+   * <p>The following cases are handled specially:
+   *
    * <ul>
    *   <li>Counter-clockwise loops are guaranteed to have positive area, and clockwise loops are
    *       guaranteed to have negative area.
@@ -496,12 +497,14 @@ final strictfp class S2ShapeMeasures {
   @VisibleForTesting
   static S2Point loopCentroid(List<S2Point> loop) {
     double[] sum = new double[3];
-    S2ShapeUtil.visitSurfaceIntegral(loop, (a, b, c) -> {
-      S2Point centroid = S2.trueCentroid(a, b, c);
-      sum[0] += centroid.x;
-      sum[1] += centroid.y;
-      sum[2] += centroid.z;
-    });
+    S2ShapeUtil.visitSurfaceIntegral(
+        loop,
+        (a, b, c) -> {
+          S2Point centroid = S2.trueCentroid(a, b, c);
+          sum[0] += centroid.x;
+          sum[1] += centroid.y;
+          sum[2] += centroid.z;
+        });
     return new S2Point(sum[0], sum[1], sum[2]);
   }
 

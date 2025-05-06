@@ -24,8 +24,7 @@ import java.io.Serializable;
  * An S2PointRegion is a region that contains a single point. It is more expensive than the raw
  * S2Point type and is useful mainly for completeness.
  */
-public final strictfp class S2PointRegion
-    implements S2Region, Comparable<S2PointRegion>, Serializable {
+public final class S2PointRegion implements S2Region, Comparable<S2PointRegion>, Serializable {
   /** The byte in a stream that signifies the lossless encoding of an S2PointRegion follows. */
   private static final byte POINT_REGION_LOSSLESS_ENCODING_VERSION = 1;
 

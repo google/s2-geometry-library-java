@@ -15,8 +15,13 @@
  */
 package com.google.common.geometry;
 
+import static java.lang.Math.min;
+
 import com.google.common.geometry.S2ClosestEdgeQuery.CellTarget;
 import com.google.common.geometry.S2ClosestEdgeQuery.PointTarget;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import jsinterop.annotations.JsMethod;
 
 /**
@@ -34,14 +39,14 @@ import jsinterop.annotations.JsMethod;
  *
  * <p>Example usage:
  *
- * <pre>{@code
+ * {@snippet :
  * S2CellUnion getBufferedCovering(S2ShapeIndex index, S1Angle radius) {
  *   S2ShapeIndexBufferedRegion region = new S2ShapeIndexBufferedRegion(index, radius);
  *   S2CellUnion covering = S2RegionCoverer.DEFAULT.getCovering(region);
  *   return covering;
  * }
  *
- * }</pre>
+ * }
  */
 public class S2ShapeIndexBufferedRegion implements S2Region {
   /** The radius to expand the index geometry by. */
@@ -108,6 +113,34 @@ public class S2ShapeIndexBufferedRegion implements S2Region {
   public S2LatLngRect getRectBound() {
     S2LatLngRect origRect = makeS2ShapeIndexRegion().getRectBound();
     return origRect.expandedByDistance(radius.toAngle());
+  }
+
+  @Override
+  public void getCellUnionBound(Collection<S2CellId> results) {
+    // Get the max level to add neighbors at, or return the full union if the buffer radius is huge.
+    double radians = radius.toAngle().radians();
+    int maxLevel = S2Projections.MIN_WIDTH.getMaxLevel(radians) - 1;
+    if (maxLevel < 0) {
+      S2Cap.full().getCellUnionBound(results);
+      return;
+    }
+
+    // We start with a covering of the original S2ShapeIndex, and then expand it by replacing each
+    // cell with a block of 4 cells whose union contains the original cell buffered by the radius.
+    //
+    // This increases the number of cells in the covering by a factor of 4 and increases the covered
+    // area by a factor of 16, so it is not a very good covering, but it is much better than always
+    // returning the 6 face cells.
+    List<S2CellId> origCellIds = new ArrayList<>(6);
+    new S2ShapeIndexRegion(index()).getCellUnionBound(origCellIds);
+    results.clear();
+    for (S2CellId id : origCellIds) {
+      if (id.isFace()) {
+        S2Cap.full().getCellUnionBound(results);
+        return;
+      }
+      id.getVertexNeighbors(min(maxLevel, id.level() - 1), results);
+    }
   }
 
   @Override

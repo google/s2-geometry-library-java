@@ -24,7 +24,6 @@ import com.google.common.geometry.S1ChordAngle;
 import com.google.common.geometry.S2EdgeUtil;
 import com.google.common.geometry.S2Point;
 import com.google.errorprone.annotations.CheckReturnValue;
-import java.io.IOException;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -72,7 +71,7 @@ public class S2EdgeUtilBenchmark {
 
     @Setup(Level.Trial)
     @Override
-    public void setup() throws IOException {
+    public void setup() {
       super.setup();
       for (int i = 0; i < NUM_POINTS; ++i) {
         points[i] = data.getRandomPoint();
@@ -223,7 +222,7 @@ public class S2EdgeUtilBenchmark {
       S1Angle angle = angles[distanceIndex % NUM_ANGLES];
       pointIndex = (pointIndex + 1) % NUM_POINTS;
       distanceIndex = (distanceIndex + 1) % NUM_ANGLES;
-      return S2EdgeUtil.interpolateAtDistance(angle, a, b);
+      return S2EdgeUtil.getPointOnLine(a, b, angle);
     }
 
     /**

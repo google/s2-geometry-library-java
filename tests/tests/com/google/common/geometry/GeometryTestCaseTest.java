@@ -16,71 +16,77 @@
 package com.google.common.geometry;
 
 import static java.lang.Math.PI;
+import static org.junit.Assert.fail;
 
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/**
- * Tests for methods in GeometryTestCase.
- */
+/** Tests for methods in GeometryTestCase. */
+@RunWith(JUnit4.class)
 public final class GeometryTestCaseTest extends GeometryTestCase {
 
-  private void assertNotDoubleEquals(double a, double b) {
-    assertNotDoubleEquals("", a, b);
+  private void assertNotAlmostEquals(double a, double b) {
+    assertNotAlmostEquals("", a, b);
   }
 
-  private void assertNotDoubleEquals(String message, double a, double b) {
+  private void assertNotAlmostEquals(String message, double a, double b) {
     try {
-      assertDoubleEquals(a, b);
+      assertAlmostEquals(a, b);
     } catch (AssertionError expected) {
       return; // test passes.
     }
-    fail("Expected assertDoubleEquals to fail, but it did not: " + message);
+    fail("Expected assertAlmostEquals to fail, but it did not: " + message);
   }
 
-  public void testAssertDoubleEqualsFundamentals() {
-    assertDoubleEquals(0, 0);
+  @Test
+  public void testAssertAlmostEqualsFundamentals() {
+    assertAlmostEquals(0, 0);
     // Negative zero is a special case.
-    assertDoubleEquals(-0, 0);
+    assertAlmostEquals(-0.0, 0);
 
     // Tiny numbers with the same sign are considered almost equal.
-    assertDoubleEquals(0, nextUp(0));
-    assertDoubleEquals(-0.0d, nextDown(0));
+    assertAlmostEquals(0, nextUp(0));
+    assertAlmostEquals(-0.0d, nextDown(0));
 
     // Tiny non-zero numbers with opposite signs are not considered almost equal, even if they're
     // within MAX_ULPS of each other.
-    assertNotDoubleEquals(0, nextDown(0));
-    assertNotDoubleEquals(-0.0d, nextUp(0));
-    assertNotDoubleEquals(nextUp(0), nextDown(0));
+    assertNotAlmostEquals(0, nextDown(0));
+    assertNotAlmostEquals(-0.0d, nextUp(0));
+    assertNotAlmostEquals(nextUp(0), nextDown(0));
 
     /* ULP-based comparison for some fixed epsilons.  */
 
     // 1e-12 is larger than 4 ULPs at 360, so ULP-based checking is stricter than a fixed epsilon of
     // 1e-12 for any reasonable value of degrees or radians.
-    assertNotDoubleEquals(360, 360 + 1e-12);
+    assertNotAlmostEquals(360, 360 + 1e-12);
     // But 1e-12 is less than 4 ULPs at 4096.
-    assertDoubleEquals(4096, 4096 + 1e-12);
+    assertAlmostEquals(4096, 4096 + 1e-12);
 
     // 1e-14 is larger than 4 ULPs at 4 * PI, so ULP-based checking is stricter than a fixed
     // epsilon of 1e-14 for any reasonable value of radians.
-    assertNotDoubleEquals(4 * PI, 4 * PI + 1e-14);
+    assertNotAlmostEquals(4 * PI, 4 * PI + 1e-14);
     // However, for doubles representing a large angle in degrees, differences of 1e-14 could be
     // within 4 ULPs.
-    assertDoubleEquals(360, 360 + 1e-14);
+    assertAlmostEquals(360, 360 + 1e-14);
   }
 
-  public void testAssertDoubleEqualsEdgeCases() {
-    assertNotDoubleEquals(Double.NaN, Double.NaN);
-    assertDoubleEquals(Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY);
-    assertDoubleEquals(Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
-    assertNotDoubleEquals(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY);
+  @Test
+  public void testAssertAlmostEqualsEdgeCases() {
+    assertNotAlmostEquals(Double.NaN, Double.NaN);
+    assertAlmostEquals(Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY);
+    assertAlmostEquals(Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
+    assertNotAlmostEquals(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY);
 
     // Almost Infinities
     double almostPositiveInfinity = nextDown(Double.POSITIVE_INFINITY);
     double almostNegativeInfinity = nextUp(Double.NEGATIVE_INFINITY);
-    assertDoubleEquals(almostPositiveInfinity, Double.POSITIVE_INFINITY);
-    assertDoubleEquals(almostNegativeInfinity, Double.NEGATIVE_INFINITY);
+    assertAlmostEquals(almostPositiveInfinity, Double.POSITIVE_INFINITY);
+    assertAlmostEquals(almostNegativeInfinity, Double.NEGATIVE_INFINITY);
   }
 
-  public void testAssertDoubleEquals() {
+  @Test
+  public void testAssertAlmostEquals() {
     double[] testNumbers = {
           // Small positive numbers
           1.0, 1e-3d, 1e-5d, 1e-7, 1e-12d, 1e-20d, 1e-30d, 1e-40d,
@@ -96,25 +102,25 @@ public final class GeometryTestCaseTest extends GeometryTestCase {
       double aUp = a;
       int ups = 0;
       for (; ups <= MAX_ULPS; ) {
-        assertDoubleEquals(
+        assertAlmostEquals(
             Platform.formatString("Expect doubleEquals(%s, %s), %s up", a, aUp, ups), a, aUp);
         aUp = nextUp(aUp);
         ups++;
       }
-      assertNotDoubleEquals(
+      assertNotAlmostEquals(
           Platform.formatString("Expect NOT doubleEquals(%s, %s) %s up", a, aUp, ups), a, aUp);
 
       double aDown = a;
       int downs = 0;
       for (; downs <= MAX_ULPS; ) {
-        assertDoubleEquals(
+        assertAlmostEquals(
             Platform.formatString("Expect doubleEquals(%s, %s), %s down", a, aDown, downs),
             a,
             aDown);
         aDown = nextDown(aDown);
         downs++;
       }
-      assertNotDoubleEquals(
+      assertNotAlmostEquals(
           Platform.formatString("Expect NOT doubleEquals(%s, %s) %s down", a, aDown, downs),
           a,
           aDown);

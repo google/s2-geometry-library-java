@@ -17,7 +17,6 @@ package com.google.common.geometry;
 
 import static java.lang.Math.max;
 
-
 /**
  * Defines various angle and area measures for {@link S2ShapeIndex} objects. In general, these
  * methods return the sum of the corresponding measure for all {@link S2Shape} in the index.
@@ -66,9 +65,9 @@ public final class S2ShapeIndexMeasures {
   }
 
   /**
-   * Returns the total area of all polygons in shapeIndex. Returns 0 if no polygons are present.
-   * This method has good relative accuracy for both very large and very small regions. Note that
-   * the result may exceed 4*Pi if shapeIndex contains overlapping polygons.
+   * Returns the total area of all polygons in shapeIndex, in steradians. Returns 0 if no polygons
+   * are present. This method has good relative accuracy for both very large and very small regions.
+   * Note that the result may exceed 4*Pi if shapeIndex contains overlapping polygons.
    */
   public static double area(S2ShapeIndex shapeIndex) {
     double area = 0;
@@ -76,6 +75,23 @@ public final class S2ShapeIndexMeasures {
       area += S2ShapeMeasures.area(shape);
     }
     return area;
+  }
+
+  /**
+   * Returns true if the total area of all polygons in shapeIndex is greater than the given
+   * threshold in steradians. May be faster than calling area() because it stops as soon as the
+   * threshold is exceeded. This method has good relative accuracy for both very large and very
+   * small regions.
+   */
+  public static boolean areaIsGreaterThan(S2ShapeIndex shapeIndex, double threshold) {
+    double area = 0;
+    for (S2Shape shape : shapeIndex.getShapes()) {
+      area += S2ShapeMeasures.area(shape);
+      if (area > threshold) {
+        return true;
+      }
+    }
+    return area > threshold;
   }
 
   /**

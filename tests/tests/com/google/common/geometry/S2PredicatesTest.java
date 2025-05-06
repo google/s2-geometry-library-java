@@ -18,9 +18,15 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2Point.ORIGIN;
 import static com.google.common.geometry.S2Predicates.sign;
+import static com.google.common.geometry.S2RobustCrossProd.robustCrossProd;
 import static java.lang.Math.PI;
 import static java.lang.Math.pow;
 import static java.lang.Math.tan;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableMap;
@@ -35,20 +41,31 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public strictfp class S2PredicatesTest extends GeometryTestCase {
+/** Tests for {@link S2Predicates}. */
+@RunWith(JUnit4.class)
+public class S2PredicatesTest extends GeometryTestCase {
   /** Relabeled for brevity in its many, many uses below. */
   private static final double EPS = S2.DBL_EPSILON;
+
   /** The number of consistency checks to run. */
   private static final int NUM_CONSISTENCY_CHECKS = 5000;
+
   /** A label to indicate double precision was used. */
   private static final int DOUBLE = 0;
+
   /** A label to indicate exact precision was used. */
   private static final int EXACT = 1;
+
   /** A label to indicate symbolic precision was used. */
   private static final int SYMBOLIC = 2;
+
   /** A label to indicate long double could be useful, but double was used. */
   private static final int LDOUBLE = DOUBLE;
+
   /** The squared chord length of a right angle. */
   private static final double RIGHT = S1ChordAngle.RIGHT.getLength2();
 
@@ -61,6 +78,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    */
   private static final double SIN2_ERROR_GAP = 1e-11;
 
+  @Test
   public void testSignCollinearPoints() {
     // The following points happen to be *exactly collinear* along a line that is approximately
     // tangent to the surface of the unit sphere. In fact, C is the exact midpoint of the line
@@ -69,7 +87,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     S2Point b = p(0.7257192746638208, 0.4605882657381817, 0.5110674944131274);
     S2Point c = p(0.7257192767170946, 0.46058826089853633, 0.511067495859088);
     assertEquals(c.sub(a), b.sub(c));
-    assertFalse(0 == sign(a, b, c));
+    assertNotEquals(0, sign(a, b, c));
     assertEquals(sign(a, b, c), sign(b, c, a));
     assertEquals(sign(a, b, c), -sign(c, b, a));
 
@@ -81,7 +99,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     S2Point x2 = p(1, 1.4901161193847656e-08, 0);
     assertEquals(x1, x1.normalize());
     assertEquals(x2, x2.normalize());
-    assertFalse(0 == sign(x1, x2, x1.neg()));
+    assertNotEquals(0, sign(x1, x2, x1.neg()));
     assertEquals(sign(x1, x2, x1.neg()), sign(x2, x1.neg(), x1));
     assertEquals(sign(x1, x2, x1.neg()), -sign(x1.neg(), x2, x1));
 
@@ -92,7 +110,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     assertEquals(x3, x3.normalize());
     assertEquals(x4, x4.normalize());
     assertFalse(x3.equalsPoint(x4));
-    assertFalse(0 == sign(x3, x4, x3.neg()));
+    assertNotEquals(0, sign(x3, x4, x3.neg()));
 
     // The following two points demonstrate that normalize() is not idempotent, i.e. y0.normalize()
     // != y0.normalize().normalize(). Both points satisfy S2.isNormalized(), though, and the two
@@ -102,7 +120,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     S2Point y2 = y1.normalize();
     assertFalse(y1.equalsPoint(y2));
     assertEquals(y2, y2.normalize());
-    assertFalse(0 == sign(y1, y2, y1.neg()));
+    assertNotEquals(0, sign(y1, y2, y1.neg()));
     assertEquals(sign(y1, y2, y1.neg()), sign(y2, y1.neg(), y1));
     assertEquals(sign(y1, y2, y1.neg()), -sign(y1.neg(), y2, y1));
   }
@@ -117,6 +135,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * <p>It is easier to think about what this test is doing if you imagine that the points are in
    * general position rather than on a great circle.
    */
+  @Test
   public void testSignStressTest() {
     // The run time of this test is *cubic* in the parameter below.
     int circleSize = 20;
@@ -207,9 +226,9 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
         {
           // Add the intersection point of AB with X=0, Y=0, or Z=0.
           S2Point dir = set(p(0, 0, 0), coord, data.oneIn(2) ? 1 : -1);
-          S2Point norm = S2.robustCrossProd(a, b).normalize();
+          S2Point norm = robustCrossProd(a, b).normalize();
           if (norm.norm2() > 0) {
-            addNormalized(S2.robustCrossProd(dir, norm), points);
+            addNormalized(robustCrossProd(dir, norm), points);
           }
           break;
         }
@@ -239,7 +258,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * that A, A1, and A2 are exactly collinear (i.e. even with infinite-precision arithmetic).
    */
   private void addTangentPoints(S2Point a, S2Point b, List<S2Point> points) {
-    S2Point dir = S2Point.crossProd(S2.robustCrossProd(a, b), a).normalize();
+    S2Point dir = S2Point.crossProd(robustCrossProd(a, b), a).normalize();
     if (dir.equalsPoint(ORIGIN)) {
       return;
     }
@@ -332,7 +351,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     int n = sorted.size();
     for (int j = 1; j < n; ++j) {
       int sign = sign(origin, sorted.get(start), sorted.get((start + j) % n));
-      assertFalse(0 == sign);
+      assertFalse(sign == 0);
       if (sign > 0) {
         numCcw++;
       }
@@ -353,6 +372,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * is approximately linear. For example, the failure rate is 0.4% for collinear points spaced 1km
    * apart, but only 0.0004% for collinear points spaced 1 meter apart.
    */
+  @Test
   public void testSignStableFailureRate() {
     assertTrue(getFailureRate(1.0) < 0.01); //  1km spacing: <  1% (actual 0.4%)
     assertTrue(getFailureRate(10.0) < 0.1); // 10km spacing: < 10% (actual 4%)
@@ -401,18 +421,27 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * <p>Reversing the sign of any of the "return" statements in symbolicallyPerturbedSign() causes
    * this test to fail.
    */
-  public void testSignSymbolicPerturbationCodeCoverage() {
+  @Test
+  public void testSignSymbolicPerturbationCodeCoverage0() {
     checkSymbolicSign(1, p(-3, -1, 0), p(-2, 1, 0), p(1, -2, 0)); // det(M_1) = b0*c1 - b1*c0
     checkSymbolicSign(1, p(-6, 3, 3), p(-4, 2, -1), p(-2, 1, 4)); // det(M_2) = b2*c0 - b0*c2
     checkSymbolicSign(1, p(0, -1, -1), p(0, 1, -2), p(0, 2, 1)); // det(M_3) = b1*c2 - b2*c1
+  }
 
+  /** See above. This test has been split to avoid timeouts in J2CL testing. */
+  @Test
+  public void testSignSymbolicPerturbationCodeCoverage1() {
     // From this point onward, B or C must be zero, or B is proportional to C.
     checkSymbolicSign(1, p(-1, 2, 7), p(2, 1, -4), p(4, 2, -8)); // det(M_4) = c0*a1 - c1*a0
     checkSymbolicSign(1, p(-4, -2, 7), p(2, 1, -4), p(4, 2, -8)); // det(M_5) = c0
     checkSymbolicSign(1, p(0, -5, 7), p(0, -4, 8), p(0, -2, 4)); // det(M_6) = -c1
     checkSymbolicSign(1, p(-5, -2, 7), p(0, 0, -2), p(0, 0, -1)); // det(M_7) = c2*a0 - c0*a2
     checkSymbolicSign(1, p(0, -2, 7), p(0, 0, 1), p(0, 0, 2)); // det(M_8) = c2
+  }
 
+  /** See above. This test has been split to avoid timeouts in J2CL testing. */
+  @Test
+  public void testSignSymbolicPerturbationCodeCoverage2() {
     // From this point onward, C must be zero.
     checkSymbolicSign(1, p(-3, 1, 7), p(-1, -4, 1), p(0, 0, 0)); // det(M_9) = a0*b1 - a1*b0
     checkSymbolicSign(1, p(-6, -4, 7), p(-3, -2, 1), p(0, 0, 0)); // det(M_10) = -b0
@@ -442,6 +471,32 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     assertEquals(-expected, S2Predicates.Sign.expensive(a, c, b, true));
   }
 
+  @Test
+  public void testAngleContainsVertex() {
+    S2Point a = new S2Point(1, 0, 0);
+    S2Point b = new S2Point(0, 1, 0);
+    S2Point refB = S2.refDir(b);
+
+    // Degenerate angle ABA.
+    assertFalse(S2Predicates.angleContainsVertex(a, b, a));
+
+    // An angle where A == ortho(B).
+    assertTrue(S2Predicates.angleContainsVertex(refB, b, a));
+
+    // An angle where C == ortho(B).
+    assertFalse(S2Predicates.angleContainsVertex(a, b, refB));
+
+    // Verify that when a set of polygons tile the region around the vertex, exactly one of those
+    // polygons contains the vertex.
+    List<S2Point> points = S2Loop.makeRegularVertices(b, S1Angle.degrees(10), 10);
+    int count = 0;
+    for (int i = 0; i < points.size(); ++i) {
+      count += S2Predicates.angleContainsVertex(
+          points.get((i + 1) % points.size()), b, points.get(i)) ? 1 : 0;
+    }
+    assertEquals(1, count);
+  }
+
   /**
    * Chooses a random S2Point that is often near the intersection of one of the coodinate planes or
    * coordinate axes with the unit sphere. (It is possible to represent very small perturbations
@@ -459,6 +514,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
   }
 
   /** This test attempts to exercise all the code paths in all precisions. */
+  @Test
   public void testCompareDistancesCoverage() {
     // Test triage by sin2.
     CheckCompareDistances sin2 = CheckCompareDistances.SIN2;
@@ -498,6 +554,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * are chosen to be pathological worst cases.)
    */
   @GwtIncompatible("Lack of strictfp causing error bounds math to come out wrong")
+  @Test
   public void testCompareDistancesConsistency() {
     CheckCompareDistances.COS.consistency(p(1, 0, 0), p(0, -1, 0), p(0, 1, 0));
     PrecisionStats sin2Stats = new PrecisionStats();
@@ -514,8 +571,8 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
         r = M_PI_2 + r;
       }
       S1Angle angle = S1Angle.radians(r);
-      S2Point a = S2EdgeUtil.interpolateAtDistance(angle, x, dir);
-      S2Point b = S2EdgeUtil.interpolateAtDistance(angle, x, dir.neg());
+      S2Point a = S2EdgeUtil.getPointOnLine(x, dir, angle);
+      S2Point b = S2EdgeUtil.getPointOnLine(x, dir.neg(), angle);
       int prec = CheckCompareDistances.COS.consistency(x, a, b);
       if (angle.degrees() >= 45 && angle.degrees() <= 135) {
         cosStats.tally(prec);
@@ -612,6 +669,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCompareDistanceCoverage() {
     // Test triage by sin2.
     CheckCompareDistance sin2 = CheckCompareDistance.SIN2;
@@ -638,6 +696,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    *
    * @see #testCompareDistancesConsistency()
    */
+  @Test
   public void testCompareDistanceConsistency() {
     PrecisionStats sin2Stats = new PrecisionStats();
     PrecisionStats cosStats = new PrecisionStats();
@@ -652,7 +711,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
         r = M_PI_2 + r;
       }
       S1Angle angle = S1Angle.radians(r);
-      S2Point y = S2EdgeUtil.interpolateAtDistance(angle, x, dir);
+      S2Point y = S2EdgeUtil.getPointOnLine(x, dir, angle);
       int prec = CheckCompareDistance.COS.checkConsistency(x, y, length2(r));
       if (angle.degrees() >= 45) {
         cosStats.tally(prec);
@@ -725,6 +784,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCompareEdgeDistanceCoverage() {
     CheckCompareEdgeDistance c = new CheckCompareEdgeDistance();
 
@@ -753,13 +813,14 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * one level of precision is consistent with the answer given at the next higher level of See also
    * the comments in the CompareDistances consistency test.
    */
+  @Test
   public void testCompareEdgeDistanceConsistency() {
     PrecisionStats stats = new PrecisionStats();
     CheckCompareEdgeDistance c = new CheckCompareEdgeDistance();
     for (int iter = 0; iter < NUM_CONSISTENCY_CHECKS; ++iter) {
       S2Point a0 = choosePoint();
       S1Angle len = S1Angle.radians(PI * pow(1e-20, data.nextDouble()));
-      S2Point a1 = S2EdgeUtil.interpolateAtDistance(len, a0, choosePoint());
+      S2Point a1 = S2EdgeUtil.getPointOnLine(a0, choosePoint(), len);
       if (data.oneIn(2)) {
         a1 = a1.neg();
       }
@@ -767,14 +828,14 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
         // Not allowed by API.
         continue;
       }
-      S2Point n = S2.robustCrossProd(a0, a1).normalize();
+      S2Point n = robustCrossProd(a0, a1).normalize();
       double f = pow(1e-20, data.nextDouble());
       S2Point a = a0.mul(1 - f).add(a1.mul(f)).normalize();
       double r = M_PI_2 * pow(1e-20, data.nextDouble());
       if (data.oneIn(2)) {
         r = M_PI_2 - r;
       }
-      S2Point x = S2EdgeUtil.interpolateAtDistance(S1Angle.radians(r), a, n);
+      S2Point x = S2EdgeUtil.getPointOnLine(a, n, S1Angle.radians(r));
       if (data.oneIn(5)) {
         // Replace "x" with a random point that is closest to an edge endpoint.
         do {
@@ -829,6 +890,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testCompareEdgeDirectionsCoverage() {
     CheckCompareEdgeDir x = new CheckCompareEdgeDir();
     x.coverage(p(1, 0, 0), p(1, 1, 0), p(1, -1, 0), p(1, 0, 0), 1, DOUBLE);
@@ -846,17 +908,18 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * <p>See also the comments in the CompareDistances test.
    */
   @GwtIncompatible("Lack of strictfp causing error bounds math to come out wrong")
+  @Test
   public void testCompareEdgeDirectionsConsistency() {
     CheckCompareEdgeDir x = new CheckCompareEdgeDir();
     PrecisionStats stats = new PrecisionStats();
     for (int iter = 0; iter < NUM_CONSISTENCY_CHECKS; ++iter) {
       S2Point a0 = choosePoint();
       S1Angle aLen = S1Angle.radians(PI * pow(1e-20, data.nextDouble()));
-      S2Point a1 = S2EdgeUtil.interpolateAtDistance(aLen, a0, choosePoint());
-      S2Point aNorm = S2.robustCrossProd(a0, a1).normalize();
+      S2Point a1 = S2EdgeUtil.getPointOnLine(a0, choosePoint(), aLen);
+      S2Point aNorm = robustCrossProd(a0, a1).normalize();
       S2Point b0 = choosePoint();
       S1Angle bLen = S1Angle.radians(PI * pow(1e-20, data.nextDouble()));
-      S2Point b1 = S2EdgeUtil.interpolateAtDistance(bLen, b0, aNorm);
+      S2Point b1 = S2EdgeUtil.getPointOnLine(b0, aNorm, bLen);
       if (a0.equalsPoint(a1.neg()) || b0.equalsPoint(b1.neg())) {
         continue; // Not allowed by API.
       }
@@ -925,19 +988,112 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  private void checkSignDotProd(S2Point a, S2Point b, int expected, int expectedPrecision) {
+    int actual = S2Predicates.signDotProd(a, b);
+    assertEquals(expected, actual);
+
+    // We triage in double precision and then fall back to exact for 0.
+    int actualPrecision = EXACT;
+    if (S2Predicates.triageSignDotProd(a, b) != 0) {
+      actualPrecision = DOUBLE;
+    }
+
+    assertEquals(expectedPrecision, actualPrecision);
+  }
+
+  @Test
+  public void testSignDotProdOrthogonal() {
+    S2Point a = p(1, 0, 0);
+    S2Point b = p(0, 1, 0);
+    checkSignDotProd(a, b, 0, EXACT);
+  }
+
+  @Test
+  public void testSignDotProdNearlyOrthogonalPositive() {
+    S2Point a = p(1, 0, 0);
+    S2Point b = p(S2.DBL_EPSILON, 1, 0);
+    checkSignDotProd(a, b, +1, EXACT);
+
+    S2Point c = p(1e-45, 1, 0);
+    checkSignDotProd(a, c, +1, EXACT);
+  }
+
+  @Test
+  public void testSignDotProdNearlyOrthogonalNegative() {
+    S2Point a = p(1, 0, 0);
+    S2Point b = p(-S2.DBL_EPSILON, 1, 0);
+    checkSignDotProd(a, b, -1, EXACT);
+
+    S2Point c = p(-1e-45, 1, 0);
+    checkSignDotProd(a, c, -1, EXACT);
+  }
+
+  private void checkCircleEdgeIntersectionSign(S2Point a, S2Point b, S2Point n, S2Point x,
+      int expected, int expectedPrecision) {
+    int actual = S2Predicates.circleEdgeIntersectionSign(a, b, n, x);
+    assertEquals(expected, actual);
+
+    int actualPrecision = EXACT;
+    if (S2Predicates.triageCircleEdgeIntersectionSign(a, b, n, x) != 0) {
+      actualPrecision = DOUBLE;
+    }
+    assertEquals(expectedPrecision, actualPrecision);
+  }
+
+  @Test
+  public void testCircleEdgeIntersectionSignWorks() {
+    // Two cells who's left and right edges are on the prime meridian,
+    S2Cell cell0 = c("054");
+    S2Cell cell1 = c("1ac");
+
+    // And then the three neighbors above them.
+    S2Cell cella = c("0fc");
+    S2Cell cellb = c("104");
+    S2Cell cellc = c("10c");
+
+    {
+      // Top, left and right edges of the cell as unnormalized vectors.
+      S2Point nt = cell1.getEdgeRaw(2);
+      S2Point nl = cell1.getEdgeRaw(3);
+      S2Point nr = cell1.getEdgeRaw(1);
+      S2Point v0 = cell1.getCenter();
+
+      checkCircleEdgeIntersectionSign(v0, cella.getVertex(0), nt, nl, -1, DOUBLE);
+      checkCircleEdgeIntersectionSign(v0, cella.getVertex(0), nt, nr, +1, DOUBLE);
+
+      checkCircleEdgeIntersectionSign(v0, cell1.getVertex(3), nt, nl, 0, EXACT);
+      checkCircleEdgeIntersectionSign(v0, cell1.getVertex(3), nt, nr, +1, DOUBLE);
+
+      checkCircleEdgeIntersectionSign(v0, cellb.getCenter(), nt, nl, +1, DOUBLE);
+      checkCircleEdgeIntersectionSign(v0, cellb.getCenter(), nt, nr, +1, DOUBLE);
+
+      checkCircleEdgeIntersectionSign(v0, cellc.getVertex(1), nt, nl, +1, DOUBLE);
+      checkCircleEdgeIntersectionSign(v0, cellc.getVertex(1), nt, nr, -1, DOUBLE);
+    }
+
+    {
+      // Test landing exactly on the right edge.
+      S2Point nt = cell0.getEdgeRaw(2);
+      S2Point nl = cell0.getEdgeRaw(3);
+      S2Point nr = cell0.getEdgeRaw(1);
+      S2Point v0 = cell0.getCenter();
+
+      checkCircleEdgeIntersectionSign(v0, cell0.getVertex(2), nt, nl, +1, DOUBLE);
+      checkCircleEdgeIntersectionSign(v0, cell0.getVertex(2), nt, nr, 0, EXACT);
+    }
+  }
+
   /**
    * Verifies that CircleEdgeIntersectionOrdering(a, b, c, d, n, m) == expected, and that the
    * minimum required precision is "expected_prec".
    */
+  @Test
   public void testCircleEdgeIntersectionOrdering() {
     // Two cells who's left and right edges are on the prime meridian,
-    S2Cell cell0 = new S2Cell(S2CellId.fromToken("054"));
     S2Cell cell1 = new S2Cell(S2CellId.fromToken("1ac"));
 
     // And then the three neighbors above them.
-    S2Cell cella = new S2Cell(S2CellId.fromToken("0fc"));
     S2Cell cellb = new S2Cell(S2CellId.fromToken("104"));
-    S2Cell cellc = new S2Cell(S2CellId.fromToken("10c"));
 
     // Top, left and right edges of the cell as unnormalized vectors.
     S2Point e3 = cell1.getEdgeRaw(3);
@@ -968,9 +1124,14 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
   }
 
   void checkIntersectionOrdering(
-      S2Point a, S2Point b, S2Point c, S2Point d,
-      S2Point m, S2Point n,
-      int expected, int expectedPrec) {
+      S2Point a,
+      S2Point b,
+      S2Point c,
+      S2Point d,
+      S2Point m,
+      S2Point n,
+      int expected,
+      int expectedPrec) {
     int actual = S2Predicates.circleEdgeIntersectionOrdering(a, b, c, d, m, n);
     assertEquals(expected, actual);
 
@@ -988,6 +1149,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     assertEquals(expectedPrec, actualPrec);
   }
 
+  @Test
   public void testEdgeCircumcenterSignCoverage() {
     CheckCircumcenterSign x = new CheckCircumcenterSign();
     x.coverage(p(1, 0, 0), p(1, 1, 0), p(0, 0, 1), p(1, 0, 1), p(0, 1, 1), 1, DOUBLE);
@@ -1013,6 +1175,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * checks that the answer given by a method at one level of precision is consistent with the
    * answer given at the next higher level of precision.
    */
+  @Test
   public void testEdgeCircumcenterSignConsistency() {
     PrecisionStats stats = new PrecisionStats();
     CheckCircumcenterSign x = new CheckCircumcenterSign();
@@ -1026,9 +1189,9 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
       double c1 = (data.oneIn(2) ? -1 : 1) * pow(1e-20, data.nextDouble());
       S2Point z = p.mul(c0).add(q.mul(c1)).normalize();
       S1Angle r = S1Angle.radians(PI * pow(1e-30, data.nextDouble()));
-      S2Point a = S2EdgeUtil.interpolateAtDistance(r, z, choosePoint());
-      S2Point b = S2EdgeUtil.interpolateAtDistance(r, z, choosePoint());
-      S2Point c = S2EdgeUtil.interpolateAtDistance(r, z, choosePoint());
+      S2Point a = S2EdgeUtil.getPointOnLine(z, choosePoint(), r);
+      S2Point b = S2EdgeUtil.getPointOnLine(z, choosePoint(), r);
+      S2Point c = S2EdgeUtil.getPointOnLine(z, choosePoint(), r);
       int prec = x.consistency(p, q, a, b, c);
       // Don't skew the statistics by recording degenerate inputs.
       if (p.equalsPoint(q)) {
@@ -1116,6 +1279,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testVoronoiSiteExclusionCoverage() {
     CheckVoronoiSiteExclusion x = new CheckVoronoiSiteExclusion();
 
@@ -1232,6 +1396,7 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
    * endpoint. It then checks that the answer given by a method at one level of precision is
    * consistent with the answer given at higher levels of precision.
    */
+  @Test
   public void testVoronoiSiteExclusionConsistency() {
     CheckVoronoiSiteExclusion v = new CheckVoronoiSiteExclusion();
     PrecisionStats stats = new PrecisionStats();
@@ -1245,8 +1410,8 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
       double f = pow(1e-20, data.nextDouble());
       S2Point x = p.mul(1 - f).add(q.mul(f)).normalize();
       double r1 = M_PI_2 * pow(1e-20, data.nextDouble());
-      S2Point a = S2EdgeUtil.interpolateAtDistance(S1Angle.radians(r1), x, choosePoint());
-      S2Point b = S2EdgeUtil.interpolateAtDistance(S1Angle.radians(r1), x, choosePoint());
+      S2Point a = S2EdgeUtil.getPointOnLine(x, choosePoint(), S1Angle.radians(r1));
+      S2Point b = S2EdgeUtil.getPointOnLine(x, choosePoint(), S1Angle.radians(r1));
       // Check that the other API requirements are met.
       double r2 = length2(r1);
       if (S2Predicates.compareEdgeDistance(a, p, q, r2) > 0) {
@@ -1357,6 +1522,11 @@ public strictfp class S2PredicatesTest extends GeometryTestCase {
 
   private static S2Point p(double x, double y, double z) {
     return new S2Point(x, y, z);
+  }
+
+  /** Returns the S2Cell with the given token. */
+  private static S2Cell c(String token) {
+    return new S2Cell(S2CellId.fromToken(token));
   }
 
   /** Returns the squared chord distance of an angular opening of the given radians. */

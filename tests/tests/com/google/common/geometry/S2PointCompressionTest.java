@@ -15,9 +15,9 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.TestDataGenerator.kmToAngle;
-import static com.google.common.geometry.TestDataGenerator.snapPointToLevel;
-import static com.google.common.geometry.TestDataGenerator.snapPointsToLevel;
+import static com.google.common.geometry.S2TextFormat.snapPointToLevel;
+import static com.google.common.geometry.S2TextFormat.snapPointsToLevel;
+import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -25,8 +25,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-public strictfp class S2PointCompressionTest extends GeometryTestCase {
+/** Tests for {@link S2PointCompression}. */
+@RunWith(JUnit4.class)
+public class S2PointCompressionTest extends GeometryTestCase {
 
   // Four vertex loop near the corner of faces 0, 1, and 2.
   private List<S2Point> fourVertexLoop;
@@ -60,10 +66,8 @@ public strictfp class S2PointCompressionTest extends GeometryTestCase {
   // A straight line of 100 vertices on face 0 that should compress well.
   private List<S2Point> straightLine;
 
-  @Override
-  public void setUp() {
-    super.setUp();
-
+  @Before
+  public void buildTestData() {
     fourVertexLoop = makeRegularPoints(4, 0.1, S2CellId.MAX_LEVEL);
 
     fourVertexUnsnappedLoop = makeRegularPoints(4, 0.1, -1);
@@ -105,8 +109,8 @@ public strictfp class S2PointCompressionTest extends GeometryTestCase {
     for (int i = 0; i < 100; i++) {
       double s = 0.01 + 0.005 * i;
       double t = 0.01 + 0.009 * i;
-      double u = S2Projections.PROJ.stToUV(s);
-      double v = S2Projections.PROJ.stToUV(t);
+      double u = S2Projections.stToUV(s);
+      double v = S2Projections.stToUV(t);
       linePoints.add(S2Projections.faceUvToXyz(0, u, v).normalize());
     }
     straightLine = snapPointsToLevel(linePoints, S2CellId.MAX_LEVEL);
@@ -147,77 +151,94 @@ public strictfp class S2PointCompressionTest extends GeometryTestCase {
     assertEquals(points, decodedPoints);
   }
 
+  @Test
   public void testRoundtrips_empty() throws Exception {
     checkRoundtrip(new ArrayList<S2Point>(), S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_fourVertexLoop() throws Exception {
     checkRoundtrip(fourVertexLoop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_fourVertexUnsnappedLoop() throws Exception {
     checkRoundtrip(fourVertexUnsnappedLoop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_fourVertexLevel14Loop() throws Exception {
     checkRoundtrip(fourVertexLevel14Loop, 14);
   }
 
+  @Test
   public void testRoundtrip_oneHundredVertexLoop() throws Exception {
     checkRoundtrip(oneHundredVertexLoop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_oneHundredVertexUnsnappedLoop() throws Exception {
     checkRoundtrip(oneHundredVertexUnsnappedLoop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_oneHundredVertexMixed15Loop() throws Exception {
     checkRoundtrip(oneHundredVertexMixed15Loop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_oneHundredVertexMixed25Loop() throws Exception {
     checkRoundtrip(oneHundredVertexMixed25Loop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_oneHundredVertexLevel22Loop() throws Exception {
     checkRoundtrip(oneHundredVertexLevel22Loop, 22);
   }
 
+  @Test
   public void testRoundtrip_multiFaceLoop() throws Exception {
     checkRoundtrip(multiFaceLoop, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testRoundtrip_straightLine() throws Exception {
     checkRoundtrip(straightLine, S2CellId.MAX_LEVEL);
   }
 
+  @Test
   public void testSize_fourVertexLoop() throws Exception {
     byte[] encoded = encode(fourVertexLoop, S2CellId.MAX_LEVEL);
     // It would take 32 bytes uncompressed.
     assertEquals(39, encoded.length);
   }
 
+  @Test
   public void testSize_fourVertexLevel14Loop() throws Exception {
     byte[] encoded = encode(fourVertexLevel14Loop, 14);
     // It would take 4 bytes per vertex without compression.
     assertEquals(23, encoded.length);
   }
 
+  @Test
   public void testSize_oneHundredVertexLoop() throws Exception {
     byte[] encoded = encode(oneHundredVertexLoop, S2CellId.MAX_LEVEL);
     assertEquals(257, encoded.length);
   }
 
+  @Test
   public void testSize_oneHundredVertexUnsnappedLoop() throws Exception {
     byte[] encoded = encode(oneHundredVertexUnsnappedLoop, S2CellId.MAX_LEVEL);
     assertEquals(2756, encoded.length);
   }
 
+  @Test
   public void testSize_oneHundredVertexLevel22Loop() throws Exception {
     byte[] encoded = encode(oneHundredVertexLevel22Loop, 22);
     assertEquals(148, encoded.length);
   }
 
+  @Test
   public void testSize_straightLine() throws Exception {
     byte[] encoded = encode(straightLine, S2CellId.MAX_LEVEL);
     // About 1 byte / vertex.
@@ -226,6 +247,7 @@ public strictfp class S2PointCompressionTest extends GeometryTestCase {
 
   private static final int NUM_REGRESSION_CASES = 1000000;
 
+  @Test
   public void testNthDerivativeCoder_fixed() throws Exception {
     int[] input = {1, 5, 10, 15, 20, 23};
     int[] order0 = {1, 5, 10, 15, 20, 23};
@@ -274,6 +296,7 @@ public strictfp class S2PointCompressionTest extends GeometryTestCase {
     }
   }
 
+  @Test
   public void testNthDerivativeCoder_regression() throws Exception {
     // Always test the lowest orders.
     for (int i = 0; i <= 2; i++) {

@@ -17,13 +17,12 @@ package com.google.common.geometry;
 
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
-import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
+import com.google.common.geometry.S2ShapeUtil.LoadedShape;
 import com.google.common.geometry.S2ShapeUtil.RangeIterator;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -62,14 +61,33 @@ public class S2CrossingEdgesQuery {
   /** The S2Shape, plus the source, destination, and ids of clipped edges in clipped shape 'B'. */
   private final LoadedShape b = new LoadedShape();
 
+  /** The current cell being processed. */
+  private S2CellId currentId = S2CellId.sentinel();
+
+  /** The cell that crossing edges intersect, or {@link S2CellId#sentinel()} if not processing. */
+  public S2CellId currentId() {
+    return currentId;
+  }
+
   /**
    * Constructs a new S2CrossingEdgesQuery for the given CrossingType.
    *
    * @param type indicates whether all crossings should be visited, or only interior crossings.
    */
   public S2CrossingEdgesQuery(CrossingType type) {
+    this(type, /* needAdjacent= */ (type == CrossingType.ALL));
+  }
+
+  /**
+   * Constructs a new S2CrossingEdgesQuery for the given CrossingType, allowing needAdjacent to be
+   * set explicitly. If "needAdjacent" is false, then edge pairs of the form (AB, BC) may
+   * optionally be ignored, even if the two edges belong to different edge chains.
+   *
+   * @param type indicates whether all crossings should be visited, or only interior crossings.
+   */
+  public S2CrossingEdgesQuery(CrossingType type, boolean needAdjacent) {
     crossingType = type;
-    needAdjacent = (type == CrossingType.ALL);
+    this.needAdjacent = needAdjacent;
     minCrossingSign = (type == CrossingType.INTERIOR) ? 1 : 0;
   }
 
@@ -81,6 +99,8 @@ public class S2CrossingEdgesQuery {
    */
   @CanIgnoreReturnValue
   public boolean visitCrossingEdgePairs(S2ShapeIndex index, EdgePairVisitor visitor) {
+    a.init(index);
+    b.init(index);
     return visitCrossings(index, visitor);
   }
 
@@ -94,6 +114,8 @@ public class S2CrossingEdgesQuery {
   @CanIgnoreReturnValue
   public boolean visitCrossingEdgePairs(
       S2ShapeIndex aIndex, S2ShapeIndex bIndex, EdgePairVisitor visitor) {
+    a.init(aIndex);
+    b.init(bIndex);
     // We look for S2CellId ranges where the indexes of A and B overlap, and then test those edges
     // for crossings.
     // TODO(user): Use brute force if the total number of edges is small enough (using a
@@ -118,17 +140,20 @@ public class S2CrossingEdgesQuery {
         long abRelation = ai.id().lowestOnBit() - bi.id().lowestOnBit();
         if (abRelation > 0) {
           // A's index cell is larger.
+          currentId = bi.id();
           if (!abCrosser.visitCrossings(ai, bi)) {
             return false;
           }
         } else if (abRelation < 0) {
           // B's index cell is larger.
+          currentId = ai.id();
           if (!baCrosser.visitCrossings(bi, ai)) {
             return false;
           }
         } else {
           // The A and B cells are the same.
           if (ai.iterator().entry().numEdges() > 0 && bi.iterator().entry().numEdges() > 0) {
+            currentId = ai.id();
             if (!abCrosser.visitCellCellCrossings(ai.iterator().entry(), bi.iterator().entry())) {
               return false;
             }
@@ -138,6 +163,7 @@ public class S2CrossingEdgesQuery {
         }
       }
     }
+    currentId = S2CellId.sentinel();
     return true;
   }
 
@@ -149,10 +175,12 @@ public class S2CrossingEdgesQuery {
     // TODO(user): Use brute force if the total number of edges is small enough (using a
     // larger threshold if the S2ShapeIndex is not constructed yet).
     for (S2Iterator<Cell> it = index.iterator(); !it.done(); it.next()) {
+      currentId = it.id();
       if (!visitCellCrossings(it.entry(), visitor)) {
         return false;
       }
     }
+    currentId = S2CellId.sentinel();
     return true;
   }
 
@@ -190,8 +218,8 @@ public class S2CrossingEdgesQuery {
             int sign = crosser.robustCrossing(bSrc, bDst);
             if (sign >= minCrossingSign) {
               if (!visitor.visit(
-                  a.shape, aId, aSrc, aDst,
-                  b.shape, bId, bSrc, bDst,
+                  a.shapeId, aId, aSrc, aDst,
+                  b.shapeId, bId, bSrc, bDst,
                   sign == 1)) {
                 return false;
               }
@@ -231,83 +259,10 @@ public class S2CrossingEdgesQuery {
      *     expensive to recompute.
      */
     boolean visit(
-        S2Shape aShape, int aEdgeId, S2Point aEdgeSrc, S2Point aEdgeDst,
-        S2Shape bShape, int bEdgeId, S2Point bEdgeSrc, S2Point bEdgeDst,
+        int aShapeId, int aEdgeId, S2Point aEdgeSrc, S2Point aEdgeDst,
+        int bShapeId, int bEdgeId, S2Point bEdgeSrc, S2Point bEdgeDst,
         boolean isInterior);
   }
-
-  /** A reusable container for loading and visiting the clipped edges of a clipped shape. */
-  static class LoadedShape {
-    /** The source points of the clipped shape edges. */
-    public final ArrayList<S2Point> srcs = new ArrayList<>();
-
-    /** The destination points of the clipped shape edges. */
-    public final ArrayList<S2Point> dsts = new ArrayList<>();
-
-    /**
-     * The edge ids of the clipped shape edges. To avoid reallocation, the array may be larger than
-     * required. The number of elements actually used is equal to srcs.size() (and dsts.size()).
-     */
-    public int[] ids;
-
-    /** A MutableEdge used to load edge end points. */
-    private final MutableEdge edge = new MutableEdge();
-
-    /** The S2Shape underlying the currently clipped shape. */
-    public S2Shape shape;
-
-    /** Constructs a LoadedShape. */
-    public LoadedShape() {}
-
-    /** Loads the edges of the given clipped shape, replacing the current content. */
-    public void load(S2ClippedShape clipped) {
-      shape = clipped.shape();
-      srcs.clear();
-      dsts.clear();
-
-      // Only (re)allocate the ids array if required.
-      if (ids == null) {
-        ids = new int[clipped.numEdges()];
-      } else if (ids.length < clipped.numEdges()) {
-        ids = Arrays.copyOf(ids, clipped.numEdges());
-      }
-
-      for (int i = 0; i < clipped.numEdges(); i++) {
-        int id = clipped.edge(i);
-        clipped.shape().getEdge(id, edge);
-        ids[i] = id;
-        srcs.add(edge.getStart());
-        dsts.add(edge.getEnd());
-      }
-    }
-
-    /** How many clipped edges does this LoadedShape currently contain? */
-    public int size() {
-      return srcs.size();
-    }
-
-    /**
-     * Visits the loaded clipped edges until the visitor returns false, in which case false is
-     * returned, or all edges have been visited, in which case true is returned.
-     */
-    public boolean visit(Visitor visitor) {
-      for (int i = 0; i < srcs.size(); i++) {
-        if (!visitor.visit(shape, ids[i], srcs.get(i), dsts.get(i))) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    /**
-     * A visitor for the contents of a LoadedShape. May return false to indicate that no more
-     * clipped edges should be visited.
-     */
-    public interface Visitor {
-      boolean visit(S2Shape shape, int edgeId, S2Point src, S2Point dst);
-    }
-  }
-
 
   /**
    * IndexCrosser is a helper class for finding edge crossings between a pair of indexes with {@link
@@ -346,6 +301,8 @@ public class S2CrossingEdgesQuery {
         CrossingType type,
         EdgePairVisitor visitor,
         boolean swapped) {
+      a.init(aIndex);
+      b.init(bIndex);
       this.visitor = visitor;
       minCrossingSign = (type == CrossingType.INTERIOR) ? 1 : 0;
       this.swapped = swapped;
@@ -354,15 +311,19 @@ public class S2CrossingEdgesQuery {
 
     /** Calls the visitor with the given edge information, swapping the order if needed. */
     private boolean visitEdgePair(
-        S2Shape aShape, int aEdgeId, S2Point aEdgeSrc, S2Point aEdgeDst,
-        S2Shape bShape, int bEdgeId, S2Point bEdgeSrc, S2Point bEdgeDst,
+        int aShapeId, int aEdgeId, S2Point aEdgeSrc, S2Point aEdgeDst,
+        int bShapeId, int bEdgeId, S2Point bEdgeSrc, S2Point bEdgeDst,
         boolean isInterior) {
       if (swapped) {
         return visitor.visit(
-            bShape, bEdgeId, bEdgeSrc, bEdgeDst, aShape, aEdgeId, aEdgeSrc, aEdgeDst, isInterior);
+            bShapeId, bEdgeId, bEdgeSrc, bEdgeDst,
+            aShapeId, aEdgeId, aEdgeSrc, aEdgeDst,
+            isInterior);
       } else {
         return visitor.visit(
-            aShape, aEdgeId, aEdgeSrc, aEdgeDst, bShape, bEdgeId, bEdgeSrc, bEdgeDst, isInterior);
+            aShapeId, aEdgeId, aEdgeSrc, aEdgeDst,
+            bShapeId, bEdgeId, bEdgeSrc, bEdgeDst,
+            isInterior);
       }
     }
 
@@ -385,8 +346,8 @@ public class S2CrossingEdgesQuery {
           int sign = crosser.robustCrossing(bSrc, bDst);
           if (sign >= minCrossingSign) {
             if (!visitEdgePair(
-                a.shape, aId, aSrc, aDst,
-                b.shape, bId, bSrc, bDst,
+                a.shapeId, aId, aSrc, aDst,
+                b.shapeId, bId, bSrc, bDst,
                 sign == 1)) {
               return false;
             }
@@ -453,7 +414,7 @@ public class S2CrossingEdgesQuery {
      * "bId". Terminates early and returns false if the "visitor" supplied to the constructor
      * returns false.
      */
-    private boolean visitSubcellCrossings(S2ShapeIndex.Cell aCell, S2CellId bId) {
+    private boolean visitSubcellCrossings(Cell aCell, S2CellId bId) {
       final S2PaddedCell bRoot = new S2PaddedCell(bId, 0);
       // Test all shape edges in "aCell" against the edges contained in B index cells that are
       // descendants of "bId".
@@ -461,11 +422,11 @@ public class S2CrossingEdgesQuery {
         S2ClippedShape aClippedShape = aCell.clipped(aShapeNum);
         a.load(aClippedShape);
         if (!a.visit(
-            (shape, edgeId, src, dst) -> {
+            (shapeId, edgeId, src, dst) -> {
               bCells.clear();
               bQuery.getCells(src, dst, bRoot, bCells);
               for (Cell bCell : bCells) {
-                if (!visitEdgeCellCrossings(shape, edgeId, src, dst, bCell)) {
+                if (!visitEdgeCellCrossings(shapeId, edgeId, src, dst, bCell)) {
                   return false;
                 }
               }
@@ -479,16 +440,19 @@ public class S2CrossingEdgesQuery {
 
     /** Visit edge crossings of edge A with any edge in bCell. */
     private boolean visitEdgeCellCrossings(
-        S2Shape aShape, int aId, S2Point aSrc, S2Point aDst, S2ShapeIndex.Cell bCell) {
+        int aShapeId, int aEdgeId, S2Point aSrc, S2Point aDst, Cell bCell) {
       crosser.init(aSrc, aDst);
       for (int bShapeNum = 0; bShapeNum < bCell.numShapes(); bShapeNum++) {
         S2ClippedShape bClippedShape = bCell.clipped(bShapeNum);
         b.load(bClippedShape);
         if (!b.visit(
-            (bShape, bId, bSrc, bDst) -> {
+            (bShapeId, bEdgeId, bSrc, bDst) -> {
               int sign = crosser.robustCrossing(bSrc, bDst);
               if (sign >= minCrossingSign) {
-                if (!visitEdgePair(aShape, aId, aSrc, aDst, bShape, bId, bSrc, bDst, sign == 1)) {
+                if (!visitEdgePair(
+                        aShapeId, aEdgeId, aSrc, aDst,
+                        bShapeId, bEdgeId, bSrc, bDst,
+                        sign == 1)) {
                   return false;
                 }
               }

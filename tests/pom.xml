@@ -32,6 +32,7 @@
 
   <properties>
     <junit.version>4.13.1</junit.version>
+    <truth.version>1.4.4</truth.version>
   </properties>
 
   <dependencies>
@@ -43,8 +44,27 @@
 
     <dependency>
       <groupId>com.google.geometry</groupId>
-      <artifactId>s2-geometry-testdatagenerator</artifactId>
+      <artifactId>s2-geometry-primitives</artifactId>
       <version>${project.parent.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>${guava.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.truth</groupId>
+      <artifactId>truth</artifactId>
+      <version>${truth.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>it.unimi.dsi</groupId>
+      <artifactId>fastutil</artifactId>
+      <version>${fastutil.version}</version>
     </dependency>
 
     <dependency>

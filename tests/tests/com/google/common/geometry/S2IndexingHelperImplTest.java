@@ -16,6 +16,9 @@
 
 package com.google.common.geometry;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2IndexingHelper.Term;
 import com.google.common.geometry.S2IndexingHelper.TermType;
@@ -23,12 +26,17 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
-import junit.framework.TestCase;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
-/** @author Pete Gillin (peteg@google.com) */
+/**
+ * @author Pete Gillin (peteg@google.com)
+ */
+@RunWith(JUnit4.class)
+public class S2IndexingHelperImplTest {
 
-public class S2IndexingHelperImplTest extends TestCase {
-
+  @Test
   public void testGetIndexTermsLatLng() {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -55,6 +63,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsLatLng_optimizeForSpace() {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -82,6 +91,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsLatLng_onlyPointsIndexed() {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -109,6 +119,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsIterableCellId() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -145,6 +156,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsIterableCellId_optimizeForSpace() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -180,6 +192,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsIterableCellId_onlyPointsIndexed() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -206,6 +219,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     }
   }
 
+  @Test
   public void testGetIndexTermsRegion() {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2CellId cellId = S2CellId.fromLatLng(latlng).parent(15);
@@ -241,6 +255,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetIndexTermsListRegion() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -277,6 +292,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testQueryTermsLatLng() throws Exception {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -304,6 +320,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testQueryTermsLatLng_optimizeForSpace() throws Exception {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -332,6 +349,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testQueryTermsLatLng_onlyPointsIndexed() throws Exception {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     int minLevel = 10;
@@ -357,6 +375,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetQueryTermsIterableCellId() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -392,6 +411,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetQueryTermsIterableCellId_optimizeForSpace() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -429,6 +449,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetQueryTermsIterableCellId_onlyPointsIndexed() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -459,6 +480,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testGetQueryTermsIterableCellId_optimizeForSpaceAndOnlyPointIndexed() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);
@@ -490,6 +512,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     checkExpectedVsActual(expectedTerms, actualTerms);
   }
 
+  @Test
   public void testQueryTermsRegion() throws Exception {
     S2LatLng latlng = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2CellId cellId = S2CellId.fromLatLng(latlng).parent(15);
@@ -526,6 +549,7 @@ public class S2IndexingHelperImplTest extends TestCase {
     assertEquals(new HashSet<Term>(Arrays.asList(expectedTerms)), new HashSet<Term>(actualTerms));
   }
 
+  @Test
   public void testGetQueryTermsListRegion() {
     S2LatLng latlng1 = S2LatLng.fromDegrees(51.49483, -0.14653);
     S2LatLng latlng2 = S2LatLng.fromDegrees(31.232867, 121.47676);

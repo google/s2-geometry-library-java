@@ -122,7 +122,13 @@ import jsinterop.annotations.JsType;
  * which is 9.5 cm on the Earth's surface.
  */
 @JsType
-public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializable {
+public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializable {
+  /**
+   * Maximum relative error when summing two S1ChordAngles together. Absolute error is length2() of
+   * the summed S1ChordAngle times this value. See {@link add(S1ChordAngle, S1ChordAngle)} for the
+   * error analysis.
+   */
+  public static final double RELATIVE_SUM_ERROR = 2.02 * DBL_EPSILON;
 
   /**
    * Returns a new DistanceCollector for finding a minimum S1ChordAngle, starting from an initial
@@ -226,7 +232,14 @@ public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Se
 
       @Override
       public boolean update(S2Point p1, S2Point p2) {
-        return update(new S1ChordAngle(p1, p2));
+        S1ChordAngle dist = new S1ChordAngle(p1, p2);
+        // For greater accuracy and consistency with update(S2Point, S2Point, S2Point),
+        // recompute large chord distances by subtracting the antipodal distance from STRAIGHT.
+        if (dist.compareTo(S1ChordAngle.RIGHT) > 0) {
+          dist = new S1ChordAngle(p1.neg(), p2);
+          dist = S1ChordAngle.sub(S1ChordAngle.STRAIGHT, dist);
+        }
+        return update(dist);
       }
 
       @Override
@@ -364,16 +377,16 @@ public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Se
   }
 
   /**
-   * Returns an approximation of this chord angle in radians, implemented by first converting to
-   * an S1Angle.
+   * Returns an approximation of this chord angle in radians, implemented by first converting to an
+   * S1Angle.
    */
   public double radians() {
     return toAngle().radians();
   }
 
   /**
-   * Returns an approximation of this chord angle in degrees, implemented by first converting to
-   * an S1Angle.
+   * Returns an approximation of this chord angle in degrees, implemented by first converting to an
+   * S1Angle.
    */
   public double degrees() {
     return toAngle().degrees();
@@ -531,8 +544,8 @@ public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Se
 
   /**
    * Returns a new S1ChordAngle whose chord distance represents the sum of the angular distances
-   * represented by the 'a' and 'b' chord angles, with a ceiling of 180 degrees, the maximum
-   * value of S1ChordAngle.
+   * represented by the 'a' and 'b' chord angles, with a ceiling of 180 degrees, the maximum value
+   * of S1ChordAngle.
    *
    * <p>Note that this method is much more efficient than converting the chord angles to S1Angles
    * and adding those. It requires only one square root plus a few additions and multiplications.
@@ -540,6 +553,19 @@ public final strictfp class S1ChordAngle implements S1Distance<S1ChordAngle>, Se
   public static S1ChordAngle add(S1ChordAngle a, S1ChordAngle b) {
     checkArgument(!a.isSpecial());
     checkArgument(!b.isSpecial());
+
+    // Error Analysis:
+    //
+    //   u is the unit round-off, equal to ε/2 = 2^-53
+    //   x and y below are both computed with (1+u)² error.  So we have
+    //     length2 = x + y + 2*sqrt(x * y)
+    //     length2 = ((x + y)(1+u)³ + 2*sqrt((x * y)((1+u)³))(1+u))(1+u)
+    //
+    //   Taking (1+u)^1.5 out of the square root and rounding (1+u)^2.5 to (1+u)³:
+    //     length2 = (x + y + 2*sqrt(x * y))(1+u)⁴
+    //
+    //   Bounding (1+u)⁴ as 4*1.01u = 4.04*ε/2 = 2.02ε, total relative error is:
+    //     length2()*2.02ε.
 
     // Optimization for the common case where "b" is an error tolerance parameter that happens to be
     // set to zero.

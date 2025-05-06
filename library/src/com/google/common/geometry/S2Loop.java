@@ -42,9 +42,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An S2Loop represents a simple spherical polygon. It consists of a single chain of vertices where
@@ -55,8 +55,9 @@ import jsinterop.annotations.JsType;
  *
  * <p>Loops are not allowed to have any duplicate vertices (whether adjacent or not), and non-
  * adjacent edges are not allowed to intersect. Loops must have at least 3 vertices (except for the
- * "empty" and "full" loops discussed below). Although these restrictions are not enforced in
- * optimized code, you may get unexpected results if they are violated.
+ * "empty" and "full" loops discussed below). Loop vertices must be unit length. Although these
+ * restrictions are not enforced in optimized code, you may get unexpected results if they are
+ * violated.
  *
  * <p>There are two special loops: the "empty" loop contains no points, while the "full" loop
  * contains all points. These loops do not have any edges, but to preserve the invariant that every
@@ -65,13 +66,15 @@ import jsinterop.annotations.JsType;
  *
  * <p>Point containment of loops is defined such that if the sphere is subdivided into faces
  * (loops), every point is contained by exactly one face. This implies that loops do not necessarily
- * contain their vertices.
+ * contain their vertices, and merely "touching" loops, with one or more shared vertices or edges,
+ * are not considered intersecting.
  *
  * @author shakusa@google.com (Steven Hakusa) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Serializable, S2Shape {
+@SuppressWarnings("Assertion")
+public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable, S2Shape {
 
   @VisibleForTesting static final byte LOSSLESS_ENCODING_VERSION = 1;
 
@@ -116,7 +119,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   /**
    * Constructs a loop with the given vertices. The last vertex is implicitly connected to the
-   * first. All points should be unit length. Loops must have at least 3 vertices (except for the
+   * first. All points must be unit length. Loops must have at least 3 vertices (except for the
    * "empty" and "full" loops; see {@link #empty()} and {@link #full()}.
    *
    * @param vertices the vertices for this new loop
@@ -144,11 +147,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     initOriginAndBound();
   }
 
-
   /**
    * Fast/unsafe loop initialization.
    *
-   * <p>This constructor provides known good values for bounds and the originInside value. This is
+   * <p>This constructor accepts known good values for bounds and the originInside value. This is
    * intended to be a "fast loop creation" when we already know a lot about the loop. It is
    * primarily used in combination with the fast S2Polygon initializer ( {@link
    * S2Polygon#initWithNestedLoops(java.util.Map)}). The last vertex is implicitly connected to the
@@ -156,7 +158,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
    * empty and full loops (see {@link #empty()} and {@link #full()}.)
    *
    * @param vertices loop vertices
-   * @param originInside true if the S2::origin() is inside the loop
+   * @param originInside true if the S2.origin() is inside the loop
    * @param bound the lat/long bounds of the loop
    * @return new loop.
    */
@@ -168,6 +170,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   /** Create a circle of points with a given center, radius, and number of vertices. */
   public static S2Loop makeRegularLoop(S2Point center, S1Angle radius, int numVertices) {
+    assert S2.isUnitLength(center);
+    assert numVertices >= 3;
     return new S2Loop(makeRegularVertices(center, radius, numVertices));
   }
 
@@ -187,14 +191,13 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
    * center, radius, and number of vertices, but returns the vertices as a list.
    */
   public static List<S2Point> makeRegularVertices(S2Point center, S1Angle radius, int numVertices) {
-    Matrix m = S2.getFrame(center);
-    return makeRegularVertices(m, radius, numVertices);
+    return makeRegularVertices(S2.getFrame(center), radius, numVertices);
   }
 
   /**
    * Like the function above, but constructs the list of vertices around the z-axis of the given
    * coordinate frame, with the first vertex in the direction of the positive x-axis.
-  */
+   */
   @JsIgnore
   public static List<S2Point> makeRegularVertices(Matrix frame, S1Angle radius, int numVertices) {
     List<S2Point> vertices = Lists.newArrayList();
@@ -395,10 +398,13 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   /** Returns the vertices oriented such that left is on the inside. */
   public List<S2Point> orientedVertices() {
     return new AbstractList<S2Point>() {
-      @Override public int size() {
+      @Override
+      public int size() {
         return numVertices;
       }
-      @Override public S2Point get(int index) {
+
+      @Override
+      public S2Point get(int index) {
         return orientedVertex(index);
       }
     };
@@ -607,8 +613,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
    *
    * <p>Note that the return value is not affected by whether this loop is a "hole" or a "shell".
    */
-  @Nullable
-  public S2Point getCentroid() {
+  public @Nullable S2Point getCentroid() {
     if (numVertices < 3) {
       return null;
     }
@@ -616,7 +621,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Returns a pair of {@link #getArea()} and {@link #getCentroid()}.
+   * Returns a pair of {@link #getArea()} and {@link #getCentroid()}. Note that the centroid is not
+   * unit length: it is scaled by the area of the loop.
    */
   public S2AreaCentroid getAreaAndCentroid() {
     return new S2AreaCentroid(getArea(), getCentroid());
@@ -714,8 +720,9 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Return true if the region contained by this loop intersects the region contained by the given
-   * other loop.
+   * Return true if the region contained by this loop "A" intersects the region contained by the
+   * given other loop "B". Note that loops that only "touch" at a common point or along a shared
+   * (but reversed) edge are not considered intersecting.
    */
   public boolean intersects(S2Loop b) {
     // This code is similar to contains(), but is optimized for the case where both loops enclose
@@ -734,19 +741,19 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
       return false;
     }
 
-    // Since there are no edge intersections or shared vertices, the loops intersect only if A
-    // contains B, B contains A, or the two loops contain each other's boundaries. These checks are
-    // usually cheap because of the bounding box preconditions. Note that neither loop is empty
-    // (because of the bounding box check above), so it is safe to access vertex(0).
+    // Since there are no edge intersections or shared vertices, the loops intersect only if this
+    // loop A contains B, B contains A, or the two loops contain each other's boundaries. These
+    // checks are usually cheap because of the bounding box preconditions. Note that neither loop is
+    // empty (because of the bounding box check above), so it is safe to access vertex(0).
 
-    // Check whether A contains B, or A and B contain each other's boundaries. (Note that A contains
-    // all the vertices of B in either case.)
+    // Check whether this loop A contains B, or A and B contain each other's boundaries. (Note that
+    // A contains all the vertices of B in either case.)
     if (subregionBound.contains(b.bound) || bound.union(b.bound).isFull()) {
       if (contains(b.vertex(0))) {
         return true;
       }
     }
-    // Check whether B contains A.
+    // Check whether B contains this loop A.
     if (b.subregionBound.contains(bound)) {
       if (b.contains(vertex(0))) {
         return true;
@@ -775,10 +782,49 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Given two loops of a polygon, return true if A contains B. This version of Contains() is cheap
-   * because it does not test for edge intersections. The loops must meet all the S2Polygon
-   * requirements; for example this implies that their boundaries may not cross or have any shared
-   * edges (although they may have shared vertices).
+   * Given another loop "B" whose boundaries do not cross the boundaries of this loop "A", (see
+   * {@link #compareBoundary(S2Loop)}, returns true if this loop A contains the boundary of B. If
+   * "bReverse" is true, the boundary of B is reversed first (which only affects the result when
+   * there are shared edges). This method is cheaper than compareBoundary() because it does not test
+   * for edge intersections, but it does trigger building the index if there are edges in both
+   * polygons and the bounds intersect.
+   *
+   * <p>Requires that neither loop is empty or has an edge crossing with the other, and if B is
+   * full, then bReverse must be false.
+   */
+  boolean containsNonCrossingBoundary(S2Loop b, boolean bReverse) {
+    assert !isEmpty();
+    assert !b.isEmpty();
+    assert !b.isFull() || !bReverse;
+
+    // The bounds must intersect for containment.
+    if (!getRectBound().intersects(b.getRectBound())) {
+      return false;
+    }
+
+    // Full loops are handled as though the loop surrounded the entire sphere.
+    if (isFull()) {
+      return true;
+    }
+    if (b.isFull()) {
+      return false;
+    }
+
+    int m = findVertex(b.vertex(0));
+    if (m < 0) {
+      // Since b.vertex(0) is not shared, we can check whether A contains it.
+      return contains(b.vertex(0));
+    }
+    // Otherwise check whether the edge (b0, b1) is contained by A.
+    return wedgeContainsSemiwedge(vertex(m - 1), vertex(m), vertex(m + 1), b.vertex(1), bReverse);
+  }
+
+  /**
+   * Given that this loop "A" and the given loop "B" are both loops of a common polygon, return true
+   * if this loop A contains B. This version of contains() is cheap because it does not test for
+   * edge intersections. The loops must meet all the S2Polygon requirements; for example this
+   * implies that their boundaries may not cross or have any shared edges (although they may have
+   * shared vertices).
    */
   public boolean containsNested(S2Loop b) {
     if (!subregionBound.contains(b.bound)) {
@@ -791,32 +837,32 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
       return isFull() || b.isEmpty();
     }
 
-    // We are given that A and B do not share any edges, and that either one loop contains the other
-    // or they do not intersect.
+    // We are given that this loop A and B do not share any edges, and that either one loop contains
+    // the other or they do not intersect.
     int m = findVertex(b.vertex(1));
     if (m < 0) {
-      // Since b->vertex(1) is not shared, we can check whether A contains it.
+      // Since b.vertex(1) is not shared, we can check whether A contains it.
       return contains(b.vertex(1));
     }
-    // Check whether the edge order around b.vertex(1) is compatible with A containing B.
+    // Check whether the edge order around b.vertex(1) is compatible with this loop A containing B.
     return new S2EdgeUtil.WedgeContains()
             .test(vertex(m - 1), vertex(m), vertex(m + 1), b.vertex(0), b.vertex(2))
         > 0;
   }
 
   /**
-   * Returns +1 if A contains the boundary of B, -1 if A excludes the boundary of B, and 0 if the
-   * boundaries of A and B cross.
+   * Returns +1 if this loop A contains the boundary of B, -1 if A excludes the boundary of B, and 0
+   * if the boundaries of A and B cross.
    *
    * <p>Shared edges are handled as follows: If XY is a shared edge, define reversed(XY) to be true
-   * if XY appears in opposite directions in A and B. Then A contains XY if and only if
-   * {@code reversed(XY) == B.isHole()}. Intuitively, this checks whether A contains a vanishingly
-   * small region extending from the boundary of B toward the interior of the polygon to which loop
-   * B belongs.
+   * if XY appears in opposite directions in A and B. Then A contains XY if and only if {@code
+   * reversed(XY) == B.isHole()}. Intuitively, this checks whether A contains a vanishingly small
+   * region extending from the boundary of B toward the interior of the polygon to which loop B
+   * belongs.
    *
    * <p>This method is used for testing containment and intersection of multi-loop polygons. Note
-   * that this method is not symmetric, since the result depends on the direction of loop A but not
-   * on the direction of loop B (in the absence of shared edges).
+   * that this method is not symmetric, since the result depends on the direction of this loop A but
+   * not on the direction of loop B (in the absence of shared edges).
    *
    * @param b the loop to compare against this loop; neither loop may be empty, and if {@code b} is
    *     full, then it must not be a hole.
@@ -848,15 +894,15 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
       return relation.containsEdge() ? 1 : -1;
     }
 
-    // There are no edge intersections or shared vertices, so we can check whether A contains an
-    // arbitrary vertex of B.
+    // There are no edge intersections or shared vertices, so we can check whether this loop A
+    // contains an arbitrary vertex of B.
     return contains(b.vertex(0)) ? 1 : -1;
   }
 
   /**
-   * Returns true if two loops have the same boundary. This is true if and only if the loops have
-   * the same vertices in the same cyclic order. The empty and full loops are considered to have
-   * different boundaries. (For testing purposes.)
+   * Returns true if this loop and the given loop 'b' have the same boundary. This is true if and
+   * only if the loops have the same vertices in the same cyclic order. The empty and full loops are
+   * considered to have different boundaries. (For testing purposes.)
    */
   boolean boundaryEquals(S2Loop b) {
     if (numVertices != b.numVertices) {
@@ -884,10 +930,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Returns true if two loops have the same boundary except for vertex perturbations. More
-   * precisely, the vertices in the two loops must be in the same cyclic order, and corresponding
-   * vertex pairs must be separated by no more than maxErrorRadians. Note: This method is mostly
-   * useful for testing purposes.
+   * Returns true if this loop and the given loop 'b' have the same boundary except for vertex
+   * perturbations. More precisely, the vertices in the two loops must be in the same cyclic order,
+   * and corresponding vertex pairs must be separated by no more than maxErrorRadians. Note: This
+   * method is mostly useful for testing purposes.
    */
   boolean boundaryApproxEquals(S2Loop b, double maxErrorRadians) {
     final S2Loop a = this;
@@ -932,6 +978,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   private static final class LoopOffsets {
     /** The offset of the first loop. */
     public final int first;
+
     /** The offset of the second loop. */
     public final int second;
 
@@ -1010,10 +1057,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Returns true if the two loop boundaries are within {@code maxError} of each other along their
-   * entire lengths. The two loops may have different numbers of vertices. More precisely, this
-   * method returns true if the two loops have parameterizations a:[0,1] -> S^2, b:[0,1] -> S^2 such
-   * that {@code distance(a(t), b(t)) <= maxError} for all t.
+   * Returns true if the this loop and the given loop 'b' have boundaries are within {@code
+   * maxError} of each other along their entire lengths. The two loops may have different numbers of
+   * vertices. More precisely, this method returns true if the two loops have parameterizations
+   * a:[0,1] -> S^2, b:[0,1] -> S^2 such that {@code distance(a(t), b(t)) <= maxError} for all t.
    *
    * <p>You can think of this as testing whether it is possible to drive two cars all the way around
    * the two loops such that no car ever goes backward and the cars are always within {@code
@@ -1141,7 +1188,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
    * returns INDEXED.)
    */
   private boolean boundaryApproxIntersects(S2Iterator<S2ShapeIndex.Cell> it, S2Cell target) {
-    // assert (it.id().contains(target.id()));
+    assert it.id().contains(target.id());
     S2ClippedShape aClipped = it.entry().clipped(0);
     int aNumClipped = aClipped.numEdges();
 
@@ -1274,8 +1321,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
-   * Given an iterator that is already positioned at the {@link S2ShapeIndex.Cell} containing
-   * {@code p}, returns contains(p).
+   * Given an iterator that is already positioned at the {@link S2ShapeIndex.Cell} containing {@code
+   * p}, returns contains(p).
    */
   private boolean contains(S2Iterator<S2ShapeIndex.Cell> it, S2Point p) {
     // Test containment by drawing a line segment from the cell center to the given point and
@@ -1302,7 +1349,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   /**
    * Returns the shortest distance from a point P to this loop, given as the angle formed between P,
    * the origin and the nearest point on the loop to P. This angle in radians is equivalent to the
-   * arclength along the unit sphere.
+   * arclength along the unit sphere. The point is not required to be normalized.
    */
   public S1Angle getDistance(S2Point p) {
     S2Point normalized = p.normalize();
@@ -1325,21 +1372,37 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     return originInside;
   }
 
-  /** Returns true if this loop is valid. */
+  /**
+   * Returns true if this loop is valid. To check validity and also get problem details, use {@link
+   * #findValidationError(S2Error)}.
+   */
   public boolean isValid() {
     return !findValidationError(new S2Error());
   }
 
   /**
-   * Static version of isValid(), to be used only when an S2Loop instance is not available, but
-   * validity of the points must be checked.
+   * Static version of {@link #isValid()} for checking a set of points before attempting to create a
+   * loop from them. To check validity and also get problem details, use {@link
+   * #findValidationError(List, S2Error)}.
    *
-   * @return true if the given loop is valid. Creates an instance of S2Loop and defers this call to
-   *     {@link #isValid()}.
+   * @return true if the given set of vertices forms a valid loop.
    */
   @JsIgnore
   public static boolean isValid(List<S2Point> vertices) {
-    return new S2Loop(vertices).isValid();
+    return verticesAreUnitLength(vertices) && new S2Loop(vertices).isValid();
+  }
+
+  /**
+   * Returns true if all vertices are unit length. If Java assertions are enabled, this must be
+   * checked first, otherwise a loop cannot even be constructed without triggering an assertion.
+   */
+  private static boolean verticesAreUnitLength(List<S2Point> vertices) {
+    for (int i = 0; i < vertices.size(); ++i) {
+      if (!S2.isUnitLength(vertices.get(i))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -1353,15 +1416,39 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   }
 
   /**
+   * Static version of {@link #findValidationError(S2Error)}, for checking if a set of points is
+   * valid before attempting to create a loop from them.
+   *
+   * <p>Returns true if the given list of vertices do *not* form a valid loop and sets {@code error}
+   * appropriately. Otherwise returns false and leaves {@code error} unchanged. Requires that error
+   * != null.
+   */
+  @JsIgnore
+  public static boolean findValidationError(List<S2Point> vertices, S2Error error) {
+    if (!verticesAreUnitLength(vertices)) {
+      error.init(S2Error.Code.NOT_UNIT_LENGTH, "Vertex is not unit length.");
+      return true;
+    }
+    return new S2Loop(vertices).findValidationError(error);
+  }
+
+  /**
    * Like findValidationError(), but skips any checks that would require building the S2ShapeIndex
    * (i.e., self-intersection tests). This will be used by the S2Polygon implementation, which uses
    * its own index to check for loop self-intersection.
    */
   @CanIgnoreReturnValue
   public boolean findValidationErrorNoIndex(S2Error error) {
-    // subregionBound must be at least as large as bound. (This is an internal consistency check
-    // rather than a test of client data.
-    // assert(subregionBound.contains(bound));
+    if (!bound.isValid() || !subregionBound.isValid()) {
+      error.init(
+          S2Error.Code.NOT_UNIT_LENGTH,
+          "Invalid loop bound, possibly due to vertices that are not unit length.");
+      return true;
+    }
+
+    // If the bounds are valid, subregionBound must be at least as large as bound. (This is an
+    // internal consistency check rather than a test of client data.)
+    assert subregionBound.contains(bound);
 
     // All vertices must be unit length.
     for (int i = 0; i < numVertices; ++i) {
@@ -1397,8 +1484,8 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   @Override
   public String toString() {
-    StringBuilder builder = new StringBuilder("S2Loop, ");
-
+    StringBuilder builder = new StringBuilder("S2Loop, depth=");
+    builder.append(depth).append(", ");
     builder.append(vertices.length).append(" points. [");
 
     for (S2Point v : vertices) {
@@ -1420,26 +1507,22 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
         originInside = false;
       }
     } else {
-      // Point containment testing is done by counting edge crossings starting at a fixed point on
-      // the sphere. (S2.origin()). Historically this was important, but it is now no longer
-      // necessary, and it may be worthwhile experimenting with using a loop vertex as the
-      // reference point. In any case, we need to know whether the reference point (S2.origin) is
-      // inside or outside the loop before we can construct the S2ShapeIndex. We do this by first
-      // guessing that it is outside, and then seeing whether we get the correct containment result
-      // for vertex 1. If the result is incorrect, the origin must be inside the loop.
+      // The brute force point containment algorithm works by counting edge crossings starting at a
+      // fixed reference point (chosen as S2.origin() for historical reasons). Loop initialization
+      // would be more efficient if we used a loop vertex such as vertex(0) as the reference point
+      // instead, however making this change would be a lot of work because originInside is
+      // currently part of the encoded format.
       //
-      // A loop with consecutive vertices A, B, C contains vertex B if and only if the fixed vector
-      // R = S2.ortho(B) is contained by the wedge ABC. The wedge is closed at A and open at C, i.e.
-      // the point B is inside the loop if A=R but not if C=R. This convention is required for
-      // compatibility with S2EdgeUtil.vertexCrossing. (Note that we can't use S2.origin() as the
-      // fixed vector because of the possibility that B == S2.origin().)
-      //
-      // TODO(user): Investigate using vertex(0) as the reference point.
-
-      // Initialize before calling contains().
-      originInside = false;
+      // In any case, we initialize originInside by first guessing that it is outside, and then
+      // seeing whether we get the correct containment result for vertex 1. If the result is
+      // incorrect, the origin must be inside the loop instead. Note that the S2Loop is not
+      // necessarily valid and so we need to check the requirements of angleContainsVertex() first.
       boolean v1Inside =
-          S2Predicates.orderedCCW(S2.ortho(vertex(1)), vertex(0), vertex(2), vertex(1));
+          !vertex(0).equalsPoint(vertex(1))
+              && !vertex(2).equalsPoint(vertex(1))
+              && S2Predicates.angleContainsVertex(vertex(0), vertex(1), vertex(2));
+
+      originInside = false; // Initialize before calling contains().
       if (v1Inside != contains(vertex(1))) {
         originInside = true;
       }
@@ -1596,8 +1679,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
     // Decode the number of vertices.
     int numVertices = decoder.readVarint32();
     if (numVertices < 0) {
-      throw new IOException("Invalid numVertices: " + numVertices
-          + ". Loops with more than 2^31 - 1 vertices are not supported.");
+      throw new IOException(
+          "Invalid numVertices: "
+              + numVertices
+              + ". Loops with more than 2^31 - 1 vertices are not supported.");
     }
 
     // Decode the individual vertices.
@@ -1638,8 +1723,10 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   private static S2Loop decodeInternal(LittleEndianInput decoder) throws IOException {
     int numVertices = decoder.readInt();
     if (numVertices < 0) {
-      throw new IOException("Invalid numVertices: " + numVertices
-          + ". Loops with more than 2^31 - 1 vertices are not supported.");
+      throw new IOException(
+          "Invalid numVertices: "
+              + numVertices
+              + ". Loops with more than 2^31 - 1 vertices are not supported.");
     }
 
     ArrayList<S2Point> vertices = new ArrayList<>(numVertices);
@@ -1686,6 +1773,9 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
   /**
    * Returns a loop decoded from the given stream. Note S2Loops are intended to be serialized as
    * part of an S2Polygon; see {@link S2Polygon#decode(java.io.InputStream)}.
+   *
+   * <p>Also note that the decoded loop is not checked for validity. Clients may call {@link
+   * S2Loop#isValid()} if they are decoding from an untrusted source.
    */
   static S2Loop decode(LittleEndianInput decoder) throws IOException {
     byte version = decoder.readByte();
@@ -1755,11 +1845,13 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
 
   private static class LoopRangeIterator extends RangeIterator<Cell> {
     private S2ClippedShape clipped;
+
     public LoopRangeIterator(S2ShapeIndex index) {
       super(index.iterator());
     }
 
-    @Override protected void refresh() {
+    @Override
+    protected void refresh() {
       super.refresh();
       clipped = it.done() ? null : it.entry().clipped(0);
     }
@@ -1835,7 +1927,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
      * "crossing targets". Advances both iterators past {@code ai.id()}.
      */
     public boolean hasCrossingRelation(LoopRangeIterator ai, LoopRangeIterator bi) {
-      // assert(ai.id().contains(bi.id()));
+      assert ai.id().contains(bi.id());
       if (ai.numEdges() == 0) {
         if (aCrossingTarget == (ai.containsCenter() ? 1 : 0)) {
           // All points within ai.id() satisfy the crossing target for A, so it's worth iterating
@@ -1885,7 +1977,7 @@ public final strictfp class S2Loop implements S2Region, Comparable<S2Loop>, Seri
      * {@code bi} (only) past {@code ai.id()}.
      */
     private boolean hasCrossing(LoopRangeIterator ai, LoopRangeIterator bi) {
-      // assert(ai.id().contains(bi.id()));
+      assert ai.id().contains(bi.id());
       // If ai.id() intersects many edges of B, then it is faster to use S2EdgeQuery to narrow down
       // the candidates. But if it intersects only a few edges, it is faster to check all the
       // crossings directly. We handle this by advancing 'bi' and keeping track of how many edges we
