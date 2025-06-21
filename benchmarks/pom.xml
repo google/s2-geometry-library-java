@@ -20,7 +20,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>com.google.geometry</groupId>
+    <groupId>org.datasyslab</groupId>
     <artifactId>s2-geometry-parent</artifactId>
     <version>${revision}</version>
   </parent>
@@ -33,12 +33,13 @@
   <properties>
     <jmh.version>1.35</jmh.version>
     <uberjar.name>benchmarks</uberjar.name>
-    <javac.target>1.8</javac.target>
+    <javac.target>1.11</javac.target>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>com.google.geometry</groupId>
+      <groupId>org.datasyslab</groupId>
       <artifactId>s2-geometry-library</artifactId>
       <version>${project.parent.version}</version>
     </dependency>

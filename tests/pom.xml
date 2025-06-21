@@ -20,7 +20,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>com.google.geometry</groupId>
+    <groupId>org.datasyslab</groupId>
     <artifactId>s2-geometry-parent</artifactId>
     <version>${revision}</version>
   </parent>
@@ -33,11 +33,12 @@
   <properties>
     <junit.version>4.13.1</junit.version>
     <truth.version>1.4.4</truth.version>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>com.google.geometry</groupId>
+      <groupId>org.datasyslab</groupId>
       <artifactId>s2-geometry-library</artifactId>
       <version>${project.parent.version}</version>
     </dependency>
