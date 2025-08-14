@@ -81,16 +81,16 @@ public class S2PolygonLayer implements S2BuilderShapesLayer {
    * If provided to the constructor, labelSetLexicon provides label sets from label set ids after
    * build(). Otherwise null.
    */
-  private IdSetLexicon labelSetLexicon;
+  private final IdSetLexicon labelSetLexicon;
 
   /** The label fetcher is reused for each build() call, but constructed only if needed. */
   private LabelFetcher fetcher = null;
 
   /** This list of loops is reused for each build() call. */
-  private ArrayList<S2Loop> loops = new ArrayList<>();
+  private final ArrayList<S2Loop> loops = new ArrayList<>();
 
   /** This list of loops is reused for each build() call. */
-  private ArrayList<int[]> edgeLoops = new ArrayList<>();
+  private final ArrayList<int[]> edgeLoops = new ArrayList<>();
 
   /** Constructs an S2PolygonLayer using default {@link Options}. */
   public S2PolygonLayer() {

@@ -17,12 +17,12 @@ package com.google.common.geometry;
 
 import static java.util.Comparator.naturalOrder;
 
-import com.google.common.base.Objects;
 import com.google.common.geometry.S2Iterator.AvlSetIterator;
 import com.google.common.primitives.UnsignedLongs;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import it.unimi.dsi.fastutil.objects.ObjectAVLTreeSet;
 import java.util.Comparator;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -223,7 +223,7 @@ public final class S2PointIndex<D> {
     public boolean equals(Object other) {
       if (other instanceof Entry) {
         Entry<?> e = (Entry<?>) other;
-        return point.equalsPoint(e.point) && Objects.equal(data, e.data);
+        return point.equalsPoint(e.point) && Objects.equals(data, e.data);
       } else {
         return false;
       }

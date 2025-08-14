@@ -23,7 +23,6 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.sin;
 
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -40,6 +39,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.logging.Logger;
 import jsinterop.annotations.JsConstructor;
@@ -112,8 +112,9 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
 
   /**
    * Create a polyline that connects the given vertices, which are copied. Empty polylines are
-   * allowed. Adjacent vertices should not be identical or antipodal. All vertices must be unit
-   * length.
+   * allowed. Single-vertex polylines are allowed but are not valid in all contexts; they generally
+   * are considered to represent a degenerate edge. Adjacent vertices must not be identical or
+   * antipodal. All vertices must be unit length.
    */
   @JsIgnore
   public S2Polyline(List<S2Point> vertices) {
@@ -298,7 +299,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
     int i = getNearestEdgeIndex(queryPoint);
 
     double arcLength =
-        S2EdgeUtil.getClosestPoint(queryPoint, vertex(i), vertex(i + 1)).angle(vertex(i));
+        S2EdgeUtil.project(queryPoint, vertex(i), vertex(i + 1)).angle(vertex(i));
     for (; i > 0; i--) {
       arcLength += vertex(i - 1).angle(vertex(i));
     }
@@ -573,7 +574,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
 
   /**
    * Given a point p and the index of the start point of an edge of this polyline, returns the point
-   * on that edge that is closest to p.
+   * on that edge that is closest to p. The point must be unit length.
    *
    * @throws IllegalStateException if this polyline does not have any vertices
    * @throws IllegalArgumentException if the given index is out of range for this polyline
@@ -586,7 +587,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
       // If there is only one vertex, it is always closest to any given point.
       return vertex(0);
     }
-    return S2EdgeUtil.getClosestPoint(point, vertex(index), vertex(index + 1));
+    return S2EdgeUtil.project(point, vertex(index), vertex(index + 1));
   }
 
   /**
@@ -606,7 +607,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
       return vertex(0);
     }
     int i = getNearestEdgeIndex(queryPoint);
-    return S2EdgeUtil.getClosestPoint(queryPoint, vertex(i), vertex(i + 1));
+    return S2EdgeUtil.project(queryPoint, vertex(i), vertex(i + 1));
   }
 
   @Override
@@ -658,7 +659,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(numVertices, Arrays.deepHashCode(vertices));
+    return Objects.hash(numVertices, Arrays.deepHashCode(vertices));
   }
 
   @Override

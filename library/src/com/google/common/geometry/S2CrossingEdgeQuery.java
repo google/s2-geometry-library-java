@@ -20,7 +20,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.geometry.S2EdgeQuery.Edges.Empty;
+import com.google.common.geometry.S2CrossingEdgeQuery.Edges.Empty;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
@@ -32,13 +32,13 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
- * S2EdgeQuery is used to find edges or shapes that are crossed by one edge at a time. See also
+ * S2CrossingEdgeQuery is used to find edges or shapes that are crossed by one edge at a time. See also
  * {@link S2CrossingEdgesQuery}, which finds all crossing edge pairs in an S2ShapeIndex or between
- * two S2ShapeIndexes, and is much more efficient for bulk queries. S2EdgeQuery is faster if you
+ * two S2ShapeIndexes, and is much more efficient for bulk queries. S2CrossingEdgeQuery is faster if you
  * have just a few edges to query and they are not in an index.
  *
- * <p>If you are using S2EdgeQuery for multiple edges, it is more efficient to declare a single
- * S2EdgeQuery object and reuse it so that temporary storage does not need to be reallocated each
+ * <p>If you are using S2CrossingEdgeQuery for multiple edges, it is more efficient to declare a single
+ * S2CrossingEdgeQuery object and reuse it so that temporary storage does not need to be reallocated each
  * time.
  *
  * <p>Here is an example showing how to index a set of polylines, and then find the polylines that
@@ -50,7 +50,7 @@ import java.util.PriorityQueue;
  *   for (int i = 0; i &lt; polylines.size(); ++i) {
  *     index.add(polylines[i]);
  *   }
- *   S2EdgeQuery query = new S2EdgeQuery(index);
+ *   S2CrossingEdgeQuery query = new S2CrossingEdgeQuery(index);
  *   Map&lt;S2Shape, Edges&gt; results = query.getCrossings(a, b);
  *   for (Map.Entry&lt;S2Shape, Edges&gt; entry : results.entrySet()) {
  *     S2Polyline polyline = (S2Polyline) entry.getKey();
@@ -65,14 +65,10 @@ import java.util.PriorityQueue;
  * }
  * </pre>
  *
- * <p>Note that if you need to query many edges, it is more efficient to declare a single
- * S2EdgeQuery object and reuse it so that temporary storage does not need to be reallocated each
- * time.
- *
  * <p>This class is not thread-safe.
  */
 @SuppressWarnings("Assertion")
-public class S2EdgeQuery {
+public class S2CrossingEdgeQuery {
   private S2ShapeIndex index;
 
   /** Temporary list of cells that intersect the query edge AB. Used while processing a query. */
@@ -82,10 +78,10 @@ public class S2EdgeQuery {
   private S2Iterator<S2ShapeIndex.Cell> iter;
 
   /** Default constructor. Requires {@link #init} be called before use. */
-  public S2EdgeQuery() {}
+  public S2CrossingEdgeQuery() {}
 
   /** Constructor from an {@link S2ShapeIndex}. */
-  public S2EdgeQuery(S2ShapeIndex index) {
+  public S2CrossingEdgeQuery(S2ShapeIndex index) {
     init(index);
   }
 

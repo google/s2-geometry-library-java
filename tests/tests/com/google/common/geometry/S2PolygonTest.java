@@ -16,28 +16,34 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2Projections.MAX_DIAG;
+import static com.google.common.geometry.S2Projections.MAX_WIDTH;
 import static com.google.common.geometry.S2TextFormat.makeLoop;
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static com.google.common.geometry.S2TextFormat.makePolygon;
 import static com.google.common.geometry.S2TextFormat.makePolygonOrDie;
+import static com.google.common.geometry.S2TextFormat.makePolygonVerbatimOrDie;
 import static com.google.common.geometry.S2TextFormat.parseVertices;
 import static com.google.common.geometry.TestDataGenerator.concentricLoopsPolygon;
+import static java.lang.Math.PI;
 import static java.lang.Math.min;
 import static java.lang.Math.pow;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
+import com.google.common.collect.Sets;
+import com.google.common.geometry.S2BuilderSnapFunctions.IdentitySnapFunction;
+import com.google.common.geometry.S2BuilderSnapFunctions.IntLatLngSnapFunction;
+import com.google.common.geometry.S2BuilderSnapFunctions.S2CellIdSnapFunction;
 import com.google.common.geometry.S2Shape.ChainPosition;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.io.BaseEncoding;
@@ -49,10 +55,11 @@ import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Iterator;
+import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -64,6 +71,7 @@ import org.junit.runners.JUnit4;
  * @author ericv@google.com (Eric Veach) original author
  */
 @RunWith(JUnit4.class)
+@SuppressWarnings("IdentifierName")
 public class S2PolygonTest extends GeometryTestCase {
   private static final Logger logger = Logger.getLogger(S2PolygonTest.class.getName());
 
@@ -158,6 +166,8 @@ public class S2PolygonTest extends GeometryTestCase {
   private static final String TRIANGLE = "15:0, 17:0, 16:2;";
   private static final String TRIANGLE_ROT = "17:0, 16:2, 15:0;";
 
+  private final S2Polygon empty = new S2Polygon();
+  private final S2Polygon full = new S2Polygon(S2Loop.full());
   private final S2Polygon near0 = makeVerbatimPolygon(NEAR0);
   private final S2Polygon near10 = makeVerbatimPolygon(NEAR0 + NEAR1);
   private final S2Polygon near30 = makeVerbatimPolygon(NEAR3 + NEAR0);
@@ -214,14 +224,12 @@ public class S2PolygonTest extends GeometryTestCase {
   private final S2Polygon overlapA = makeVerbatimPolygon(OVERLAP_A);
   private final S2Polygon overlapB = makeVerbatimPolygon(OVERLAP_B);
 
-  private final S2Polygon empty = new S2Polygon();
-  private final S2Polygon full = new S2Polygon(S2Loop.full());
-
-  private static final S2Polygon POLYGON = makePolygon("0:0, 0:1, 1:0");
-  private static final S2Polygon SNAPPED_POLYGON = new S2Polygon(new S2Loop(ImmutableList.of(
-      FACE_CELLS[0].toPoint(),
-      FACE_CELLS[1].toPoint(),
-      FACE_CELLS[2].toPoint())));
+  static final S2Polygon POLYGON = makePolygon("0:0, 0:1, 1:0");
+  static final S2Polygon SNAPPED_POLYGON =
+      new S2Polygon(
+          new S2Loop(
+              ImmutableList.of(
+                  FACE_CELLS[0].toPoint(), FACE_CELLS[1].toPoint(), FACE_CELLS[2].toPoint())));
 
   private static final int VALIDITY_ITERS = 100;
 
@@ -251,6 +259,8 @@ public class S2PolygonTest extends GeometryTestCase {
     byte[] encoded = encode(polygon);
     S2Polygon decodedPolygon = decode(encoded);
     assertEquals(polygon, decodedPolygon);
+    assertTrue(polygon.boundaryEquals(decodedPolygon));
+    assertTrue(polygon.getRectBound().equals(decodedPolygon.getRectBound()));
   }
 
   @Test
@@ -270,8 +280,8 @@ public class S2PolygonTest extends GeometryTestCase {
 
   @Test
   public void testCoderShapeCompact() {
-    assertShapesEqual(SNAPPED_POLYGON.shape(),
-        roundtrip(S2Polygon.Shape.COMPACT_CODER, SNAPPED_POLYGON.shape()));
+    assertShapesEqual(
+        SNAPPED_POLYGON.shape(), roundtrip(S2Polygon.Shape.COMPACT_CODER, SNAPPED_POLYGON.shape()));
   }
 
   // Make sure we've set things up correctly.
@@ -312,15 +322,45 @@ public class S2PolygonTest extends GeometryTestCase {
     assertEquals(0.25, bOverlapA, 0.01);
     assertEquals(0.5, aOverlapB, 0.01);
 
-    assertAlmostEquals(1.0, S2Polygon.getOverlapFraction(empty, empty));
+    // Empty polygons are defined as overlapping.
+    S2Polygon a = makePolygon("");
+    S2Polygon b = makePolygon("");
+    aOverlapB = S2Polygon.getOverlapFraction(a, b);
+    bOverlapA = S2Polygon.getOverlapFraction(b, a);
+    assertEquals(1.0, aOverlapB, 0.01);
+    assertEquals(1.0, bOverlapA, 0.01);
 
-    S2Polygon b = makeVerbatimPolygon(OVERLAP_3);
-    assertAlmostEquals(1.0, S2Polygon.getOverlapFraction(empty, b));
-    assertAlmostEquals(0.0, S2Polygon.getOverlapFraction(b, empty));
+    b = makePolygon(OVERLAP_3);
+    assertAlmostEquals(1.0, S2Polygon.getOverlapFraction(a, b));
+    assertAlmostEquals(0.0, S2Polygon.getOverlapFraction(b, a));
 
-    S2Polygon a = makeVerbatimPolygon(OVERLAP_4);
+    a = makePolygon(OVERLAP_4);
     assertDoubleNear(0.5, S2Polygon.getOverlapFraction(a, b), 1e-14);
     assertDoubleNear(0.5, S2Polygon.getOverlapFraction(b, a), 1e-14);
+
+    // Two nearly identical polygons except that one is inverted.
+    S2Polygon n =
+        makeVerbatimPolygon(
+            "33.596254:-112.1686194, 33.6106261:-112.1683897, 33.6106433:-112.1597676,"
+                + " 33.6106034:-112.1510097, 33.5963451:-112.1511747");
+    S2Polygon x =
+        makeVerbatimPolygon(
+            "33.596254:-112.1686194, 33.5963451:-112.1511747, 33.6106034:-112.1510097,"
+                + " 33.6106433:-112.1597676, 33.6106261:-112.1683897");
+    assertDoubleNear(0.0, S2Polygon.getOverlapFraction(n, x), 1e-9);
+    assertDoubleNear(0.0, S2Polygon.getOverlapFraction(x, n), 1e-9);
+  }
+
+  @Test
+  public void testEmptyAndFull() {
+    assertTrue(empty.isEmpty());
+    assertFalse(full.isEmpty());
+    assertFalse(empty.isFull());
+    assertTrue(full.isFull());
+
+    checkNestedPair(empty, empty);
+    checkNestedPair(full, empty);
+    checkNestedPair(full, full);
   }
 
   @Test
@@ -350,61 +390,914 @@ public class S2PolygonTest extends GeometryTestCase {
     final String aAndB;
     final String aOrB;
     final String aMinusB;
+    final String aXorB;
 
-    TestCase(String a, String b, String aAndB, String aOrB, String aMinusB) {
+    TestCase(String a, String b, String aAndB, String aOrB, String aMinusB, String aXorB) {
       this.a = a;
       this.b = b;
       this.aAndB = aAndB;
       this.aOrB = aOrB;
       this.aMinusB = aMinusB;
+      this.aXorB = aXorB;
     }
   }
 
-  private static TestCase[] testCases = {
+  private static final TestCase[] testCases = {
     // Two triangles that share an edge.
-    new TestCase("4:2, 3:1, 3:3;", "3:1, 2:2, 3:3;", "", "4:2, 3:1, 2:2, 3:3;", "4:2, 3:1, 3:3;"),
+    new TestCase(
+        /* a= */ "4:2, 3:1, 3:3;",
+        /* b= */ "3:1, 2:2, 3:3;",
+        /* aAndB= */ "",
+        /* aOrB= */ "4:2, 3:1, 2:2, 3:3;",
+        /* aMinusB= */ "4:2, 3:1, 3:3;",
+        /* aXorB= */ "4:2, 3:1, 2:2, 3:3;"),
     // Two vertical bars and a horizontal bar connecting them.
     new TestCase(
-        "0:0, 0:2, 3:2, 3:0;   0:3, 0:5, 3:5, 3:3;",
-        "1:1, 1:4, 2:4, 2:1;",
-        "1:1, 1:2, 2:2, 2:1;   1:3, 1:4, 2:4, 2:3;",
-        "0:0, 0:2, 1:2, 1:3, 0:3, 0:5, 3:5, 3:3, 2:3, 2:2, 3:2, 3:0;",
-        "0:0, 0:2, 1:2, 1:1, 2:1, 2:2, 3:2, 3:0;   " + "0:3, 0:5, 3:5, 3:3, 2:3, 2:4, 1:4, 1:3;"),
+        "0:0, 0:2, 3:2, 3:0;   0:3, 0:5, 3:5, 3:3;", // a
+        "1:1, 1:4, 2:4, 2:1;", // b
+        "1:1, 1:2, 2:2, 2:1;   1:3, 1:4, 2:4, 2:3;", // aAndB
+        "0:0, 0:2, 1:2, 1:3, 0:3, 0:5, 3:5, 3:3, 2:3, 2:2, 3:2, 3:0;", // aOrB
+        "0:0, 0:2, 1:2, 1:1, 2:1, 2:2, 3:2, 3:0;   " // aMinusB
+            + "0:3, 0:5, 3:5, 3:3, 2:3, 2:4, 1:4, 1:3;", //
+        "0:0, 0:2, 1:2, 1:1, 2:1, 2:2, 3:2, 3:0;   " // aXorB
+            + "0:3, 0:5, 3:5, 3:3, 2:3, 2:4, 1:4, 1:3;   " //
+            + "1:2, 1:3, 2:3, 2:2"),
     // Two vertical bars and two horizontal bars centered around S2.origin().
     new TestCase(
-        "1:88, 1:93, 2:93, 2:88;   -1:88, -1:93, 0:93, 0:88;",
-        "-2:89, -2:90, 3:90, 3:89;   -2:91, -2:92, 3:92, 3:91;",
-        "1:89, 1:90, 2:90, 2:89;   1:91, 1:92, 2:92, 2:91;   "
+        "1:88, 1:93, 2:93, 2:88;   -1:88, -1:93, 0:93, 0:88;", // a
+        "-2:89, -2:90, 3:90, 3:89;   -2:91, -2:92, 3:92, 3:91;", // b
+        "1:89, 1:90, 2:90, 2:89;   1:91, 1:92, 2:92, 2:91;   " // aAndB
             + "-1:89, -1:90, 0:90, 0:89;   -1:91, -1:92, 0:92, 0:91;",
-        "-1:88, -1:89, -2:89, -2:90, -1:90, -1:91, -2:91, -2:92, -1:92,"
+        "-1:88, -1:89, -2:89, -2:90, -1:90, -1:91, -2:91, -2:92, -1:92," // aOrB
             + "-1:93, 0:93, 0:92, 1:92, 1:93, 2:93, 2:92, 3:92, 3:91, 2:91,"
             + "2:90, 3:90, 3:89, 2:89, 2:88, 1:88, 1:89, 0:89, 0:88;   "
             + "0:90, 0:91, 1:91, 1:90;",
-        "1:88, 1:89, 2:89, 2:88;   1:90, 1:91, 2:91, 2:90;   "
-            + "1:92, 1:93, 2:93, 2:92;   -1:88, -1:89, 0:89, 0:88;   "
-            + "-1:90, -1:91, 0:91, 0:90;   -1:92, -1:93, 0:93, 0:92;"),
+        "1:88, 1:89, 2:89, 2:88;   1:90, 1:91, 2:91, 2:90;   " // aMinusB
+            + "1:92, 1:93, 2:93, 2:92;   -1:88, -1:89, 0:89, 0:88;   " //
+            + "-1:90, -1:91, 0:91, 0:90;   -1:92, -1:93, 0:93, 0:92;", //
+        "1:88, 1:89, 2:89, 2:88;   -1:88, -1:89, 0:89, 0:88;   " // aXorB
+            + "1:90, 1:91, 2:91, 2:90;   -1:90, -1:91, 0:91, 0:90;   " //
+            + "1:92, 1:93, 2:93, 2:92;   -1:92, -1:93, 0:93, 0:92;   " //
+            + "-2:89, -2:90, -1:90, -1:89;   -2:91, -2:92, -1:92, -1:91;   " //
+            + "0:89, 0:90, 1:90, 1:89;   0:91, 0:92, 1:92, 1:91;   " //
+            + "2:89, 2:90, 3:90, 3:89;   2:91, 2:92, 3:92, 3:91;" //
+        ),
     // Two interlocking square doughnuts centered around -S2.origin().
     new TestCase(
-        "-1:-93, -1:-89, 3:-89, 3:-93;   0:-92, 0:-90, 2:-90, 2:-92;",
-        "-3:-91, -3:-87, 1:-87, 1:-91;   -2:-90, -2:-88, 0:-88, 0:-90;",
-        "-1:-91, -1:-90, 0:-90, 0:-91;   0:-90, 0:-89, 1:-89, 1:-90;",
-        "-1:-93, -1:-91, -3:-91, -3:-87, 1:-87, 1:-89, 3:-89, 3:-93;   "
+        "-1:-93, -1:-89, 3:-89, 3:-93;   0:-92, 0:-90, 2:-90, 2:-92;", // a
+        "-3:-91, -3:-87, 1:-87, 1:-91;   -2:-90, -2:-88, 0:-88, 0:-90;", // b
+        "-1:-91, -1:-90, 0:-90, 0:-91;   0:-90, 0:-89, 1:-89, 1:-90;", // aAndB
+        "-1:-93, -1:-91, -3:-91, -3:-87, 1:-87, 1:-89, 3:-89, 3:-93;   " // aOrB
             + "0:-92, 0:-91, 1:-91, 1:-90, 2:-90, 2:-92;   "
             + "-2:-90, -2:-88, 0:-88, 0:-89, -1:-89, -1:-90;",
-        "-1:-93, -1:-91, 0:-91, 0:-92, 2:-92, 2:-90, 1:-90, 1:-89, 3:-89,"
-            + "3:-93;   -1:-90, -1:-89, 0:-89, 0:-90;"),
+        "-1:-93, -1:-91, 0:-91, 0:-92, 2:-92, 2:-90, " // aMinusB
+            + "1:-90, 1:-89, 3:-89, 3:-93;   " //
+            + "-1:-90, -1:-89, 0:-89, 0:-90;", //
+        "-1:-93, -1:-91, 0:-91, 0:-92, 2:-92, 2:-90, " // aXorB
+            + "1:-90, 1:-89, 3:-89, 3:-93;   "
+            + "-3:-91, -3:-87, 1:-87, 1:-89, 0:-89, 0:-88, "
+            + "-2:-88, -2:-90, -1:-90, -1:-91;   "
+            + "-1:-90, -1:-89, 0:-89, 0:-90;   "
+            + "1:-91, 0:-91, 0:-90, 1:-90;"),
     // An incredibly thin triangle intersecting a square, such that the two intersection points of
     // the triangle with the square are identical. This results in a degenerate loop that needs to
     // be handled correctly.
     new TestCase(
-        "10:44, 10:46, 12:46, 12:44;",
-        "11:45, 89:45.00000000000001, 90:45;",
-        "", // Empty intersection!
+        "10:44, 10:46, 12:46, 12:44;", // a
+        "11:45, 89:45.00000000000001, 90:45;", // b
+        "", // aAndB - Empty intersection!
         // Original square with extra vertex, and triangle disappears (due to default
-        // vertex_merge_radius of S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE).
-        "10:44, 10:46, 12:46, 12:45, 12:44;",
-        "10:44, 10:46, 12:46, 12:45, 12:44;")
+        // vertexMergeRadius of S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE).
+        "10:44, 10:46, 12:46, 12:45, 12:44;", // aOrB
+        "10:44, 10:46, 12:46, 12:45, 12:44;", // aMinusB
+        "10:44, 10:46, 12:46, 12:45.001774937, 12:44;" // aXorB
+        )
   };
+
+  @Test
+  public void testOperations() {
+    // The error margin used when comparing the actual and expected results of constructive geometry
+    // operations. The intersections in the expected data were computed in lat-lng space, while the
+    // actual intersections are computed using geodesics. The error due to this depends on the
+    // length and direction of the line segment being intersected, and how close the intersection is
+    // to the endpoints of the segment. The worst case is for a line segment between two points at
+    // the same latitude, where the intersection point is in the middle of the segment. In this case
+    // the error is approximately {@code (p * t^2) / 8}, where {@code p} is the absolute latitude in
+    // radians, {@code t} is the longitude difference in radians, and both {@code p} and {@code t}
+    // are small. The test cases all have small latitude and longitude differences. If {@code p} and
+    // {@code t} are converted to degrees, the following error bound is valid as long as {@code (p *
+    // t^2 < 150)}.
+    final double operationsMaxError = 1e-4;
+
+    S2Polygon farSouth = new S2Polygon();
+    farSouth.initToIntersection(farH, southH);
+    checkEqual(farSouth, farHSouthH, 1e-15);
+
+    for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
+      TestCase test = testCases[testNumber];
+      logger.fine("Polygon operation test case " + testNumber);
+      S2Polygon a = makeVerbatimPolygon(test.a);
+      S2Polygon b = makeVerbatimPolygon(test.b);
+      S2Polygon expectedAAndB = makeVerbatimPolygon(test.aAndB);
+      S2Polygon expectedAOrB = makeVerbatimPolygon(test.aOrB);
+      S2Polygon expectedAMinusB = makeVerbatimPolygon(test.aMinusB);
+      S2Polygon expectedAXorB = makePolygon(test.aXorB);
+
+      S2Polygon aAndB = new S2Polygon();
+      S2Polygon aOrB = new S2Polygon();
+      S2Polygon aMinusB = new S2Polygon();
+      S2Polygon aXorB = new S2Polygon();
+
+      aAndB.initToIntersection(a, b);
+      checkEqual(aAndB, expectedAAndB, operationsMaxError);
+      aOrB.initToUnion(a, b);
+      checkEqual(aOrB, expectedAOrB, operationsMaxError);
+      checkUnion(a, b);
+      aMinusB.initToDifference(a, b);
+      checkEqual(aMinusB, expectedAMinusB, operationsMaxError);
+      aXorB.initToSymmetricDifference(a, b);
+      checkEqual(aXorB, expectedAXorB, operationsMaxError);
+    }
+  }
+
+  @Test
+  public void testIntersectionSnapFunction() {
+    // This tests that an intersection point is rounded to the nearest allowable vertex position
+    // (using E0 coordinates, i.e. integer lat/lng values).
+    S2Polygon a = makePolygon("0:0, 0:10, 1:10, 1:0");
+    S2Polygon b = makePolygon("0:0, 0:10, 3:0");
+    S2Polygon expected = makePolygon("0:0, 0:10, 1:7, 1:0");
+    S2Polygon actual = new S2Polygon();
+    actual.initToIntersection(a, b, new IntLatLngSnapFunction(0)); // E0 coords
+    checkEqual(expected, actual);
+  }
+
+  @Test
+  public void testIntersectionPreservesLoopOrder() {
+    S2Polygon a = makePolygon("0:0, 0:10, 10:10, 10:0");
+    S2Polygon b = makePolygon("1:1, 1:9, 9:5; 2:2, 2:8, 8:5");
+    S2Polygon actual = new S2Polygon();
+    actual.initToIntersection(a, b);
+    assertEquals(S2TextFormat.toString(b), S2TextFormat.toString(actual));
+  }
+
+  /**
+   * Verifies that the bounding rectangle optimization in initToIntersection() resets the result
+   * polygon to be empty.
+   */
+  @Test
+  public void testEmptyIntersectionClearsResult() {
+    // The bounding rectangles of these two polygons do not intersect.
+    S2Polygon a = makePolygon("0:0, 0:1, 1:0");
+    S2Polygon b = makePolygon("3:3, 3:4, 4:3");
+
+    // Initialize the result polygon to be non-empty, then verify that computing the intersection
+    // clears the result.
+    S2Polygon result = makePolygon("0:0, 0:1, 1:0");
+    result.initToIntersection(a, b);
+    assertTrue(result.isEmpty());
+
+    // Repeat with the version of InitToIntersection that allows error reporting.
+    S2Error error = new S2Error();
+    result = makePolygon("0:0, 0:1, 1:0");
+    assertTrue(result.initToIntersection(a, b, new IdentitySnapFunction(S1Angle.ZERO), error));
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
+  public void testFullAndEmptyLoops() {
+    S2Error error = new S2Error();
+
+    // Canonical full and empty loops result in valid full and empty polygons.
+    S2Polygon fullPoly = S2Polygon.fromLoops(ImmutableList.of(S2Loop.full()));
+    assertTrue(fullPoly.isFull());
+    assertTrue(fullPoly.isValid());
+    assertEquals(1, fullPoly.numLoops());  // A full polygon has one full loop.
+
+    S2Polygon emptyPoly = S2Polygon.fromLoops(ImmutableList.of(S2Loop.empty()));
+    assertTrue(emptyPoly.isEmpty());
+    assertTrue(emptyPoly.isValid());
+    assertEquals(0, emptyPoly.numLoops());  // An empty polygon has no loops.
+
+    // Points in the northern and southern hemispheres, not the canonical vertices for empty/full.
+    S2Point pNorth = S2LatLng.fromDegrees(49, -112).toPoint();
+    S2Point pSouth = S2LatLng.fromDegrees(-49, -112).toPoint();
+    // Loops with those single points.
+    S2Loop oneVertexLoopNorth = new S2Loop(ImmutableList.of(pNorth));
+    S2Loop oneVertexLoopSouth = new S2Loop(ImmutableList.of(pSouth));
+
+    // The one in the north is considered empty, the one in the south is considered full by S2Loop.
+    assertTrue(oneVertexLoopNorth.isEmpty());
+    assertTrue(oneVertexLoopSouth.isFull());
+
+    // This "empty" loop isn't canonical, so it is added to an S2Polygon but considered an error.
+    ArrayList<S2Loop> loops = new ArrayList<>();
+    loops.add(oneVertexLoopNorth);
+    S2Polygon polygonA = new S2Polygon(loops);
+    assertEquals(1, polygonA.getLoops().size());
+    assertTrue(polygonA.findValidationError(error));
+    assertEquals(S2Error.Code.LOOP_NOT_ENOUGH_VERTICES, error.code());
+    // Although the non-canonical single-vertex loop is considered empty by S2Loop, the S2Polygon
+    // containing it is not empty.
+    assertFalse(polygonA.isEmpty());
+
+    error.clear();
+    loops.clear();
+
+    // Likewise, a non-canonical single-vertex loop in the southern hemisphere is added but
+    // considered to be an error.
+    loops.add(oneVertexLoopSouth);
+    S2Polygon polygonB = new S2Polygon(loops);
+    loops.add(oneVertexLoopSouth);
+    assertEquals(1, polygonB.getLoops().size());
+    assertTrue(polygonB.findValidationError(error));
+    assertEquals(S2Error.Code.LOOP_NOT_ENOUGH_VERTICES, error.code());
+    // Although the non-canonical single-vertex loop is considered full by S2Loop, the S2Polygon
+    // containing it is not full.
+    assertFalse(polygonB.isFull());
+  }
+
+  // Verifies that S2Polygon does not destroy or replace S2Loops, so callers can rely on using
+  // references for loop identity.
+  @Test
+  public void testLoopPointers() {
+    List<S2Loop> loops = new ArrayList<>();
+    loops.add(S2TextFormat.makeLoopOrDie("4:4, 4:6, 6:6, 6:4"));
+    loops.add(S2TextFormat.makeLoopOrDie("3:3, 3:7, 7:7, 7:3"));
+    loops.add(S2TextFormat.makeLoopOrDie("2:2, 2:8, 8:8, 8:2"));
+    loops.add(S2TextFormat.makeLoopOrDie("1:1, 1:9, 9:9, 9:1"));
+    loops.add(S2TextFormat.makeLoopOrDie("10:10, 15:15, 20:10"));
+    loops.add(S2TextFormat.makeLoopOrDie("-1:-1, -9:-1, -9:-9, -1:-9"));
+    loops.add(S2TextFormat.makeLoopOrDie("-5:-5, -6:-5, -6:-6, -5:-6"));
+
+    Set<S2Loop> loopReferences = Sets.newIdentityHashSet();
+    loopReferences.addAll(loops);
+    S2Polygon polygon = new S2Polygon(loops);
+
+    // Check that loop pointers didn't change (but could've gotten reordered).
+    assertEquals(loopReferences.size(), polygon.numLoops());
+    for (int i = 0; i < polygon.numLoops(); i++) {
+      assertTrue(loopReferences.contains(polygon.loop(i)));
+    }
+  }
+
+  // The "Bug" tests are regression tests from previous versions of the algorithm, ported from C++.
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug1() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10531193335759943, -0.80522214810955617, 0.58354664670985534),
+                p(-0.10531194840431297, -0.80522215192439039, 0.58354663873039425),
+                p(-0.10531192794033867, -0.80522217497559767, 0.58354661061568747),
+                p(-0.10531191284235047, -0.80522217121852058, 0.58354661852470402)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10531174240075937, -0.80522236320875284, 0.58354638436119843),
+                p(-0.1053119128423491, -0.80522217121852213, 0.58354661852470235),
+                p(-0.10531192039134209, -0.80522217309706012, 0.58354661457019508), // A
+                p(-0.10531191288915481, -0.80522217116640804, 0.5835466185881667), // B
+                p(-0.10531191288915592, -0.8052221711664066, 0.58354661858816803), // B
+                p(-0.10531192039151964, -0.80522217309710431, 0.58354661457010204), // A
+                p(-0.10531192794033779, -0.80522217497559878, 0.58354661061568636),
+                p(-0.1053117575499668, -0.80522236690813498, 0.58354637652254981)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug2() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10618951389689163, -0.80546461394606728, 0.58305277875939732),
+                p(-0.10618904764039243, -0.8054645437464607, 0.58305296065497536),
+                p(-0.10618862643748632, -0.80546451917975415, 0.58305307130470341),
+                p(-0.10617606798507535, -0.80544758470051458, 0.58307875187433833)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10618668131028208, -0.80544613076731553, 0.58307882755616247),
+                p(-0.10618910658843225, -0.80546454998744921, 0.58305294129732887),
+                p(-0.10618904764039225, -0.80546454374646081, 0.58305296065497536),
+                p(-0.10618898834264634, -0.80546453817003949, 0.58305297915823251)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug3() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10703494861068318, -0.80542232562508131, 0.58295659972299307),
+                p(-0.10703494998722708, -0.80542232255642865, 0.58295660370995028),
+                p(-0.10703495367938694, -0.80542232008675829, 0.58295660644418046),
+                p(-0.10703495869785147, -0.80542231887781635, 0.58295660719304865),
+                p(-0.10703496369792719, -0.80542231925353791, 0.58295660575589636),
+                p(-0.10703496733984781, -0.80542232111324863, 0.58295660251780734),
+                p(-0.10703496864776367, -0.80542232395864055, 0.58295659834642488),
+                p(-0.10703496727121976, -0.80542232702729322, 0.58295659435946767),
+                p(-0.10703496357905991, -0.80542232949696357, 0.5829565916252375),
+                p(-0.10703495856059538, -0.80542233070590552, 0.58295659087636931),
+                p(-0.10703495356051966, -0.80542233033018396, 0.58295659231352159),
+                p(-0.10703494991859903, -0.80542232847047324, 0.58295659555161061)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10703494861068762, -0.80542232562508098, 0.58295659972299274),
+                p(-0.10703494998723152, -0.80542232255642832, 0.58295660370994995),
+                p(-0.10703495367939138, -0.80542232008675796, 0.58295660644418013),
+                p(-0.10703495869785591, -0.80542231887781601, 0.58295660719304832),
+                p(-0.10703496369793163, -0.80542231925353758, 0.58295660575589603),
+                p(-0.10703496733985225, -0.8054223211132483, 0.58295660251780701),
+                p(-0.10703496864776811, -0.80542232395864022, 0.58295659834642455),
+                p(-0.1070349672712242, -0.80542232702729288, 0.58295659435946734),
+                p(-0.10703496357906438, -0.80542232949696346, 0.58295659162523727),
+                p(-0.10703495856059982, -0.80542233070590519, 0.58295659087636897),
+                p(-0.1070349535605241, -0.80542233033018362, 0.58295659231352126),
+                p(-0.10703494991860348, -0.8054223284704729, 0.58295659555161028)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug4() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10667065556339718, -0.80657502337947207, 0.58142764201754193),
+                p(-0.10667064691895933, -0.80657502457251051, 0.58142764194845853),
+                p(-0.10667064691930939, -0.80657502457246333, 0.58142764194845975),
+                p(-0.10667065556339746, -0.80657502337947395, 0.5814276420175396),
+                p(-0.10667077559567185, -0.80657589269604968, 0.58142641405029793),
+                p(-0.10667077059539463, -0.80657589232162286, 0.58142641548708696),
+                p(-0.10667063827452879, -0.80657502576554818, 0.58142764187937435),
+                p(-0.10667063169531328, -0.80657498170361974, 0.58142770421053058),
+                p(-0.10667064898418178, -0.8065749793175444, 0.58142770434869739)),
+            ImmutableList.of(
+                p(-0.10667064691897719, -0.80657502457250896, 0.58142764194845697),
+                p(-0.10667063827452879, -0.80657502576554818, 0.58142764187937435),
+                p(-0.10667064691861985, -0.80657502457255736, 0.58142764194845586)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10667064691896312, -0.80657502457251107, 0.58142764194845697),
+                p(-0.10667064691896297, -0.80657502457251007, 0.58142764194845853),
+                p(-0.10667064033974753, -0.80657498051058207, 0.58142770427961399),
+                p(-0.10667064076268165, -0.80657498045444342, 0.58142770427989865),
+                p(-0.10667051785242875, -0.80657409963649807, 0.58142894872603923),
+                p(-0.1066707756642685, -0.80657588679775971, 0.58142642222003538)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Loop 1: Edge 1 crosses edge 3
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug5() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10574444273627338, -0.80816264611829447, 0.57938868667714882),
+                p(-0.10574444845633162, -0.80816268110163325, 0.57938863683652475),
+                p(-0.10574444825833453, -0.80816268112970524, 0.57938863683350494),
+                p(-0.10574444253827629, -0.80816264614636646, 0.57938868667412902),
+                p(-0.10574408792844124, -0.80816047738475361, 0.57939177648757634),
+                p(-0.10574408812643833, -0.80816047735668162, 0.57939177649059592)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.1057440881264381, -0.80816047735668017, 0.57939177649059825),
+                p(-0.10574408802743954, -0.80816047737071606, 0.57939177648908835),
+                p(-0.10574408812649677, -0.8081604773570521, 0.57939177649006868),
+                p(-0.10574408812649701, -0.80816047735705354, 0.57939177649006646),
+                p(-0.10574408802703171, -0.80816047737077379, 0.57939177648908202),
+                p(-0.10574408792844098, -0.80816047738475194, 0.57939177648757834),
+                p(-0.10574408792838257, -0.80816047738438168, 0.5793917764881058),
+                p(-0.1057440879283823, -0.80816047738438002, 0.57939177648810791),
+                p(-0.10574407993470979, -0.80816042849578984, 0.57939184613891748),
+                p(-0.10574408013270691, -0.80816042846771807, 0.57939184614193739)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Loop 0 edge 8 crosses loop 1 edge 0
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug6() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10618849949725141, -0.80552159562437586, 0.58297423747304822),
+                p(-0.10618849959636036, -0.80552159561106063, 0.58297423747339361),
+                p(-0.10618849949722192, -0.80552159562415893, 0.5829742374733532),
+                p(-0.10618834540082922, -0.80552043435619214, 0.58297587011440333),
+                p(-0.10618834559910612, -0.80552043432999554, 0.58297587011448437),
+                p(-0.10618849969546933, -0.80552159559774539, 0.58297423747373922),
+                p(-0.10618849969546955, -0.80552159559774716, 0.582974237473737),
+                p(-0.10618849969549882, -0.80552159559796233, 0.58297423747343424),
+                p(-0.10618849959710704, -0.80552159561096182, 0.58297423747339394),
+                p(-0.10618849949725161, -0.80552159562437742, 0.58297423747304589)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10618856154870562, -0.80552206324314812, 0.58297358004005528),
+                p(-0.10618849949722212, -0.80552159562416048, 0.58297423747335086),
+                p(-0.10618849969549901, -0.80552159559796388, 0.58297423747343191),
+                p(-0.10618856174698249, -0.8055220632169513, 0.58297358004013622),
+                p(-0.10618857104277038, -0.80552213326985989, 0.58297348155149287),
+                p(-0.10618857084449349, -0.80552213329605649, 0.58297348155141182)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Loop 0 edge 0 crosses loop 1 edge 4
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug7() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10651728339354898, -0.80806023027835039, 0.57938996589599123),
+                p(-0.10651728368541774, -0.80806023024121265, 0.57938996589412783),
+                p(-0.10651743884289547, -0.80806147782022508, 0.5793881973990701),
+                p(-0.1065172793067945, -0.80806153133252501, 0.5793881520963412),
+                p(-0.10651707335497011, -0.80806158532388361, 0.57938811465868356),
+                p(-0.10651593657771009, -0.80806167503227055, 0.57938819853274059),
+                p(-0.10651567693742285, -0.80806182530835402, 0.57938803667826444),
+                p(-0.10651496089498214, -0.80806213485510237, 0.57938773659696563),
+                p(-0.10651453461919227, -0.80806229235522298, 0.57938759530083062),
+                p(-0.10651448583749658, -0.80806230280784852, 0.57938758969074455),
+                p(-0.10651428153471061, -0.80806061225022852, 0.57938998503506256),
+                p(-0.10651428161845182, -0.8080606122395747, 0.57938998503452654),
+                p(-0.10651427761078044, -0.80806057978063328, 0.57939003104095654),
+                p(-0.10651427761077951, -0.80806057978062562, 0.57939003104096709),
+                p(-0.10651387099203104, -0.8080572864940091, 0.5793946988282096),
+                p(-0.10651387099202798, -0.80805728649398445, 0.57939469882824468),
+                p(-0.10651386444607201, -0.80805723347699177, 0.57939477397218053),
+                p(-0.10651386444607169, -0.8080572334769891, 0.57939477397218409),
+                p(-0.106513765993723, -0.80805643609199118, 0.57939590414857456),
+                p(-0.10651376671438624, -0.8080564359989727, 0.57939590414581921),
+                p(-0.10651368187839319, -0.80805575808078389, 0.57939686520139033),
+                p(-0.10651465698432123, -0.80805552598235797, 0.57939700963750851),
+                p(-0.1065149024434091, -0.80805548225095913, 0.57939702550292815),
+                p(-0.10651504788182964, -0.80805555533715756, 0.5793968968362615),
+                p(-0.10651511658091152, -0.80805559604710031, 0.57939682743066534),
+                p(-0.10651517919248171, -0.80805562751022852, 0.57939677204023521),
+                p(-0.10651528575974038, -0.80805561374213786, 0.57939677165077275),
+                p(-0.10651648823358072, -0.80805539171529139, 0.57939686023850034),
+                p(-0.10651666406737116, -0.80805537863686483, 0.57939684615295572),
+                p(-0.10651674780673852, -0.80805605121551227, 0.57939589274577097),
+                p(-0.10651674667750256, -0.80805605136137271, 0.57939589274994641),
+                p(-0.10651678418140036, -0.80805634336988752, 0.57939547860450136),
+                p(-0.10651680240261223, -0.80805648524178364, 0.57939527739240138),
+                p(-0.10651680240261237, -0.80805648524178486, 0.57939527739239993)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10651727337444802, -0.80806023111043901, 0.57938996657744879),
+                p(-0.10651727440799089, -0.80806022882029649, 0.57938996958144073),
+                p(-0.10651679374955145, -0.80805648637258243, 0.57939527740611751),
+                p(-0.10651677552833975, -0.80805634450068775, 0.57939547861821594),
+                p(-0.10651673802444192, -0.80805605249217261, 0.57939589276366099),
+                p(-0.10651674651102909, -0.80805605138312775, 0.5793958927502102),
+                p(-0.10651673915225639, -0.80805605233507238, 0.57939589277542292),
+                p(-0.10651665541288889, -0.80805537975642383, 0.57939684618260878),
+                p(-0.10651667272185343, -0.80805537751730583, 0.57939684612330267),
+                p(-0.1065167564612207, -0.8080560500959526, 0.57939589271611924),
+                p(-0.1065167553320342, -0.80805605024202609, 0.57939589271998793),
+                p(-0.10651679283446101, -0.80805634223908773, 0.57939547859078699),
+                p(-0.10651681105567287, -0.80805648411098374, 0.57939527737868723),
+                p(-0.10651680240318392, -0.80805648524170914, 0.5793952773924006),
+                p(-0.10651680240261234, -0.80805648524178475, 0.57939527739239982),
+                p(-0.1065168110556733, -0.80805648411098718, 0.57939527737868224),
+                p(-0.10651729169518892, -0.80806022641135866, 0.57938996976297907),
+                p(-0.10651729210462238, -0.80806022661896348, 0.579389969398166),
+                p(-0.1065172934126499, -0.80806022944626155, 0.57938996521453356),
+                p(-0.10651729203606744, -0.80806023249651726, 0.57938996121349717),
+                p(-0.1065172883437291, -0.80806023495241674, 0.57938995846713126),
+                p(-0.10651728332499401, -0.80806023615590394, 0.5793899577113224),
+                p(-0.10651727832462815, -0.80806023578450537, 0.57938995914858893),
+                p(-0.10651727468247554, -0.80806023393773707, 0.57938996239381635)),
+            ImmutableList.of(
+                p(-0.10651680240204828, -0.80805648524185858, 0.57939527739240082),
+                p(-0.10651679861449742, -0.80805648573682254, 0.57939527739840524),
+                p(-0.10651680240261419, -0.80805648524178353, 0.57939527739240138)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Loop 0: Edge 33 crosses edge 35
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug8() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10703872198218529, -0.80846112144645677, 0.57873424566545062),
+                p(-0.10703872122182066, -0.80846111957630917, 0.57873424841857957),
+                p(-0.10703873813385757, -0.80846111582010538, 0.57873425053786276),
+                p(-0.1070387388942222, -0.80846111769025297, 0.57873424778473381),
+                p(-0.10703873050793056, -0.80846111955286837, 0.57873424673382978),
+                p(-0.1070387388942227, -0.80846111769025419, 0.57873424778473193),
+                p(-0.10703919382477994, -0.80846223660916783, 0.57873260056976505),
+                p(-0.10703917691274406, -0.80846224036537406, 0.57873259845047831)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10703917691274355, -0.80846224036537273, 0.57873259845047997),
+                p(-0.1070391853685064, -0.8084622384873289, 0.57873259951008804),
+                p(-0.10703919381027188, -0.80846223657409677, 0.57873260062144094),
+                p(-0.10703919381027233, -0.80846223657409788, 0.57873260062143939),
+                p(-0.10703918536876245, -0.80846223848727206, 0.57873259951012024),
+                p(-0.10703919382478132, -0.80846223660917116, 0.57873260056976017),
+                p(-0.10703957146434441, -0.80846316542623331, 0.57873123320737097),
+                p(-0.10703955455230836, -0.8084631691824391, 0.57873123108808489)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(a));
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(b));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    //  Loop 1: Edge 1 crosses edge 3
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(c));
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  @Ignore("I suspect this test fails because of b/400510172")
+  public void testBug9() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10639937100501309, -0.80810205676564995, 0.57935329437301375),
+                p(-0.10639937101137514, -0.80810205688156922, 0.57935329421015713),
+                p(-0.10639937101137305, -0.80810205688156944, 0.57935329421015713),
+                p(-0.106399371005011, -0.80810205676565017, 0.57935329437301375)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10639937099530022, -0.8081020567669569, 0.57935329437297489),
+                p(-0.10639937102108385, -0.80810205688026293, 0.5793532942101961),
+                p(-0.10639937102108181, -0.80810205688026326, 0.5793532942101961),
+                p(-0.10639937099529816, -0.80810205676695701, 0.57935329437297478)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon A: "
+            + S2TextFormat.toString(a)
+            + "\nS2Polygon B: "
+            + S2TextFormat.toString(b)
+            + "\nS2Polygon C: "
+            + S2TextFormat.toString(c),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug10() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10592889932808099, -0.80701394501854917, 0.58095400922339757),
+                p(-0.10592787800899696, -0.8070140771413753, 0.58095401191158469),
+                p(-0.1059270044681431, -0.80701419014619669, 0.58095401421031945),
+                p(-0.10592685562894633, -0.80701420940058122, 0.58095401460194696),
+                p(-0.10592685502239066, -0.80701420947920588, 0.58095401460332308),
+                p(-0.10592681668594067, -0.80701421444855337, 0.5809540146902914),
+                p(-0.10592586497682262, -0.8070143378130904, 0.58095401684902004),
+                p(-0.10592586434121586, -0.80701433789547994, 0.58095401685046155),
+                p(-0.10592585898876766, -0.80701428569270217, 0.58095409034224832),
+                p(-0.10592585898876755, -0.80701428569270128, 0.58095409034224987),
+                p(-0.10592571912106936, -0.8070129215545373, 0.58095601078971082),
+                p(-0.10592571912106795, -0.80701292155452331, 0.58095601078973025),
+                p(-0.10592546626664477, -0.80701045545315664, 0.58095948256783148),
+                p(-0.10592546630689463, -0.80701045544795602, 0.58095948256771723),
+                p(-0.10592538513536764, -0.80700975616910509, 0.58096046873415197),
+                p(-0.10592564439344856, -0.80700971612782446, 0.58096047708524956),
+                p(-0.1059267844512099, -0.80700966174311928, 0.58096034476466896),
+                p(-0.10592686088387009, -0.80700965393230761, 0.58096034167862642),
+                p(-0.10592691331665709, -0.80700961093727019, 0.58096039184274961),
+                p(-0.10592705773734933, -0.80700947507458121, 0.58096055423665138),
+                p(-0.10592721940752658, -0.80700934249808198, 0.58096070892049412),
+                p(-0.10592756003095027, -0.80700933299293154, 0.58096066001769275),
+                p(-0.10592832507751106, -0.80700935762745474, 0.58096048630521868),
+                p(-0.1059284165295875, -0.80701007424011018, 0.58095947418602778),
+                p(-0.10592841614913188, -0.80701007428931704, 0.58095947418704452),
+                p(-0.10592864947042728, -0.8070119434176124, 0.58095683523192998),
+                p(-0.1059286884898481, -0.80701225600079662, 0.58095639390519271),
+                p(-0.10592868927069989, -0.80701225581371527, 0.58095639402269295),
+                p(-0.10592869427137827, -0.80701225619024619, 0.58095639258785126),
+                p(-0.10592869791375134, -0.80701225804491505, 0.58095638934738025),
+                p(-0.10592869922184817, -0.80701226088076483, 0.5809563851695615),
+                p(-0.10592869922184843, -0.80701226088076705, 0.58095638516955805),
+                p(-0.10592869784516552, -0.80701226393793402, 0.58095638117383475),
+                p(-0.10592869415258396, -0.80701226639725276, 0.58095637843085768),
+                p(-0.10592868991437976, -0.80701226741266929, 0.58095637779310561)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10592564460843924, -0.80700972122716552, 0.58096046996257766),
+                p(-0.10592539435053176, -0.80700975987840939, 0.58096046190138972),
+                p(-0.10592547496472972, -0.80701045435596641, 0.58095948250602925),
+                p(-0.10592546630689462, -0.80701045544795591, 0.58095948256771723),
+                p(-0.10592546630693271, -0.80701045544826022, 0.58095948256728758),
+                p(-0.1059254749287661, -0.80701045440038255, 0.5809594824508878),
+                p(-0.10592572778318898, -0.80701292050174633, 0.58095601067279068),
+                p(-0.1059257191207934, -0.80701292155455673, 0.58095601078973391),
+                p(-0.1059257194541381, -0.80701292151405679, 0.58095601078521419),
+                p(-0.10592572778319062, -0.80701292050176254, 0.58095601067276803),
+                p(-0.10592586765088864, -0.80701428463992497, 0.58095409022530931),
+                p(-0.10592585899855227, -0.80701428569151201, 0.58095409034211776),
+                p(-0.10592585898857355, -0.80701428569272593, 0.58095409034225098),
+                p(-0.10592586765088888, -0.80701428463992686, 0.58095409022530675),
+                p(-0.10592587247896063, -0.80701433172842685, 0.58095402393347073),
+                p(-0.10592681605007616, -0.80701420941876889, 0.58095402179319922),
+                p(-0.10592685438651758, -0.80701420444942229, 0.58095402170623067),
+                p(-0.10592685499307326, -0.80701420437079774, 0.58095402170485466),
+                p(-0.10592685562894634, -0.80701420940058122, 0.58095401460194696),
+                p(-0.10592685499689927, -0.80701420437030225, 0.58095402170484534),
+                p(-0.10592700383609792, -0.80701418511591771, 0.58095402131321794),
+                p(-0.10592787737695626, -0.80701407211109533, 0.58095401901448296),
+                p(-0.10592889869604118, -0.80701393998826909, 0.58095401632629584),
+                p(-0.10592889996012077, -0.80701395004882903, 0.58095400212049919),
+                p(-0.10592787864104941, -0.80701408217165349, 0.58095400480868631),
+                p(-0.10592787800903029, -0.80701407714164064, 0.58095401191120999),
+                p(-0.10592787864103763, -0.80701408217165482, 0.5809540048086862),
+                p(-0.10592700510019466, -0.80701419517647521, 0.58095400710742118),
+                p(-0.1059270044681431, -0.80701419014619669, 0.58095401421031934),
+                p(-0.10592700510018833, -0.8070141951764761, 0.58095400710742118),
+                p(-0.10592685626275877, -0.80701421443063182, 0.58095400749904391),
+                p(-0.10592685565826369, -0.80701421450898914, 0.58095400750041526),
+                p(-0.10592685502239063, -0.80701420947920566, 0.58095401460332308),
+                p(-0.10592685565826078, -0.80701421450898947, 0.58095400750041526),
+                p(-0.10592681732181129, -0.80701421947833718, 0.58095400758738369),
+                p(-0.10592681668594069, -0.80701421444855348, 0.58095401469029151),
+                p(-0.10592681732180521, -0.80701421947833796, 0.58095400758738369),
+                p(-0.10592586561269894, -0.80701434284287321, 0.58095400974611222),
+                p(-0.10592586497746249, -0.80701433781815202, 0.58095401684187198),
+                p(-0.10592586561268771, -0.80701434284287465, 0.58095400974611222),
+                p(-0.10592586497708102, -0.80701434292526464, 0.58095400974755396),
+                p(-0.10592586434121586, -0.80701433789548005, 0.58095401685046166),
+                p(-0.10592585567909471, -0.80701433894825569, 0.58095401696740323),
+                p(-0.1059258503266465, -0.80701428674547793, 0.58095409045919011),
+                p(-0.10592571045894811, -0.80701292260731206, 0.58095601090665361),
+                p(-0.10592571912060067, -0.80701292155459425, 0.58095601078971715),
+                p(-0.10592571878923682, -0.80701292159485349, 0.58095601079421),
+                p(-0.10592571045894694, -0.80701292260730051, 0.58095601090666993),
+                p(-0.10592545760452345, -0.80701045650593073, 0.58095948268477515),
+                p(-0.10592545764454649, -0.80701045650106651, 0.58095948268423492),
+                p(-0.10592537647753246, -0.80700975726109381, 0.58096046879584118),
+                p(-0.10592538513536764, -0.80700975616910509, 0.58096046873415197),
+                p(-0.10592538413784101, -0.80700975119062324, 0.58096047583161736),
+                p(-0.10592564339592514, -0.80700971114934217, 0.58096048418271495),
+                p(-0.10592564439344856, -0.80700971612782446, 0.58096047708524956),
+                p(-0.10592564496449927, -0.80700971099098684, 0.58096048411668999),
+                p(-0.10592678502227458, -0.80700965660628099, 0.58096035179610783),
+                p(-0.10592678388014524, -0.80700966687995779, 0.58096033773323019)),
+            ImmutableList.of(
+                p(-0.10592585898876757, -0.80701428569270128, 0.58095409034224987),
+                p(-0.10592585897888845, -0.80701428569390288, 0.58095409034238166),
+                p(-0.1059258503266465, -0.80701428674547793, 0.58095409045919011)),
+            ImmutableList.of(
+                p(-0.10592546626664477, -0.80701045545315664, 0.58095948256783148),
+                p(-0.10592546623958927, -0.8070104554564449, 0.58095948256819674),
+                p(-0.10592546626662946, -0.80701045545303429, 0.580959482568004)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(a));
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(b));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Inconsistent loop orientations detected
+    System.err.println("\nS2Polygon: " + S2TextFormat.toString(c));
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug11() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10727349803435572, -0.80875763107088172, 0.57827631008375979),
+                p(-0.10727349807040805, -0.80875763112192245, 0.57827631000568813),
+                p(-0.10727349807040625, -0.80875763112192278, 0.57827631000568813)),
+            ImmutableList.of(
+                p(-0.1072729603486537, -0.80875606054879057, 0.57827860629945249),
+                p(-0.10727299870478688, -0.80875633377729705, 0.57827821705818028),
+                p(-0.10727299875560981, -0.80875633413933223, 0.57827821654242495),
+                p(-0.10727309272230967, -0.80875700360375646, 0.57827726282438607),
+                p(-0.10727318660000487, -0.80875767243400742, 0.57827631000742785),
+                p(-0.10727349802669105, -0.80875763101356435, 0.57827631016534387),
+                p(-0.10727349803435525, -0.80875763107087817, 0.57827631008376468),
+                p(-0.10727349803435572, -0.80875763107088172, 0.57827631008375979),
+                p(-0.1072734980420204, -0.80875763112819909, 0.57827631000217561),
+                p(-0.10727318657570066, -0.80875767255391384, 0.57827630984423972),
+                p(-0.10727318651657966, -0.80875767256177711, 0.57827630984420975),
+                p(-0.10727318650891528, -0.80875767250445951, 0.57827630992579371),
+                p(-0.10727318640981781, -0.80875767251785957, 0.57827630992543622),
+                p(-0.10727309252411468, -0.80875700363055636, 0.57827726282367087),
+                p(-0.10727299855741491, -0.8087563341661328, 0.57827821654170874),
+                p(-0.10727299850659211, -0.8087563338040985, 0.57827821705746318),
+                p(-0.10727296014242577, -0.80875606051836801, 0.57827860638025652),
+                p(-0.10727296024152315, -0.80875606050496729, 0.57827860638061501),
+                p(-0.10727296023340849, -0.8087560604477102, 0.57827860646219797),
+                p(-0.10727348576547496, -0.80875598914629976, 0.57827860869282954),
+                p(-0.1072734857817042, -0.80875598926081438, 0.57827860852966395)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.1072734857735896, -0.80875598920355718, 0.5782786086112468),
+                p(-0.10727348576547457, -0.80875598914629976, 0.57827860869282954),
+                p(-0.10727839137361543, -0.80875532356817348, 0.57827862950694298),
+                p(-0.10727839137881608, -0.80875532356471602, 0.57827862951081388),
+                p(-0.10727839143632178, -0.80875532355090063, 0.5782786295194674),
+                p(-0.10727839149361706, -0.80875532355509905, 0.57827862950296649),
+                p(-0.1072783915353497, -0.80875532357618651, 0.57827862946573261),
+                p(-0.10727839154773799, -0.80875532360290581, 0.57827862942606567),
+                p(-0.10727848921795155, -0.80875531035110082, 0.57827862984032907),
+                p(-0.1072784892332832, -0.80875531046514559, 0.57827862967798682),
+                p(-0.10727971608197531, -0.8087551454635169, 0.57827863284376713),
+                p(-0.10727986275126807, -0.80875539440654376, 0.57827825747332484),
+                p(-0.10727959167812619, -0.80875599171505064, 0.57827747239052929),
+                p(-0.10727974196569352, -0.80875625444235633, 0.57827707706958686),
+                p(-0.10727993501555312, -0.80875677560355186, 0.57827631237878363),
+                p(-0.10727870858143702, -0.80875693828645479, 0.57827631237896882),
+                p(-0.1072787085493927, -0.80875693804871851, 0.5782763127174031),
+                p(-0.10727615977928232, -0.80875727704955946, 0.57827631143112901),
+                p(-0.10727615977915911, -0.80875727704957578, 0.57827631143112901),
+                p(-0.10727349803435751, -0.80875763107088128, 0.57827631008375968),
+                p(-0.10727349803435574, -0.80875763107088183, 0.57827631008375979),
+                p(-0.10727318656803594, -0.80875767249659658, 0.57827630992582391),
+                p(-0.10727318650891531, -0.80875767250445962, 0.57827630992579382),
+                p(-0.10727309262321218, -0.80875700361715641, 0.57827726282402847),
+                p(-0.10727299865651231, -0.80875633415273218, 0.57827821654206735),
+                p(-0.10727299860568951, -0.80875633379069789, 0.57827821705782179),
+                p(-0.10727296024152314, -0.80875606050496718, 0.57827860638061501)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testBug12() {
+    ImmutableList<List<S2Point>> aVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10772916872905106, -0.80699542608967267, 0.58064861015531188),
+                p(-0.10772916892726483, -0.80699542606300401, 0.58064861015560143),
+                p(-0.10772916892726613, -0.80699542606301333, 0.58064861015558844),
+                p(-0.10772916872905235, -0.806995426089682, 0.58064861015529889)));
+    ImmutableList<List<S2Point>> bVertices =
+        ImmutableList.of(
+            ImmutableList.of(
+                p(-0.10772916872905348, -0.80699542608969022, 0.58064861015528724),
+                p(-0.10772916892726496, -0.80699542606300489, 0.58064861015559999),
+                p(-0.10772930108168739, -0.80699639165138115, 0.58064724364290399),
+                p(-0.10772930088347589, -0.80699639167806647, 0.58064724364259113)));
+    S2Polygon a = new S2Polygon(makeLoops(aVertices));
+    S2Polygon b = new S2Polygon(makeLoops(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    // Given edges do not form loops (indegree != outdegree)
+    assertFalse(
+        "\nS2Polygon: " + S2TextFormat.toString(a) + "\nS2Polygon: " + S2TextFormat.toString(b),
+        c.isEmpty());
+  }
+
+  /**
+   * This tests polygon-polyline intersections where the polyline is a single edge of the polygon.
+   */
+  @Test
+  public void testPolylineIntersectionForwardEdge() {
+    for (int v = 0; v < 3; ++v) {
+      polylineIntersectionSharedEdgeTest(cross1, v, 1);
+      polylineIntersectionSharedEdgeTest(cross1SideHole, v, 1);
+    }
+  }
+
+  /**
+   * This tests polygon-polyline intersections where the polyline is a single reversed edge of the
+   * polygon.
+   */
+  @Test
+  public void testPolylineIntersectionReverseEdge() {
+    for (int v = 0; v < 3; ++v) {
+      polylineIntersectionSharedEdgeTest(cross1, v + 1, -1);
+      polylineIntersectionSharedEdgeTest(cross1SideHole, v + 1, -1);
+    }
+  }
+
+  /**
+   * This tests polygon-polyline intersections. It covers the same edge cases as {@code
+   * testOperations} and also adds some extra tests for shared edges.
+   */
+  @Test
+  public void testMorePolylineIntersections() {
+    // See comments in testOperations about the value of this constant.
+    final double operationsMaxError = 1e-4;
+
+    // This duplicates some of the tests in testOperations by converting the outline of polygon A to
+    // a polyline then intersecting it with the polygon B. It then converts B to a polyline and
+    // intersects it with A. It then feeds all of the results into a polygon builder and tests that
+    // the output is equal to doing an intersection between A and B.
+
+    for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
+      TestCase test = testCases[testNumber];
+      logger.fine("Polyline intersection test case " + testNumber);
+      S2Polygon a = makeVerbatimPolygon(test.a);
+      S2Polygon b = makeVerbatimPolygon(test.b);
+      S2Polygon expectedAAndB = makeVerbatimPolygon(test.aAndB);
+
+      List<S2Point> points = Lists.newArrayList();
+      List<S2Polyline> polylines = Lists.newArrayList();
+      for (int ab = 0; ab < 2; ab++) {
+        S2Polygon tmp = (ab == 1) ? a : b;
+        S2Polygon tmp2 = (ab == 1) ? b : a;
+        for (int l = 0; l < tmp.numLoops(); l++) {
+          points.clear();
+          if (tmp.loop(l).isHole()) {
+            for (int v = tmp.loop(l).numVertices(); v >= 0; v--) {
+              points.add(tmp.loop(l).vertex(v));
+            }
+          } else {
+            for (int v = 0; v <= tmp.loop(l).numVertices(); v++) {
+              points.add(tmp.loop(l).vertex(v));
+            }
+          }
+          polylines.addAll(tmp2.intersectWithPolyline(new S2Polyline(points)));
+        }
+      }
+
+      S2Builder builder = new S2Builder.Builder().build();
+      S2PolygonLayer layer = new S2PolygonLayer();
+      builder.startLayer(layer);
+
+      for (S2Polyline polyLine : polylines) {
+        builder.addPolyline(polyLine);
+      }
+
+      S2Error error = new S2Error();
+      boolean built = builder.build(error);
+      assertTrue(error.text(), built);
+      S2Polygon aAndB = layer.getPolygon();
+      checkEqual(aAndB, expectedAAndB, operationsMaxError);
+    }
+  }
 
   @Test
   public void testIsValidUnitLength() {
@@ -434,12 +1327,10 @@ public class S2PolygonTest extends GeometryTestCase {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = Lists.newArrayList();
       List<S2Point> loopPoints = Lists.newArrayList();
-      if (data.oneIn(2)) {
-        loopPoints.add(data.getRandomPoint());
-        loopPoints.add(data.getRandomPoint());
-      }
+      loopPoints.add(data.getRandomPoint());
+      loopPoints.add(data.getRandomPoint());
       loops.add(loopPoints);
-      checkInvalid(loops, "at least 3 vertices");
+      checkInvalid(loops, S2Error.Code.LOOP_NOT_ENOUGH_VERTICES);
     }
   }
 
@@ -452,7 +1343,15 @@ public class S2PolygonTest extends GeometryTestCase {
       int i = data.random(n);
       int j = data.random(n - 1);
       loop.set(i, loop.get(j + (j >= i ? 1 : 0)));
-      checkInvalid(loops, "duplicate vertex");
+      checkInvalid(
+          loops,
+          ImmutableSet.of(
+              // Duplicate caused a degenerate edges.
+              S2Error.Code.DUPLICATE_VERTICES,
+              // Duplicate caused the interior to flip.
+              S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS,
+              // Duplicate caused a duplicate polygon edge.
+              S2Error.Code.OVERLAPPING_GEOMETRY));
     }
   }
 
@@ -466,17 +1365,23 @@ public class S2PolygonTest extends GeometryTestCase {
       int n = loop.size();
       int i = data.random(n);
       Collections.swap(loop, i, (i + 1) % n);
-      checkInvalid(loops, "crosses edge");
+      checkInvalid(
+          loops,
+          ImmutableSet.of(
+              S2Error.Code.LOOP_SELF_INTERSECTION,
+              S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS,
+              S2Error.Code.OVERLAPPING_GEOMETRY));
     }
   }
-
   @Test
   public void testIsValidEmptyLoop() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       List<List<S2Point>> loops = getConcentricLoops(data.random(5), 3);
-      List<S2Point> emptyLoop = Lists.newArrayList();
+      List<S2Point> emptyLoop = S2Loop.empty().vertices();
       loops.add(emptyLoop);
-      checkInvalid(loops, "Non-empty, non-full loops must have at least 3 vertices");
+      // Empty loops should be ignored, leaving only the non-empty loops.
+      S2Polygon polygon = checkValid(loops);
+      assertEquals(loops.size() - 1, polygon.numLoops());
     }
   }
 
@@ -487,11 +1392,18 @@ public class S2PolygonTest extends GeometryTestCase {
     for (int i = 0; i < fullLoop.numVertices(); ++i) {
       fullLoopPoints.add(fullLoop.vertex(i));
     }
+
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       // This is only an error if there is at least one other loop.
-      List<List<S2Point>> loops = getConcentricLoops(1 + data.random(5), 3);
+      List<List<S2Point>> loops = getConcentricLoops(data.uniformInt(1, 6), 3);
       loops.add(fullLoopPoints);
-      checkInvalid(loops, "full loop appears in non-full polygon");
+
+      // We can't distinguish full/empty loops through the S2Shape API (only whether the shape as a
+      // whole is the full or empty polygon). So when we have an extra full loop, we'll see it as an
+      // empty loop via S2Shape.
+      checkInvalid(
+          loops,
+          ImmutableSet.of(S2Error.Code.POLYGON_EXCESS_FULL_LOOP, S2Error.Code.POLYGON_EMPTY_LOOP));
     }
   }
 
@@ -513,7 +1425,12 @@ public class S2PolygonTest extends GeometryTestCase {
         loops.get(0).set((i + 1) % n, loops.get(1).get((i + 1) % n));
         loops.get(0).set((i + n - 1) % n, loops.get(1).get((i + n - 1) % n));
       }
-      checkInvalid(loops, "crosses loop");
+      checkInvalid(
+          loops,
+          ImmutableSet.of(
+              S2Error.Code.OVERLAPPING_GEOMETRY,
+              S2Error.Code.POLYGON_LOOPS_CROSS,
+              S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS));
     }
   }
 
@@ -539,7 +1456,23 @@ public class S2PolygonTest extends GeometryTestCase {
           loopB.add(loopA.get(s));
         }
       }
-      checkInvalid(loops, "has duplicate");
+      checkInvalid(
+          loops,
+          ImmutableSet.of(
+              S2Error.Code.DUPLICATE_VERTICES,
+              S2Error.Code.OVERLAPPING_GEOMETRY,
+              S2Error.Code.POLYGON_LOOPS_SHARE_EDGE,
+              S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS));
+    }
+  }
+
+  @Test
+  public void testIsValidInconsistentOrientations() {
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      List<List<S2Point>> loops = getConcentricLoops(data.uniformInt(2, 7), 3 /*min_vertices*/);
+      S2Polygon polygon = new S2Polygon();
+      uncheckedInitialize(() -> polygon.initOriented(loops(loops)));
+      checkInvalid(polygon, S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS);
     }
   }
 
@@ -554,18 +1487,32 @@ public class S2PolygonTest extends GeometryTestCase {
       } else {
         poly.loop(i).setDepth(poly.loop(i - 1).depth() + 2);
       }
-      checkInvalid(poly, "invalid loop depth");
+      checkInvalid(poly, S2Error.Code.POLYGON_INVALID_LOOP_DEPTH);
     }
   }
 
   @Test
   public void testIsValidLoopNestingInvalid() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
-      S2Polygon poly =
-          new S2Polygon(loops(getConcentricLoops(2 + data.random(4), 3 /*min_vertices*/)));
-      poly.loop(data.random(poly.numLoops())).invert();
-      poly.index().reset();
-      checkInvalid(poly, "Invalid nesting");
+      int numLoops = data.uniformInt(2, 6);
+      List<List<S2Point>> loops = getConcentricLoops(numLoops, /* minVertices= */ 3);
+
+      // Randomly invert all the loops in order to generate cases where the outer loop encompasses
+      // almost the entire sphere. This tests different code paths because bounding box checks are
+      // not as useful.
+      if (data.oneIn(2)) {
+        for (List<S2Point> loop : loops) {
+          Collections.reverse(loop);
+        }
+      }
+
+      S2Polygon polygon = new S2Polygon(loops(loops));
+
+      // Randomly invert one loop of the polygon to not match the others.
+      int i = data.uniformInt(0, polygon.numLoops());
+      polygon.loop(i).invert();
+
+      checkInvalid(polygon, S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS);
     }
   }
 
@@ -625,6 +1572,180 @@ public class S2PolygonTest extends GeometryTestCase {
     }
   }
 
+  private static S2Polygon simplify(String poly, double toleranceInDegrees) {
+    return simplify(makePolygonOrDie(poly), toleranceInDegrees);
+  }
+
+  private static S2Polygon simplify(S2Polygon original, double toleranceInDegrees) {
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplified(
+        original, new IdentitySnapFunction(S1Angle.degrees(toleranceInDegrees)));
+    return simplified;
+  }
+
+  @Test
+  public void testSimplifierNoSimplification() {
+    S2Polygon original = makePolygonOrDie("0:0, 0:20, 20:20, 20:0");
+    S2Polygon simplified = simplify(original, 1.0);
+    assertEquals(4, simplified.numVertices());
+
+    assertExactly(0, maximumDistanceInDegrees(simplified, original, 0));
+    assertExactly(0, maximumDistanceInDegrees(original, simplified, 0));
+  }
+
+  // Here, 10:-2 will be removed and  0:0-20:0 will intersect two edges.
+  // (The resulting polygon will in fact probably have more edges.)
+  @Test
+  public void testSimplifierSimplifiedLoopSelfIntersects() {
+    S2Polygon original = makePolygonOrDie("0:0, 0:20, 10:-0.1, 20:20, 20:0, 10:-0.2");
+    S2Polygon simplified = simplify(original, 0.22);
+
+    // The simplified polygon has the same number of vertices but it should now consist of two loops
+    // rather than one.
+    assertEquals(2, simplified.numLoops());
+    assertTrue(maximumDistanceInDegrees(simplified, original, 0) <= 0.22);
+    assertTrue(maximumDistanceInDegrees(original, simplified, 0.22) <= 0.22);
+  }
+
+  @Test
+  public void testSimplifierNoSimplificationManyLoops() {
+    S2Polygon original =
+        makePolygonOrDie( //
+            "0:0,    0:1,   1:0;   0:20, 0:21, 1:20; " + "20:20, 20:21, 21:20; 20:0, 20:1, 21:0");
+    S2Polygon simplified = simplify(original, 0.01);
+    assertExactly(0, maximumDistanceInDegrees(simplified, original, 0));
+    assertExactly(0, maximumDistanceInDegrees(original, simplified, 0));
+  }
+
+  @Test
+  public void testSimplifierTinyLoopDisappears() {
+    S2Polygon simplified = simplify("0:0, 0:1, 1:1, 1:0", 1.1);
+    assertTrue(simplified.isEmpty());
+  }
+
+  @Test
+  public void testSimplifierStraightLinesAreSimplified() {
+    S2Polygon simplified =
+        simplify("0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0," + "6:1, 5:1, 4:1, 3:1, 2:1, 1:1, 0:1", 0.01);
+    assertEquals(4, simplified.numVertices());
+  }
+
+  @Test
+  public void testSimplifierEdgeSplitInManyPieces() {
+    // nearSquare's right four-point side will be simplified to a vertical line at lng=7.9, that
+    // will cut the 9 teeth of the saw (the edge will therefore be broken into 19 pieces).
+    String saw =
+        "1:1, 1:8, 2:2, 2:8, 3:2, 3:8, 4:2, 4:8, 5:2, 5:8,"
+            + "6:2, 6:8, 7:2, 7:8, 8:2, 8:8, 9:2, 9:8, 10:1";
+    String nearSquare = "0:0, 0:7.9, 1:8.1, 10:8.1, 11:7.9, 11:0";
+    S2Polygon original = makePolygonOrDie(saw + ";" + nearSquare);
+    S2Polygon simplified = simplify(original, 0.21);
+
+    assertTrue(simplified.isValid());
+    assertTrue(maximumDistanceInDegrees(simplified, original, 0) <= 0.11);
+    assertTrue(maximumDistanceInDegrees(original, simplified, 0) <= 0.11);
+    // The resulting polygon's 9 little teeth are very small and disappear due to the
+    // vertex_merge_radius of the polygon builder. There remains nine loops.
+    assertEquals(9, simplified.numLoops());
+  }
+
+  @Test
+  public void testSimplifierEdgesOverlap() {
+    // Two loops, One edge of the second one ([0:1 - 0:2]) is part of an edge of the first one..
+    S2Polygon simplified = simplify("0:0, 0:3, 1:0; 0:1, -1:1, 0:2", 0.01);
+    S2Polygon truePoly = makePolygonOrDie("0:3, 1:0, 0:0, 0:1, -1:1, 0:2");
+    assertTrue(simplified.boundaryApproxEquals(truePoly, S1Angle.radians(1e-15).radians()));
+  }
+
+  /**
+   * Constructs a polygon (presumed to be invalid) from loops constructed from the given points.
+   * Verifies that the S2Polygon constructor throws an AssertionError on the given loops, but does
+   * not when wrapped in {@link S2TestSupport#uncheckedCreate(Supplier)}.
+   *
+   * <p>Checks that the resulting polygon is invalid, with an S2Error having a code that matches one
+   * of the given 'codes'.
+   */
+  private static void checkInvalid(List<List<S2Point>> invalidLoops, Set<S2Error.Code> codes) {
+    // First create a list of loops from the lists of points, and shuffle their order.
+    List<S2Loop> invalidS2Loops = uncheckedLoops(invalidLoops);
+    // Verify that S2Polygon construction from invalid loops throws an AssertionError.
+    // TODO(user): After enabling assertions that polygons are valid, check that the
+    // assertions work by enabling this "assertThrows".
+    // assertThrows(AssertionError.class, () -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+
+    // The same S2Polygon construction succeeds when wrapped in uncheckedCreate().
+    S2Polygon invalidPolygon =
+        uncheckedCreate(() -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+    // Verify that findValidationError() finds the expected problem.
+    checkInvalid(invalidPolygon, codes);
+  }
+
+  /**
+   * Constructs a polygon (presumed to be invalid) from loops constructed from the given points.
+   * Verifies that the S2Polygon constructor throws an AssertionError on the given loops, but does
+   * not when wrapped in {@link S2TestSupport#uncheckedCreate(Supplier)}.
+   *
+   * <p>Checks that the resulting polygon is invalid, with an S2Error having a code that matches the
+   * given 'code'.
+   */
+  private static void checkInvalid(List<List<S2Point>> invalidLoops, S2Error.Code code) {
+    // First create a list of loops from the lists of points, and shuffle their order.
+    List<S2Loop> invalidS2Loops = uncheckedLoops(invalidLoops);
+    // Verify that S2Polygon construction from invalid loops throws an AssertionError.
+    // TODO(user): After enabling assertions that polygons are valid, check that the
+    // assertions work by enabling this "assertThrows".
+    // assertThrows(AssertionError.class, () -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+
+    // The same S2Polygon construction succeeds when wrapped in uncheckedCreate().
+    S2Polygon invalidPolygon =
+        uncheckedCreate(() -> new S2Polygon(new ArrayList<>(invalidS2Loops)));
+    // Verify that findValidationError() finds the expected problem.
+    checkInvalid(invalidPolygon, code);
+  }
+
+  /**
+   * Checks that the given polygon is invalid, with an S2Error having one of the expected 'codes'.
+   */
+  private static void checkInvalid(S2Polygon polygon, Set<S2Error.Code> codes) {
+    ImmutableSet<String> strCodes = codes.stream().map(Enum::toString).collect(toImmutableSet());
+    S2Error error = new S2Error();
+    boolean hasError = polygon.findValidationError(error);
+    assertTrue(
+        "No error found, but expected validation error with one of the codes: '"
+            + strCodes
+            + "'\nfor polygon "
+            + S2TextFormat.toString(polygon),
+        hasError);
+    assertTrue(
+        "Actual Error: '"
+            + error.text()
+            + "' with code "
+            + error.code()
+            + "\n but expected one of the codes: "
+            + strCodes,
+        codes.contains(error.code()));
+  }
+
+  /** Checks that the given polygon is invalid, with an S2Error having the expected 'code'. */
+  private static void checkInvalid(S2Polygon polygon, S2Error.Code code) {
+    S2Error error = new S2Error();
+    boolean hasError = polygon.findValidationError(error);
+    assertTrue(
+        "No error found, but expected validation error with the code: '"
+            + code
+            + "'\nfor polygon "
+            + S2TextFormat.toString(polygon),
+        hasError);
+    assertTrue(
+        "Actual Error: '"
+            + error.text()
+            + "' with code "
+            + error.code()
+            + "\n but expected the code: "
+            + code,
+        code == error.code());
+  }
+
   /**
    * Constructs a polygon (presumed to be invalid) from loops constructed from the given points.
    * Verifies that the S2Polygon constructor throws an AssertionError on the given loops, but does
@@ -669,6 +1790,25 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   /**
+   * Constructs S2Loops from the given lists of S2Points, shuffles those loops, and then constructs
+   * a polygon (presumed to be valid) from those S2Loops. Verifies that the S2Polygon is valid, and
+   * returns it.
+   */
+  private static S2Polygon checkValid(List<List<S2Point>> validLoops) {
+    List<S2Loop> loops = Lists.newArrayList();
+    for (int i = 0; i < validLoops.size(); ++i) {
+      loops.add(new S2Loop(validLoops.get(i)));
+    }
+    Collections.shuffle(loops);
+
+    S2Polygon polygon = new S2Polygon(loops);
+    S2Error error = new S2Error();
+    boolean hasError = polygon.findValidationError(error);
+    assertFalse(error.text(), hasError);
+    return polygon;
+  }
+
+  /**
    * Constructs a List of possibly invalid S2Loops from the given lists of points. The vertices are
    * allowed to not be unit length. Shuffles the order of the resulting loops.
    */
@@ -693,6 +1833,19 @@ public class S2PolygonTest extends GeometryTestCase {
     }
     Collections.shuffle(loops);
     return loops;
+  }
+
+  /** Constructs S2Loops and checks they are valid. */
+  private static List<S2Loop> makeLoops(List<List<S2Point>> loopVertices) {
+    List<S2Loop> result = new ArrayList<>();
+    for (List<S2Point> vertices : loopVertices) {
+      S2Loop loop = new S2Loop(vertices);
+      result.add(loop);
+      S2Error error = new S2Error();
+      boolean invalid = loop.findValidationError(error);
+      assertFalse("Loop " + (result.size() - 1) + ": " + error, invalid);
+    }
+    return result;
   }
 
   @Test
@@ -720,7 +1873,7 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   @Test
-  public void testEncodingSize_snappedPolygon() throws IOException {
+  public void testEncodingSizeSnappedPolygon() throws IOException {
     S2Polygon snapped = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0", S2CellId.MAX_LEVEL);
     byte[] encoded = encode(snapped);
 
@@ -728,48 +1881,19 @@ public class S2PolygonTest extends GeometryTestCase {
     // Polygon:
     //   1 byte for version
     //   1 byte for level
-    //   1 byte for num_loops
+    //   1 byte for numLoops
     // Loops:
     //   5 bytes overhead
     //   8 bytes per vertex
     assertEquals(1 + 1 + 1 + 2 * 5 + 7 * 8, encoded.length);
   }
 
-  @Test
-  public void testOperations() {
-    S2Polygon farSouth = new S2Polygon();
-    farSouth.initToIntersection(farH, southH);
-    checkEqual(farSouth, farHSouthH, 1e-15);
-
-    for (int testNumber = 0; testNumber < testCases.length; testNumber++) {
-      TestCase test = testCases[testNumber];
-      logger.fine("Polygon operation test case " + testNumber);
-      S2Polygon a = makeVerbatimPolygon(test.a);
-      S2Polygon b = makeVerbatimPolygon(test.b);
-      S2Polygon expectedAAndB = makeVerbatimPolygon(test.aAndB);
-      S2Polygon expectedAOrB = makeVerbatimPolygon(test.aOrB);
-      S2Polygon expectedAMinusB = makeVerbatimPolygon(test.aMinusB);
-
-      S2Polygon aAndB = new S2Polygon();
-      S2Polygon aOrB = new S2Polygon();
-      S2Polygon aMinusB = new S2Polygon();
-      aAndB.initToIntersection(a, b);
-      checkEqual(aAndB, expectedAAndB, OPERATIONS_MAX_ERROR);
-      aOrB.initToUnion(a, b);
-      checkEqual(aOrB, expectedAOrB, OPERATIONS_MAX_ERROR);
-      checkUnion(a, b);
-      aMinusB.initToDifference(a, b);
-      checkEqual(aMinusB, expectedAMinusB, OPERATIONS_MAX_ERROR);
-    }
-  }
-
   private void polylineIntersectionSharedEdgeTest(S2Polygon p, int startVertex, int direction) {
-    logger.fine(
-        "Polyline intersection shared edge test start=" + startVertex + " direction=" + direction);
     List<S2Point> points = Lists.newArrayList();
     points.add(p.loop(0).vertex(startVertex));
     points.add(p.loop(0).vertex(startVertex + direction));
     S2Polyline polyline = new S2Polyline(points);
+
     List<S2Polyline> polylines;
     if (direction < 0) {
       polylines = p.intersectWithPolyline(polyline);
@@ -791,18 +1915,24 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   /**
-   * This tests polyline-polyline intersections. It covers the same edge cases as {@code
-   * testOperations} and also adds some extra tests for shared edges.
+   * This tests polyline-polyline intersections with shared edges.
    */
   @Test
-  public void testPolylineIntersection() {
+  public void testPolylineIntersectionSharedEdges() {
     for (int v = 0; v < 3; ++v) {
       polylineIntersectionSharedEdgeTest(cross1, v, 1);
       polylineIntersectionSharedEdgeTest(cross1, v + 1, -1);
       polylineIntersectionSharedEdgeTest(cross1SideHole, v, 1);
       polylineIntersectionSharedEdgeTest(cross1SideHole, v + 1, -1);
     }
+  }
 
+  /**
+   * This tests polyline-polyline intersections. It covers the same edge cases as {@code
+   * testOperations} and also adds some extra tests for shared edges.
+   */
+  @Test
+  public void testPolylineIntersection() {
     // This duplicates some of the tests in testOperations by converting the outline of polygon A to
     // a polyline then intersecting it with the polygon B. It then converts B to a polyline and
     // intersects it with A. It then feeds all of the results into a polygon builder and tests that
@@ -831,7 +1961,16 @@ public class S2PolygonTest extends GeometryTestCase {
               points.add(tmp.loop(l).vertex(v));
             }
           }
-          polylines.addAll(tmp2.intersectWithPolyline(new S2Polyline(points)));
+          S2Polyline polyline = new S2Polyline(points);
+          try {
+            polylines.addAll(tmp2.intersectWithPolyline(polyline));
+          } catch (AssertionError e) {
+            System.err.println("AssertionError " + e.getMessage());
+            System.err.println(" during S2Polygon.intersectWithPolyline(S2Polyline) with");
+            System.err.println(" S2Polygon = " + S2TextFormat.toString(tmp2.index()));
+            System.err.println(" S2Polyline = " + S2TextFormat.toString(polyline));
+            throw e;
+          }
         }
       }
 
@@ -854,18 +1993,42 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   private static void checkEqual(S2Polygon a, S2Polygon b, final double maxError) {
+    checkEqual("", a, b, maxError);
+  }
+
+  private static void checkEqual(String message, S2Polygon a, S2Polygon b, final double maxError) {
     if (a.boundaryApproxEquals(b, maxError)) {
       return;
     }
+    message +=
+        "Expected polygons to be equal: \nA:"
+            + S2TextFormat.toString(a)
+            + "\nB:"
+            + S2TextFormat.toString(b);
+
+    message += "\nBoundaries are not approximately equal. Trying reconstruction...\n";
 
     S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_XOR);
     builder.addPolygon(a);
     S2Polygon a2 = new S2Polygon();
-    assertTrue(builder.assemblePolygon(a2, null));
+    assertTrue(
+        message + "\nFailed to assemble the loops of A into a new polygon.",
+        builder.assemblePolygon(a2, null));
     builder.addPolygon(b);
     S2Polygon b2 = new S2Polygon();
-    assertTrue(builder.assemblePolygon(b2, null));
-    assertTrue(a2.boundaryApproxEquals(b2, maxError));
+    assertTrue(
+        message + "\nFailed to assemble the loops of B into a new polygon.",
+        builder.assemblePolygon(b2, null));
+
+    message +=
+        "\nReconstructed polygons:\nA2:"
+            + S2TextFormat.toString(a2)
+            + "\nB2:"
+            + S2TextFormat.toString(b2);
+
+    assertTrue(
+        message + "\nBoundaries of reconstructed polygons are not approximately equal.",
+        a2.boundaryApproxEquals(b2, maxError));
   }
 
   private static void checkComplementary(S2Polygon a, S2Polygon b) {
@@ -941,10 +2104,10 @@ public class S2PolygonTest extends GeometryTestCase {
    * intersection, and difference operations hold true.
    */
   private static void checkOneDisjointPair(S2Polygon a, S2Polygon b) {
-    assertFalse(a.intersects(b));
-    assertFalse(b.intersects(a));
-    assertEquals(b.isEmpty(), a.contains(b));
-    assertEquals(a.isEmpty(), b.contains(a));
+    assertFalse("Expect disjoint polygons to not intersect", a.intersects(b));
+    assertFalse("Expect disjoint polygons to not intersect", b.intersects(a));
+    assertEquals("Expect disjoint polygon to not contain the other", b.isEmpty(), a.contains(b));
+    assertEquals("Expect disjoint polygon to not contain the other", a.isEmpty(), b.contains(a));
 
     S2Polygon ab = new S2Polygon();
     S2Polygon c = new S2Polygon();
@@ -1073,14 +2236,29 @@ public class S2PolygonTest extends GeometryTestCase {
     checkOneComplementPair(a1, a, b, b1);
     checkOneComplementPair(a, a1, b1, b);
     checkOneComplementPair(a1, a, b1, b);
+
+    // There is a lot of redundancy if we do this test for each complementary pair, so we just do it
+    // once instead.
+    S2Polygon aXorB1 = new S2Polygon();
+    S2Polygon a1XorB = new S2Polygon();
+    aXorB1.initToSymmetricDifference(a, b1);
+    a1XorB.initToSymmetricDifference(a1, b);
+    checkEqual(aXorB1, a1XorB);
   }
 
   private static void checkUnion(S2Polygon a, S2Polygon b) {
+    S2Polygon aCopy = new S2Polygon(a);
+    S2Polygon bCopy = new S2Polygon(b);
+    // Check the copy constructor.
+    checkEqual(a, aCopy);
+    checkEqual(b, bCopy);
+
     S2Polygon c = new S2Polygon();
     c.initToUnion(a, b);
+
     List<S2Polygon> polygons = Lists.newArrayList();
-    polygons.add(new S2Polygon(a));
-    polygons.add(new S2Polygon(b));
+    polygons.add(aCopy);
+    polygons.add(bCopy);
     S2Polygon cUnion = S2Polygon.union(polygons);
     checkEqual(c, cUnion);
   }
@@ -1111,7 +2289,8 @@ public class S2PolygonTest extends GeometryTestCase {
     try {
       checkRelationImpl(a, b, contains, contained, intersects);
     } catch (AssertionError e) {
-      System.err.println("args " + a + ", " + b);
+      System.err.println("S2Polygon a: " + S2TextFormat.toString(a.index));
+      System.err.println("S2Polygon b: " + S2TextFormat.toString(b.index));
       throw e;
     }
   }
@@ -1252,16 +2431,6 @@ public class S2PolygonTest extends GeometryTestCase {
 
   @Test
   public void testCompareTo() {
-    // Polygons with same loops, but in different order:
-    S2Polygon p1 = makePolygon(RECTANGLE1 + RECTANGLE2);
-    S2Polygon p2 = makePolygon(RECTANGLE2 + RECTANGLE1);
-    assertEquals(0, p1.compareTo(p2));
-
-    // Polygons with same loops, but in different order and containing a different number of points.
-    S2Polygon p3 = makePolygon(RECTANGLE1 + TRIANGLE);
-    S2Polygon p4 = makePolygon(TRIANGLE + RECTANGLE1);
-    assertEquals(0, p3.compareTo(p4));
-
     // Polygons with same logical loop (but loop is reordered).
     S2Polygon p5 = makePolygon(TRIANGLE);
     S2Polygon p6 = makePolygon(TRIANGLE_ROT);
@@ -1359,6 +2528,10 @@ public class S2PolygonTest extends GeometryTestCase {
     point = makePoint("0:-3");
     projected = polygon.project(point);
     assertTrue(makePoint("0:-2").aequal(projected, epsilon));
+
+    // Project for full or empty polygons, with no edges, are expected to return the given point.
+    assertTrue(empty.project(point).equalsPoint(point));
+    assertTrue(full.project(point).equalsPoint(point));
   }
 
   @Test
@@ -1382,14 +2555,14 @@ public class S2PolygonTest extends GeometryTestCase {
   @Test
   public void testFastInit() {
     S2LatLngRect bound;
-    Map<S2Loop, List<S2Loop>> nestedLoops = Maps.newHashMap();
-    nestedLoops.put(null, Lists.<S2Loop>newArrayList());
+    IdentityHashMap<S2Loop, List<S2Loop>> nestedLoops = new IdentityHashMap<>();
+    nestedLoops.put(S2Polygon.ROOT, Lists.<S2Loop>newArrayList());
 
     List<S2Point> vertices = Lists.newArrayList();
 
     bound = parseVertices("-2:-2, -3:6, 6:-3", vertices);
     S2Loop loop1 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
-    nestedLoops.get(null).add(loop1);
+    nestedLoops.get(S2Polygon.ROOT).add(loop1);
     nestedLoops.put(loop1, Lists.<S2Loop>newArrayList());
 
     vertices = Lists.newArrayList();
@@ -1409,7 +2582,9 @@ public class S2PolygonTest extends GeometryTestCase {
 
     assertEquals(0, polygon.compareTo(makePolygon(NEAR0 + NEAR2 + NEAR3)));
 
-    assertTrue(polygon.isValid());
+    S2Error error = new S2Error();
+    boolean hasError = polygon.findValidationError(error);
+    assertFalse(error.text(), hasError);
     assertEquals(0, polygon.loop(0).depth());
     assertEquals(1, polygon.loop(1).depth());
     assertEquals(2, polygon.loop(2).depth());
@@ -1418,14 +2593,16 @@ public class S2PolygonTest extends GeometryTestCase {
 
   @Test
   public void testInitToSnappedWithSnapLevel() {
-    S2Polygon polygon = makePolygon("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0");
+    S2Polygon polygon = makePolygonOrDie("0:0, 0:2, 2:0; 0:0, 0:-2, -2:-2, -2:0");
 
     for (int level = 0; level <= S2CellId.MAX_LEVEL; level++) {
       S2Polygon snappedPolygon = new S2Polygon();
       snappedPolygon.initToSnapped(polygon, level);
       assertTrue(snappedPolygon.isValid());
       double cellAngle = MAX_DIAG.getValue(level);
-      S1Angle mergeRadius = S1Angle.radians(cellAngle);
+      S1Angle mergeRadius = S1Angle.min(
+          S2BuilderSnapFunctions.maxSnapRadius(),
+          S1Angle.radians(cellAngle));
       assertTrue(
           "snapped polygon should approx contain original polygon for"
               + "\nsnap level = "
@@ -1438,6 +2615,163 @@ public class S2PolygonTest extends GeometryTestCase {
               + snappedPolygon,
           snappedPolygon.approxContains(polygon, mergeRadius));
     }
+  }
+
+  private static class S2PolygonSimplifierTest {
+    final S2Polygon original;
+    final S2Polygon simplified;
+
+    public S2PolygonSimplifierTest(S2Polygon original, double toleranceInDegrees) {
+      this.original = original;
+      this.simplified = new S2Polygon();
+      this.simplified.initToSimplified(
+          original, new IdentitySnapFunction(S1Angle.degrees(toleranceInDegrees)));
+    }
+
+    public S2PolygonSimplifierTest(String poly, double toleranceInDegrees) {
+      this(makeVerbatimPolygonOrDie(poly), toleranceInDegrees);
+    }
+  }
+
+  @Test
+  public void testInitToSimplifiedNoSimplification() {
+    S2PolygonSimplifierTest s = new S2PolygonSimplifierTest("0:0, 0:20, 20:20, 20:0", 1.0);
+    assertEquals(4, s.simplified.getNumVertices());
+
+    assertExactly(0.0, maximumDistanceInDegrees(s.simplified, s.original, 0));
+    assertExactly(0.0, maximumDistanceInDegrees(s.original, s.simplified, 0));
+  }
+
+  // Here, 10:-2 will be removed and  0:0-20:0 will intersect two edges. (The resulting polygon will
+  // in fact probably have more edges.)
+  @Test
+  public void testInitToSimplifiedSimplifiedLoopSelfIntersects() {
+    S2PolygonSimplifierTest s =
+        new S2PolygonSimplifierTest("0:0, 0:20, 10:-0.1, 20:20, 20:0, 10:-0.2", 0.22);
+
+    // The simplified polygon has the same number of vertices but it should now consists of two
+    // loops rather than one.
+    assertEquals(2, s.simplified.numLoops());
+    assertGreaterOrEqual(0.22, maximumDistanceInDegrees(s.simplified, s.original, 0));
+    assertGreaterOrEqual(0.22, maximumDistanceInDegrees(s.original, s.simplified, 0.22));
+  }
+
+  @Test
+  public void testInitToSimplifiedNoSimplificationManyLoops() {
+    S2PolygonSimplifierTest s =
+        new S2PolygonSimplifierTest(
+            "0:0,    0:1,   1:0;   0:20, 0:21, 1:20; 20:20, 20:21, 21:20; 20:0, 20:1, 21:0", 0.01);
+    assertExactly(0.0, maximumDistanceInDegrees(s.simplified, s.original, 0));
+    assertExactly(0.0, maximumDistanceInDegrees(s.original, s.simplified, 0));
+  }
+
+  @Test
+  public void testInitToSimplifiedTinyLoopDisappears() {
+    S2PolygonSimplifierTest s = new S2PolygonSimplifierTest("0:0, 0:1, 1:1, 1:0", 1.1);
+    assertTrue(s.simplified.isEmpty());
+  }
+
+  // Check that initFromBuilder correctly chooses between an empty or a full polygon when
+  // simplification produces a polygon with no loops.
+  @Test
+  public void initToSimplifiedFullPolygonPredicateTest() {
+    // A narrow rectangle polygon that includes the north pole and extends to the equator. This has
+    // very large bounds but a small area. Simplifying with 10 degree tolerance will collapse
+    // the rectangle to nothing.
+    S2Polygon bigBoundsSmallArea =
+        makePolygonVerbatimOrDie("0:1, 85:1, 85:179, 85:-179, 85:-1, 0:-1");
+    assertGreaterThan(bigBoundsSmallArea.getRectBound().area(), 2 * PI);
+    assertLessThan(bigBoundsSmallArea.getArea(), 1.0);
+
+    S2PolygonSimplifierTest s1 = new S2PolygonSimplifierTest(bigBoundsSmallArea, 10);
+    assertTrue(s1.simplified.isEmpty());
+
+    // A polygon that has both bounds and area > 2* pi because it is a small clockwise loop, i.e.
+    // hole in the sphere. Simplifying with 10 degree tolerance will collapse it to nothing.
+    S2Polygon hole = makePolygonVerbatimOrDie("10:10, 10:8, 12:8, 12:10");
+
+    assertGreaterThan(hole.getRectBound().area(), 2 * PI);
+    assertGreaterThan(hole.getArea(), 2 * PI);
+
+    S2PolygonSimplifierTest s2 = new S2PolygonSimplifierTest(hole, 10);
+    assertTrue(s2.simplified.isFull());
+  }
+
+  @Test
+  public void testInitToSimplifiedStraightLinesAreSimplified() {
+    S2PolygonSimplifierTest s =
+        new S2PolygonSimplifierTest(
+            "0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 6:1, 5:1, 4:1, 3:1, 2:1, 1:1, 0:1", 0.01);
+    assertEquals(4, s.simplified.getNumVertices());
+  }
+
+  @Test
+  public void testInitToSimplifiedEdgeSplitInManyPieces() {
+    // nearSquare's right four-point side will be simplified to a vertical line at lng=7.9, that
+    // will cut the 9 teeth of the saw (the edge will therefore be broken into 19 pieces).
+    String saw =
+        "1:1, 1:8, 2:2, 2:8, 3:2, 3:8, 4:2, 4:8, 5:2, 5:8,"
+            + "6:2, 6:8, 7:2, 7:8, 8:2, 8:8, 9:2, 9:8, 10:1";
+    String nearSquare = "0:0, 0:7.9, 1:8.1, 10:8.1, 11:7.9, 11:0";
+    S2PolygonSimplifierTest s = new S2PolygonSimplifierTest(saw + ";" + nearSquare, 0.21);
+
+    assertTrue(s.simplified.isValid());
+    assertGreaterOrEqual(0.11, maximumDistanceInDegrees(s.simplified, s.original, 0));
+    assertGreaterOrEqual(0.11, maximumDistanceInDegrees(s.original, s.simplified, 0));
+    // The resulting polygon's 9 little teeth are very small and disappear due to the
+    // vertexMergeRadius of the builder. Nine loops remain.
+    assertEquals(9, s.simplified.numLoops());
+  }
+
+  @Test
+  public void testInitToSimplifiedEdgesOverlap() {
+    // Two loops, One edge of the second one ([0:1 - 0:2]) is part of an edge of the first one.
+    S2PolygonSimplifierTest s = new S2PolygonSimplifierTest("0:0, 0:3, 1:0; 0:1, -1:1, 0:2", 0.01);
+    S2Polygon truePoly = makePolygonOrDie("0:3, 1:0, 0:0, 0:1, -1:1, 0:2");
+    assertTrue(s.simplified.boundaryApproxEquals(truePoly, 1e-15));
+  }
+
+  /**
+   * Returns the maximum distance from any vertex of polyA to polyB, that is, the directed Haussdorf
+   * distance of the set of vertices of polyA to the boundary of polyB. Doesn't consider loops from
+   * polyA that have diameter less than minDiameterInDegrees.
+   */
+  private static double maximumDistanceInDegrees(
+      S2Polygon polyA, S2Polygon polyB, double minDiameterInDegrees) {
+    double minDistance = 360;
+    boolean hasBigLoops = false;
+    for (int l = 0; l < polyA.numLoops(); ++l) {
+      S2Loop aLoop = polyA.loop(l);
+      if (loopDiameter(aLoop).degrees() <= minDiameterInDegrees) {
+        continue;
+      }
+      hasBigLoops = true;
+      for (int v = 0; v < aLoop.numVertices(); ++v) {
+        double distance = polyB.getDistance(aLoop.vertex(v)).degrees();
+        if (distance < minDistance) {
+          minDistance = distance;
+        }
+      }
+    }
+    if (hasBigLoops) {
+      return minDistance;
+    } else {
+      return 0.; // As if the first polygon were empty.
+    }
+  }
+
+  /** Returns the diameter of a loop (maximum distance between any two points in the loop). */
+  private static S1Angle loopDiameter(S2Loop loop) {
+    S1Angle diameter = new S1Angle();
+    for (int i = 0; i < loop.numVertices(); ++i) {
+      S2Point testPoint = loop.vertex(i);
+      for (int j = i + 1; j < loop.numVertices(); ++j) {
+        diameter =
+            S1Angle.max(
+                diameter, S2EdgeUtil.getDistance(testPoint, loop.vertex(j), loop.vertex(j + 1)));
+      }
+    }
+    return diameter;
   }
 
   @Test
@@ -1460,29 +2794,128 @@ public class S2PolygonTest extends GeometryTestCase {
   public void testInitToSimplifiedInCellPointsOnCellBoundaryKept() {
     S2CellId cellId = S2CellId.fromToken("89c25c");
     S2Cell cell = new S2Cell(cellId);
-    S2Polygon loop = new S2Polygon(makeCellLoop(cell, "0.1:0, 0.2:0, 0.2:0.5"));
-    S1Angle tolerance = S1Angle.radians(loop.loop(0).vertex(0).angle(loop.loop(0).vertex(1)) * 1.1);
-    S2Polygon simplifiedLoop = new S2Polygon();
-    simplifiedLoop.initToSimplified(loop, tolerance, false);
-    assertTrue(simplifiedLoop.isEmpty());
-    S2Polygon simplifiedLoopInCell = new S2Polygon();
-    simplifiedLoopInCell.initToSimplifiedInCell(loop, cell, tolerance);
-    assertTrue(loop.boundaryApproxEquals(simplifiedLoopInCell, tolerance.radians()));
-    assertEquals(3, simplifiedLoopInCell.getNumVertices());
-    assertEquals(-1, simplifiedLoop.getSnapLevel());
+    S2Polygon polygon = makeCellPolygon(cell, "0.1:0, 0.2:0, 0.2:0.5");
+    double angle = polygon.loop(0).vertex(0).angle(polygon.loop(0).vertex(1));
+    S1Angle tolerance = S1Angle.radians(angle * 1.1);
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplified(polygon, tolerance, false);
+    assertTrue(simplified.isEmpty());
+
+    S2Polygon simplifiedInCell = new S2Polygon();
+    simplifiedInCell.initToSimplifiedInCell(polygon, cell, tolerance);
+
+    assertTrue(simplifiedInCell.boundaryEquals(polygon));
+    assertEquals(3, simplifiedInCell.getNumVertices());
+    assertEquals(-1, simplifiedInCell.getSnapLevel());
   }
 
   @Test
   public void testInitToSimplifiedInCellPointsInsideCellSimplified() {
     S2CellId cellId = S2CellId.fromToken("89c25c");
     S2Cell cell = new S2Cell(cellId);
-    S2Polygon loop = new S2Polygon(makeCellLoop(cell, "0.1:0, 0.2:0, 0.2:0.5, 0.2:0.8"));
+    S2Polygon loop = makeCellPolygon(cell, "0.3:0, 0.4:0, 0.4:0.5, 0.4:0.8, 0.2:0.8");
     S1Angle tolerance = S1Angle.radians(loop.loop(0).vertex(0).angle(loop.loop(0).vertex(1)) * 1.1);
     S2Polygon simplifiedLoop = new S2Polygon();
     simplifiedLoop.initToSimplifiedInCell(loop, cell, tolerance);
     assertTrue(loop.boundaryNear(simplifiedLoop, 1e-15));
-    assertEquals(3, simplifiedLoop.getNumVertices());
+    assertEquals(4, simplifiedLoop.getNumVertices());
     assertEquals(-1, simplifiedLoop.getSnapLevel());
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellCellCornerKept() {
+    S2Cell cell = new S2Cell(S2CellId.fromToken("00001"));
+    S2Polygon input = makeCellPolygon(cell, "1:0, 1:0.05, 0.99:0");
+    S1Angle tolerance = new S1Angle(cell.getVertex(0), cell.getVertex(1)).mul(0.02);
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplifiedInCell(input, cell, tolerance);
+    assertTrue(simplified.boundaryNear(input, 1e-15));
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellNarrowStripRemoved() {
+    S2Cell cell = new S2Cell(S2CellId.fromToken("00001"));
+    S2Polygon input = makeCellPolygon(cell, "0.9:0, 0.91:0, 0.91:1, 0.9:1");
+    S1Angle tolerance = new S1Angle(cell.getVertex(0), cell.getVertex(1)).mul(0.02);
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplifiedInCell(input, cell, tolerance);
+    assertTrue(simplified.isEmpty());
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellNarrowGapRemoved() {
+    S2Cell cell = new S2Cell(S2CellId.fromToken("00001"));
+    S2Polygon input =
+        makeCellPolygon(cell, "0.7:0, 0.75:0, 0.75:1, 0.7:1", "0.76:0, 0.8:0, 0.8:1, 0.76:1");
+    S2Polygon expected = makeCellPolygon(cell, "0.7:0, 0.8:0, 0.8:1, 0.7:1");
+    S1Angle tolerance = new S1Angle(cell.getVertex(0), cell.getVertex(1)).mul(0.02);
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplifiedInCell(input, cell, tolerance);
+    assertTrue(simplified.boundaryNear(expected, 1e-15));
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellCloselySpacedEdgeVerticesKept() {
+    S2Cell cell = new S2Cell(S2CellId.fromToken("00001"));
+    S2Polygon input = makeCellPolygon(cell, "0:0.303, 0:0.302, 0:0.301, 0:0.3, 0.1:0.3, 0.1:0.4");
+    S1Angle tolerance = new S1Angle(cell.getVertex(0), cell.getVertex(1)).mul(0.02);
+    S2Polygon simplified = new S2Polygon();
+    simplified.initToSimplifiedInCell(input, cell, tolerance);
+    assertTrue(simplified.boundaryApproxEquals(input, 1e-15));
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellPolylineAssemblyBug() {
+    S2Cell cell = new S2Cell(S2CellId.fromToken("5701"));
+    S2Polygon polygon =
+        makePolygonOrDie(
+            "55.8699252:-163.9412145, " // South-west corner of 5701
+                + "54.7672352:-166.7579678, " // North-east corner of 5701
+                /* Offending part: a tiny triangle near south-east corner */
+                + "54.7109214:-164.6376338, " // forced vertex, on edge 4
+                + "54.7140193:-164.6398404, "
+                + "54.7113202:-164.6374015"); // forced vertex, on edge 4
+    S1Angle tolerance = S1Angle.radians(2.138358e-05); // 136.235m
+    S1Angle maxDist = S1Angle.radians(2.821947e-09); // 18mm
+    S2Polygon simplifiedInCell = new S2Polygon();
+    simplifiedInCell.initToSimplifiedInCell(polygon, cell, tolerance, maxDist);
+    assertFalse(simplifiedInCell.isEmpty());
+  }
+
+  @Test
+  public void testInitToSimplifiedInCellInteriorEdgesSnappedToBoundary() {
+    S2Polygon polygon =
+        makePolygonOrDie(
+            "37.8011672:-122.3247322, 37.8011648:-122.3247399, "
+                + "37.8011647:-122.3247403, 37.8011646:-122.3247408, "
+                + "37.8011645:-122.3247411, 37.8011633:-122.3247449, "
+                + "37.8011621:-122.3247334");
+    S2Cell cell = new S2Cell(S2CellId.fromDebugString("4/001013300"));
+    S1Angle snapRadius = metersToAngle(1.0);
+    S1Angle boundaryTolerance =
+        S1Angle.radians(0.5 * S2Projections.MAX_WIDTH.getValue(S2CellId.MAX_LEVEL - 1))
+            .add(IntLatLngSnapFunction.minSnapRadiusForExponent(7));
+    S2Polygon simplifiedPolygon = new S2Polygon();
+    // simplifiedPolygon.set_s2debug_override(S2Debug::DISABLE);
+    simplifiedPolygon.initToSimplifiedInCell(polygon, cell, snapRadius, boundaryTolerance);
+    S2Error error = new S2Error();
+    boolean invalid = simplifiedPolygon.findValidationError(error);
+    assertFalse(error.text(), invalid);
+  }
+
+  @Test
+  public void testInitToSimplifiedMaxVertices() {
+    for (int n = 4; n <= 1024; n *= 2) {
+      S2Polygon p = new S2Polygon(S2Loop.makeRegularLoop(S2Point.X_POS, S1Angle.degrees(1), n));
+      S2Polygon simplified = p.simplify(24);
+      assertLessOrEqual(simplified.getNumVertices(), 24);
+      int level = simplified.getSnapLevel();
+      assertEquals(n <= 24, level < 0);
+      if (level >= 0) {
+        S1Angle r = level < 0 ? S1Angle.ZERO : new S2CellIdSnapFunction(level).snapRadius();
+        assertTrue(simplified.boundaryNear(p, r.radians()));
+      }
+    }
   }
 
   /**
@@ -1497,12 +2930,12 @@ public class S2PolygonTest extends GeometryTestCase {
       S2CellId bigCell = data.getRandomCellId(data.uniform(S2CellId.MAX_LEVEL));
       // Get all neighbors at some smaller level.
       int smallLevel =
-          bigCell.level() + data.uniform(min(16, S2CellId.MAX_LEVEL - bigCell.level()));
+          data.uniformInt(bigCell.level(), min(bigCell.level() + 16, S2CellId.MAX_LEVEL));
       List<S2CellId> neighbors = new ArrayList<>();
       bigCell.getAllNeighbors(smallLevel, neighbors);
       // Pick one at random.
       S2CellId smallCell = neighbors.get(data.uniform(neighbors.size()));
-      // If it's diagonally adjacent, bail out if the random pair isn't arranged as desired.
+      // If it's diagonally adjacent, bail out.
       S2CellId[] edgeNeighbors = new S2CellId[4];
       bigCell.getEdgeNeighbors(edgeNeighbors);
       boolean diagonal = true;
@@ -1516,14 +2949,13 @@ public class S2PolygonTest extends GeometryTestCase {
       }
 
       S2CellUnion cellUnion = new S2CellUnion();
-      cellUnion.cellIds().add(bigCell);
-      cellUnion.cellIds().add(smallCell);
+      cellUnion.initFromIds(ImmutableList.of(bigCell.id(), smallCell.id()));
       assertEquals(2, cellUnion.size());
       S2Polygon poly = S2Polygon.fromCellUnionBorder(cellUnion);
       assertEquals(1, poly.numLoops());
 
       // If the conversion were perfect we could test containment, but due to rounding the polygon
-      // won't always exactly contain both cells.  We can at least test intersection.
+      // won't always exactly contain both cells. We can at least test intersection.
       assertTrue(poly.mayIntersect(new S2Cell(bigCell)));
       assertTrue(poly.mayIntersect(new S2Cell(smallCell)));
     }
@@ -1544,28 +2976,30 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   /**
-   * Creates a loop from a comma separated list of u:v coordinates relative to a cell. The loop
-   * "0:0, 1:0, 1:1, 0:1" is counter-clockwise.
+   * Creates a polygon from multiple loops specified as comma separated lists of u:v coordinates
+   * relative to a cell.
    */
-  private static S2Polygon makeCellLoop(S2Cell cell, String str) {
-    S2Point[] vertices = {
-      cell.getVertex(0), cell.getVertex(1), cell.getVertex(2), cell.getVertex(3)
-    };
-    List<S2Point> loopVertices = Lists.newArrayList();
-    for (String p : Splitter.on(",").split(str)) {
-      Iterator<String> coords = Splitter.on(":").trimResults().split(p).iterator();
-      double u = Double.parseDouble(coords.next());
-      double v = Double.parseDouble(coords.next());
-      assertFalse(coords.hasNext());
-      loopVertices.add(
-          S2Point.normalize(
-              interp(v, interp(u, vertices[0], vertices[1]), interp(u, vertices[2], vertices[3]))));
-    }
-    return new S2Polygon(new S2Loop(loopVertices));
-  }
+  private static S2Polygon makeCellPolygon(S2Cell cell, String... strs) {
+    List<S2Loop> loops = new ArrayList<>();
+    R2Rect uv = cell.getBoundUV();
 
-  private static S2Point interp(double t, S2Point a, S2Point b) {
-    return a.mul(1 - t).add(b.mul(t));
+    for (String str : strs) {
+      List<S2LatLng> points = S2TextFormat.parseLatLngsOrDie(str); // Actually u/vs, not lat/lngs
+      List<S2Point> loopVertices = Lists.newArrayList();
+      for (S2LatLng p : points) {
+        double u = p.latDegrees();
+        double v = p.lngDegrees();
+        loopVertices.add(
+            S2Point.normalize(
+                S2Projections.faceUvToXyz(
+                    cell.face(),
+                    uv.x().lo() * (1 - u) + uv.x().hi() * u,
+                    uv.y().lo() * (1 - v) + uv.y().hi() * v)));
+      }
+      loops.add(new S2Loop(loopVertices));
+    }
+
+    return new S2Polygon(loops);
   }
 
   /**
@@ -1577,7 +3011,7 @@ public class S2PolygonTest extends GeometryTestCase {
   public void testDuplicatePointClipping() {
     S2Polygon invalid = uncheckedCreate(() -> makePolygonOrDie("0:0, 0:0, 0:4, 4:4, 4:0"));
     S2Polygon fixed = new S2Polygon();
-    fixed.initToIntersection(invalid, invalid);
+    fixed.initToIntersectionOld(invalid, invalid);
     S2Polygon valid = makePolygon("0:0, 0:4, 4:4, 4:0");
     assertEquals(valid, fixed);
   }
@@ -1618,19 +3052,40 @@ public class S2PolygonTest extends GeometryTestCase {
     splitAndAssemble(farH3210);
   }
 
+  @SuppressWarnings("FloatingPointLiteralPrecision") // To be identical to the C++
+  @Test
+  public void testUnionWithAmbgiuousCrossings() {
+    ImmutableList<S2Point> aVertices =
+        ImmutableList.of(
+            p(0.044856812877680216, -0.80679210859571904, 0.5891301722422051),
+            p(0.044851868273159699, -0.80679240802900054, 0.5891301386444033),
+            p(0.044854246527738666, -0.80679240292188514, 0.58912996457145106));
+    ImmutableList<S2Point> bVertices =
+        ImmutableList.of(
+            p(0.044849715793028468, -0.80679253837178111, 0.58913012401412856),
+            p(0.044855344598821352, -0.80679219751320641, 0.589130162266992),
+            p(0.044854017712818696, -0.80679210327223405, 0.58913039235179754));
+    S2Polygon a = new S2Polygon(new S2Loop(aVertices));
+    S2Polygon b = new S2Polygon(new S2Loop(bVertices));
+    S2Polygon c = new S2Polygon();
+    c.initToUnion(a, b);
+    assertFalse(c.isEmpty());
+  }
+
   private void splitAndAssemble(S2Polygon polygon) {
     S2PolygonBuilder builder = new S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_XOR);
     S2Polygon expected = new S2Polygon();
     builder.addPolygon(polygon);
     assertTrue(builder.assemblePolygon(expected, null));
+    checkEqual(polygon, expected);
 
     for (int iter = 0; iter < 10; ++iter) {
       // Compute the minimum level such that the polygon's bounding cap is guaranteed to be cut.
       double diameter = 2 * polygon.getCapBound().angle().radians();
-      int minLevel = MAX_DIAG.getMinLevel(diameter);
+      int minLevel = MAX_WIDTH.getMinLevel(diameter);
 
-      // TODO(user): Choose a level that will have up to 256 cells in the covering.
-      int level = minLevel + data.random(4);
+      // Now choose a level that has up to 500 cells in the covering.
+      int level = minLevel + data.random(6);
       S2RegionCoverer coverer =
           S2RegionCoverer.builder()
               .setMinLevel(minLevel)
@@ -1668,14 +3123,12 @@ public class S2PolygonTest extends GeometryTestCase {
         c.initToUnion(a, b);
         pieces.add(c);
         logger.fine(
-            "\nJoining piece a: "
-                + a
+            "\nSplitAndAssemble Joined piece a: "
+                + S2TextFormat.toString(a)
                 + "\n With piece b: "
-                + b
+                + S2TextFormat.toString(b)
                 + "\n To get piece c: "
-                + c
-                + " at iteration "
-                + iter);
+                + S2TextFormat.toString(c));
       }
       S2Polygon result = pieces.get(0);
 
@@ -1779,32 +3232,28 @@ public class S2PolygonTest extends GeometryTestCase {
     assertEquals(2, shape.dimension());
   }
 
+  /** Verify that polygons remove their empty loops during construction. */
   @Test
   public void testEmptyLoopsRemoved() throws IOException {
-    // Include an invalid loop in the following tests that appears to be empty but really isn't.
-    S2Loop invalid = new S2Loop(ImmutableList.of(S2Point.X_POS));
-    assertTrue(invalid.isEmpty());
-    assertFalse(S2Polygon.literalEmpty(invalid));
-    assertEquals(0, farH.loop(0).depth());
+    for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
+      int numLoops = data.uniformInt(1, 6);
+      List<List<S2Point>> loops = getConcentricLoops(numLoops, /* minVertices= */ 3);
 
-    // Verify that polygons remove their empty loops during construction.
-    // A single empty loop is removed.
-    assertEquals(0, new S2Polygon(S2Loop.empty()).numLoops());
-    // Multiple empty loops are removed, leaving the other loops unchanged.
-    List<S2Loop> loops = ImmutableList.of(
-        S2Loop.empty(),
-        invalid,
-        S2Loop.full(),
-        S2Loop.empty(),
-        farH.loop(0));
-    // This isn't a valid polygon so uncheckedCreate() is needed. Note that the farH.loop(0) loop is
-    // modified to have depth 1 when it is built into the polygon.
-    S2Polygon invalidPolygon = uncheckedCreate(() -> new S2Polygon(new ArrayList<>(loops)));
-    assertEquals(
-        ImmutableSet.of(invalid, S2Loop.full(), farH.loop(0)),
-        ImmutableSet.copyOf(invalidPolygon.getLoops()));
-    assertEquals(1, farH.loop(0).depth());
+      // Insert one or more empty loops into the list at random positions, which should be ignored.
+      int nEmptyLoops = data.uniformInt(1, 6);
+      for (int j = 0; j < nEmptyLoops; ++j) {
+        int insertPos = data.uniformInt(0, loops.size());
+        loops.add(insertPos, S2Loop.empty().vertices());
+      }
 
+      S2Polygon polygon = new S2Polygon(uncheckedLoops(loops));
+      assertTrue(polygon.isValid());
+      assertEquals(numLoops, polygon.numLoops());
+    }
+  }
+
+  @Test
+  public void testEmptyLoopsRemovedDuringDecoding() throws IOException {
     // Verify that polygons remove serialized canonical empty loops during decoding. Note that
     // S2Polygon.decode guarantees it will not return an invalid polygon, so other kinds of invalid
     // loops cannot be included in this test. That includes having a full loop along with other
@@ -1898,7 +3347,9 @@ public class S2PolygonTest extends GeometryTestCase {
   public void testInitRecursion() {
     String loop = "-18.84:-40.96, -18.93:-40.96, -18.93:-40.86, -18.84:-40.86";
     S2Polygon duplicateLoops = uncheckedCreate(() -> makePolygonOrDie(loop + "; " + loop));
-    checkInvalid(duplicateLoops, "POLYGON_LOOPS_SHARE_EDGE");
+    // This could be POLYGON_LOOPS_SHARE_EDGE, but S2ValidQuery checks for duplicate edges by cell
+    // without tracking which loops own the edges, and categorizes it as OVERLAPPING_GEOMETRY.
+    checkInvalid(duplicateLoops, S2Error.Code.OVERLAPPING_GEOMETRY);
   }
 
   /** Verifies a bug in S2ShapeIndex has been fixed. */
@@ -1913,7 +3364,7 @@ public class S2PolygonTest extends GeometryTestCase {
   @Test
   public void testEmptyLoopCentroid() {
     S2Polygon polygon = new S2Polygon(S2Loop.empty());
-    assertEquals(polygon.getCentroid(), S2Point.ORIGIN);
+    assertEquals(polygon.getCentroid(), S2Point.ZERO);
   }
 
   @Test
@@ -1971,12 +3422,13 @@ public class S2PolygonTest extends GeometryTestCase {
 
   @Test
   public void testEncodeDecodeCorruptLossless() {
-    try {
-      S2Polygon.decode(new ByteArrayInputStream(BaseEncoding.base16().decode("0101FFFFFF")));
-      fail();
-    } catch (IOException e) {
-      assertEquals("EOF", e.getMessage());
-    }
+    IOException e =
+        assertThrows(
+            IOException.class,
+            () ->
+                S2Polygon.decode(
+                    new ByteArrayInputStream(BaseEncoding.base16().decode("0101FFFFFF"))));
+    assertEquals("EOF", e.getMessage());
   }
 
   @Test
@@ -1998,6 +3450,7 @@ public class S2PolygonTest extends GeometryTestCase {
 
   @Test
   public void testDecodeEncodeTwoLoopsLossless() throws IOException {
+    // Two counter-clockwise loops, one nested inside the other.
     String encodedBytesHexString =
         "010101020000000108000000D44A8442C3F9EF3F7EDA2AB341DC913F27DCF7C958DEA1BFB4"
             + "825F3C81FDEF3F27DCF7C958DE913F1EDD892B0BDF91BFB4825F3C81FDEF3F27DCF7C958DE"
@@ -2038,5 +3491,9 @@ public class S2PolygonTest extends GeometryTestCase {
                 new S2Point(6, 7, 8).normalize()));
     doSerializationTest(
         new S2Polygon(Lists.newArrayList(loop1, loop2)), Ordering.<S2Polygon>natural());
+  }
+
+  private static S2Point p(double x, double y, double z) {
+    return new S2Point(x, y, z);
   }
 }

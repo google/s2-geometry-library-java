@@ -39,6 +39,7 @@ import com.google.common.geometry.S2BuilderUtil.IndexedLayer;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -2628,5 +2629,65 @@ public final class S2BooleanOperationTest extends GeometryTestCase {
     S2ShapeIndex b = makeIndexOrDie(bStr);
     S2ShapeIndex expected = makeIndexOrDie(expectedStr);
     expectResult(opType, builder, a, b, expected);
+  }
+
+  // This used to crash, as described in comment #3 on b/407842119
+  @Test
+  public void testDissolveRegression() {
+    // A 13 edge single line scribble across the polygon loops.
+    S2ShapeIndex pointsAndLinesIndex =
+        S2TextFormat.makeIndexOrDie(
+            "# "
+                + "  -39.0329729033509:135.029055987371, -39.006555061068:135.025411886111,"
+                + " -39.0335186080345:135.008328395693, -39.0010516583349:135.033361416367,"
+                + " -39.040013198064:135.034062216659, -39.0347377044487:135.048781590026,"
+                + " -39.0387048770585:135.037934012991, -39.0130769779637:135.048055978205,"
+                + " -39.0057599459958:134.998902372611, -39.0401417638199:135.043644033191,"
+                + " -39.0475824239056:135.037502945469, -39.0344501374733:135.018973438999,"
+                + " -38.9976152401773:135.006639145402, -39.0406103224914:135.025118895254"
+                + " #");
+    // A single polygon with three nested loops of three edges each.
+    S2ShapeIndex polygonIndex =
+        S2TextFormat.makeIndexOrDie(
+            "# # -39.0093951082975:134.978394915587, -39.059653460008:135.013108406395,"
+                + " -39.0111604245516:135.05176055349; -39.0131085425476:135.047094046527,"
+                + " -39.0555392996262:135.013272584011, -39.0115638458088:134.982897245322;"
+                + " -39.0137324104193:134.987399851501, -39.051425138717:135.01343674251,"
+                + " -39.0150564747747:135.042427282141");
+
+    // The resulting polygon layer will contain at most one polygon.
+    S2BooleanOperation.Builder opBuilder = new S2BooleanOperation.Builder();
+    opBuilder.setSnapFunction(new IdentitySnapFunction(S1Angle.ZERO));
+    opBuilder.setPolygonModel(S2BooleanOperation.PolygonModel.CLOSED);
+    opBuilder.setPolylineModel(S2BooleanOperation.PolylineModel.CLOSED);
+    opBuilder.setPolylineLoopsHaveBoundaries(false);
+    opBuilder.setSplitAllCrossingPolylineEdges(true);
+
+    S2PolylineVectorLayer.Options polylineOptions =
+        new S2PolylineVectorLayer.Options()
+            .setEdgeType(S2Builder.EdgeType.UNDIRECTED)
+            .setPolylineType(S2BuilderGraph.PolylineType.WALK)
+            .setDuplicateEdges(S2Builder.GraphOptions.DuplicateEdges.MERGE);
+    S2ShapeIndex outputIndex = new S2ShapeIndex();
+
+    S2ClosedSetNormalizer normalizer =
+        new S2ClosedSetNormalizer(
+            new IndexedLayer<>(outputIndex, new S2PointVectorLayer()),
+            new IndexedLayer<>(outputIndex, new S2PolylineVectorLayer(polylineOptions)),
+            new IndexedLayer<>(outputIndex, new S2PolygonLayer()));
+
+    S2BooleanOperation op =
+        opBuilder.build(
+            S2BooleanOperation.OpType.UNION,
+            normalizer.pointLayer(),
+            normalizer.lineLayer(),
+            normalizer.polygonLayer());
+
+    S2Error error = new S2Error();
+    boolean ok = op.build(pointsAndLinesIndex, polygonIndex, error);
+    if (!ok || !error.ok()) {
+      Assert.fail("S2BooleanOperation failed: " + error);
+    }
+    System.err.println("Dissolved result\n" + S2TextFormat.toString(outputIndex));
   }
 }

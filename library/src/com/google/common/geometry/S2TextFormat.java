@@ -37,6 +37,7 @@ import org.jspecify.annotations.Nullable;
  * readable format is *not* designed to preserve the full precision of the original object, so it
  * should not be used for data storage.
  */
+@SuppressWarnings("UngroupedOverloads")
 public final class S2TextFormat {
 
   /**
@@ -211,6 +212,23 @@ public final class S2TextFormat {
     }
     return latlngs.get(0);
   }
+
+  /**
+   * Parses the given String into a list of S2Edges. Edges are separated by ';' and consist of two
+   * lat/lng vertices separated by commas.
+   */
+  public static List<S2Edge> makeEdgesOrDie(String str) throws IllegalArgumentException {
+    List<S2Edge> edges = new ArrayList<>();
+    for (String edgeStr : splitString(str, ";")) {
+      List<S2Point> latlngs = parsePointsOrDie(edgeStr);
+      if (latlngs.size() != 2) {
+        throw new IllegalArgumentException("Edge string with size != 2");
+      }
+      edges.add(new S2Edge(latlngs.get(0), latlngs.get(1)));
+    }
+    return edges;
+  }
+
 
   /**
    * Given a string in the same format as {@link #parseLatLngs(String)}, returns the minimal
@@ -488,12 +506,20 @@ public final class S2TextFormat {
     return makePolygon(str, -1);
   }
 
+
   /**
    * As {@link #makePolygonOrDie(String, int)}, above but does not throw IllegalArgumentException on
    * invalid input. Returns null if conversion is unsuccessful.
    */
   public static @Nullable S2Polygon makePolygon(String str, int level) {
     return internalMakePolygon(str, true, level);
+  }
+
+  /**
+   * As {@link #makePolygonOrDie(String)} above, but does not normalize loops.
+   */
+  public static @Nullable S2Polygon makePolygonVerbatimOrDie(String str) {
+    return internalMakePolygon(str, false, -1);
   }
 
   /**
@@ -704,10 +730,18 @@ public final class S2TextFormat {
   /** Convert an S2Polyline to the S2TextFormat string representation documented above. */
   public static String toString(S2Polyline polyline) {
     StringBuilder out = new StringBuilder();
+    appendPolyline(polyline, out);
+    return out.toString();
+  }
+
+  /**
+   * Appends an S2Polyline to StringBuilder, using the S2TextFormat string representation documented
+   * above.
+   */
+  public static void appendPolyline(S2Polyline polyline, StringBuilder out) {
     if (polyline.numVertices() > 0) {
       appendVertices(polyline.vertices(), out);
     }
-    return out.toString();
   }
 
   /**
@@ -722,9 +756,34 @@ public final class S2TextFormat {
     return out.toString();
   }
 
-  /** Convert an S2Polygon to the S2TextFormat string representation documented above. */
-  public static String toString(S2Polygon polygon) {
-    return toString(polygon, ";\n");
+  /**
+   * Convert a list of S2Polylines to the S2TextFormat string representation documented above.
+   */
+  public static String toStringPolylines(List<S2Polyline> polylines) {
+    StringBuilder out = new StringBuilder();
+    Iterator<S2Polyline> i = polylines.iterator();
+    while (i.hasNext()) {
+      appendPolyline(i.next(), out);
+      if (i.hasNext()) {
+        out.append("|\n ");
+      }
+    }
+    return out.toString();
+  }
+
+  /**
+   * Convert a list of S2Polygons to the S2TextFormat string representation documented above.
+   */
+  public static String toStringPolygons(List<S2Polygon> polygons) {
+    StringBuilder out = new StringBuilder();
+    Iterator<S2Polygon> i = polygons.iterator();
+    while (i.hasNext()) {
+      appendPolygon(i.next(), out);
+      if (i.hasNext()) {
+        out.append("|\n ");
+      }
+    }
+    return out.toString();
   }
 
   /**
@@ -733,19 +792,41 @@ public final class S2TextFormat {
    * "full" respectively.
    */
   public static String toString(S2Polygon polygon, String loopSeparator) {
-    if (polygon.isEmpty()) {
-      return "empty";
-    } else if (polygon.isFull()) {
-      return "full";
-    }
     StringBuilder out = new StringBuilder();
-    for (int i = 0; i < polygon.numLoops(); ++i) {
-      if (i > 0) {
-        out.append(loopSeparator);
-      }
-      appendVertices(polygon.loop(i).vertices(), out);
-    }
+    appendPolygon(polygon, loopSeparator, out);
     return out.toString();
+  }
+
+  /** Convert an S2Polygon to the S2TextFormat string representation documented above. */
+  public static String toString(S2Polygon polygon) {
+    return toString(polygon, ";\n");
+  }
+
+  /**
+   * Appends an S2Polygon to the given StringBuilder, using the S2TextFormat string representation
+   * documented above.
+   */
+  public static void appendPolygon(S2Polygon polygon, StringBuilder out) {
+    appendPolygon(polygon, ";\n", out);
+  }
+
+  /**
+   * Appends an S2Polygon to the given StringBuilder, using the given loopSeparator between each
+   * loop. Empty and Full polygons are represented as "empty" and "full" respectively.
+   */
+  public static void appendPolygon(S2Polygon polygon, String loopSeparator, StringBuilder out) {
+    if (polygon.isEmpty()) {
+      out.append("empty");
+    } else if (polygon.isFull()) {
+      out.append("full");
+    } else {
+      for (int i = 0; i < polygon.numLoops(); ++i) {
+        if (i > 0) {
+          out.append(loopSeparator);
+        }
+        appendVertices(polygon.loop(i).vertices(), out);
+      }
+    }
   }
 
   /** Convert an S2LaxPolylineShape to the S2TextFormat string representation documented above. */
@@ -795,7 +876,6 @@ public final class S2TextFormat {
    */
   public static String toString(S2ShapeIndex index) {
     StringBuilder out = new StringBuilder();
-    MutableEdge edge = new MutableEdge();
 
     for (int dim = 0; dim < 3; ++dim) {
       if (dim > 0) {
@@ -807,32 +887,62 @@ public final class S2TextFormat {
           continue;
         }
         out.append((count > 0) ? " | " : (dim > 0) ? " " : "");
-        for (int i = 0; i < shape.numChains(); ++i, ++count) {
-          if (i > 0) {
-            out.append((dim == 2) ? "; " : " | ");
-          }
-          if (shape.getChainLength(i) == 0) {
-            out.append("full");
-          } else {
-            shape.getChainEdge(i, 0, edge);
-            appendVertex(edge.getStart(), out);
-          }
-          int limit = shape.getChainLength(i);
-          if (dim != 1) {
-            --limit;
-          }
-          for (int edgeOffset = 0; edgeOffset < limit; ++edgeOffset) {
-            out.append(", ");
-            shape.getChainEdge(i, edgeOffset, edge);
-            appendVertex(edge.getEnd(), out);
-          }
-        }
+        count += appendShape(out, shape);
       }
       // Example output: "# #", "0:0 # #", "# # 0:0, 0:1, 1:0"
       if (dim == 1 || (dim == 0 && count > 0)) {
         out.append(" ");
       }
     }
+    return out.toString();
+  }
+
+  /**
+   * Appends the S2TextFormat representation of the given S2Shape to the given StringBuilder.
+   * If the shape's dimension is 2, chains are separated by ';', otherwise they are separated by '|'.
+   * Returns the number of chains in the shape.
+   */
+  @CanIgnoreReturnValue
+  public static int appendShape(StringBuilder out, S2Shape shape) {
+    MutableEdge edge = new MutableEdge();
+    int dimension = shape.dimension();
+
+    for (int i = 0; i < shape.numChains(); ++i) {
+      if (i > 0) {
+        out.append((dimension == 2) ? "; " : " | ");
+      }
+      if (shape.getChainLength(i) == 0) {
+        out.append("full");
+      } else {
+        shape.getChainEdge(i, 0, edge);
+        appendVertex(edge.getStart(), out);
+      }
+      int limit = shape.getChainLength(i);
+      if (dimension != 1) {
+        --limit;
+      }
+      for (int edgeOffset = 0; edgeOffset < limit; ++edgeOffset) {
+        out.append(", ");
+        shape.getChainEdge(i, edgeOffset, edge);
+        appendVertex(edge.getEnd(), out);
+      }
+    }
+    return shape.numChains();
+  }
+
+  /**
+   * Returns a S2TextFormat representation of the given S2Shape, preceded by its concrete type,
+   * dimension, and number of chains.
+   */
+  public static String toString(S2Shape shape) {
+    StringBuilder out = new StringBuilder();
+    out.append("S2Shape of type '")
+        .append(shape.getClass().getSimpleName())
+        .append("', dimension ")
+        .append(shape.dimension())
+        .append(", ").append(shape.numChains()).append(" chains: ");
+
+    appendShape(out, shape);
     return out.toString();
   }
 
@@ -852,7 +962,7 @@ public final class S2TextFormat {
     }
     sb.append("Edges: \n");
     for (int edgeId = 0; edgeId < graph.numEdges(); ++edgeId) {
-      int setId = graph.inputEdgeIdSetIds().get(edgeId);
+      int setId = graph.inputEdgeIdSetIds().getInt(edgeId);
       sb.append("  EdgeId ")
           .append(edgeId)
           .append(" is edge (")
@@ -870,10 +980,12 @@ public final class S2TextFormat {
   /**
    * Summarizes some key information about the given index: for each shape, the dimension, the
    * number of edges and chains, and for each chain the chainStart and length. Useful for debugging.
+   *
+   * <p>If "withEdges" is true, then each edge of each shape is printed.
    */
-  public static String summarizeIndex(S2ShapeIndex index) {
+  public static String summarizeIndex(S2ShapeIndex index, boolean withEdges) {
     StringBuilder sb = new StringBuilder();
-    sb.append("Index has").append(index.getShapes().size()).append(" shapes.\n");
+    sb.append("Index has ").append(index.getShapes().size()).append(" shapes.\n");
     for (int shapeId = 0; shapeId < index.getShapes().size(); ++shapeId) {
       S2Shape shape = index.getShapes().get(shapeId);
       sb.append("  Shape #")
@@ -895,8 +1007,27 @@ public final class S2TextFormat {
             .append(shape.getChainLength(c))
             .append("\n");
       }
+      if (withEdges) {
+        MutableEdge edge = new MutableEdge();
+        for (int e = 0; e < shape.numEdges(); ++e) {
+          shape.getEdge(e, edge);
+          sb.append("    lineShape")
+              .append(shapeId)
+              .append("Edge")
+              .append(e)
+              .append(": (")
+              .append(toString(edge.getStart()))
+              .append("),(")
+              .append(toString(edge.getEnd()))
+              .append(")\n");
+        }
+      }
     }
     return sb.toString();
+  }
+
+  public static String summarizeIndex(S2ShapeIndex index) {
+    return summarizeIndex(index, false);
   }
 
   /** Convert a list of S2Points to the S2TextFormat string representation documented above. */

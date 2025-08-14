@@ -45,6 +45,32 @@ public class S2ShapeUtil {
   /** Utility methods only. */
   private S2ShapeUtil() {}
 
+  /**
+   * Given a list of vertices representing a loop, returns an immutable List with twice the length,
+   * mapping index values in the range [n, 2*n-1] to the range [0, n-1] by subtracting n (where n ==
+   * size()). In other words, two full copies of the vertex list are available. The size of the
+   * provided List must not be changed as long as a reference to the returned list exists.
+   *
+   * <p>(This is a substitute for the S2PointLoopSpan class in the C++ implementation, but note that
+   * unlike S2PointLoopSpan, the returned list here has twice the size of the input list.)
+   */
+  public static List<S2Point> s2PointLoopList(List<S2Point> vertices) {
+    return new AbstractList<S2Point>() {
+      final int length = vertices.size();
+
+      @Override
+      public S2Point get(int index) {
+        int j = index - length;
+        return vertices.get(j < 0 ? index : j);
+      }
+
+      @Override
+      public int size() {
+        return length * 2;
+      }
+    };
+  }
+
   /** A visitor that receives points. */
   public interface PointVisitor extends Predicate<S2Point> {}
 
@@ -944,6 +970,24 @@ public class S2ShapeUtil {
     }
   }
 
+  /**
+   * Returns true if the number of vertices in all the shapes in the given shape index is greater
+   * than the given threshold. If the index has many shapes, this can be much faster than actually
+   * computing the number of vertices, as it stops iterating shapes as soon as the threshold is
+   * reached.
+   */
+  public static boolean numVerticesIsGreaterThan(S2ShapeIndex index, int threshold) {
+    for (S2Shape shape : index.getShapes()) {
+      if (shape != null) {
+        threshold -= numVertices(shape);
+      }
+      if (threshold < 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Returns the number of vertices in all the shapes in the given shape index. */
   public static int numVertices(S2ShapeIndex index) {
     int sum = 0;
@@ -1193,7 +1237,7 @@ public class S2ShapeUtil {
     }
   }
 
-  /*
+  /**
    * Returns the total number of edges in all shapes in {@code index}. Note a point is a degenerate
    * edge, and each chain of a line has one more vertex than the number of edges, so the number of
    * vertices in the index is equal to the number of edges plus the number of chains in all 1-D
@@ -1233,9 +1277,9 @@ public class S2ShapeUtil {
    */
   public static S2Polygon shapeToS2Polygon(S2Shape poly) {
     Preconditions.checkState(poly.dimension() == 2);
-    var output = new S2Polygon();
+    S2Polygon output = new S2Polygon();
     // TODO(torrey): S2Polygon.init* shouldn't require mutable lists.
-    var loops = new ArrayList<S2Loop>(poly.numChains());
+    List<S2Loop> loops = new ArrayList<>(poly.numChains());
     if (poly.isFull()) {
       loops.add(S2Loop.full());
       output.initNested(loops);
@@ -1250,5 +1294,51 @@ public class S2ShapeUtil {
       output.initOriented(loops);
     }
     return output;
+  }
+
+  /**
+   * Converts an S2Shape into an S2LaxPolygonShape. The shape must be 2-dimensional. If the given
+   * shape is an S2LaxPolygonShape, it is returned as-is. If the given shape is a full polygon,
+   * S2LaxPolygonShape.FULL is returned. Otherwise, the shape chains are used to construct a new
+   * S2LaxPolygonShape. The resulting S2LaxPolygonShape is not validated.
+   */
+  public static S2LaxPolygonShape shapeToS2LaxPolygon(S2Shape poly) {
+    if (poly instanceof S2LaxPolygonShape) {
+      return (S2LaxPolygonShape) poly;
+    }
+    Preconditions.checkState(poly.dimension() == 2);
+    if (poly.isFull()) {
+      return S2LaxPolygonShape.FULL;
+    }
+
+    return S2LaxPolygonShape.create(poly.chains());
+  }
+
+  /**
+   * Converts an S2Shape into an S2Polyline. The shape must be 1-dimensional and have a single
+   * chain. The single shape chain is used to construct a new S2Polyline.
+   *
+   * <p>If assertions are enabled, as they normally are for unit tests, an assertion may be thrown
+   * if the S2Polyline is invalid. When assertions are not enabled, callers can use {@link
+   * S2Polyline#isValid()} or {@link S2Polyline#findValidationError()} to check validity.
+   */
+  public static S2Polyline shapeToS2Polyline(S2Shape line) {
+    Preconditions.checkState(line.dimension() == 1);
+    Preconditions.checkState(line.numChains() == 1);
+    return new S2Polyline(line.chain(0));
+  }
+
+  /**
+   * Converts an S2Shape into an S2LaxPolylineShape. The shape must be 1-dimensional. Shapes with
+   * multiple chains (i.e. multiline shapes) are supported. If the given shape is an
+   * S2LaxPolylineShape, it is returned as-is. Otherwise, the shape chains are used to construct a
+   * new S2LaxPolylineShape. The resulting S2LaxPolylineShape is not validated.
+   */
+  public static S2LaxPolylineShape shapeToS2LaxPolyline(S2Shape line) {
+    if (line instanceof S2LaxPolylineShape) {
+      return (S2LaxPolylineShape) line;
+    }
+    Preconditions.checkState(line.dimension() == 1);
+    return S2LaxPolylineShape.createMulti(line.chains());
   }
 }

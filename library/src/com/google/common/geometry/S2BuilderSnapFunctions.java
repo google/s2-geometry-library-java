@@ -67,7 +67,9 @@ public final class S2BuilderSnapFunctions {
      * <p>REQUIRES: {@code snapRadius <= maxSnapRadius()}.
      */
     public IdentitySnapFunction(S1Angle snapRadius) {
-      Preconditions.checkArgument(snapRadius.lessOrEquals(maxSnapRadius()));
+      Preconditions.checkArgument(
+          snapRadius.lessOrEquals(maxSnapRadius()),
+          "snapRadius of %s exceeds maximum of %s", snapRadius, maxSnapRadius());
       this.snapRadius = snapRadius;
     }
 

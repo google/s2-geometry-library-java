@@ -46,11 +46,15 @@ public final class S2PolylineVectorLayerTest extends GeometryTestCase {
 
   @Test
   public void testSingleVertexPolylines() {
-    // One polyline with a single vertex.
-    checkS2PolylineVectorUnchanged(ImmutableList.of("2:2"));
+    // A polyline with a single vertex is discarded. Single vertex S2Polylines represent degenerate
+    // edges. Clients who want degenerate edge results will need to use the ClosedSetNormalizer,
+    // which will reduce them to points.
+    checkS2PolylineVector(ImmutableList.of("2:2"), ImmutableList.of(), null, null);
 
-    // One polyline with two vertices, one with a single vertex, not touching.
-    checkS2PolylineVectorUnchanged(ImmutableList.of("2:2", "1:1, 1:0"));
+    // One polyline with two vertices, one with a single vertex, not touching. The single vertex
+    // is discarded, the other line is retained.
+    checkS2PolylineVector(
+        ImmutableList.of("2:2", "1:1, 1:0"), ImmutableList.of("1:1, 1:0"), null, null);
   }
 
   /**

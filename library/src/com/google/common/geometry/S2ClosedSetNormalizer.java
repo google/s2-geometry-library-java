@@ -25,6 +25,7 @@ import com.google.common.geometry.S2BuilderGraph.EdgeList;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -150,7 +151,7 @@ public final class S2ClosedSetNormalizer {
     public GraphOptions inputGraphOptions = null;
     public GraphOptions outputGraphOptions = null;
     public final EdgeList newEdges = new EdgeList();
-    public final IntVector newInputEdgeIds = new IntVector();
+    public final IntArrayList newInputEdgeIds = new IntArrayList();
     public IdSetLexicon newInputEdgeIdSetLexicon = null;
     public S2BuilderGraph inputGraph = null;
     public final S2BuilderLayer inputLayer = new DimensionLayer(this);
@@ -166,7 +167,7 @@ public final class S2ClosedSetNormalizer {
    * A vector of incoming polygon edges sorted in lexicographic order. This is used to suppress
    * directed polyline edges that match a polygon edge in the reverse direction.
    */
-  private IntVector polygonInputEdgeIds = null;
+  private IntArrayList polygonInputEdgeIds = null;
 
   /**
    * excludeFromPointOutput[i] is true if vertex[i] belongs to a non-degenerate edge, and therefore
@@ -335,7 +336,7 @@ public final class S2ClosedSetNormalizer {
 
   @VisibleForTesting
   static S2BuilderGraph copyGraphWithOptions(S2BuilderGraph graph, GraphOptions options) {
-    IntVector inputEdgeIdSetIds = new IntVector();
+    IntArrayList inputEdgeIdSetIds = new IntArrayList();
     inputEdgeIdSetIds.addAll(graph.inputEdgeIdSetIds());
     IntVector labelSetIds = new IntVector();
     labelSetIds.addAll(graph.labelSetIds());
@@ -388,7 +389,7 @@ public final class S2ClosedSetNormalizer {
       out.setSentinel();
       return Integer.MAX_VALUE;
     }
-    graph.edges().getReverse(polygonInputEdgeIds.get(index), out);
+    graph.edges().getReverse(polygonInputEdgeIds.getInt(index), out);
     return index;
   }
 

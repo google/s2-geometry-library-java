@@ -388,7 +388,7 @@ public final class S2HausdorffDistanceQuery {
             } else {
               S2Shape.MutableEdge edge = new S2Shape.MutableEdge();
               closestEdgeQuery.index().getShapes().get(shapeId).getEdge(edgeId, edge);
-              sourcePoint = S2EdgeUtil.getClosestPoint(targetPoint, edge.getStart(), edge.getEnd());
+              sourcePoint = S2EdgeUtil.project(targetPoint, edge.getStart(), edge.getEnd());
             }
           }
           return true;

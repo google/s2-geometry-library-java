@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2RobustCrossProd.robustCrossProd;
+import static com.google.common.math.DoubleMath.log2;
 import static java.lang.Math.PI;
 import static java.lang.Math.asin;
 import static java.lang.Math.ceil;
@@ -161,6 +162,13 @@ public class TestDataGenerator {
     return S2CellId.fromFacePosLevel(face, pos, level);
   }
 
+  double logUniform(double lo, double hi) {
+    Preconditions.checkArgument(lo > 0);
+    Preconditions.checkArgument(lo < hi);
+    Preconditions.checkArgument(hi < Double.POSITIVE_INFINITY);
+    return pow(2, uniform(log2(lo), log2(hi)));
+  }
+
   /** Return a uniformly distributed double in the range [min, max). */
   public double uniform(double min, double max) {
     Preconditions.checkArgument(min <= max);
@@ -219,7 +227,10 @@ public class TestDataGenerator {
     return rand.nextInt(n);
   }
 
-  /** Returns a randomly located and sized S2Cap, with area in the range [minArea, maxArea]. */
+  /**
+   * Returns a randomly located and sized S2Cap, with area in the range [minArea, maxArea]. The area
+   * parameters are in steradians.
+   */
   public S2Cap getRandomCap(double minArea, double maxArea) {
     double capArea = maxArea * pow(minArea / maxArea, rand.nextDouble());
     Preconditions.checkState(capArea >= minArea && capArea <= maxArea);
@@ -240,6 +251,31 @@ public class TestDataGenerator {
       for (int vi = 0; vi < numVerticesPerLoop; ++vi) {
         double angle = vi * radianStep;
         S2Point p = new S2Point(radius * cos(angle), radius * sin(angle), 1);
+        vertices.add(S2.rotate(p, m));
+      }
+      loops.add(new S2Loop(vertices));
+    }
+    return new S2Polygon(loops);
+  }
+
+  /**
+   * Returns a polygon with given center, number of concentric loops, and vertices per loop, where
+   * the outermost loop has the given maxRadius, and the inner loops get progressively smaller, and
+   * also progressively closer together.
+   */
+  public static S2Polygon concentricLoopsPolygon(
+      S2Point center, S1Angle maxRadius, int numLoops, int numVerticesPerLoop) {
+    Matrix m = S2.getFrame(center);
+    List<S2Loop> loops = new ArrayList<>(numLoops);
+    for (int li = 0; li < numLoops; ++li) {
+      List<S2Point> vertices = new ArrayList<>(numVerticesPerLoop);
+      double fraction = (5.0 + numLoops - li) / (5.0 + numLoops);
+      double loopRadius = maxRadius.radians() * fraction;
+      Preconditions.checkState(loopRadius > 0);
+      double radianStep = 2 * PI / numVerticesPerLoop;
+      for (int vi = 0; vi < numVerticesPerLoop; ++vi) {
+        double angle = vi * radianStep;
+        S2Point p = new S2Point(loopRadius * cos(angle), loopRadius * sin(angle), 1);
         vertices.add(S2.rotate(p, m));
       }
       loops.add(new S2Loop(vertices));
@@ -277,6 +313,18 @@ public class TestDataGenerator {
   /** Converts latitude/longitude in radians to an S2Point. */
   public static S2Point latLngToPoint(double lat, double lng) {
     return S2LatLng.fromRadians(lat, lng).toPoint();
+  }
+
+  /**
+   * Return numPoints points sampled uniformly at random from the given cap. Convenient for making a
+   * line that "scribbles" in the given cap.
+  */
+  public List<S2Point> samplePoints(S2Cap cap, int numPoints) {
+    List<S2Point> points = new ArrayList<>();
+    for (int i = 0; i < numPoints; ++i) {
+      points.add(samplePoint(cap));
+    }
+    return points;
   }
 
   /** Return a point chosen uniformly at random (with respect to area) from the given cap. */
@@ -411,7 +459,12 @@ public class TestDataGenerator {
 
   /** Returns a frame in the "up" (positive z) direction at a given point. */
   public static Matrix upFrameAt(S2LatLng center) {
-    S2Point z = center.toPoint();
+    return upFrameAt(center.toPoint());
+  }
+
+  /** Returns a frame in the "up" (positive z) direction at a given point. */
+  public static Matrix upFrameAt(S2Point center) {
+    S2Point z = center;
     S2Point x = robustCrossProd(z, S2Point.Z_POS).normalize();
     S2Point y = robustCrossProd(z, x).normalize();
     return Matrix.fromCols(x, y, z);
@@ -643,7 +696,13 @@ public class TestDataGenerator {
         TestDataGenerator data, S2Cap queryCap, int numPoints);
   }
 
-  /** Builds the internal index for the given S2Polygon. */
+  /**
+   * Builds the internal index for the given S2Polygon.
+   *
+   * @deprecated Use {@code S2Polygon.index().applyUpdates();} instead.
+   */
+  @Deprecated
+  @CanIgnoreReturnValue
   public static S2Polygon index(S2Polygon polygon) {
     polygon.index().applyUpdates();
     return polygon;

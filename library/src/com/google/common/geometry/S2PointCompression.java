@@ -256,7 +256,7 @@ public final class S2PointCompression {
         this.count = count;
       }
 
-      public int face;
+      public final int face;
       public int count;
     }
 

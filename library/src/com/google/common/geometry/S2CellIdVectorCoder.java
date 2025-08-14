@@ -27,10 +27,10 @@ import java.io.OutputStream;
 import java.util.List;
 
 /** An encoder/decoder of Lists of {@link S2CellId}s. */
-class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
+public class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
 
   /** An instance of an {@code S2CellIdVectorCoder}. */
-  static final S2CellIdVectorCoder INSTANCE = new S2CellIdVectorCoder();
+  public static final S2CellIdVectorCoder INSTANCE = new S2CellIdVectorCoder();
 
   /**
    * Encodes the given list of S2CellId values into the provided OutputStream.

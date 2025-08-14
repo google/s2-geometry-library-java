@@ -95,6 +95,8 @@ import java.util.List;
  *       bytes/vertex, but construction and especially operations are even slower and drive the
  *       garbage collector even harder.
  * </ol>
+ *
+ * <p>S2LaxPolygonShape implementations are expected to be immutable.
  */
 public interface S2LaxPolygonShape extends S2ShapeAspect.EdgeAspect.Closed {
   // When adding a new encoding, be aware that old binaries will not be able to decode it.

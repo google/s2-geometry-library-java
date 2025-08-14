@@ -654,7 +654,7 @@ public final class S2ValidationQueries {
           shape.getChainEdge(chainId, offset, edge);
 
           // Check that coordinates aren't inf/nan.
-          if (!validPoint(edge.a) || !validPoint(edge.b)) {
+          if (!edge.a.isValid() || !edge.b.isValid()) {
             error.init(S2Error.Code.INVALID_VERTEX, "Shape %d has invalid coordinates", shapeId);
             return false;
           }
@@ -1501,13 +1501,6 @@ public final class S2ValidationQueries {
 
   private static boolean areReversed(S2Edge a, S2Edge b) {
     return a.getStart().equalsPoint(b.getEnd()) && a.getEnd().equalsPoint(b.getStart());
-  }
-
-  /**
-   * Returns true if the given S2Point is valid, meaning none of its components are infinite or NaN.
-   */
-  private static boolean validPoint(S2Point p) {
-    return Double.isFinite(p.getX()) && Double.isFinite(p.getY()) && Double.isFinite(p.getZ());
   }
 
   private S2ValidationQueries() {}

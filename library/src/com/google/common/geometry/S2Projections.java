@@ -138,10 +138,12 @@ import org.jspecify.annotations.Nullable;
  * @author eengle@google.com (Eric Engle) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-@SuppressWarnings({"FloatingPointLiteralPrecision", "Assertion"})
+@SuppressWarnings({"FloatingPointLiteralPrecision", "Assertion", "IdentifierName"})
 public final class S2Projections {
 
-  /*
+  /**
+   *
+   *
    * <h1>HISTORICAL PROJECTIONS</h1>
    *
    * All of the values below were obtained by a combination of hand analysis and Mathematica. In
@@ -183,36 +185,36 @@ public final class S2Projections {
    * <p>The TANGENT projection is no longer provided. Transforming the coordinates via atan() makes
    * the cell sizes more uniform. The areas vary by a maximum ratio of 1.4 as opposed to a maximum
    * ratio of 5.2. However, each call to atan() is about as expensive as all of the other
-   * calculations combined when converting from points to cell IDs, i.e. it reduces performance by
-   * a factor of 3.
+   * calculations combined when converting from points to cell IDs, i.e. it reduces performance by a
+   * factor of 3.
    *
-   * <pre>
-   *   (PI * PI) / (4 * sqrt(2)), // MIN_AREA_DERIV 1.745
-   *   PI * PI / 4,               // MAX_AREA_DERIV 2.467
-   *   PI / 2,                    // MIN_ANGLE_SPAN_DERIV 1.571
-   *   PI / 2,                    // MAX_ANGLE_SPAN_DERIV 1.571
-   *   PI / (2 * sqrt(2)),        // MIN_WIDTH_DERIV 1.111
-   *   1.437318638925160885,      // AVG_WIDTH_DERIV 1.437
-   *   PI / (2 * sqrt(2)),        // MIN_EDGE_DERIV 1.111
-   *   1.461667032546739266,      // AVG_EDGE_DERIV 1.462
-   *   PI * sqrt(2) / 3,          // MIN_DIAG_DERIV 1.481
-   *   PI * sqrt(2. / 3),         // MAX_DIAG_DERIV 2.565
-   *   2.063623197195635753,      // AVG_DIAG_DERIV 2.064
-   *   sqrt(2)                    // MAX_EDGE_ASPECT 1.414
+   * <pre>{@code
+   *  (PI * PI) / (4 * sqrt(2)), // MIN_AREA_DERIV 1.745
+   *  PI * PI / 4,               // MAX_AREA_DERIV 2.467
+   *  PI / 2,                    // MIN_ANGLE_SPAN_DERIV 1.571
+   *  PI / 2,                    // MAX_ANGLE_SPAN_DERIV 1.571
+   *  PI / (2 * sqrt(2)),        // MIN_WIDTH_DERIV 1.111
+   *  1.437318638925160885,      // AVG_WIDTH_DERIV 1.437
+   *  PI / (2 * sqrt(2)),        // MIN_EDGE_DERIV 1.111
+   *  1.461667032546739266,      // AVG_EDGE_DERIV 1.462
+   *  PI * sqrt(2) / 3,          // MIN_DIAG_DERIV 1.481
+   *  PI * sqrt(2. / 3),         // MAX_DIAG_DERIV 2.565
+   *  2.063623197195635753,      // AVG_DIAG_DERIV 2.064
+   *  sqrt(2)                    // MAX_EDGE_ASPECT 1.414
    *
-   *  public double stToUV(double s) {
-   *    // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
-   *    // implementation of tan(), it's because the derivative of tan(x) at x=pi/4 is 2, and it
-   *    // happens that the two adjacent floating point numbers on either side of the infinite-
-   *    // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
-   *    // rounded to the nearest double-precision result.
-   *    s = tan(M_PI_2 * s - M_PI_4);
-   *    return s + (1.0 / (1L << 53)) * s;
-   *  }
-   *  public double uvToST(double u) {
-   *    return (2 * M_1_PI) * (atan(u) + M_PI_4);
-   *  }
-   * </pre>
+   * public double stToUV(double s) {
+   *   // Unfortunately, tan(M_PI_4) is slightly less than 1.0. This isn't due to a flaw in the
+   *   // implementation of tan(), it's because the derivative of tan(x) at x=pi/4 is 2, and it
+   *   // happens that the two adjacent floating point numbers on either side of the infinite-
+   *   // precision value of pi/4 have tangents that are slightly below and slightly above 1.0 when
+   *   // rounded to the nearest double-precision result.
+   *   s = tan(M_PI_2 * s - M_PI_4);
+   *   return s + (1.0 / (1L << 53)) * s;
+   * }
+   * public double uvToST(double u) {
+   *   return (2 * M_1_PI) * (atan(u) + M_PI_4);
+   * }
+   * }</pre>
    */
 
   /*
@@ -224,6 +226,7 @@ public final class S2Projections {
    * It is now the only supported projection.
    */
   private static final double MIN_AREA_DERIV = 8 * sqrt(2) / 9; // 1.257
+
   private static final double MAX_AREA_DERIV = 2.635799256963161491; // 2.636
   private static final double MIN_ANGLE_SPAN_DERIV = 4. / 3; // 1.333
   private static final double MAX_ANGLE_SPAN_DERIV = 1.704897179199218452; // 1.705

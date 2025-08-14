@@ -22,8 +22,8 @@ import com.google.common.geometry.S2Builder.GraphOptions.SiblingPairs;
 import com.google.common.geometry.S2BuilderGraph.EdgeList;
 import com.google.common.geometry.S2BuilderUtil.GraphShape;
 import com.google.common.geometry.primitives.IntVector;
-import com.google.common.geometry.primitives.Ints.IntList;
 import com.google.common.geometry.primitives.Ints.OfInt;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -188,8 +188,8 @@ final class S2PolygonDegeneracyFinder {
     return mergeDegeneracies(components);
   }
 
-  private S2BuilderGraph.Edge getReverse(EdgeList edges, IntList inEdgeIds, int inIndex) {
-    edges.getReverse(inEdgeIds.get(inIndex), reverseInEdge);
+  private S2BuilderGraph.Edge getReverse(EdgeList edges, IntArrayList inEdgeIds, int inIndex) {
+    edges.getReverse(inEdgeIds.getInt(inIndex), reverseInEdge);
     return reverseInEdge;
   }
 
@@ -198,7 +198,7 @@ final class S2PolygonDegeneracyFinder {
 
     // EdgeIds sorted in lexicographic order by (destination, origin) vertex ids. All of the
     // incoming edges to each vertex form a contiguous subrange of this ordering.
-    IntList inEdgeIds = in.inEdgeIds();
+    IntArrayList inEdgeIds = in.inEdgeIds();
     // All the edges, ordered lexicographically by (origin, destination) vertex ids. All of the
     // outgoing edges from each vertex form a contiguous subrange of this ordering.
     EdgeList edges = g.edges();
@@ -399,7 +399,7 @@ final class S2PolygonDegeneracyFinder {
     // Add all the edges in the graph to a shape index as a single shape, and build a query.
     S2ShapeIndex index = new S2ShapeIndex();
     index.add(new GraphShape(g));
-    S2EdgeQuery query = new S2EdgeQuery(index);
+    S2CrossingEdgeQuery query = new S2CrossingEdgeQuery(index);
 
     // ArrayList<ShapeEdgeId> crossingEdges = new ArrayList<>();
     S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser();
@@ -411,7 +411,7 @@ final class S2PolygonDegeneracyFinder {
       crosser.init(g.vertex(knownVertexId), g.vertex(component.rootVertexId));
       // Instead of checking every edge in the graph, get only edges that might cross the edge from
       // the known vertex to the root vertex of the component.
-      S2EdgeQuery.Edges crossingEdges =
+      S2CrossingEdgeQuery.Edges crossingEdges =
           query.getCandidates(g.vertex(knownVertexId), g.vertex(component.rootVertexId), 0);
 
       while (!crossingEdges.isEmpty()) {

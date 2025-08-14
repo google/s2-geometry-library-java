@@ -32,6 +32,7 @@ import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -268,7 +269,7 @@ public class S2ShapeIndexTest extends GeometryTestCase {
                         it.next()) {}
                     // Ensure that all threads end before any additional threads can begin.
                     end.await();
-                  } catch (Exception e) {
+                  } catch (InterruptedException | BrokenBarrierException e) {
                     throw new RuntimeException(e);
                   }
                 },

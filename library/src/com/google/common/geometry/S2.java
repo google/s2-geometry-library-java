@@ -46,7 +46,7 @@ import com.google.errorprone.annotations.Immutable;
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
-@SuppressWarnings({"Assertion", "NonFinalStaticField"})
+@SuppressWarnings({"Assertion", "NonFinalStaticField", "IdentifierName"})
 public final class S2 {
   // Declare some frequently used constants
   public static final double M_PI = PI;
@@ -101,7 +101,7 @@ public final class S2 {
   // This point is about 66km from the north pole towards the East Siberian Sea, at lat/lng
   // approximately (89.4081206, 165.4655449). See the unit test for more details. It is written here
   // using constant components to ensure the value is identical to other implementations of S2.
-  // Warning: Not the same as S2Point.ORIGIN.
+  // Warning: Not the same as S2Point.ZERO.
   @SuppressWarnings("FloatingPointLiteralPrecision") // Deliberate, same as other implementations.
   private static final S2Point ORIGIN =
       new S2Point(-0.0099994664350250197, 0.0025924542609324121, 0.99994664350250195);
@@ -227,9 +227,9 @@ public final class S2 {
     }
 
     /**
-     * Return the level at which the metric has approximately the given value. For example,
-     * PROJ.avgEdge.getClosestLevel(0.1) returns the level at which the average cell edge length is
-     * approximately 0.1. The return value is always a valid level.
+     * Return the level at which the metric has approximately the given value. For example, {@code
+     * S2Projections.AVG_EDGE.getClosestLevel(0.1)} returns the level at which the average cell edge
+     * length is approximately 0.1. The return value is always a valid level.
      */
     public int getClosestLevel(double value) {
       return getMinLevel((dim == 1 ? M_SQRT2 : 2) * value);
@@ -237,9 +237,11 @@ public final class S2 {
 
     /**
      * Return the minimum level such that the metric is at most the given value, or MAX_LEVEL if
-     * there is no such level. For example, PROJ.maxDiag.getMinLevel(0.1) returns the minimum level
-     * such that all cell diagonal lengths are 0.1 or smaller. The return value is always a valid
-     * level.
+     * there is no such level. For example, {@code S2Projections.MAX_DIAG.getMinLevel(0.1)} returns
+     * the minimum level such that all cell diagonal lengths have a maximum value of 0.1. The return
+     * value is always a valid level.
+     *
+     * <p>Note that in the C++ implementation, the equivalent method is named "GetLevelForMaxValue".
      */
     public int getMinLevel(double value) {
       if (value <= 0) {
@@ -257,9 +259,11 @@ public final class S2 {
 
     /**
      * Return the maximum level such that the metric is at least the given value, or zero if there
-     * is no such level. For example, PROJ.minWidth.getMaxLevel(0.1) returns the maximum level such
-     * that all cells have a minimum width of 0.1 or larger. The return value is always a valid
-     * level.
+     * is no such level. For example, {@code S2Projections.MIN_WIDTH.getMaxLevel(0.1)} returns the
+     * maximum level such that all cells have a minimum width of 0.1 or larger. The return value is
+     * always a valid level.
+     *
+     * <p>Note that in the C++ implementation, the equivalent method is named "GetLevelForMinValue".
      */
     public int getMaxLevel(double value) {
       if (value <= 0) {
@@ -280,7 +284,7 @@ public final class S2 {
    * should *not* be a point that is commonly used in edge tests in order to avoid triggering code
    * to handle degenerate cases. (This rules out the north and south poles.)
    *
-   * <p>Warning: This is completely unrelated to S2Point.ORIGIN.
+   * <p>Warning: This is completely unrelated to S2Point.ZERO.
    */
   public static S2Point origin() {
     return ORIGIN;
@@ -331,11 +335,13 @@ public final class S2 {
    * also accurate for small triangles. Example: when the true area is 100 square meters, area()
    * yields an error about 1 trillion times smaller than girardArea().
    *
-   * <p>All points should be unit length, and no two points should be antipodal. The area is always
+   * <p>All points must be unit length, and no two points may be antipodal. The area is always
    * positive.
    */
   public static double area(S2Point a, S2Point b, S2Point c) {
-    // assert isUnitLength(a) && isUnitLength(b) && isUnitLength(c);
+    assert isUnitLength(a);
+    assert isUnitLength(b);
+    assert isUnitLength(c);
 
     // This method is based on l'Huilier's theorem,
     //
@@ -469,7 +475,7 @@ public final class S2 {
    * centroid is (a + b).normalize(). However neither of these values is appropriate for computing
    * the centroid of a collection of edges (such as a polyline).
    *
-   * <p>Also note that the result of this function is defined to be {@link S2Point#ORIGIN} if the
+   * <p>Also note that the result of this function is defined to be {@link S2Point#ZERO} if the
    * edge is degenerate (and that this is intended behavior).
    */
   public static S2Point trueCentroid(S2Point a, S2Point b) {
@@ -481,7 +487,7 @@ public final class S2 {
     double sin2 = vDiff.norm2();
     double cos2 = vSum.norm2();
     if (cos2 == 0) {
-      return S2Point.ORIGIN; // Ignore antipodal edges.
+      return S2Point.ZERO; // Ignore antipodal edges.
     }
     return vSum.mul(sqrt(sin2 / cos2)); // Length == 2*sin(theta)
   }

@@ -1026,7 +1026,7 @@ public class S2LatLngRectTest extends GeometryTestCase {
   @Test
   public void testGetCentroid() {
     // Empty and full rectangles.
-    assertEquals(S2Point.ORIGIN, S2LatLngRect.empty().getCentroid());
+    assertEquals(S2Point.ZERO, S2LatLngRect.empty().getCentroid());
     assertTrue(S2LatLngRect.full().getCentroid().norm() <= 1e-15);
 
     // Rectangles that cover the full longitude range.

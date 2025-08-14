@@ -454,7 +454,7 @@ public abstract class S2ClosestEdgeQuery<D extends S1Distance<D>> extends S2Best
     }
     S2Shape.MutableEdge resultEdge = new S2Shape.MutableEdge();
     index.getShapes().get(result.shapeId()).getEdge(result.edgeId(), resultEdge);
-    return S2EdgeUtil.getClosestPoint(targetPoint, resultEdge.getStart(), resultEdge.getEnd());
+    return S2EdgeUtil.project(targetPoint, resultEdge.getStart(), resultEdge.getEnd());
   }
 
   /**
@@ -585,7 +585,7 @@ public abstract class S2ClosestEdgeQuery<D extends S1Distance<D>> extends S2Best
     @CanIgnoreReturnValue
     public Builder setConservativeMaxDistance(S1ChordAngle maxDistance) {
       this.distanceLimit =
-          maxDistance.plusError(S2EdgeUtil.getMinDistanceMaxError(maxDistance)).successor();
+          maxDistance.plusError(S2EdgeUtil.getUpdateMinDistanceMaxError(maxDistance)).successor();
       return this;
     }
 
@@ -815,7 +815,7 @@ public abstract class S2ClosestEdgeQuery<D extends S1Distance<D>> extends S2Best
         Target<S1ChordAngle> target, S1ChordAngle limit, @Nullable ShapeFilter shapeFilter) {
       // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
       // not the same-named Options fields.
-      distanceLimit = limit.plusError(S2EdgeUtil.getMinDistanceMaxError(limit)).successor();
+      distanceLimit = limit.plusError(S2EdgeUtil.getUpdateMinDistanceMaxError(limit)).successor();
       maxResults = 1;
       maxError = worstDistance();
       this.shapeFilter = shapeFilter;

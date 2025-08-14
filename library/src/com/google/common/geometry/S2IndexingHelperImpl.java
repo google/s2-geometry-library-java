@@ -308,7 +308,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
 
     @Override
     public String toString() {
-      return String.format("%s:%016X", type.name(), cellId);
+      return Platform.formatString("%s:%016X", type.name(), cellId);
     }
   }
 

@@ -105,15 +105,15 @@ public class S2EarthTest {
   }
 
   @Test
-  public void testGetInitialBearings() {
+  public void testGetInitialBearing() {
     S2LatLng equator0 = S2LatLng.fromDegrees(0, 0);
     S2LatLng equator50 = S2LatLng.fromDegrees(0, 50);
     S2LatLng equator100 = S2LatLng.fromDegrees(0, 100);
 
-    // Westward on Equator.
+    // Eastward on Equator.
     assertEquals(S2Earth.getInitialBearing(equator50, equator100), S1Angle.degrees(90));
 
-    // Eastwards on Equator.
+    // Westward on Equator.
     assertEquals(S2Earth.getInitialBearing(equator100, equator0), S1Angle.degrees(-90));
 
     // Northward from Meridian.

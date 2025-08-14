@@ -751,12 +751,12 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
     if (cellIds.isEmpty()) {
       return S2Cap.empty();
     }
-    S2Point centroid = S2Point.ORIGIN;
+    S2Point centroid = S2Point.ZERO;
     for (S2CellId id : this) {
       double area = S2Cell.averageArea(id.level());
       centroid = centroid.add(id.toPoint().mul(area));
     }
-    if (centroid.equalsPoint(S2Point.ORIGIN)) {
+    if (centroid.equalsPoint(S2Point.ZERO)) {
       centroid = S2Point.X_POS;
     } else {
       centroid = centroid.normalize();

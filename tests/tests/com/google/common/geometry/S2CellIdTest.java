@@ -127,6 +127,40 @@ public class S2CellIdTest extends GeometryTestCase {
   }
 
   @Test
+  public void testMaximumTile() {
+    for (int iter = 0; iter < 1000; ++iter) {
+      S2CellId id = data.getRandomCellId(10);
+
+      // Check that "limit" is returned for tiles at or beyond "limit".
+      assertEquals(id, id.maximumTile(id));
+      assertEquals(id, id.child(0).maximumTile(id));
+      assertEquals(id, id.child(1).maximumTile(id));
+      assertEquals(id, id.next().maximumTile(id));
+      assertEquals(id.child(0), id.maximumTile(id.child(0)));
+
+      // Check that the tile size is increased when possible.
+      assertEquals(id, id.child(0).maximumTile(id.next()));
+      assertEquals(id, id.child(0).maximumTile(id.next().child(0)));
+      assertEquals(id, id.child(0).maximumTile(id.next().child(1).child(0)));
+      assertEquals(id, id.child(0).child(0).maximumTile(id.next()));
+      assertEquals(id, id.child(0).child(0).child(0).maximumTile(id.next()));
+
+      // Check that the tile size is decreased when necessary.
+      assertEquals(id.child(0), id.maximumTile(id.child(0).next()));
+      assertEquals(id.child(0), id.maximumTile(id.child(0).next().child(0)));
+      assertEquals(id.child(0), id.maximumTile(id.child(0).next().child(1)));
+      assertEquals(id.child(0).child(0), id.maximumTile(id.child(0).child(0).next()));
+      assertEquals(
+          id.child(0).child(0).child(0), id.maximumTile(id.child(0).child(0).child(0).next()));
+
+      // Check that the tile size is otherwise unchanged.
+      assertEquals(id, id.maximumTile(id.next()));
+      assertEquals(id, id.maximumTile(id.next().child(0)));
+      assertEquals(id, id.maximumTile(id.next().child(1).child(0)));
+    }
+  }
+
+  @Test
   public void testCenterSiTi() {
     S2CellId id = S2CellId.fromFacePosLevel(3, 0x12345678, MAX_LEVEL);
     // Check that the (si, ti) coordinates of the center end in a 1 followed by (30 - level) 0s.

@@ -16,37 +16,37 @@
 
 package com.google.common.geometry;
 
-import com.google.common.base.Objects;
 import java.io.Serializable;
+import java.util.Objects;
 import jsinterop.annotations.JsType;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The area of an interior, i.e. the region on the left side of an odd number of loops and
- * optionally a centroid. The area is between 0 and 4*Pi. If it has a centroid, it is the true
- * centroid of the interior multiplied by the area of the shape. Note that the centroid may not be
- * contained by the shape.
+ * optionally a centroid. The area is measured in steradians, and is between 0 and 4*Pi. If it has a
+ * centroid, it is the true centroid of the interior multiplied by the area of the shape. Note that
+ * the centroid may not be contained by the shape.
  *
  * @author dbentley@google.com (Daniel Bentley)
  */
 @JsType
 public final class S2AreaCentroid implements Serializable {
 
-  private final double area;
+  private final double areaSteradians;
   private final @Nullable S2Point centroid;
 
   /** Constructs a new S2AreaCentroid with an area and optional centroid. */
   public S2AreaCentroid(double area, @Nullable S2Point centroid) {
-    this.area = area;
+    this.areaSteradians = area;
     this.centroid = centroid;
   }
 
   /**
-   * Returns the area of a shape interior, i.e. the region on the left side of an odd number of
-   * loops.
+   * Returns the area of a shape interior in steradians, i.e. the region on the left side of an odd
+   * number of loops. The return value is between 0 and 4*Pi.
    */
   public double getArea() {
-    return area;
+    return areaSteradians;
   }
 
   /**
@@ -61,13 +61,14 @@ public final class S2AreaCentroid implements Serializable {
   public boolean equals(Object obj) {
     if (obj instanceof S2AreaCentroid) {
       S2AreaCentroid that = (S2AreaCentroid) obj;
-      return this.area == that.area && Objects.equal(this.centroid, that.centroid);
+      return this.areaSteradians == that.areaSteradians
+          && Objects.equals(this.centroid, that.centroid);
     }
     return false;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(area, centroid);
+    return Objects.hash(areaSteradians, centroid);
   }
 }

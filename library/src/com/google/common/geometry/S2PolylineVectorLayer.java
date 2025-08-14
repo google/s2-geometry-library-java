@@ -124,7 +124,7 @@ public class S2PolylineVectorLayer implements S2BuilderShapesLayer {
   public GraphOptions graphOptions() {
     return new GraphOptions(
         options.edgeType(),
-        GraphOptions.DegenerateEdges.DISCARD_EXCESS,
+        GraphOptions.DegenerateEdges.DISCARD, // TODO(user): DISCARD_EXCESS would be better.
         options.duplicateEdges(),
         options.siblingPairs());
   }
@@ -169,7 +169,6 @@ public class S2PolylineVectorLayer implements S2BuilderShapesLayer {
       if (vertices.length == 2 && vertices[0].equalsPoint(vertices[1])) {
         vertices = new S2Point[] { vertices[0] };
       }
-      // Create a polyline. This constructor takes ownership of the array of vertices.
       S2Polyline polyline = new S2Polyline(vertices);
       if (options.validate()) {
         if (polyline.findValidationError(error)) {

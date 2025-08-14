@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.max;
@@ -35,8 +36,8 @@ import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntPairVector;
 import com.google.common.geometry.primitives.IntVector;
-import com.google.common.geometry.primitives.Ints.IntList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -330,27 +331,10 @@ public class S2BooleanOperation {
     private static final long SHAPE_MASK = (REGION_MASK - 1) << 32;
     private static final long EDGE_MASK = (1L << 32) - 1;
 
-    // TODO(torrey): Consider making regionId a boolean or enum, as it can only have two values.
-    // If changing it, update C++ as well for consistency.
     /** Encodes a SourceId consisting of the given regionId, shapeId, and edgeId into a long. */
     private static long encode(int regionId, int shapeId, int edgeId) {
       Preconditions.checkArgument(edgeId >= 0);
       return (((long) regionId) << 63) | (((long) shapeId) << 32) | edgeId;
-    }
-
-    /** Decodes the regionId from the given encoded SourceId. */
-    public static int regionId(long encoded) {
-      return (encoded & REGION_MASK) == 0 ? 0 : 1;
-    }
-
-    /** Decodes the shapeId from the given encoded SourceId. */
-    public static int shapeId(long encoded) {
-      return (int) ((encoded & SHAPE_MASK) >> 32);
-    }
-
-    /** Decodes the edgeId from the given encoded SourceId. */
-    public static int edgeId(long encoded) {
-      return (int) (encoded & EDGE_MASK);
     }
 
     /** Returns an encoded SourceId with a special edgeIds that control the GraphEdgeClipper. */
@@ -358,7 +342,6 @@ public class S2BooleanOperation {
       Preconditions.checkArgument(specialEdgeId < 0);
       return specialEdgeId; // encode(0, 0, specialEdgeId);
     }
-
   }
 
   /**
@@ -725,7 +708,7 @@ public class S2BooleanOperation {
    * reclassify such polylines as points if desired, but this rule makes it easier for clients that
    * want to process point, polyline, and polygon inputs differently.
    *
-   * <p>The layers are always built in the order 0, 1, 2, and all arguments to the Build() calls are
+   * <p>The layers are always built in the order 0, 1, 2, and all arguments to the build() calls are
    * guaranteed to be valid until the last call returns. All Graph objects have the same set of
    * vertices and the same lexicon objects, in order to make it easier to write classes that process
    * all the edges in parallel.
@@ -748,15 +731,41 @@ public class S2BooleanOperation {
 
   /**
    * Executes the operation specified to the constructor on the provided inputs. Returns true on
-   * success, and otherwise sets "error" appropriately. (This class does not generate any errors
-   * itself, but the S2BuilderLayer might.)
+   * success, and otherwise sets "error" appropriately.
+   *
+   * <p>S2BooleanOperation does not set any errors itself, but the S2BuilderLayer or layers may.
+   * Generally, errors should not occur for valid inputs, and as of mid-2025, S2BuilderLayer
+   * implementations provided in the S2 library, (outside of unit test implementations), only set
+   * errors in the following cases:
+   *
+   * <ul>
+   *   <li>S2LaxPolygonLayer doesn't support undirected edges yet, and sets an error if they are
+   *       requested.
+   *   <li>S2LaxPolylineLayer and S2PolylineLayer set an error if a single polyline was requested,
+   *       but the given edges cannot be assembled into a single polyline.
+   *   <li>S2PointVectorLayer was given edges that are not points.
+   * </ul>
    */
   public boolean build(S2ShapeIndex a, S2ShapeIndex b, S2Error error) {
-    regions[0] = a;
-    regions[1] = b;
+    regions[0] = checkNotNull(a);
+    regions[1] = checkNotNull(b);
 
     Impl impl = new Impl(this);
     return impl.build(error);
+  }
+
+  /**
+   * Executes the operation specified to the constructor on the provided inputs. This method wraps
+   * {@link #build(S2ShapeIndex, S2ShapeIndex, S2Error)} as a convenience for clients who either do
+   * not wish to handle errors, or prefer using exception handling.
+   *
+   * @throws S2Exception wrapping the underlying {@link S2Error}, if any error occurs.
+   */
+  public void buildUnsafe(S2ShapeIndex a, S2ShapeIndex b) {
+    S2Error error = new S2Error();
+    if (!build(a, b, error)) {
+      throw new S2Exception(error);
+    }
   }
 
   /**
@@ -1064,7 +1073,7 @@ public class S2BooleanOperation {
    * every output edge corresponds to exactly one input edge. See also {@link
    * S2BuilderGraph#getInputEdgeOrder()}.
    */
-  private static IntVector getInputEdgeChainOrder(S2BuilderGraph g, IntList inputEdgeIds) {
+  private static IntArrayList getInputEdgeChainOrder(S2BuilderGraph g, IntArrayList inputEdgeIds) {
     Preconditions.checkState(g.options().edgeType() == EdgeType.DIRECTED);
     Preconditions.checkState(g.options().duplicateEdges() == DuplicateEdges.KEEP);
     Preconditions.checkState(g.options().siblingPairs() == SiblingPairs.KEEP);
@@ -1072,7 +1081,7 @@ public class S2BooleanOperation {
     // First, sort the edges so that the edges corresponding to each input edge are consecutive.
     // (Each input edge was snapped to a chain of output edges, or two chains in the case of
     // undirected input edges.)
-    IntVector order = g.getInputEdgeOrder(inputEdgeIds);
+    IntArrayList order = g.getInputEdgeOrder(inputEdgeIds);
 
     // Now sort the group of edges corresponding to each input edge in edge chain order (e.g. AB,
     // BC, CD).
@@ -1082,9 +1091,9 @@ public class S2BooleanOperation {
     int[] indegree = new int[g.numVertices()]; // Restricted to current input edge.
     for (int end, begin = 0; begin < order.size(); begin = end) {
       // Gather the edges that came from a single input edge.
-      int inputEdgeId = inputEdgeIds.get(order.get(begin));
+      int inputEdgeId = inputEdgeIds.getInt(order.getInt(begin));
       for (end = begin; end < order.size(); ++end) {
-        if (inputEdgeIds.get(order.get(end)) != inputEdgeId) {
+        if (inputEdgeIds.getInt(order.getInt(end)) != inputEdgeId) {
           break;
         }
       }
@@ -1095,7 +1104,7 @@ public class S2BooleanOperation {
       // Build a map from the source vertex of each edge to its edge id, and also compute the
       // indegree at each vertex considering only the edges that came from the current input edge.
       for (int i = begin; i < end; ++i) {
-        int edgeId = order.get(i);
+        int edgeId = order.getInt(i);
         vmap.add(g.edgeSrcId(edgeId), edgeId);
         indegree[g.edgeDstId(edgeId)] += 1;
       }
@@ -1104,7 +1113,7 @@ public class S2BooleanOperation {
       // Find the starting edge for building the edge chain.
       int nextEdgeId = g.numEdges();
       for (int i = begin; i < end; ++i) {
-        int edgeId = order.get(i);
+        int edgeId = order.getInt(i);
         if (indegree[g.edgeSrcId(edgeId)] == 0) {
           nextEdgeId = edgeId;
         }
@@ -1118,7 +1127,7 @@ public class S2BooleanOperation {
           break;
         }
         int outIndex = vmap.lowerBound(vertexId, 0);
-        Preconditions.checkState(vertexId == vmap.getFirst(outIndex));
+        assert vertexId == vmap.getFirst(outIndex);
         nextEdgeId = vmap.getSecond(outIndex);
       }
       vmap.clear();
@@ -1184,7 +1193,7 @@ public class S2BooleanOperation {
     private final EdgeList newEdges;
 
     /** The corresponding input edge ids of the clipped set of edges in 'newEdges'. */
-    private final IntVector newInputEdgeIds;
+    private final IntArrayList newInputEdgeIds;
 
     /**
      * Every graph edge is associated with exactly one input edge in our case, which means that
@@ -1192,14 +1201,14 @@ public class S2BooleanOperation {
      * also relies on the fact that IdSetLexicon represents a singleton set as the value of its
      * single element.)
      */
-    private final IntList inputEdgeIds;
+    private final IntArrayList inputEdgeIds;
 
     /**
      * Graph edge ids sorted in input edge id order. When more than one output edge has the same
      * input edge id (i.e., the input edge snapped to a chain of edges), the edges are sorted so
      * that they form a directed edge chain.
      */
-    private final IntVector order;
+    private final IntArrayList order;
 
     /** The rank of each graph edge is its index in the sorted "order". */
     private final int[] rank;
@@ -1226,7 +1235,7 @@ public class S2BooleanOperation {
         IntVector inputDimensions,
         InputEdgeCrossings inputCrossings,
         EdgeList newEdges,
-        IntVector newInputEdgeIds) {
+        IntArrayList newInputEdgeIds) {
       this.g = g;
       this.in = new VertexInMap(g);
       this.out = new VertexOutMap(g);
@@ -1237,7 +1246,10 @@ public class S2BooleanOperation {
       this.inputEdgeIds = g.inputEdgeIdSetIds();
       order = getInputEdgeChainOrder(g, inputEdgeIds);
       rank = new int[order.size()];
-      order.forEach((k, v) -> rank[v] = k);
+      // order.forEach((k, v) -> rank[v] = k);
+      for (int k = 0; k < order.size(); k++) {
+        rank[order.getInt(k)] = k;
+      }
 
       // newEdges is obtained by filtering the graph edges and therefore the number of graph edges
       // is an upper bound on its size.
@@ -1282,8 +1294,8 @@ public class S2BooleanOperation {
       // loop over the other snapped graph edges for input edge 'A'.
       for (int i = 0; i < order.size(); ++i) {
         // edge0 is the first graph edge for input edge A.
-        int edge0Id = order.get(i);
-        int aInputEdgeId = inputEdgeIds.get(edge0Id);
+        int edge0Id = order.getInt(i);
+        int aInputEdgeId = inputEdgeIds.getInt(edge0Id);
         int edge0SrcId = g.edgeSrcId(edge0Id);
         int edge0DstId = g.edgeDstId(edge0Id);
 
@@ -1306,7 +1318,7 @@ public class S2BooleanOperation {
           } else if (crossingPair.second().inputEdgeId() == SET_INVERT_B) {
             invertB = crossingPair.second().leftToRight();
           } else {
-            Preconditions.checkState(crossingPair.second().inputEdgeId() == SET_REVERSE_A);
+            assert crossingPair.second().inputEdgeId() == SET_REVERSE_A;
             reverseA = crossingPair.second().leftToRight();
           }
         }
@@ -1348,8 +1360,8 @@ public class S2BooleanOperation {
         gatherIncidentEdges(aVertices, 0, bInputEdges, bEdges);
         // Walk along the snapped edge chain for input edge A, adding their endpoints to aVertices
         // and getting the snapped crossing edges incident to each of those vertices.
-        for (; i < order.size() && inputEdgeIds.get(order.get(i)) == aInputEdgeId; ++i) {
-          aVertices.add(g.edgeDstId(order.get(i)));
+        for (; i < order.size() && inputEdgeIds.getInt(order.getInt(i)) == aInputEdgeId; ++i) {
+          aVertices.add(g.edgeDstId(order.getInt(i)));
           gatherIncidentEdges(aVertices, aVertices.size() - 1, bInputEdges, bEdges);
         }
 
@@ -1416,7 +1428,8 @@ public class S2BooleanOperation {
           multiplicity += aNumCrossings.get(ai);
         }
         // Multiplicities other than 0 or 1 can only occur in the edge interior.
-        Preconditions.checkState(multiplicity == 0 || multiplicity == 1);
+        // If this assertion fails, it is likely due to invalid inputs.
+        assert multiplicity == 0 || multiplicity == 1;
         inside = (multiplicity != 0);
 
         // Output any isolated polyline vertices.
@@ -1455,12 +1468,12 @@ public class S2BooleanOperation {
         CrossingGraphEdgeVectorVector bEdges) {
       // Examine all the snapped edges incident to the given vertex of A. If any edge comes from a B
       // input edge, append it to the appropriate CrossingGraphEdgeVector.
-      Preconditions.checkState(bInputEdges.size() == bEdges.size());
+      assert bInputEdges.size() == bEdges.size();
       in.edgeIds(a.get(ai)) // Incoming snapped edge ids at the snapped vertex of A, from A and B
           .forEach(
               snappedEdgeId -> {
                 // The input edge id of this incoming snapped edge to ai.
-                int inputEdgeId = inputEdgeIds.get(snappedEdgeId);
+                int inputEdgeId = inputEdgeIds.getInt(snappedEdgeId);
                 // Index of the first input edge of B that crosses this input edge, if any
                 int index = bInputEdges.lowerBound(inputEdgeId);
                 // A matching, crossing, input edge of B crosses here, at snapped vertex 'ai'
@@ -1474,7 +1487,7 @@ public class S2BooleanOperation {
       out.edgeIds(a.get(ai))
           .forEach(
               snappedEdgeId -> {
-                int inputEdgeId = inputEdgeIds.get(snappedEdgeId);
+                int inputEdgeId = inputEdgeIds.getInt(snappedEdgeId);
                 int index = bInputEdges.lowerBound(inputEdgeId);
                 if (index != bInputEdges.size()
                     && bInputEdges.get(index).inputEdgeId() == inputEdgeId) {
@@ -1645,7 +1658,7 @@ public class S2BooleanOperation {
       // Otherwise we choose the smallest shared VertexId in the acceptable range, in order to
       // ensure that both chains choose the same crossing vertex.
       int best = -1;
-      Preconditions.checkState(lo <= hi);
+      assert lo <= hi;
       for (CrossingGraphEdge e : b) {
         int ai = e.aIndex;
         int vrank = getVertexRank(e);
@@ -1679,7 +1692,7 @@ public class S2BooleanOperation {
       // Gather all the interior vertices of the B subchain.
       IntVector loop = new IntVector(); // vertex ids
       for (int i = rank[bFirstEdgeId]; i < rank[bLastEdgeId]; ++i) {
-        loop.push(g.edgeDstId(order.get(i)));
+        loop.push(g.edgeDstId(order.getInt(i)));
       }
       // Possibly reverse the chain so that it forms a loop when "a" is appended.
       if (g.edgeDstId(bLastEdgeId) != a.get(0)) {
@@ -1753,7 +1766,7 @@ public class S2BooleanOperation {
     public boolean build(S2BuilderGraph g, S2Error error) {
       // The bulk of the work is handled by GraphEdgeClipper.
       EdgeList newEdges = new EdgeList();
-      IntVector newInputEdgeIds = new IntVector();
+      IntArrayList newInputEdgeIds = new IntArrayList();
 
       GraphEdgeClipper gec =
           new GraphEdgeClipper(g, inputDimensions, inputCrossings, newEdges, newInputEdgeIds);
@@ -1783,15 +1796,15 @@ public class S2BooleanOperation {
         // of the graph data in arrays with 3 elements.
         Preconditions.checkState(layers.size() == 3);
         EdgeList[] layerEdges = new EdgeList[3];
-        IntVector[] layerInputEdgeIds = new IntVector[3];
+        IntArrayList[] layerInputEdgeIds = new IntArrayList[3];
         for (int d = 0; d < 3; ++d) {
           layerEdges[d] = new EdgeList();
-          layerInputEdgeIds[d] = new IntVector();
+          layerInputEdgeIds[d] = new IntArrayList();
         }
 
         // Separate the edges according to their dimension.
         for (int i = 0; i < newEdges.size(); ++i) {
-          int newInputEdgeId = newInputEdgeIds.get(i);
+          int newInputEdgeId = newInputEdgeIds.getInt(i);
           int d = inputDimensions.get(newInputEdgeId);
           layerEdges[d].copyEdge(newEdges, i);
           layerInputEdgeIds[d].add(newInputEdgeId);
@@ -1961,6 +1974,7 @@ public class S2BooleanOperation {
       indexCrossingsFirstRegionId = -1;
     }
 
+    /** Builds the output of the S2BooleanOperation. Returns true if the operation succeeded. */
     public boolean build(S2Error error) {
       error.clear();
       doBuild(error);
@@ -3373,7 +3387,9 @@ public class S2BooleanOperation {
 
       // Verify that edge crossings are being counted correctly.
       inside ^= (r.a1Crossings & 1) == 1;
-      // This is a releatively expensive check and must only be done in debug mode.
+      // This is a releatively expensive check and must only be done in debug mode. One of the
+      // reasons this can fail is if one of the S2BooleanOperation inputs has overlapping polygon
+      // interiors, which is not allowed.
       assert !it.crossingsComplete()
           || (new S2ContainsPointQuery(it.bIndex()).contains(a.getEnd()) == inside ^ invertB);
 
@@ -3823,7 +3839,6 @@ public class S2BooleanOperation {
           (firstInputEdgeId, secondSourceEdgeCrossing) -> {
             long sourceId = secondSourceEdgeCrossing.sourceId();
 
-            // "Expected to find sourceId " + sourceId + " in sourceIdMap."
             assert sourceIdMap.containsKey(sourceId);
             int secondInputEdgeId = sourceIdMap.get(sourceId);
 

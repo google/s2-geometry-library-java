@@ -34,7 +34,7 @@ import java.math.BigDecimal;
  *       (-1), colinear (0), or counter-clockwise (1).
  * </ul>
  */
-@SuppressWarnings("Assertion")
+@SuppressWarnings({"Assertion", "IdentifierName"})
 public final class S2Predicates {
   /** Maximum rounding error of a 64 bit double. */
   public static final double DBL_ERR = DBL_EPSILON / 2;
@@ -279,7 +279,9 @@ public final class S2Predicates {
      * the three points are distinct.
      */
     public static int exact(S2Point a, S2Point b, S2Point c, boolean perturb) {
-      // assert !a.equalsPoint(b) && !b.equalsPoint(c) && !c.equalsPoint(a);
+      assert !a.equalsPoint(b);
+      assert !b.equalsPoint(c);
+      assert !c.equalsPoint(a);
 
       // Check the determinant using any available Platform optimizations, which may return zero
       // but are faster than BigDecimal techniques. The current Platform implementation computes the
@@ -310,7 +312,8 @@ public final class S2Predicates {
         b = t;
         permSign = -permSign;
       }
-      // assert a.compareTo(b) < 0 && b.compareTo(c) < 0;
+      // This assertion can fail if the points have NaN values.
+      assert S2.skipAssertions || (a.compareTo(b) < 0 && b.compareTo(c) < 0);
 
       // The BigDecimal approach used below can't handle NaNs. Prior to use of this type, NaN always
       // resulted in -1, regardless of other coordinate values, so maintain that behavior here.
@@ -336,7 +339,7 @@ public final class S2Predicates {
 
       // Resort to symbolic perturbations to resolve a stable non-zero result.
       sign = sos(xa, xb, xc, xbc);
-      // assert 0 != sign;
+      assert 0 != sign;
       return permSign * sign;
     }
 
@@ -381,7 +384,8 @@ public final class S2Predicates {
       // multi-precision representation, and this also lets us re-use the result of the cross
       // product B x C.
       //
-      // assert a.compareTo(b) < 0 && b.compareTo(c) < 0;
+      assert a.compareTo(b) < 0;
+      assert b.compareTo(c) < 0;
 
       // Every input coordinate x[i] is assigned a symbolic perturbation dx[i]. We then compute the
       // sign of the determinant of the perturbed points,
@@ -498,11 +502,16 @@ public final class S2Predicates {
    *   <li>If {@code a == b || b == c}, then {@code orderedCCW(a,b,c,o)} is true
    *   <li>Otherwise if {@code a == c}, then {@code orderedCCW(a,b,c,o)} is false
    * </ol>
+   *
+   * REQUIRES: a != o && b != o && c != o
    */
   public static boolean orderedCCW(S2Point a, S2Point b, S2Point c, S2Point o) {
+    // assert S2.skipAssertions || !a.equalsPoint(o);
+    // assert S2.skipAssertions || !b.equalsPoint(o);
+    // assert S2.skipAssertions || !c.equalsPoint(o);
+
     // The last inequality below is ">" rather than ">=" so that we return true if A == B or B == C,
     // and otherwise false if A == C. Recall that sign(x,y,z) == -sign(z,y,x) for all x,y,z.
-
     int sum = 0;
     if (sign(b, o, a) >= 0) {
       ++sum;
@@ -684,15 +693,26 @@ public final class S2Predicates {
 
   /**
    * Returns -1, 0, or +1 according to whether the distance XY is less than, equal to, or greater
-   * than the squared chord distance "r2" respectively. Distances are measured with respect the
+   * than the squared chord distance "r2" respectively. Distances are measured with respect to the
    * positions of all points as though they are projected to lie exactly on the surface of the unit
    * sphere.
    */
   public static int compareDistance(S2Point x, S2Point y, double r2) {
+    // As with compareDistances(), we start by comparing dot products because the sin^2 method is
+    // only valid when the distance XY and the limit "r" are both less than 90 degrees.
     int sign = CompareDistance.triage(x, y, r2);
     if (sign != 0) {
       return sign;
     }
+
+    // Optimization for (x == y) to avoid falling back to exact arithmetic. Note that it is possible
+    // for the distance from x to y to be zero even if they are not identical. They may have the
+    // same projection onto the unit sphere. This is possible even if both points are normalized.
+    // See S2.isUnitLength().
+    if (r2 == 0 && x.equalsPoint(y)) {
+      return 0;
+    }
+
     // TODO(user): Use Real instead of BigDecimal.
     return CompareDistance.exact(x, y, r2);
   }
@@ -722,7 +742,7 @@ public final class S2Predicates {
      * only handles angles below 90 degrees.
      */
     public static int triageSin2(S2Point x, S2Point y, double r2) {
-      // assert r2 < 2.0; // Only valid for distance limits < 90 degrees.
+      assert r2 < 2.0; // Only valid for distance limits < 90 degrees.
       double xySin2 = sin2Distance(x, y);
       double rSin2 = r2 * (1 - 0.25 * r2);
       return compare(xySin2, sin2DistanceError(xySin2), rSin2, 3 * T_ERR * rSin2);
@@ -786,7 +806,7 @@ public final class S2Predicates {
   public static int compareEdgeDistance(S2Point x, S2Point a, S2Point b, double r2) {
     // Check that the edge does not consist of antipodal points. This catches the most common case.
     // The full test is in CompareEdgeDistance.exact().
-    // assert !a.equals(b.neg());
+    assert !a.equals(b.neg());
 
     int sign = CompareEdgeDistance.triage(x, a, b, r2);
     if (sign != 0) {
@@ -842,20 +862,20 @@ public final class S2Predicates {
       double n1Error = ((3.5 + 8 / sqrt(3)) * n1 + 32 * sqrt(3) * DBL_ERR) * T_ERR;
       double aSignError = n1Error * aDir.norm();
       double bSignError = n1Error * bDir.norm();
-      if (abs(aSign) < aSignError || abs(bSign) < bSignError) {
-        // It is uncertain whether minimum distance is to an edge vertex or to the edge interior.
-        // So compute both distances and check whether they yield the same result.
-        int vertexSign = triageLineEndpoints(x, a, b, r2);
-        int lineSign = triageLineInterior(x, a, b, r2, n, n1, n2);
-        return (vertexSign == lineSign) ? lineSign : 0;
-      }
-      if (aSign >= 0 || bSign <= 0) {
-        // The minimum distance is to an edge endpoint.
-        return triageLineEndpoints(x, a, b, r2);
-      } else {
+      if (aSign < aSignError && bSign > -bSignError) {
+        if (aSign > -aSignError || bSign < bSignError) {
+          // It is uncertain whether minimum distance is to an edge vertex or to the edge interior.
+          // We compute both distances and check whether they yield the same result; otherwise the
+          // result is uncertain.
+          int vertexSign = triageLineEndpoints(x, a, b, r2);
+          int lineSign = triageLineInterior(x, a, b, r2, n, n1, n2);
+          return (vertexSign == lineSign) ? lineSign : 0;
+        }
         // The minimum distance is to the edge interior.
         return triageLineInterior(x, a, b, r2, n, n1, n2);
       }
+      // The minimum distance is to an edge endpoint.
+      return triageLineEndpoints(x, a, b, r2);
     }
 
     /** Returns the min test result from XA and XB, assuming the projection is A or B. */
@@ -960,8 +980,13 @@ public final class S2Predicates {
       // "a" and "b", since it is virtually certain that the previous floating point calculations
       // failed in that case.
 
-      // CompareEdgeDirections also checks that no edge has antipodal endpoints.
-      if (compareEdgeDirections(a, b, a, x) > 0 && compareEdgeDirections(a, b, x, b) > 0) {
+      // CompareEdgeDirections requires that no edge has antipodal endpoints, therefore we need to
+      // handle the cases a == -x, b == -x separately.
+      S2Point xneg = x.neg();
+      if (!a.equalsPoint(xneg)
+          && !b.equalsPoint(xneg)
+          && compareEdgeDirections(a, b, a, x) > 0
+          && compareEdgeDirections(a, b, x, b) > 0) {
         return exactLineInterior(big(x), big(a), big(b), big(r2));
       } else {
         return exactLineEndpoints(x, a, b, r2);
@@ -1171,8 +1196,8 @@ public final class S2Predicates {
   public static int compareEdgeDirections(S2Point a, S2Point b, S2Point c, S2Point d) {
     // Check that no edge consists of antipodal points. This catches the most common case; a full
     // test is in CompareEdgeDirections.exact.)
-    // assert !a.equals(b.neg());
-    // assert !c.equals(d.neg());
+    assert !a.equals(b.neg());
+    assert !c.equals(d.neg());
 
     int sign = CompareEdgeDirections.triage(a, b, c, d);
     if (sign != 0) {
@@ -1217,8 +1242,8 @@ public final class S2Predicates {
 
     /** Returns a BigDecimal-based test result. Exact but very slow. */
     public static int exact(BigPoint a, BigPoint b, BigPoint c, BigPoint d) {
-      // assert !a.isAntipodal(b);
-      // assert !c.isAntipodal(d);
+      assert !a.isAntipodal(b);
+      assert !c.isAntipodal(d);
       return a.crossProd(b).dotProd(c.crossProd(d)).signum();
     }
   }
@@ -1384,7 +1409,7 @@ public final class S2Predicates {
   public static int edgeCircumcenterSign(S2Point p, S2Point q, S2Point a, S2Point b, S2Point c) {
     // Check that the edge does not consist of antipodal points. This catches the most common case,
     // see EdgeCircumcenterSign.exact for a full test.
-    // assert !p.equals(q.neg());
+    assert !p.equals(q.neg());
 
     int abc = sign(a, b, c);
     int sign = EdgeCircumcenterSign.triage(p, q, a, b, c, abc);
@@ -1444,7 +1469,7 @@ public final class S2Predicates {
     public static int exact(BigPoint p, BigPoint q, BigPoint a, BigPoint b, BigPoint c, int abc) {
       // Return zero if the edge PQ is degenerate. (Also see the comments in sosTest.)
       if (p.isLinearlyDependent(q)) {
-        // assert p.dotProd(q).signum() > 0; // Antipodal edges not allowed.
+        assert p.dotProd(q).signum() > 0; // Antipodal edges not allowed.
         return 0;
       }
 
@@ -1669,14 +1694,14 @@ public final class S2Predicates {
    */
   public static Excluded getVoronoiSiteExclusion(
       S2Point a, S2Point b, S2Point p, S2Point q, double r2) {
-    // assert r2 < 2.0; // Less than a right angle.
-    // assert compareDistances(p, a, b) < 0;  // (implies a != b)
-    // assert compareEdgeDistance(a, p, q, r2) <= 0;
-    // assert compareEdgeDistance(b, p, q, r2) <= 0;
+    assert r2 < 2.0; // Less than a right angle.
+    assert compareDistances(p, a, b) < 0;  // (implies a != b)
+    assert compareEdgeDistance(a, p, q, r2) <= 0;
+    assert compareEdgeDistance(b, p, q, r2) <= 0;
 
     // Check that the edge does not consist of antipodal points. This catches the most common case,
     // see VoronoiSiteExclusion.exact for the full test.
-    // assert !p.equals(q.neg());
+    assert !p.equals(q.neg());
 
     // If one site is closer than the other to both endpoints of PQ, then it is closer to every
     // point on PQ. Note that this also handles the case where A and B are equidistant from every
@@ -1832,7 +1857,9 @@ public final class S2Predicates {
       // Includes the rb2 subtraction error above.
       double rbError = 1.5 * T_ERR * rb + 0.5 * rb2Error / sqrt(minRb2);
 
-      // The sign of LHS(3) determines which site may be excluded by the other.
+      // The sign of LHS(3) before taking the absolute value determines which site may be excluded
+      // by the other. If it is positive then A may be excluded, and if it is negative then B may be
+      // excluded.
       double lhs3 = cosR * (rb - ra);
       double absLhs3 = abs(lhs3);
       double lhs3Error = cosR * (raError + rbError) + 3 * T_ERR * absLhs3;
@@ -1850,6 +1877,48 @@ public final class S2Predicates {
       double resultError = lhs3Error + sinDError;
       if (result < -resultError) {
         return Excluded.NEITHER;
+      }
+
+      // d < 0 means that when AB is projected onto the great circle through X0X1, it proceeds in
+      // the opposite direction as X0X1. Normally we have d > 0 since GetVoronoiSiteExclusion
+      // requires d(A,X0) < d(B,X0) (corresponding to the fact that sites are processed in order of
+      // increasing distance from X0).
+      //
+      // However when edge X is long and/or the snap radius "r" is large, there are two cases where
+      // where d < 0 can occur:
+      //
+      // 1. d(A,X0) > Pi/2 and d(B,X1) < Pi/2 or the symmetric case (swap < and >).
+      //    This can only happen when d(X0,X1) + r > Pi/2. Note that {A,B} may
+      //    project to the interior of edge X or beyond its endpoints. In this
+      //    case A is kept iff d(A,X0) < Pi/2, and B is kept otherwise. Note that
+      //    the sign of (rb - ra) is not sufficient to determine which point is
+      //    kept in the situation where d(X0,X1) + r > Pi.
+      //
+      // 2. A is beyond endpoint X0, B is beyond endpoint X1, and AB wraps around
+      //    the sphere in the opposite direction from edge X. This case can only
+      //    happen when d(X0,X1) + r > Pi. Here each site is closest to one
+      //    endpoint of X and neither excludes the other.
+      //
+      // The algorithm that handles both cases is to keep A if d(A,X0) < Pi/2 and to keep B if
+      // d(B,X1) < Pi/2. (One of these conditions is always true.)
+      if (sinD < -sinDError) {
+        // Site A is kept if ca < 0 and excluded if ca > 0.
+        double r90 = S1ChordAngle.RIGHT.getLength2();
+        int ca = CompareDistance.triageCos(a, p, r90);
+        int cb = CompareDistance.triageCos(b, q, r90);
+        if (ca < 0 && cb < 0) {
+          return Excluded.NEITHER;
+        }
+        if (ca <= 0 && cb <= 0) {
+          return Excluded.UNCERTAIN;  // One or both kept?
+        }
+        // Since either ca or cb is 1, we know the result even if the distance comparison for the
+        // other site was uncertain.
+        assert ca <= 0 || cb <= 0;
+        return (ca > 0) ? Excluded.FIRST : Excluded.SECOND;
+      }
+      if (sinD <= sinDError) {
+        return Excluded.UNCERTAIN;
       }
 
       // Otherwise, before proceeding further we need to check that |d| <= Pi/2. In fact, |d| < Pi/2
@@ -1872,39 +1941,11 @@ public final class S2Predicates {
         return Excluded.UNCERTAIN;
       }
 
-      // Normally we have d > 0 because the sites are sorted so that A is closer to P and B is
-      // closer to Q. However if the edge PQ is longer than Pi/2, and the sites A and B are beyond
-      // its endpoints, then AB can wrap around the sphere in the opposite direction from PQ. In
-      // this situation d < 0 but each site is closest to one endpoint of PQ, so neither excludes
-      // the other.
-      //
-      // It turns out that this can happen only when the site that is further away from edge PQ is
-      // less than 90 degrees away from whichever endpoint of PQ it is closer to. It is provable
-      // that if this distance is less than 90 degrees, then it is also less than r2, and therefore
-      // the Voronoi regions of both sites intersect the edge.
-      if (sinD < -sinDError) {
-        double r90 = S1ChordAngle.RIGHT.getLength2();
-        // "ca" is negative if Voronoi region A definitely intersects edge PQ.
-        int ca = (lhs3 < -lhs3Error) ? -1 : CompareDistance.triageCos(a, p, r90);
-        int cb = (lhs3 > lhs3Error) ? -1 : CompareDistance.triageCos(b, q, r90);
-        if (ca < 0 && cb < 0) {
-          return Excluded.NEITHER;
-        }
-        if (ca <= 0 && cb <= 0) {
-          return Excluded.UNCERTAIN;
-        }
-        if (absLhs3 <= lhs3Error) {
-          return Excluded.UNCERTAIN;
-        }
-      } else if (sinD <= sinDError) {
-        return Excluded.UNCERTAIN;
-      }
-
       // Now we can finish checking the results of predicate (3).
       if (result <= resultError) {
         return Excluded.UNCERTAIN;
       }
-      // assert absLhs3 > lhs3Error;
+      assert absLhs3 > lhs3Error;
       return (lhs3 > 0) ? Excluded.FIRST : Excluded.SECOND;
     }
 
@@ -1914,7 +1955,7 @@ public final class S2Predicates {
 
     /** A site exclusion test using BigDecimal arithmetic. */
     public static Excluded exact(BigPoint a, BigPoint b, BigPoint p, BigPoint q, BigDecimal r2) {
-      // assert !p.isAntipodal(q);
+      assert !p.isAntipodal(q);
 
       // Recall that one site excludes the other if
       //
@@ -1936,11 +1977,25 @@ public final class S2Predicates {
       // predicate of degree 20 in the input arguments (i.e. degree 4 in each of "a", "b", "p", "q",
       // and "r2").
       //
-      // Before squaring we need to check the sign of each side. We also check the condition that
-      // cos(d) >= 0. Given what else we need to compute, it is cheaper use the identity
-      //
-      //   (aXn).(bXn) = (a.b) |n|^2 - (a.n)(b.n)
+      // Before squaring we need to check the sign of each side. If the RHS of (2) is negative
+      // (corresponding to sin(d) < 0), then we need to apply the logic in triage().
       BigPoint n = p.crossProd(q);
+      BigDecimal rhs2 = a.crossProd(b).dotProd(n);
+      int rhs2Sgn = rhs2.signum();
+      if (rhs2Sgn < 0) {
+        // This is the d < 0 case. See comments in triage().
+        int ca = CompareDistance.exact(a, p, R90);
+        int cb = CompareDistance.exact(b, q, R90);
+        if (ca < 0 && cb < 0) {
+          return Excluded.NEITHER;
+        }
+        assert ca != 0 && cb != 0;  // This is guaranteed since d < 0.
+        assert ca < 0 || cb < 0;    // At least one site must be kept.
+        return (ca > 0) ? Excluded.FIRST : Excluded.SECOND;
+      }
+
+      // We also check that cos(d) >= 0.  Given what else we need to compute, it
+      // is cheaper use the identity (aXn).(bXn) = (a.b) |n|^2 - (a.n)(b.n) .
       BigDecimal n2 = n.norm2();
       BigDecimal aDn = a.dotProd(n);
       BigDecimal bDn = b.dotProd(n);
@@ -1961,25 +2016,11 @@ public final class S2Predicates {
       BigDecimal sb2 = a2.multiply(n2Sin2R.multiply(b2).subtract(square(bDn)));
       int lhsSign2 = sb2.compareTo(sa2);
 
-      // If the RHS of (2) is negative (corresponding to sin(d) < 0), then we need to consider the
-      // possibility that the edge AB wraps around the sphere in the opposite direction from edge
-      // PQ, with the result that neither site excludes the other; see triage().
-      BigDecimal rhs2 = a.crossProd(b).dotProd(n);
-      int rhsSign2 = rhs2.signum();
-      if (rhsSign2 < 0) {
-        int ca = (lhsSign2 < 0) ? -1 : CompareDistance.exact(a, p, R90);
-        int cb = (lhsSign2 > 0) ? -1 : CompareDistance.exact(b, q, R90);
-        if (ca <= 0 && cb <= 0) {
-          return Excluded.NEITHER;
-        }
-        // assert ca != 1 || cb != 1;
-        return ca == 1 ? Excluded.FIRST : Excluded.SECOND;
-      }
       if (lhsSign2 == 0) {
         // If the RHS of (2) is zero as well (i.e., d == 0) then both sites are equidistant from
         // every point on edge PQ. This case requires symbolic perturbations, but it should already
         // have been handled in getVoronoiSiteExclusion(); see the call to CompareDistances.
-        // assert rhsSign2 > 0;
+        assert rhs2Sgn > 0;
         return Excluded.NEITHER;
       }
 

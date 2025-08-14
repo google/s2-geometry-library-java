@@ -33,6 +33,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
@@ -47,6 +48,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -228,6 +230,30 @@ public class S2LoopTest extends GeometryTestCase {
     assertTrue(TestLoops.SOUTH_HEMI.loop.getRectBound().lng().isFull());
     assertBoundsEqual(
         TestLoops.SOUTH_HEMI.loop.getRectBound().lat(), new R1Interval(-M_PI_2, 0), latError);
+  }
+
+  /**
+   * Verifies that constructing an S2Loop from invalid S2Points does not crash, but results in an
+   * invalid loop. However, if assertions are enabled, an assertion error will be thrown.
+   */
+  @Test
+  public void testInvalidPoints() {
+    // Since S2Loop.initOriginAndBound uses the first few vertices specifically for deciding
+    // originInside, we test having an invalid point in any position in the loop.
+    List<S2Point> vertices =
+        S2Loop.makeRegularVertices(
+            new S2Point(0.1, 0.2, 0.3).normalize(), S1Angle.degrees(0.001), 10);
+    vertices.set(0, new S2Point(Double.NaN, 0, 0));
+
+    for (int i = 0; i < vertices.size(); i++) {
+      List<S2Point> rotated = new ArrayList<>(vertices);
+      Collections.rotate(rotated, i);
+      // Verify that an assertion is thrown for the invalid point, if assertions are enabled.
+      assertThrows(AssertionError.class, () -> new S2Loop(rotated));
+      // Verify that an invalid loop is created without crashing, if assertions are disabled.
+      S2Loop loop = GeometryTestCase.uncheckedCreate(() -> new S2Loop(rotated));
+      assertFalse(loop.isValid());
+    }
   }
 
   @Test

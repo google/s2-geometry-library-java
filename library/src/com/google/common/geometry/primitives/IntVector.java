@@ -224,9 +224,8 @@ public class IntVector implements MutableIntList {
    */
   @Override
   public void fillConsecutive() {
-    int value = 0;
     for (int i = 0; i < numElements; i++) {
-      data[i] = value++;
+      data[i] = i;
     }
   }
 
@@ -450,13 +449,9 @@ public class IntVector implements MutableIntList {
     if (newSize < numElements) {
       return;
     }
-    // If a new array was allocated by ensureCapacity(), there's no need to clear the elements.
-    // Otherwise, the backing array is being reused and must be cleared.
-    // TODO(torrey): A sequence of resizes could be more efficient if a range of elements that were
-    // ever used but not cleared was tracked.
-    if (!ensureCapacity(newSize)) {
-      Arrays.fill(data, numElements, newSize, 0);
-    }
+    // The backing array is being reused and must be cleared.
+    ensureCapacity(newSize);
+    Arrays.fill(data, numElements, newSize, 0);
     numElements = newSize;
   }
 

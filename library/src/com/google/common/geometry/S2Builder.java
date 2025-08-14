@@ -30,6 +30,7 @@ import com.google.common.geometry.S2Builder.GraphOptions.SiblingPairs;
 import com.google.common.geometry.S2BuilderGraph.EdgeList;
 import com.google.common.geometry.S2BuilderUtil.GraphShape;
 import com.google.common.geometry.S2CrossingEdgesQuery.CrossingType;
+import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.IntComparator;
@@ -39,6 +40,7 @@ import com.google.common.geometry.primitives.Sorter;
 import com.google.common.geometry.primitives.Sorter.SortableCollection;
 import com.google.common.primitives.UnsignedLongs;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.ArrayList;
@@ -47,6 +49,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import jsinterop.annotations.JsType;
 
 /**
  * S2Builder is a tool for assembling geometry from edges. Here are some of the things it is
@@ -135,7 +138,7 @@ import java.util.Objects;
  *
  * // Create a builder with a SnapFunction for E7, and a polygon layer.
  * S2Builder builder = new S2Builder.Builder(new IntLatLngSnapFunction(7)).build();
- * S2PolygonLayer layer = new S2BuilderUtil.S2PolygonLayer();
+ * S2PolygonLayer layer = new S2PolygonLayer();
  * builder.startLayer(layer);
  *
  * // Add the input polygon to the builder and build. Check that the build was successful.
@@ -448,8 +451,51 @@ public class S2Builder {
     snappingNeeded = false;
   }
 
-  // TODO(torrey): Add getters to S2Builder so specific options can be obtained without needing to
-  // call toBuilder.
+  /** Returns the SnapFunction set for this S2Builder, from {@link Builder#snapFunction()}. */
+  public SnapFunction snapFunction() {
+    return options.snapFunction();
+  }
+
+  /** Returns the edge snap radius set for this S2Builder, from {@link Builder#edgeSnapRadius()}. */
+  public S1Angle edgeSnapRadius() {
+    return options.edgeSnapRadius();
+  }
+
+  /**
+   * Returns the max edge deviation set for this S2Builder, from {@link Builder#maxEdgeDeviation()}.
+   */
+  public S1Angle maxEdgeDeviation() {
+    return options.maxEdgeDeviation();
+  }
+
+  /**
+   * Returns the splitCrossingEdges option set for this S2Builder, from {@link
+   * Builder#splitCrossingEdges()}.
+   */
+  public boolean splitCrossingEdges() {
+    return options.splitCrossingEdges();
+  }
+
+  /**
+   * Returns the intersectionTolerance set for this S2Builder, from {@link
+   * Builder#intersectionTolerance()}.
+   */
+  public S1Angle intersectionTolerance() {
+    return options.intersectionTolerance();
+  }
+
+  /**
+   * Returns the simplifyEdgeChains option set for this S2Builder, from {@link
+   * Builder#simplifyEdgeChains()}.
+   */
+  public boolean simplifyEdgeChains() {
+    return options.simplifyEdgeChains();
+  }
+
+  /** Returns the idempotent option set for this S2Builder, from {@link Builder#idempotent()}. */
+  public boolean idempotent() {
+    return options.idempotent();
+  }
 
   /** Returns a new S2Builder.Builder initialized with the options used by this S2Builder. */
   public Builder toBuilder() {
@@ -471,7 +517,7 @@ public class S2Builder {
   }
 
   private static S1ChordAngle addPointToEdgeError(S1ChordAngle ca) {
-    return ca.plusError(S2EdgeUtil.getMinDistanceMaxError(ca));
+    return ca.plusError(S2EdgeUtil.getUpdateMinDistanceMaxError(ca));
   }
 
   /** Convenience method that returns the current layer, which is the last one. */
@@ -542,6 +588,40 @@ public class S2Builder {
   }
 
   /**
+   * Returns the number of input edges that have been added to this Builder since it was created
+   * or clear() was called.
+   */
+  public int numInputEdges() {
+    return inputEdges.size();
+  }
+
+  /** Returns the source vertex id of the given input edge id. */
+  public int inputEdgeSrcId(int edgeId) {
+    return inputEdges.getSrcId(edgeId);
+  }
+
+  /** Returns the destination vertex id of the given input edge id. */
+  public int inputEdgeDstId(int edgeId) {
+    return inputEdges.getDstId(edgeId);
+  }
+
+  /** Returns the source vertex of the given input edge id. */
+  public S2Point inputEdgeSrcVertex(int edgeId) {
+    return inputVertices.get(inputEdges.getSrcId(edgeId));
+  }
+
+  /** Returns the destination vertex of the given input edge id. */
+  public S2Point inputEdgeDstVertex(int edgeId) {
+    return inputVertices.get(inputEdges.getDstId(edgeId));
+  }
+
+  /** Fills the given MutableEdge with the start and end vertices of the given input edge id. */
+  public void getInputEdge(int edgeId, MutableEdge edge) {
+    edge.a = inputEdgeSrcVertex(edgeId);
+    edge.b = inputEdgeDstVertex(edgeId);
+  }
+
+  /**
    * Adds a point to the current layer, as a degenerate edge. The sementics depend on the layer:
    *
    * <p>If the current layer will build points, this adds a point.
@@ -605,15 +685,32 @@ public class S2Builder {
   }
 
   /**
-   * Adds the edges in the given loop. Note that a loop consisting of one vertex adds a single
-   * degenerate edge.
+   * Adds the edges defined by a loop consisting of the given list of points, including the edge
+   * from the last point to the first. Degenerate loops with one or two vertices are supported.
+   */
+  public void addLoop(List<S2Point> loop) {
+    if (loop.isEmpty()) {
+      return;
+    }
+    if (loop.size() == 1) {
+      addPoint(loop.get(0));
+      return;
+    }
+    for (int i = 0; i < loop.size() - 1; ++i) {
+      addEdge(loop.get(i), loop.get(i + 1));
+    }
+    addEdge(loop.get(loop.size() - 1), loop.get(0));
+  }
+
+  /**
+   * Adds the edges in the given loop. Empty or full loops are ignored.
    *
    * <p>If the sign() of an S2Loop is negative (i.e. the loop represents a hole within a polygon),
    * the edge directions are automatically reversed to ensure that the polygon interior is always
    * to the left of every edge.
    */
   public void addLoop(S2Loop loop) {
-    // Ignore loops that do not have a boundary.
+    // Ignore loops with a single vertex, as they do not have a boundary.
     if (loop.isEmptyOrFull()) {
       return;
     }
@@ -877,7 +974,7 @@ public class S2Builder {
     final IntVector vmap = IntVector.ofSize(inputVertices.size());
 
     // Consider the sorted vertices and add them as sites if they are not duplicates.
-    S2Point previousSite = S2Point.ORIGIN; // won't match any vertex.
+    S2Point previousSite = S2Point.ZERO; // won't match any vertex.
     for (int in = 0; in < sortedInputVertexIds.size(); in++) {
       // Get the next input vertex to consider as a candidate site.
       int vertexId = sortedInputVertexIds.get(in);
@@ -967,7 +1064,7 @@ public class S2Builder {
       sortedVertexIds.add(inputVertexId);
     }
 
-    // Wrap the IntVector and ArrayList in a SortableCollection so they can be sorted together.
+    // Wrap the IntVector and array of longs in a SortableCollection so they can be sorted together.
     // Orders by cellId, breaking ties by comparing vertex points as described above.
     Sorter.sort(new SortableCollection() {
       @Override
@@ -996,9 +1093,15 @@ public class S2Builder {
         }
         // Break ties by comparing vertices, so equal vertices are adjacent in the sorted list.
         // The chooseAllVerticesAsSites() method relies on this.
-        S2Point vertexA = inputVertices.get(sortedVertexIds.get(a));
-        S2Point vertexB = inputVertices.get(sortedVertexIds.get(b));
-        return vertexA.compareTo(vertexB) < 0;
+        int vertexAid = sortedVertexIds.get(a);
+        int vertexBid = sortedVertexIds.get(b);
+        S2Point vertexA = inputVertices.get(vertexAid);
+        S2Point vertexB = inputVertices.get(vertexBid);
+        if (vertexA.compareTo(vertexB) != 0) {
+          return vertexA.compareTo(vertexB) < 0;
+        }
+        // Break ties between equal vertices consistently by comparing vertex ids.
+        return Integer.compare(vertexAid, vertexBid) < 0;
       }
     });
     return sortedVertexIds;
@@ -1186,7 +1289,11 @@ public class S2Builder {
       S2Point aPoint = sites.get(a);
       S2Point bPoint = sites.get(b);
       // Returns -1, 0, or +1 according to whether AX < BX, A == B, or AX > BX respectively.
-      return S2Predicates.compareDistances(xPoint, aPoint, bPoint);
+      int diff = S2Predicates.compareDistances(xPoint, aPoint, bPoint);
+      if (diff != 0) {
+        return diff;
+      }
+      return Integer.compare(a, b); // Deterministic tie-breaker.
     }
   }
 
@@ -1617,7 +1724,7 @@ public class S2Builder {
 
     // For each layer, maps output edge id (in the layer) to an "input edge id set id" (an int)
     // representing the set of input edge ids that were snapped to this edge.
-    ArrayList<IntVector> layerInputEdgeIdSetIds = new ArrayList<>();
+    ArrayList<IntArrayList> layerInputEdgeIdSetIds = new ArrayList<>();
 
     // For all layers, the actual InputEdgeIds assigned to an edge can be retrieved from
     // "inputEdgeIdSetLexicon" with the "input edge id set id" for that edge.
@@ -1679,7 +1786,7 @@ public class S2Builder {
    * is necessary). The output arguments are:
    * <ul>
    * <li>For each layer, an EdgeList containing the output edges in that layer.</li>
-   * <li>For each layer, an IntVector mapping edge id to an id in the lexicon, containing sets of
+   * <li>For each layer, an IntArrayList mapping edge id to an id in the lexicon, containing sets of
    * input edge ids, thus providing the input edge ids mapped to each output edge.</li>
    * </ul>
    * <p>Note S2BuilderGraph.processEdges can modify layerOptions in some cases, changing undirected
@@ -1687,7 +1794,7 @@ public class S2Builder {
    */
   private void buildLayerEdges(
       ArrayList<EdgeList> layerEdges,
-      ArrayList<IntVector> layerInputEdgeIdSetIds,
+      ArrayList<IntArrayList> layerInputEdgeIdSetIds,
       IdSetLexicon inputEdgeIdSetLexicon) {
     // Edge chains are simplified only when a non-zero snap radius is specified.
     boolean simplify = snappingNeeded && options.simplifyEdgeChains();
@@ -1705,7 +1812,7 @@ public class S2Builder {
 
     for (int i = 0; i < layers.size(); ++i) {
       layerEdges.add(new EdgeList());
-      layerInputEdgeIdSetIds.add(new IntVector());
+      layerInputEdgeIdSetIds.add(new IntArrayList());
     }
 
     for (int layer = 0; layer < layers.size(); ++layer) {
@@ -1752,7 +1859,7 @@ public class S2Builder {
   private void simplifyEdgeChains(
       ArrayList<IntVector> siteVertices,
       ArrayList<EdgeList> layerEdges,
-      ArrayList<IntVector> layerInputEdgeIdSetIds,
+      ArrayList<IntArrayList> layerInputEdgeIdSetIds,
       IdSetLexicon inputEdgeIdSetLexicon) {
     if (layers.isEmpty()) {
       return;
@@ -1761,7 +1868,7 @@ public class S2Builder {
     // An EdgeList with edges from all layers, ordered lexicographically.
     EdgeList mergedEdges = new EdgeList();
     // Maps edges in mergedEdges to the corresponding IdSet id in the lexicon.
-    IntVector mergedInputEdgeIdSetIds = new IntVector();
+    IntArrayList mergedInputEdgeIdSetIds = new IntArrayList();
     // Maps edges in mergedEdges to the layer the edge is from.
     IntVector mergedEdgeLayers = new IntVector();
 
@@ -1773,7 +1880,7 @@ public class S2Builder {
     for (EdgeList edges : layerEdges) {
       edges.clear();
     }
-    for (IntVector inputEdgeIds : layerInputEdgeIdSetIds) {
+    for (IntArrayList inputEdgeIds : layerInputEdgeIdSetIds) {
       inputEdgeIds.clear();
     }
 
@@ -1823,10 +1930,10 @@ public class S2Builder {
   private void mergeLayerEdges(
       // Input parameters.
       ArrayList<EdgeList> layerEdges,
-      ArrayList<IntVector> layerInputEdgeIdSetIds,
+      ArrayList<IntArrayList> layerInputEdgeIdSetIds,
       // Output parameters.
       EdgeList mergedEdges,
-      IntVector mergedInputEdgeIdSetIds,
+      IntArrayList mergedInputEdgeIdSetIds,
       IntVector mergedEdgeLayers) {
     // A LayerEdgeList containing (layer, edgeIndex) for every edge in every layer's edgeList.
     LayerEdgeIdList order = new LayerEdgeIdList(layerEdges);
@@ -1847,7 +1954,7 @@ public class S2Builder {
     for (int i = 0; i < order.size(); i++) {
       mergedEdges.add(order.getSrcId(i), order.getDstId(i));
       mergedInputEdgeIdSetIds.add(
-          layerInputEdgeIdSetIds.get(order.getLayerId(i)).get(order.getEdgeId(i)));
+          layerInputEdgeIdSetIds.get(order.getLayerId(i)).getInt(order.getEdgeId(i)));
       mergedEdgeLayers.add(order.getLayerId(i));
     }
   }
@@ -1864,7 +1971,7 @@ public class S2Builder {
       GraphOptions options,
       // Output parameters
       EdgeList edges,
-      IntVector inputEdgeIdSetIds,
+      IntArrayList inputEdgeIdSetIds,
       IdSetLexicon inputEdgeIdSetLexicon,
       ArrayList<IntVector> siteVertices) {
     boolean discardDegenerateEdges =
@@ -1941,7 +2048,7 @@ public class S2Builder {
       int inputEdgeIdSetId,
       EdgeType edgeType,
       EdgeList edges,
-      IntVector inputEdgeIdSetIds) {
+      IntArrayList inputEdgeIdSetIds) {
     edges.add(srcSiteId, dstSiteId);
     inputEdgeIdSetIds.add(inputEdgeIdSetId);
     if (edgeType == EdgeType.UNDIRECTED) {
@@ -2004,9 +2111,7 @@ public class S2Builder {
 
     /** Returns the sorted list of site ids for the given 'edgeId'. */
     public IntList get(int edgeId) {
-      if (!map.containsKey(edgeId)) {
-        map.put(edgeId, new IntVector());
-      }
+      map.putIfAbsent(edgeId, new IntVector());
       return map.get(edgeId);
     }
   }
@@ -2038,7 +2143,7 @@ public class S2Builder {
     private final List<EdgeList> layerEdges;
 
     /** For each layer, maps edges in the EdgeList to the IdSet in the lexicon of input edge ids. */
-    private final List<IntVector> layerInputEdgeIdSetIds;
+    private final List<IntArrayList> layerInputEdgeIdSetIds;
 
     /** For all layers, sets of input edge ids mapped to output edges. */
     private final IdSetLexicon inputEdgeIdSetLexicon;
@@ -2094,7 +2199,7 @@ public class S2Builder {
         List<IntVector> siteVertices,
         // Output parameters.
         List<EdgeList> layerEdges, // Simplified edges for each layer.
-        List<IntVector> layerInputEdgeIdSetIds, // InputEdgeIdSetIds for the new edges.
+        List<IntArrayList> layerInputEdgeIdSetIds, // InputEdgeIdSetIds for the new edges.
         IdSetLexicon inputEdgeIdSetLexicon) { // New lexicon entries are added, if needed.
       this.builder = builder;
       this.graph = graph;
@@ -2934,6 +3039,7 @@ public class S2Builder {
    *       that no vertex crosses an edge.
    * </ol>
    */
+  @JsType
   public interface SnapFunction {
     /**
      * The maximum distance that vertices can move when snapped. The snap radius can be any value
@@ -3081,7 +3187,7 @@ public class S2Builder {
      * their intersection point. See also the {@link #addIntersection(S2Point)} method which allows
      * intersection points to be added selectively.
      *
-     * <p>When this option if true, {@link #intersectionTolerance()} is automatically set to a
+     * <p>When this option is true, {@link #intersectionTolerance()} is automatically set to a
      * minimum of {@link S2EdgeUtil#INTERSECTION_ERROR} (see {@link #intersectionTolerance()} for
      * why this is necessary). Note that this means that edges can move by up to {@link
      * S2EdgeUtil#INTERSECTION_ERROR} even when the specified snap radius is zero. The exact
@@ -3139,7 +3245,7 @@ public class S2Builder {
      *
      * <p>However if the intersection tolerance is set to 1 nanometer then the snap radius for edges
      * is increased to 1.000000001 meters ensuring that both edges snap to a common vertex even in
-     * this worst case. (Tthis technique does not work if the vertex snap radius is increased as
+     * this worst case. (This technique does not work if the vertex snap radius is increased as
      * well; it requires edges and vertices to be handled differently.)
      *
      * <p>Note that this option allows edges to move by up to the given intersection tolerance even

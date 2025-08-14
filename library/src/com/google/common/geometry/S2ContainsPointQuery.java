@@ -147,15 +147,29 @@ public class S2ContainsPointQuery {
     boolean inside = clipped.containsCenter();
     int numEdges = clipped.numEdges();
     if (numEdges > 0) {
-      // Points and polylines can be ignored unless the vertex model is CLOSED.
+      MutableEdge edge = new MutableEdge();
+
       S2Shape shape = index.getShapes().get(clipped.shapeId());
-      if (!shape.hasInterior() && options.vertexModel != S2VertexModel.CLOSED) {
+      if (!shape.hasInterior()) {
+        // Points and polylines can be ignored unless the vertex model is CLOSED.
+        if (options.vertexModel != S2VertexModel.CLOSED) {
+          return false;
+        }
+        // Otherwise points and polylines contain their vertices and nothing else.
+        for (int chainId = 0; chainId < shape.numChains(); chainId++) {
+          int length = shape.getChainLength(chainId);
+          for (int offset = 0; offset <= length; offset++) {
+            if (shape.getChainVertex(chainId, offset).equalsPoint(p)) {
+              return true;
+            }
+          }
+        }
         return false;
       }
-      // Test containment by drawing a line segment from the cell center to the given point and
-      // counting edge crossings.
+
+      // For polygons, test containment by drawing a line segment from the cell center to the given
+      // point and counting edge crossings.
       EdgeCrosser crosser = new EdgeCrosser(cellCenter, p);
-      MutableEdge edge = new MutableEdge();
       boolean crossing;
       for (int i = 0; i < numEdges; ++i) {
         shape.getEdge(clipped.edge(i), edge);
@@ -170,7 +184,7 @@ public class S2ContainsPointQuery {
           default:
             // Shared vertex, test if we have a vertex crossing.
             // For the OPEN and CLOSED models, check whether "p" is a vertex.
-            if (options.vertexModel != S2VertexModel.SEMI_OPEN && edge.isEndpoint(p)) {
+            if (options.vertexModel != S2VertexModel.SEMI_OPEN && edge.hasEndpoint(p)) {
               return options.vertexModel == S2VertexModel.CLOSED;
             }
             crossing = S2EdgeUtil.vertexCrossing(cellCenter, p, edge.a, edge.b);

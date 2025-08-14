@@ -44,6 +44,8 @@ import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.ImmutableIntSequence;
 import com.google.common.geometry.primitives.Ints.OfInt;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntComparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -92,7 +94,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
     vertices.add(new S2Point(1, 0, 0));
     EdgeList edges = new EdgeList();
     edges.add(37, 42);
-    IntVector inputEdgeIdSetIds = IntVector.empty();
+    IntArrayList inputEdgeIdSetIds = new IntArrayList();
     inputEdgeIdSetIds.add(0);
     IdSetLexicon inputEdgeIdSetLexicon = new IdSetLexicon();
     IdSetLexicon labelSetLexicon = new IdSetLexicon();
@@ -136,7 +138,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
 
     // inputEdgeIdSetIds maps an edge id to an InputEdgeIdSetId (an int) which is in turn a key in
     // inputEdgeIdSetLexicon.
-    IntVector inputEdgeIdSetIds = IntVector.of(0);
+    IntArrayList inputEdgeIdSetIds = IntArrayList.of(0);
     // The inputEdgeIdSetLexicon is empty, so no input edges were mapped to Edge 0.
     IdSetLexicon inputEdgeIdSetLexicon = new IdSetLexicon();
     // An empty labelSetIds means no labels are present.
@@ -387,8 +389,8 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
     S2Error error = new S2Error();
     assertTrue(error.toString(), builder.build(error));
     S2BuilderGraph graph = graphClone.graph();
-    assertTrue(graph.getInEdgeIds().isEqualTo(
-                   IntVector.of(1, 0, 5, 6, 7, 2, 3, 4, 11, 12, 13, 8, 9, 10)));
+    assertTrue(
+        graph.getInEdgeIds().equals(IntArrayList.of(1, 0, 5, 6, 7, 2, 3, 4, 11, 12, 13, 8, 9, 10)));
   }
 
   @Test
@@ -508,6 +510,11 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
       this.dstId = dstId;
       this.inputEdgeIds = new IntVector();
     }
+
+    @Override
+    public String toString() {
+      return Platform.formatString("%d-%d", srcId, dstId);
+    }
   }
 
   private void testProcessEdges(
@@ -524,7 +531,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
     EdgeList edges = new EdgeList();
     // Each edge in the graph has a set of input edge ids that were mapped to it. Those sets are
     // stored in the IdSetLexicon, and the map from edge id to IdSet id is stored in inputIdSetIds.
-    IntVector inputIdSetIds = IntVector.empty();
+    IntArrayList inputIdSetIds = new IntArrayList();
     IdSetLexicon idSetLexicon = new IdSetLexicon();
 
     for (TestEdge inputEdge : inputEdges) {
@@ -1058,10 +1065,10 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
       IdSetLexicon newInputEdgeIdSetLexicon,
       GraphOptions newOptions,
       EdgeList newEdges,
-      IntVector newInputEdgeIdSetIds,
+      IntArrayList newInputEdgeIdSetIds,
       GraphOptions expectedOptions,
       EdgeList expectedEdges,
-      IntVector expectedInputEdgeIdSetIds) {
+      IntArrayList expectedInputEdgeIdSetIds) {
     S2Error error = new S2Error();
     S2BuilderGraph newGraph = graph.makeSubgraph(
         newOptions, newEdges, newInputEdgeIdSetIds,
@@ -1087,7 +1094,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
 
     // The edges should be updated according to the requested options.
     assertTrue(expectedEdges.isEqualTo(newGraph.edges()));
-    assertTrue(expectedInputEdgeIdSetIds.isEqualTo(newGraph.inputEdgeIdSetIds()));
+    assertTrue(expectedInputEdgeIdSetIds.equals(newGraph.inputEdgeIdSetIds()));
     assertTrue(newInputEdgeIdSetLexicon.isEqualTo(newGraph.inputEdgeIdSetLexicon()));
   }
 
@@ -1104,7 +1111,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
         SiblingPairs.KEEP);
     List<S2Point> vertices = S2TextFormat.parsePointsOrDie("0:0, 0:1, 1:1");
     EdgeList edges = EdgeList.of(e(0, 0), e(0, 0), e(1, 2), e(2, 1));
-    IntVector inputEdgeIdSetIds = IntVector.of(0, 0, 1, 1);
+    IntArrayList inputEdgeIdSetIds = IntArrayList.of(0, 0, 1, 1);
     IntVector labelSetIds = new IntVector();
     IdSetLexicon inputEdgeIdSetLexicon = new IdSetLexicon();
     IdSetLexicon labelSetLexicon = new IdSetLexicon();
@@ -1120,7 +1127,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
         DuplicateEdges.KEEP,
         SiblingPairs.KEEP);
     EdgeList expectedEdges = EdgeList.of(e(1, 2), e(2, 1));
-    IntVector expectedInputEdgeIdSetIds = IntVector.of(1, 1);
+    IntArrayList expectedInputEdgeIdSetIds = IntArrayList.of(1, 1);
     checkMakeSubgraph(
         graph, inputEdgeIdSetLexicon,
         newOptions, edges, inputEdgeIdSetIds,
@@ -1137,7 +1144,7 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
         SiblingPairs.KEEP);
     List<S2Point> vertices = S2TextFormat.parsePointsOrDie("0:0, 0:1, 1:1");
     EdgeList edges = EdgeList.of(e(0, 0), e(0, 1), e(1, 2), e(1, 2), e(2, 1));
-    IntVector inputEdgeIdSetIds = IntVector.of(1, 2, 3, 3, 3);
+    IntArrayList inputEdgeIdSetIds = IntArrayList.of(1, 2, 3, 3, 3);
     IntVector labelSetIds = new IntVector();
     IdSetLexicon inputEdgeIdSetLexicon = new IdSetLexicon();
     IdSetLexicon labelSetLexicon = new IdSetLexicon();
@@ -1156,12 +1163,27 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
       e(0, 1), e(1, 0),  // Undirected edge.
       e(1, 2), e(2, 1)   // Undirected edge after discarding sibling pair.
     );
-    IntVector expectedInputEdgeIdSetIds = IntVector.of(
-      1, 1, 2, IdSetLexicon.EMPTY_SET_ID, 3, 3);
+    IntArrayList expectedInputEdgeIdSetIds =
+        IntArrayList.of(1, 1, 2, IdSetLexicon.EMPTY_SET_ID, 3, 3);
 
     checkMakeSubgraph(
         graph, inputEdgeIdSetLexicon,
         newOptions, edges, inputEdgeIdSetIds,
         newOptions, expectedEdges, expectedInputEdgeIdSetIds);
+  }
+
+  @Test
+  public void testByDstVertexEdge() {
+    EdgeList edges = EdgeList.of(e(1, 1), e(2, 1), e(2, 2), e(2, 2));
+    IntComparator comparator = S2BuilderGraph.byDstVertexEdge(edges);
+    // The common case, dst vertex is different
+    assertTrue(comparator.compare(1, 2) < 0);
+    assertTrue(comparator.compare(2, 1) > 0);
+    // tie on dst vertex, break tie with src vertex
+    assertTrue(comparator.compare(0, 1) < 0);
+    assertTrue(comparator.compare(1, 0) > 0);
+    // tie on src and dst vertices, break tie with edge id
+    assertTrue(comparator.compare(2, 3) < 0);
+    assertTrue(comparator.compare(3, 2) > 0);
   }
 }

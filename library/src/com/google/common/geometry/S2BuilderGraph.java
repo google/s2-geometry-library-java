@@ -17,6 +17,7 @@ package com.google.common.geometry;
 
 import static java.lang.Math.max;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.S2Builder.EdgeType;
 import com.google.common.geometry.S2Builder.GraphOptions;
@@ -27,16 +28,18 @@ import com.google.common.geometry.S2Builder.IsFullPolygonPredicate;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IdSetLexicon.IdSet;
 import com.google.common.geometry.primitives.IntPairVector;
-import com.google.common.geometry.primitives.IntSorter;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.IntBiConsumer;
-import com.google.common.geometry.primitives.Ints.IntComparator;
 import com.google.common.geometry.primitives.Ints.IntConsumer;
 import com.google.common.geometry.primitives.Ints.IntList;
 import com.google.common.geometry.primitives.Ints.IntSequence;
 import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.common.geometry.primitives.Sorter;
 import com.google.common.primitives.Ints;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntComparator;
+import it.unimi.dsi.fastutil.ints.IntIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -90,7 +93,7 @@ public class S2BuilderGraph {
    * i.e. the ids of IdSets in the inputEdgeIdSetLexicon. Each of those IdSets is the set of input
    * edge ids that were mapped to the edge.
    */
-  private final IntVector inputEdgeIdSetIds;
+  private final IntArrayList inputEdgeIdSetIds;
 
   /** Mapping from ints which are InputEdgeIdSetIds to sets of input edge ids. */
   private final IdSetLexicon inputEdgeIdSetLexicon;
@@ -141,7 +144,7 @@ public class S2BuilderGraph {
       GraphOptions options,
       List<S2Point> vertices,
       EdgeList edges,
-      IntVector inputEdgeIdSetIds,
+      IntArrayList inputEdgeIdSetIds,
       IdSetLexicon inputEdgeIdSetLexicon,
       IntList labelSetIds,
       IdSetLexicon labelSetLexicon,
@@ -194,19 +197,57 @@ public class S2BuilderGraph {
     return edges.getDstId(edgeId);
   }
 
+  /** Returns the source vertex of the Edge with the given edgeId (its index in edges). */
+  public S2Point edgeSrc(int edgeId) {
+    return vertices.get(edges.getSrcId(edgeId));
+  }
+
+  /** Returns the destination vertex of the Edge with the given edgeId (its index in edges). */
+  public S2Point edgeDst(int edgeId) {
+    return vertices.get(edges.getDstId(edgeId));
+  }
+
   /** Returns the entire ordered list of Edges. */
   public EdgeList edges() {
     return edges;
   }
 
   /**
+   * Returns an IntComparator that compares EdgeIds in the given EdgeList by destination vertex id,
+   * breaking ties with source vertex ids, and breaking ties for equal edges with edge ids.
+   */
+  @VisibleForTesting
+  static IntComparator byDstVertexEdge(EdgeList edges) {
+    return (int edgeIdA, int edgeIdB) -> {
+      int dstVertexIdA = edges.getDstId(edgeIdA);
+      int dstVertexIdB = edges.getDstId(edgeIdB);
+      if (dstVertexIdA != dstVertexIdB) {
+        return Integer.compare(dstVertexIdA, dstVertexIdB);
+      }
+      int srcVertexIdA = edges.getSrcId(edgeIdA);
+      int srcVertexIdB = edges.getSrcId(edgeIdB);
+      if (srcVertexIdA != srcVertexIdB) {
+        return Integer.compare(srcVertexIdA, srcVertexIdB);
+      }
+      return Integer.compare(edgeIdA, edgeIdB);
+    };
+  }
+
+  private static void fillConsecutive(IntArrayList list, int n) {
+    list.clear();
+    for (int i = 0; i < n; i++) {
+      list.add(i);
+    }
+  }
+
+  /**
    * Returns EdgeIds sorted in lexicographic order by (destination, origin) vertex ids. All of the
    * incoming edges to each vertex form a contiguous subrange of this ordering.
    */
-  IntVector getInEdgeIds() {
-    IntVector inEdgeIds = IntVector.ofSize(numEdges());
-    inEdgeIds.fillConsecutive();
-    IntSorter.sort(dstVertexEdgeComparator(edges), inEdgeIds);
+  IntArrayList getInEdgeIds() {
+    IntArrayList inEdgeIds = new IntArrayList(numEdges());
+    fillConsecutive(inEdgeIds, numEdges());
+    inEdgeIds.sort(byDstVertexEdge(edges));
     return inEdgeIds;
   }
 
@@ -220,16 +261,16 @@ public class S2BuilderGraph {
    * <p>REQUIRES: An option is chosen that guarantees sibling pairs: (options.siblingPairs() == {
    * REQUIRE, CREATE } || options.edgeType() == UNDIRECTED)
    */
-  IntVector getSiblingMap() {
-    IntVector inEdgeIds = getInEdgeIds();
+  IntArrayList getSiblingMap() {
+    IntArrayList inEdgeIds = getInEdgeIds();
     makeSiblingMap(inEdgeIds);
     return inEdgeIds;
   }
 
   /** Verifies that the sibling of a sibling is an identity function. */
-  private static boolean validateSiblingMap(IntVector siblingMap, int numEdges) {
+  private static boolean validateSiblingMap(IntArrayList siblingMap, int numEdges) {
     for (int edgeId = 0; edgeId < numEdges; ++edgeId) {
-      if (siblingMap.get(siblingMap.get(edgeId)) != edgeId) {
+      if (siblingMap.getInt(siblingMap.getInt(edgeId)) != edgeId) {
         return false;
       }
     }
@@ -237,10 +278,10 @@ public class S2BuilderGraph {
   }
 
   /** Verifies that edges(edgeId) == reverse(edges(inEdgeIds(edgeId))). */
-  private boolean validateInEdgeIds(IntVector inEdgeIds) {
+  private boolean validateInEdgeIds(IntArrayList inEdgeIds) {
     for (int edgeId = 0; edgeId < numEdges(); ++edgeId) {
-      if (edges.getSrcId(edgeId) != edges.getDstId(inEdgeIds.get(edgeId))
-          || edges.getDstId(edgeId) != edges.getSrcId(inEdgeIds.get(edgeId))) {
+      if (edges.getSrcId(edgeId) != edges.getDstId(inEdgeIds.getInt(edgeId))
+          || edges.getDstId(edgeId) != edges.getSrcId(inEdgeIds.getInt(edgeId))) {
         return false;
       }
     }
@@ -255,7 +296,7 @@ public class S2BuilderGraph {
    * such edges are grouped together in pairs to satisfy the requirement that every edge must have a
    * sibling edge.)
    */
-  void makeSiblingMap(IntVector inEdgeIds) {
+  void makeSiblingMap(IntArrayList inEdgeIds) {
     Preconditions.checkState(
         options.siblingPairs() == SiblingPairs.REQUIRE
             || options.siblingPairs() == SiblingPairs.CREATE
@@ -275,8 +316,8 @@ public class S2BuilderGraph {
         assert edgeId + 1 < numEdges();
         assert edges.getSrcId(edgeId + 1) == vertexId;
         assert edges.getDstId(edgeId + 1) == vertexId;
-        assert inEdgeIds.get(edgeId) == edgeId;
-        assert inEdgeIds.get(edgeId + 1) == edgeId + 1;
+        assert inEdgeIds.getInt(edgeId) == edgeId;
+        assert inEdgeIds.getInt(edgeId + 1) == edgeId + 1;
         inEdgeIds.set(edgeId, edgeId + 1);
         inEdgeIds.set(edgeId + 1, edgeId);
         edgeId++;
@@ -292,9 +333,9 @@ public class S2BuilderGraph {
    * the numbers 2 and 17. Example usage:
    *
    * <pre>
-   * for (int inputEdgeId : graph.inputEdgeIds(e)) {
+   * graph.inputEdgeIds(e).forEach(inputEdgeId -> {
    *   ...
-   * }
+   * });
    * </pre>
    *
    * <p>Please note the following:
@@ -310,7 +351,7 @@ public class S2BuilderGraph {
    * </ul>
    */
   IdSetLexicon.IdSet inputEdgeIds(int edgeId) {
-    return inputEdgeIdSetLexicon().idSet(inputEdgeIdSetIds.get(edgeId));
+    return inputEdgeIdSetLexicon().idSet(inputEdgeIdSetIds.getInt(edgeId));
   }
 
   /**
@@ -319,15 +360,15 @@ public class S2BuilderGraph {
    * 'edgeId'. The elements of the IdSet can be accessed using {@link inputEdgeIdSetLexicon()}.
    */
   int inputEdgeIdSetId(int edgeId) {
-    return inputEdgeIdSetIds.get(edgeId);
+    return inputEdgeIdSetIds.getInt(edgeId);
   }
 
   /**
-   * Low-level method that returns a vector of InputEdgeIdSetIds. For each index i in the vector,
-   * the element at 'i' is an InputEdgeIdSetId, an integer that is the id of the IdSet containing
-   * the input edge ids that were snapped to output edge 'i'.
+   * Low-level method that returns an IntArrayList of InputEdgeIdSetIds. For each index i in the
+   * vector, the element at 'i' is an InputEdgeIdSetId, an integer that is the id of the IdSet
+   * containing the input edge ids that were snapped to output edge 'i'.
    */
-  IntVector inputEdgeIdSetIds() {
+  IntArrayList inputEdgeIdSetIds() {
     return inputEdgeIdSetIds;
   }
 
@@ -350,20 +391,20 @@ public class S2BuilderGraph {
    * Returns a vector containing the minimum input edge id for every edge, by edge id. If an edge
    * has no input ids, NO_INPUT_EDGE_ID is used.
    */
-  IntVector getMinInputEdgeIds() {
-    IntVector minInputEdgeIds = IntVector.ofSize(numEdges());
+  IntArrayList getMinInputEdgeIds() {
+    IntArrayList minInputEdgeIds = new IntArrayList(numEdges());
     fillMinInputEdgeIds(minInputEdgeIds);
     return minInputEdgeIds;
   }
 
   /**
-   * Fills the given vector with the minimum input edge id for every edge, by edge id. If an edge
-   * has no input ids, such as automatically created edges for EdgeType.UNDIRECTED, NO_INPUT_EDGE_ID
-   * is used.
+   * Fills the given IntArrayList with the minimum input edge id for every edge, by edge id. If an
+   * edge has no input ids, such as automatically created edges for EdgeType.UNDIRECTED,
+   * NO_INPUT_EDGE_ID is used.
    */
-  void fillMinInputEdgeIds(IntVector minInputEdgeIds) {
+  void fillMinInputEdgeIds(IntArrayList minInputEdgeIds) {
     minInputEdgeIds.clear();
-    minInputEdgeIds.resize(numEdges());
+    minInputEdgeIds.size(numEdges());
     for (int edgeId = 0; edgeId < numEdges(); ++edgeId) {
       minInputEdgeIds.set(edgeId, minInputEdgeId(edgeId));
     }
@@ -373,10 +414,10 @@ public class S2BuilderGraph {
    * Returns edge ids sorted by minimum input edge id. This is an approximation of the input edge
    * ordering.
    */
-  IntVector getInputEdgeOrder(IntList minInputEdgeIds) {
-    IntVector orderedEdgeIds = IntVector.ofSize(numEdges());
-    orderedEdgeIds.fillConsecutive();
-    IntSorter.sort(edgeIdComparatorByMinInputEdgeId(minInputEdgeIds), orderedEdgeIds);
+  IntArrayList getInputEdgeOrder(IntArrayList minInputEdgeIds) {
+    IntArrayList orderedEdgeIds = new IntArrayList(numEdges());
+    fillConsecutive(orderedEdgeIds, numEdges());
+    orderedEdgeIds.sort(byMinInputEdgeId(minInputEdgeIds));
     return orderedEdgeIds;
   }
 
@@ -458,12 +499,12 @@ public class S2BuilderGraph {
    * <p>If it is not possible to make a left turn from every input edge, this method returns false
    * and sets "error" appropriately. In this situation the left turn map is still valid except that
    * any incoming edge where it is not possible to make a left turn will have its entry set to -1.
+   * Otherwise returns true and leaves error unchanged.
    *
    * @param "inEdgeIds" should be equal to getInEdgeIds() or getSiblingMap().
    */
-  boolean fillLeftTurnMap(IntList inEdgeIds, int[] leftTurnMap, S2Error error) {
-    // TODO(torrey): Make IntVector (or equivalent) and related classes public, use them instead of
-    // int arrays, and then make this method and others that use those classes public again.
+  @CanIgnoreReturnValue
+  boolean fillLeftTurnMap(IntArrayList inEdgeIds, int[] leftTurnMap, S2Error error) {
     Preconditions.checkArgument(leftTurnMap.length == numEdges());
     Arrays.fill(leftTurnMap, -1);
     if (numEdges() == 0) {
@@ -473,9 +514,9 @@ public class S2BuilderGraph {
     // The collection of all incoming and outgoing edges to/from the current vertex 'v0'.
     VertexEdgeList v0Edges = new VertexEdgeList(vertices);
     // unmatchedIncomingEdges is a stack of unmatched incoming edge ids to a vertex.
-    IntVector unmatchedIncomingEdges = new IntVector();
+    IntArrayList unmatchedIncomingEdges = new IntArrayList();
     // unmatchedOutgoingEdges is a stack of outgoing edge ids with no previous incoming edge.
-    IntVector unmatchedOutgoingEdges = new IntVector();
+    IntArrayList unmatchedOutgoingEdges = new IntArrayList();
 
     // Walk through the two sorted arrays of edges (outgoing and incoming) and gather all the edges
     // incident to each vertex. Then we sort those edges and add an entry to the left turn map from
@@ -485,7 +526,7 @@ public class S2BuilderGraph {
     final Edge outEdge = new Edge();
     edges.get(out, outEdge);
     final Edge reverseInEdge = new Edge();
-    edges.getReverse(inEdgeIds.get(in), reverseInEdge);
+    edges.getReverse(inEdgeIds.getInt(in), reverseInEdge);
     final Edge minEdge = new Edge();
 
     if (EdgeList.compareEdges(outEdge, reverseInEdge) < 0) {
@@ -519,7 +560,7 @@ public class S2BuilderGraph {
           if (++in == numEdges()) {
             reverseInEdge.setSentinel();
           } else {
-            edges.getReverse(inEdgeIds.get(in), reverseInEdge);
+            edges.getReverse(inEdgeIds.getInt(in), reverseInEdge);
           }
         }
 
@@ -556,21 +597,21 @@ public class S2BuilderGraph {
       for (int veIndex = 0; veIndex < v0Edges.size(); ++veIndex) {
         if (v0Edges.incoming(veIndex)) {
           // Add an unmatched incoming edge id.
-          unmatchedIncomingEdges.push(inEdgeIds.get(v0Edges.indexEdgeId(veIndex)));
+          unmatchedIncomingEdges.add(inEdgeIds.getInt(v0Edges.indexEdgeId(veIndex)));
         } else if (!unmatchedIncomingEdges.isEmpty()) {
           // e is outgoing, match it with a previous incoming edge as a left turn from the incoming
           // edge to the outgoing edge 'e'.
-          leftTurnMap[unmatchedIncomingEdges.pop()] = v0Edges.indexEdgeId(veIndex);
+          leftTurnMap[unmatchedIncomingEdges.popInt()] = v0Edges.indexEdgeId(veIndex);
         } else {
           // Add an unmatched outgoing edge id.
-          unmatchedOutgoingEdges.push(v0Edges.indexEdgeId(veIndex));
+          unmatchedOutgoingEdges.add(v0Edges.indexEdgeId(veIndex));
         }
       }
 
       // Pair up additional edges using the fact that the ordering is circular.
-      unmatchedOutgoingEdges.reverse();
+      reverse(unmatchedOutgoingEdges);
       while (!unmatchedOutgoingEdges.isEmpty() && !unmatchedIncomingEdges.isEmpty()) {
-        leftTurnMap[unmatchedIncomingEdges.pop()] = unmatchedOutgoingEdges.pop();
+        leftTurnMap[unmatchedIncomingEdges.popInt()] = unmatchedOutgoingEdges.popInt();
       }
 
       // We only need to process unmatched incoming edges, since we are only responsible for
@@ -588,6 +629,14 @@ public class S2BuilderGraph {
     return error.ok();
   }
 
+  private static void reverse(IntArrayList ial) {
+    for (int i = 0, j = ial.size() - 1; i < j; i++, j--) {
+      int t = ial.getInt(i);
+      ial.set(i, ial.getInt(j));
+      ial.set(j, t);
+    }
+  }
+
   /**
    * Rotates the edges of "loop" if necessary so that the edge(s) with the largest input edge ids
    * are last. This ensures that when an output loop is equivalent to an input loop, their cyclic
@@ -596,7 +645,7 @@ public class S2BuilderGraph {
    * <p>"minInputIds" is the output of {@link #getMinInputEdgeIds()}, i.e. a list containing the
    * minimum input edge id for every edge id.
    */
-  static void canonicalizeLoopOrder(IntList minInputIds, int[] loop) {
+  static void canonicalizeLoopOrder(IntArrayList minInputIds, int[] loop) {
     if (loop.length < 2) {
       return;
     }
@@ -617,7 +666,7 @@ public class S2BuilderGraph {
     int pos = 0;
     boolean sawGap = false;
     for (int i = 1; i < loop.length; ++i) {
-      int cmp = minInputIds.get(loop[i]) - minInputIds.get(loop[pos]);
+      int cmp = minInputIds.getInt(loop[i]) - minInputIds.getInt(loop[pos]);
       if (cmp < 0) {
         sawGap = true;
       } else if (cmp > 0 || !sawGap) {
@@ -637,12 +686,12 @@ public class S2BuilderGraph {
    * polylines) by the minimum input edge id of each component's first chain's first edge.
    */
   static void canonicalizeDirectedComponentOrder(
-      IntList minInputIds, List<DirectedComponent> components) {
+      IntArrayList minInputIds, List<DirectedComponent> components) {
     Collections.sort(
         components,
         (DirectedComponent componentA, DirectedComponent componentB) -> {
-          int minInputEdgeIdFirstLoopEdgeA = minInputIds.get(componentA.get(0)[0]);
-          int minInputEdgeIdFirstLoopEdgeB = minInputIds.get(componentB.get(0)[0]);
+          int minInputEdgeIdFirstLoopEdgeA = minInputIds.getInt(componentA.get(0)[0]);
+          int minInputEdgeIdFirstLoopEdgeB = minInputIds.getInt(componentB.get(0)[0]);
           // First sort by minimum input edge id of the components's first loop's first edge.
           if (minInputEdgeIdFirstLoopEdgeA != minInputEdgeIdFirstLoopEdgeB) {
             return Integer.compare(minInputEdgeIdFirstLoopEdgeA, minInputEdgeIdFirstLoopEdgeB);
@@ -657,12 +706,12 @@ public class S2BuilderGraph {
    * chains first edge. This ensures that when the output consists of multiple loops or polylines,
    * they are sorted in the same order as they were provided in the input.
    */
-  static void canonicalizeEdgeChainOrder(IntList minInputIds, ArrayList<int[]> chains) {
+  static void canonicalizeEdgeChainOrder(IntArrayList minInputIds, ArrayList<int[]> chains) {
     Collections.sort(
         chains,
         (int[] a, int[] b) -> {
-          int minInputEdgeIdFirstEdgeA = minInputIds.get(a[0]);
-          int minInputEdgeIdFirstEdgeB = minInputIds.get(b[0]);
+          int minInputEdgeIdFirstEdgeA = minInputIds.getInt(a[0]);
+          int minInputEdgeIdFirstEdgeB = minInputIds.getInt(b[0]);
           // First sort by minimum input edge id of the loop's first edge.
           if (minInputEdgeIdFirstEdgeA != minInputEdgeIdFirstEdgeB) {
             return Integer.compare(minInputEdgeIdFirstEdgeA, minInputEdgeIdFirstEdgeB);
@@ -700,7 +749,7 @@ public class S2BuilderGraph {
     if (!fillLeftTurnMap(getInEdgeIds(), leftTurnMap, error)) {
       return false;
     }
-    IntList minInputEdgeIds = getMinInputEdgeIds();
+    IntArrayList minInputEdgeIds = getMinInputEdgeIds();
 
     // If LoopType is SIMPLE then we will break loops at repeated vertices. To do this we maintain a
     // map from vertexId to the index of an edge id in "pathEdgeIds" with that vertex as the source
@@ -711,7 +760,7 @@ public class S2BuilderGraph {
     }
 
     // The edge ids of a path through the graph.
-    IntVector pathEdgeIds = IntVector.empty();
+    IntArrayList pathEdgeIds = new IntArrayList();
 
     // Visit edges in arbitrary order, and try to build a loop from each edge.
     for (int startEdgeId = 0; startEdgeId < numEdges(); ++startEdgeId) {
@@ -747,9 +796,9 @@ public class S2BuilderGraph {
           // Peel off that loop from the path and add it to the output loops.
 
           // Copy the edge ids that form a loop from the end of the path.
-          int[] loop = pathEdgeIds.subList(loopStart, pathEdgeIds.size()).toArray();
+          int[] loop = pathEdgeIds.subList(loopStart, pathEdgeIds.size()).toIntArray();
           // Remove these edges from the path.
-          pathEdgeIds.truncate(loopStart);
+          pathEdgeIds.size(loopStart);
 
           for (int loopEdgeId : loop) {
             // Reset the pathIndex for the vertices in this loop.
@@ -765,7 +814,7 @@ public class S2BuilderGraph {
         // edges in the path.
         Preconditions.checkState(pathEdgeIds.isEmpty());
       } else {
-        int[] loop = pathEdgeIds.toArray();
+        int[] loop = pathEdgeIds.toIntArray();
         canonicalizeLoopOrder(minInputEdgeIds, loop);
         loops.add(loop);
         pathEdgeIds.clear();
@@ -821,14 +870,14 @@ public class S2BuilderGraph {
             || options.siblingPairs() == SiblingPairs.CREATE);
     Preconditions.checkState(options.edgeType() == EdgeType.DIRECTED); // Implied by above.
 
-    IntList siblingMap = getSiblingMap();
+    IntArrayList siblingMap = getSiblingMap();
     int[] leftTurnMap = new int[numEdges()];
     if (!fillLeftTurnMap(siblingMap, leftTurnMap, error)) {
       return false;
     }
 
-    IntList minInputEdgeIds = getMinInputEdgeIds();
-    IntVector frontier = IntVector.empty(); // Unexplored sibling edge ids.
+    IntArrayList minInputEdgeIds = getMinInputEdgeIds();
+    IntArrayList frontier = new IntArrayList(); // Unexplored sibling edge ids.
 
     // A map from edge id to the position of that edge in "path". Only needed if degenerate
     // boundaries are being discarded.
@@ -845,9 +894,9 @@ public class S2BuilderGraph {
       // Build a connected component by keeping a stack of unexplored siblings of the edges used so
       // far.
       DirectedComponent component = new DirectedComponent();
-      frontier.push(startEdgeId);
+      frontier.add(startEdgeId);
       while (!frontier.isEmpty()) {
-        int edgeId = frontier.pop();
+        int edgeId = frontier.popInt();
         if (leftTurnMap[edgeId] < 0) {
           continue; // Already used this edge.
         }
@@ -855,16 +904,16 @@ public class S2BuilderGraph {
         // Build a path by making left turns at each vertex until we complete a loop. Whenever we
         // encounter an edge that is a sibling of an edge that is already on the path, we
         // "peel off" a loop consisting of any edges that were between these two edges.
-        IntVector path = IntVector.empty();
+        IntArrayList path = new IntArrayList();
         for (int nextEdgeId = 0; leftTurnMap[edgeId] >= 0; edgeId = nextEdgeId) {
-          path.push(edgeId);
+          path.add(edgeId);
           nextEdgeId = leftTurnMap[edgeId];
           leftTurnMap[edgeId] = -1;
 
           // If the sibling hasn't been visited yet, add it to the frontier.
-          int siblingEdgeId = siblingMap.get(edgeId);
+          int siblingEdgeId = siblingMap.getInt(edgeId);
           if (leftTurnMap[siblingEdgeId] >= 0) {
-            frontier.push(siblingEdgeId);
+            frontier.add(siblingEdgeId);
           }
 
           if (degenerateBoundaries == DegenerateBoundaries.DISCARD) {
@@ -879,15 +928,15 @@ public class S2BuilderGraph {
             // Common special case: the edge and its sibling are adjacent, in which case we can
             // simply remove them from the path and continue.
             if (siblingIndex == path.size() - 2) {
-              path.truncate(siblingIndex);
+              path.size(siblingIndex);
               // We don't need to update "pathIndex" for these two edges because both edges of the
               // sibling pair have now been used.
               continue;
             }
 
             // Peel off a loop from the path.
-            int[] loop = path.subList(siblingIndex + 1, path.size() - 2).toArray();
-            path.truncate(siblingIndex);
+            int[] loop = path.subList(siblingIndex + 1, path.size() - 2).toIntArray();
+            path.size(siblingIndex);
 
             // Mark the edges that are no longer part of the path.
             for (int loopEdgeId : loop) {
@@ -903,7 +952,7 @@ public class S2BuilderGraph {
         if (degenerateBoundaries == DegenerateBoundaries.DISCARD) {
           path.forEach(pathEdgeId -> pathIndex[pathEdgeId] = -1);
         }
-        int[] loop = path.toArray();
+        int[] loop = path.toIntArray();
         canonicalizeLoopOrder(minInputEdgeIds, loop);
         component.add(loop);
       }
@@ -964,14 +1013,14 @@ public class S2BuilderGraph {
 
     // This is not actually a siblingMap until makeSiblingMap() is called on it. The output of
     // getInEdgeIds is first used to build the left turn map and then converted to a sibling map.
-    IntVector siblingMap = getInEdgeIds();
+    IntArrayList siblingMap = getInEdgeIds();
     int[] leftTurnMap = new int[numEdges()];
     if (!fillLeftTurnMap(siblingMap, leftTurnMap, error)) {
       return false;
     }
 
     makeSiblingMap(siblingMap);
-    IntList minInputEdgeIds = getMinInputEdgeIds();
+    IntArrayList minInputEdgeIds = getMinInputEdgeIds();
 
     // A stack of unexplored sibling edge ids (the first element of the pair). Each sibling edge id
     // has a "slot" (0 or 1) in the second element of the pair that indicates which of the two
@@ -1014,15 +1063,15 @@ public class S2BuilderGraph {
         // offset0 (which is the position computed in the canonicalize method), iterate through the
         // leftTurnMap up to the position we just found a duplicate vertex in, and then cycle around
         // to the original vertex that was duplicated.
-        IntVector path = IntVector.empty();
+        IntArrayList path = new IntArrayList();
         int nextEdgeId;
         for (int edgeId = startEdgeId; leftTurnMap[edgeId] >= 0; edgeId = nextEdgeId) {
-          path.push(edgeId);
+          path.add(edgeId);
           nextEdgeId = leftTurnMap[edgeId];
           leftTurnMap[edgeId] = markEdgeUsed(slot);
 
           // If the sibling hasn't been visited yet, add it to the frontier.
-          int siblingEdgeId = siblingMap.get(edgeId);
+          int siblingEdgeId = siblingMap.getInt(edgeId);
           if (leftTurnMap[siblingEdgeId] >= 0) {
             frontier.pushPair(siblingEdgeId, 1 - slot);
           } else if (leftTurnMap[siblingEdgeId] != markEdgeUsed(1 - slot)) {
@@ -1042,8 +1091,8 @@ public class S2BuilderGraph {
             if (loopStart < 0) {
               continue;
             }
-            int[] loop = path.subList(loopStart, path.size()).toArray();
-            path.truncate(loopStart);
+            int[] loop = path.subList(loopStart, path.size()).toIntArray();
+            path.size(loopStart);
 
             // Mark the vertices that are no longer part of the path.
             for (int loopEdgeId : loop) {
@@ -1056,7 +1105,7 @@ public class S2BuilderGraph {
         if (loopType == LoopType.SIMPLE) {
           Preconditions.checkState(path.isEmpty()); // Invariant.
         } else {
-          int[] loop = path.toArray();
+          int[] loop = path.toIntArray();
           canonicalizeLoopOrder(minInputEdgeIds, loop);
           component.addEdgeLoop(slot, loop);
         }
@@ -1068,8 +1117,8 @@ public class S2BuilderGraph {
       // component so that the complement whose first loop most closely follows the input edge
       // ordering is first. (If the input was a valid S2Polygon, then this component will contain
       // normalized loops.)
-      if (minInputEdgeIds.get(component.getComplement(0).get(0)[0])
-          > minInputEdgeIds.get(component.getComplement(1).get(0)[0])) {
+      if (minInputEdgeIds.getInt(component.getComplement(0).get(0)[0])
+          > minInputEdgeIds.getInt(component.getComplement(1).get(0)[0])) {
         component.swapComplements();
       }
       outputComponents.add(component);
@@ -1087,17 +1136,17 @@ public class S2BuilderGraph {
    */
   private static final class UndirectedComponentComparator
       implements Comparator<UndirectedComponent> {
-    private final IntList minInputEdgeIds;
+    private final IntArrayList minInputEdgeIds;
 
-    public UndirectedComponentComparator(IntList minInputEdgeIds) {
+    public UndirectedComponentComparator(IntArrayList minInputEdgeIds) {
       this.minInputEdgeIds = minInputEdgeIds;
     }
 
     @Override
     public int compare(UndirectedComponent a, UndirectedComponent b) {
       return Integer.compare(
-          minInputEdgeIds.get(a.getComplement(0).get(0)[0]),
-          minInputEdgeIds.get(b.getComplement(0).get(0)[0]));
+          minInputEdgeIds.getInt(a.getComplement(0).get(0)[0]),
+          minInputEdgeIds.getInt(b.getComplement(0).get(0)[0]));
     }
   }
 
@@ -1109,18 +1158,18 @@ public class S2BuilderGraph {
     private S2BuilderGraph graph;
     // TODO(torrey): Make sure PolylineBuilder is actually reused when building layers. Make
     // VertexInMap and VertexOutMap reusable and final. Make the arrays reusable, perhaps by
-    // switching to IntVectors.
+    // switching to IntArrayLists.
     private VertexInMap inMap;
     private VertexOutMap outMap;
 
     /** Map from edgeId to sibling edgeId. Only present for graphs with undirected edges. */
-    private IntVector siblingMap = null;
+    private IntArrayList siblingMap = null;
 
     /**
      * Maps edge id to the smallest input edge id snapped to that edge. Edges with no input edges
      * snapped to them have NO_INPUT_EDGE_ID.
      */
-    private final IntVector minInputEdgeIds = new IntVector();
+    private final IntArrayList minInputEdgeIds = new IntArrayList();
 
     private boolean directed;
     private int edgesLeft;
@@ -1151,10 +1200,11 @@ public class S2BuilderGraph {
 
       if (!directed) {
         if (siblingMap == null) {
-          siblingMap = IntVector.copyOf(inMap.inEdgeIds);
+          siblingMap = new IntArrayList();
         } else {
-          siblingMap.copy(inMap.inEdgeIds);
+          siblingMap.clear();
         }
+        inMap.inEdgeIds.forEach(i -> siblingMap.add(i));
         graph.makeSiblingMap(siblingMap);
       } else {
         // siblingMap is only used for the undirected case.
@@ -1185,15 +1235,15 @@ public class S2BuilderGraph {
       // paths. Also, this does not reuse memory even when the builder and output layer are reused.
       // So, (a) revise this structure, and (b) use instance fields for the memory.
       ArrayList<int[]> polylines = new ArrayList<>();
-      IntVector edges = graph.getInputEdgeOrder(minInputEdgeIds);
-      IntVector polyline = new IntVector();
+      IntArrayList edges = graph.getInputEdgeOrder(minInputEdgeIds);
+      IntArrayList polyline = new IntArrayList();
       // TODO(torrey): Benchmark visitor vs. IntIterator approach. This is more compact but may be
       // slower. Revise the code in all the relevant places if so.
       edges.forEach(
           edgeId -> {
             if (!used[edgeId] && !isInterior(graph.edgeSrcId(edgeId))) {
               fillPath(edgeId, polyline);
-              polylines.add(polyline.toArray());
+              polylines.add(polyline.toIntArray());
             }
           });
       // If there are any edges left, they form non-intersecting loops. We build each loop and then
@@ -1201,13 +1251,13 @@ public class S2BuilderGraph {
       // order to preserve the input direction of undirected loops. Even so, we still need to
       // canonicalize the edge order to ensure that when an input edge is split into an edge chain,
       // the loop does not start in the middle of such a chain.
-      for (OfInt edgeIter = edges.intIterator(); edgesLeft > 0 && edgeIter.hasNext(); ) {
+      for (IntIterator edgeIter = edges.intIterator(); edgesLeft > 0 && edgeIter.hasNext(); ) {
         int edgeId = edgeIter.nextInt();
         if (used[edgeId]) {
           continue;
         }
         fillPath(edgeId, polyline);
-        int[] path = polyline.toArray();
+        int[] path = polyline.toIntArray();
         canonicalizeLoopOrder(minInputEdgeIds, path);
         polylines.add(path);
       }
@@ -1237,9 +1287,9 @@ public class S2BuilderGraph {
       // edges, vertices whose degree is odd). We consider the possible starting edges in input
       // edge id order, for idempotency in the case where multiple input polylines share vertices
       // or edges.
-      ArrayList<IntVector> polylines = new ArrayList<>();
-      IntVector edges = graph.getInputEdgeOrder(minInputEdgeIds);
-      for (OfInt edgeIter = edges.intIterator(); edgeIter.hasNext(); ) {
+      ArrayList<IntArrayList> polylines = new ArrayList<>();
+      IntArrayList edges = graph.getInputEdgeOrder(minInputEdgeIds);
+      for (IntIterator edgeIter = edges.intIterator(); edgeIter.hasNext(); ) {
         int edgeId = edgeIter.nextInt();
         if (used[edgeId]) {
           continue;
@@ -1256,29 +1306,29 @@ public class S2BuilderGraph {
         }
 
         // There is at least one unused out-edge at vertexId. Build a polyline starting there.
-        IntVector polyline = new IntVector();
+        IntArrayList polyline = new IntArrayList();
         // At the start vertex, only an out-edge will be used by the new polyline.
         ++excessUsed[vertexId]; // outdegree - indegree of used edges
         // For all the interior vertices, equal number of in and out edges are used.
         fillWalk(vertexId, polyline);
         polylines.add(polyline);
         // At the last vertex of the polyline, only an in-edge is used.
-        --excessUsed[graph.edgeDstId(polyline.peek())];
+        --excessUsed[graph.edgeDstId(polyline.getInt(polyline.size() - 1))];
       }
 
       // Now all vertices have outdegree == indegree (or even degree if undirected edges are being
       // used). Therefore all remaining edges can be assembled into loops. We first try to expand
       // the existing polylines if possible by adding loops to them.
       if (edgesLeft > 0) {
-        for (IntVector polyline : polylines) {
+        for (IntArrayList polyline : polylines) {
           maximizeWalk(polyline);
         }
       }
 
-      // Convert the IntVectors produced so far to arrays of ints.
+      // Convert the IntArrayLists produced so far to arrays of ints.
       ArrayList<int[]> walks = new ArrayList<>();
-      for (IntVector polyline : polylines) {
-        walks.add(polyline.toArray());
+      for (IntArrayList polyline : polylines) {
+        walks.add(polyline.toIntArray());
       }
       polylines.clear();
 
@@ -1286,11 +1336,11 @@ public class S2BuilderGraph {
       // that forms a loop, then for idempotency we need to start from the edge with minimum input
       // edge id. If the minimal input edge was split into several edges, then we start from the
       // first edge of the chain.
-      IntVector polyline = new IntVector(); // Reused for each loop
+      IntArrayList polyline = new IntArrayList(); // Reused for each loop
 
       // Find every unused edge in the graph, in input edge order.
       for (int i = 0; i < edges.size() && edgesLeft > 0; ++i) {
-        int edgeId = edges.get(i);
+        int edgeId = edges.getInt(i);
         if (used[edgeId]) {
           continue;
         }
@@ -1300,10 +1350,12 @@ public class S2BuilderGraph {
         // with the same minimum input edge id. (Undirected edges have input edge ids in one
         // direction only.)
         int vertexId = graph.edgeSrcId(edgeId);
-        int inputEdgeId = minInputEdgeIds.get(edgeId);
+        int inputEdgeId = minInputEdgeIds.getInt(edgeId);
         int excess = 0; // outdegree - indegree at the origin
-        for (int j = i; j < edges.size() && minInputEdgeIds.get(edges.get(j)) == inputEdgeId; ++j) {
-          int edgeId2 = edges.get(j);
+        for (int j = i;
+            j < edges.size() && minInputEdgeIds.getInt(edges.getInt(j)) == inputEdgeId;
+            ++j) {
+          int edgeId2 = edges.getInt(j);
           if (used[edgeId2]) {
             continue;
           }
@@ -1320,7 +1372,7 @@ public class S2BuilderGraph {
         if (excess == 1 || graph.edgeDstId(edgeId) == vertexId) {
           fillWalk(vertexId, polyline);
           maximizeWalk(polyline);
-          walks.add(polyline.toArray());
+          walks.add(polyline.toIntArray());
         }
       }
       Preconditions.checkState(edgesLeft == 0);
@@ -1351,7 +1403,7 @@ public class S2BuilderGraph {
     }
 
     /** Clears the provided polyline and fills it with a path starting with the provided edgeId. */
-    private void fillPath(int edgeId, IntVector polyline) {
+    private void fillPath(int edgeId, IntArrayList polyline) {
       polyline.clear();
       // We simply follow edges until either we reach a vertex where there is a choice about which
       // way to go (where isInterior(v) is false), or we return to the starting vertex (if the
@@ -1362,7 +1414,7 @@ public class S2BuilderGraph {
         Preconditions.checkState(!used[edgeId]);
         used[edgeId] = true;
         if (!directed) {
-          used[siblingMap.get(edgeId)] = true;
+          used[siblingMap.getInt(edgeId)] = true;
         }
         --edgesLeft;
         int vertexId = graph.edgeDstId(edgeId);
@@ -1385,7 +1437,7 @@ public class S2BuilderGraph {
     }
 
     /** Clears the provided polyline and fills it with a walk starting at the provided vertexId. */
-    private void fillWalk(int vertexId, IntVector polyline) {
+    private void fillWalk(int vertexId, IntArrayList polyline) {
       polyline.clear();
       for (; ; ) {
         // Follow the best unused out-edge from vertexId with the smallest input edge id. For
@@ -1398,7 +1450,7 @@ public class S2BuilderGraph {
           if (used[edgeId]) {
             continue;
           }
-          int minInputEdgeId = minInputEdgeIds.get(edgeId);
+          int minInputEdgeId = minInputEdgeIds.getInt(edgeId);
           if (minInputEdgeId >= bestOutId) {
             continue;
           }
@@ -1415,7 +1467,7 @@ public class S2BuilderGraph {
         if (directed ? (excessUnused < 0) : (excessUnused % 2) == 1) {
           for (OfInt inEdgeIter = inMap.edgeIds(vertexId).intIterator(); inEdgeIter.hasNext(); ) {
             int inEdgeId = inEdgeIter.nextInt();
-            if (!used[inEdgeId] && minInputEdgeIds.get(inEdgeId) <= bestOutId) {
+            if (!used[inEdgeId] && minInputEdgeIds.getInt(inEdgeId) <= bestOutId) {
               return;
             }
           }
@@ -1425,7 +1477,7 @@ public class S2BuilderGraph {
         polyline.add(bestEdgeId);
         used[bestEdgeId] = true;
         if (!directed) {
-          used[siblingMap.get(bestEdgeId)] = true;
+          used[siblingMap.getInt(bestEdgeId)] = true;
         }
         --edgesLeft;
         vertexId = graph.edgeDstId(bestEdgeId);
@@ -1438,17 +1490,17 @@ public class S2BuilderGraph {
      * is guaranteed to be a loop because this method is only called when all vertices have equal
      * numbers of unused incoming and outgoing edges.)
      */
-    private void maximizeWalk(IntVector polyline) {
-      IntVector loop = new IntVector(); // Reused for each inserted loop
+    private void maximizeWalk(IntArrayList polyline) {
+      IntArrayList loop = new IntArrayList(); // Reused for each inserted loop
       for (int i = 0; i <= polyline.size(); ++i) {
         int vertexId =
-            i == 0 ? graph.edgeSrcId(polyline.get(i)) : graph.edgeDstId(polyline.get(i - 1));
+            i == 0 ? graph.edgeSrcId(polyline.getInt(i)) : graph.edgeDstId(polyline.getInt(i - 1));
         for (OfInt outEdgeIter = outMap.edgeIds(vertexId).intIterator(); outEdgeIter.hasNext(); ) {
           int edgeId = outEdgeIter.nextInt();
           if (!used[edgeId]) {
             fillWalk(vertexId, loop);
-            Preconditions.checkState(vertexId == graph.edgeDstId(loop.peek()));
-            polyline.insert(i, loop);
+            Preconditions.checkState(vertexId == graph.edgeDstId(loop.getInt(loop.size() - 1)));
+            polyline.addAll(i, loop);
             Preconditions.checkState(used[edgeId]); // All outgoing edges from "v" are now used.
             break;
           }
@@ -1482,7 +1534,7 @@ public class S2BuilderGraph {
   public S2BuilderGraph makeSubgraph(
       GraphOptions newOptions,
       EdgeList newEdges,
-      IntVector newInputEdgeIdSetIds,
+      IntArrayList newInputEdgeIdSetIds,
       IdSetLexicon newInputEdgeIdSetLexicon,
       IsFullPolygonPredicate isFullPolygonPredicate,
       S2Error error) {
@@ -1496,7 +1548,7 @@ public class S2BuilderGraph {
       for (int i = 0; i < n; ++i) {
         // Add a reversed copy of the edge.
         newEdges.add(/* srcId= */ newEdges.getDstId(i), /* dstId= */ newEdges.getSrcId(i));
-        newInputEdgeIdSetIds.push(IdSetLexicon.EMPTY_SET_ID);
+        newInputEdgeIdSetIds.add(IdSetLexicon.EMPTY_SET_ID);
       }
     }
     processEdges(newOptions, newEdges, newInputEdgeIdSetIds, newInputEdgeIdSetLexicon, error);
@@ -1538,7 +1590,7 @@ public class S2BuilderGraph {
   public static void processEdges(
       GraphOptions options,
       EdgeList edges,
-      IntVector inputIds,
+      IntArrayList inputIds,
       IdSetLexicon idSetLexicon,
       S2Error error) {
     EdgeProcessor processor = new EdgeProcessor(options, edges, inputIds, idSetLexicon);
@@ -1607,19 +1659,22 @@ public class S2BuilderGraph {
    * Returns an IntComparator that compares EdgeIds in the given EdgeList by source vertex id,
    * breaking ties with destination vertex ids, and breaking ties for equal edges with edge ids.
    */
-  private static IntComparator srcVertexEdgeComparator(EdgeList edges) {
-    return (edgeIdA, edgeIdB) -> {
-      int srcVertexIdA = edges.getSrcId(edgeIdA);
-      int srcVertexIdB = edges.getSrcId(edgeIdB);
-      if (srcVertexIdA != srcVertexIdB) {
-        return Integer.compare(srcVertexIdA, srcVertexIdB);
+  private static IntComparator bySrcVertex(EdgeList edges) {
+    return new IntComparator() {
+      @Override
+      public int compare(int edgeIdA, int edgeIdB) {
+        int srcVertexIdA = edges.getSrcId(edgeIdA);
+        int srcVertexIdB = edges.getSrcId(edgeIdB);
+        if (srcVertexIdA != srcVertexIdB) {
+          return Integer.compare(srcVertexIdA, srcVertexIdB);
+        }
+        int dstVertexIdA = edges.getDstId(edgeIdA);
+        int dstVertexIdB = edges.getDstId(edgeIdB);
+        if (dstVertexIdA != dstVertexIdB) {
+          return Integer.compare(dstVertexIdA, dstVertexIdB);
+        }
+        return Integer.compare(edgeIdA, edgeIdB);
       }
-      int dstVertexIdA = edges.getDstId(edgeIdA);
-      int dstVertexIdB = edges.getDstId(edgeIdB);
-      if (dstVertexIdA != dstVertexIdB) {
-        return Integer.compare(dstVertexIdA, dstVertexIdB);
-      }
-      return Integer.compare(edgeIdA, edgeIdB);
     };
   }
 
@@ -1627,8 +1682,8 @@ public class S2BuilderGraph {
    * Returns an IntComparator that compares EdgeIds in the given EdgeList by destination vertex id,
    * breaking ties with source vertex ids, and breaking ties for equal edges with edge ids.
    */
-  private static IntComparator dstVertexEdgeComparator(EdgeList edges) {
-    return (edgeIdA, edgeIdB) -> {
+  private static IntComparator byDstVertex(EdgeList edges) {
+    return (int edgeIdA, int edgeIdB) -> {
       int dstVertexIdA = edges.getDstId(edgeIdA);
       int dstVertexIdB = edges.getDstId(edgeIdB);
       if (dstVertexIdA != dstVertexIdB) {
@@ -1700,6 +1755,11 @@ public class S2BuilderGraph {
     @Override
     public int hashCode() {
       return srcId * 39119 + dstId;
+    }
+
+    @Override
+    public String toString() {
+      return Platform.formatString("%d-%d", srcId, dstId);
     }
   }
 
@@ -2007,11 +2067,11 @@ public class S2BuilderGraph {
     private final EdgeList edges;
 
     // The index of the first edge in 'edges' from the given vertex (inclusive).
-    private int begin;
+    private final int begin;
 
     // The index of the last edge in 'edges' from the given vertex (exclusive). Must be >= begin.
     // If end == begin there are no outgoing edges.
-    private int end;
+    private final int end;
 
     /** Constructs a new VertexOutEdges as a begin-end range over the given EdgeList. */
     VertexOutEdges(EdgeList edges, int begin, int end) {
@@ -2110,12 +2170,7 @@ public class S2BuilderGraph {
 
         @Override
         public int nextInt() {
-          int n = next++;
-          return n;
-        }
-
-        public void reset() {
-          next = beginEdgeId;
+          return next++;
         }
       };
     }
@@ -2198,9 +2253,6 @@ public class S2BuilderGraph {
       int begin = edgeBegins.get(srcVertexId);
       int end = edgeBegins.get(srcVertexId + 1);
 
-      // TODO(torrey): If the number of out-edges from a vertex is large enough, it would be
-      // worthwhile to use binary search to locate the sub-range endpoints.
-
       // Advance 'begin' until the first edge ending at dstVertexId is found, or 'end' is reached.
       while (begin < end && edges.getDstId(begin) < dstVertexId) {
         begin++;
@@ -2225,13 +2277,13 @@ public class S2BuilderGraph {
   public static class VertexInEdgeIds implements IntSequence {
     // The S2BuilderGraph's inEdgeIds, sorted in lexicographic order by destination vertex, then
     // source vertex, so that all the incoming edges to a given vertex are in consecutive order.
-    private final IntList inEdgeIds;
+    private final IntArrayList inEdgeIds;
     // The index in inEdgeIds where edges to the given vertex begin.
     private final int beginIndex;
     // The index in inEdgeIds where edges to the given vertex end (exclusive).
     private final int endIndex;
 
-    private VertexInEdgeIds(IntList inEdgeIds, int begin, int end) {
+    private VertexInEdgeIds(IntArrayList inEdgeIds, int begin, int end) {
       this.inEdgeIds = inEdgeIds;
       beginIndex = begin;
       endIndex = end;
@@ -2254,11 +2306,7 @@ public class S2BuilderGraph {
 
         @Override
         public int nextInt() {
-          return inEdgeIds.get(position++);
-        }
-
-        public void reset() {
-          position = beginIndex;
+          return inEdgeIds.getInt(position++);
         }
       };
     }
@@ -2266,14 +2314,14 @@ public class S2BuilderGraph {
     @Override
     public void forEach(IntConsumer action) {
       for (int i = beginIndex; i < endIndex; i++) {
-        action.accept(inEdgeIds.get(i));
+        action.accept(inEdgeIds.getInt(i));
       }
     }
 
     @Override
     public void forEach(IntBiConsumer action) {
       for (int i = beginIndex; i < endIndex; i++) {
-        action.accept(i - beginIndex, inEdgeIds.get(i));
+        action.accept(i - beginIndex, inEdgeIds.getInt(i));
       }
     }
   }
@@ -2292,7 +2340,7 @@ public class S2BuilderGraph {
     // The S2BuilderGraph's inEdgeIds, which are edge ids sorted in lexicographic order by
     // destination vertex, then source vertex. The incoming edges to each vertex form a contiguous
     // subrange, and these subranges are in order by vertex id.
-    private final IntList inEdgeIds;
+    private final IntArrayList inEdgeIds;
 
     // Constructed by this VertexInMap, maps each vertex id to the index in inEdgeIds where the
     // incoming edges to that vertex start. The incoming edges to this vertex end immediately before
@@ -2307,7 +2355,7 @@ public class S2BuilderGraph {
       int edgeId = 0;
       for (int vertexId = 0; vertexId <= graph.numVertices(); vertexId++) {
         // Skip over the edges with destination vertex ids below the current vertex.
-        while (edgeId < graph.numEdges() && graph.edgeDstId(inEdgeIds.get(edgeId)) < vertexId) {
+        while (edgeId < graph.numEdges() && graph.edgeDstId(inEdgeIds.getInt(edgeId)) < vertexId) {
           edgeId++;
         }
         inEdgeBegins.set(vertexId, edgeId);
@@ -2328,21 +2376,23 @@ public class S2BuilderGraph {
     }
 
     // Returns a sorted list of all incoming edges. See {@link S2BuilderGraph#getInEdgeIds()}.
-    public IntList inEdgeIds() {
+    public IntArrayList inEdgeIds() {
       return inEdgeIds;
     }
   }
 
   /**
-   * A comparator of edge ids that orders edge ids by the smallest input edge ids mapped to them,
-   * breaking ties with the edge ids themselves.
+   * Returns an IntComparator of edge ids that orders edge ids by the smallest input edge ids mapped
+   * to them, breaking ties with the edge ids themselves.
    */
-  private static IntComparator edgeIdComparatorByMinInputEdgeId(IntList minInputEdgeIdsPerEdgeId) {
-    return (leftEdgeId, rightEdgeId) -> {
-      if (minInputEdgeIdsPerEdgeId.get(leftEdgeId) < minInputEdgeIdsPerEdgeId.get(rightEdgeId)) {
+  private static IntComparator byMinInputEdgeId(IntArrayList minInputEdgeIdsPerEdgeId) {
+    return (int leftEdgeId, int rightEdgeId) -> {
+      int minRight = minInputEdgeIdsPerEdgeId.getInt(rightEdgeId);
+      int minLeft = minInputEdgeIdsPerEdgeId.getInt(leftEdgeId);
+      if (minLeft < minRight) {
         return -1;
       }
-      if (minInputEdgeIdsPerEdgeId.get(leftEdgeId) > minInputEdgeIdsPerEdgeId.get(rightEdgeId)) {
+      if (minLeft > minRight) {
         return 1;
       }
       // Break ties using the edge ids.
@@ -2443,7 +2493,7 @@ public class S2BuilderGraph {
   public static class LabelFetcher {
     private S2BuilderGraph graph;
     private EdgeType edgeType;
-    private IntList siblingMap;
+    private IntArrayList siblingMap;
 
     /** Default constructor. Init must be called before use. */
     public LabelFetcher() {}
@@ -2490,7 +2540,7 @@ public class S2BuilderGraph {
 
       // For an undirected graph, add the labels of input edge ids snapped to the sibling.
       if (edgeType == EdgeType.UNDIRECTED) {
-        addInputEdgeLabels(siblingMap.get(edgeId), outLabels);
+        addInputEdgeLabels(siblingMap.getInt(edgeId), outLabels);
       }
 
       // Sort and deduplicate labels.
@@ -2508,11 +2558,11 @@ public class S2BuilderGraph {
     private final GraphOptions options;
 
     // The input list of Edges to process. The index of an Edge in the EdgeList is its edge id.
-    private EdgeList edges;
+    private final EdgeList edges;
 
     // This 'inputIds' vector is a map from edge id to InputEdgeIdSetIds. An InputEdgeIdSetId
     // is a key to the idSetLexicon below.
-    private final IntVector inputIds;
+    private final IntArrayList inputIds;
 
     // This IdSetLexicon maps an InputEdgeIdSetId to a set of "input edge ids".
     private final IdSetLexicon idSetLexicon;
@@ -2520,22 +2570,22 @@ public class S2BuilderGraph {
     // 'outEdges' is an ordering of all the edge ids in 'edges' by source vertex id, so outgoing
     // edges from each vertex are consecutive. Ties are broken by destination vertex id, so
     // duplicate edges are consecutive.
-    private final IntVector outEdges;
+    private final IntArrayList outEdges;
 
     // "inEdges" is an ordering of all the edge ids in 'edges' by destination vertex id, so
     // incoming edges from each vertex are consecutive. Ties are broken by source vertex id, so
     // duplicate edges are consecutive.
-    private final IntVector inEdges;
+    private final IntArrayList inEdges;
 
     // As the EdgeProcessor runs, it builds a new EdgeList in 'newEdges', and a mapping from those
     // new edge ids to InputEdgeIdSetIds in 'newInputIds'. These are keys for 'idSetLexicon'. New
     // IdSets are added to the existing idSetLexicon (if needed) for the edges.
     private final EdgeList newEdges;
-    private final IntVector newInputIds;
+    private final IntArrayList newInputIds;
 
     /** The EdgeProcessor constructor. */
     public EdgeProcessor(
-        GraphOptions options, EdgeList edges, IntVector inputIds, IdSetLexicon idSetLexicon) {
+        GraphOptions options, EdgeList edges, IntArrayList inputIds, IdSetLexicon idSetLexicon) {
       this.options = new GraphOptions(options);
       this.edges = edges;
       this.inputIds = inputIds;
@@ -2543,21 +2593,21 @@ public class S2BuilderGraph {
 
       // Initialize outEdges as all the edge ids sorted in lexicographic order by source vertex, so
       // all outgoing edges from a vertex are consecutive in the ordering.
-      outEdges = IntVector.ofSize(edges.size());
-      outEdges.fillConsecutive();
-      IntSorter.sort(srcVertexEdgeComparator(edges), outEdges);
+      outEdges = new IntArrayList(edges.size());
+      fillConsecutive(outEdges, edges.size());
+      outEdges.sort(bySrcVertex(edges));
 
       // Initialize inEdges as all the edge ids sorted in lexicographic order by destination vertex,
       // so all incoming edges to a vertex are consecutive in the ordering.
-      inEdges = IntVector.ofSize(edges.size());
-      inEdges.fillConsecutive();
-      IntSorter.sort(dstVertexEdgeComparator(edges), inEdges);
+      inEdges = new IntArrayList(edges.size());
+      fillConsecutive(inEdges, edges.size());
+      inEdges.sort(byDstVertex(edges));
 
       // Initialize the EdgeList that will contain the processed output edges, along with the new
       // vector mapping processed edge ids to input edge id sets.
       newEdges = new EdgeList();
       newEdges.ensureCapacity(edges.size());
-      newInputIds = new IntVector();
+      newInputIds = new IntArrayList();
       newInputIds.ensureCapacity(edges.size());
     }
 
@@ -2567,9 +2617,9 @@ public class S2BuilderGraph {
      * duplicate copies of the edge in both directions (outgoing and incoming). Then decides what to
      * do based on 'options' and how many copies of the edge there are in each direction.
      *
-     * <p>When complete, the content of the 'edges' EdgeList and 'inputIds' IntVector are replaced
-     * with the transformed graph, and additional InputEdgeIdSets with merged sets of input edge ids
-     * will have been added to the provided 'idSetLexicon' if necessary.
+     * <p>When complete, the content of the 'edges' EdgeList and 'inputIds' IntArrayList are
+     * replaced with the transformed graph, and additional InputEdgeIdSets with merged sets of input
+     * edge ids will have been added to the provided 'idSetLexicon' if necessary.
      */
     public void run(S2Error error) {
       int numEdges = edges.size();
@@ -2584,11 +2634,11 @@ public class S2BuilderGraph {
 
       // 'outEdge' is the current outgoing edge being considered.
       final Edge outEdge = new Edge();
-      edges.get(outEdges.get(out), outEdge);
+      edges.get(outEdges.getInt(out), outEdge);
 
       // 'reverseInEdge' is the current incoming edge being considered, but reversed.
       final Edge reverseInEdge = new Edge();
-      edges.getReverse(inEdges.get(in), reverseInEdge);
+      edges.getReverse(inEdges.getInt(in), reverseInEdge);
 
       final Edge minEdge = new Edge();
       for (; ; ) {
@@ -2613,7 +2663,7 @@ public class S2BuilderGraph {
           if (++out == numEdges) {
             outEdge.setSentinel();
           } else {
-            edges.get(outEdges.get(out), outEdge);
+            edges.get(outEdges.getInt(out), outEdge);
           }
         }
         // If reverse(inEdge) is the lowest, advance it until it is not. This skips duplicate
@@ -2622,7 +2672,7 @@ public class S2BuilderGraph {
           if (++in == numEdges) {
             reverseInEdge.setSentinel();
           } else {
-            edges.getReverse(inEdges.get(in), reverseInEdge);
+            edges.getReverse(inEdges.getInt(in), reverseInEdge);
           }
         }
 
@@ -2639,10 +2689,10 @@ public class S2BuilderGraph {
           // In the DISCARD_EXCESS case, degenerate edges that are connected to non-degenerate edges
           // should be discarded. Are there any non-degenerate incident edges?
           if (options.degenerateEdges() == DegenerateEdges.DISCARD_EXCESS
-              && ((outBegin > 0 && edges.getSrcId(outEdges.get(outBegin - 1)) == minEdge.srcId)
-                  || (out < numEdges && edges.getSrcId(outEdges.get(out)) == minEdge.srcId)
-                  || (inBegin > 0 && edges.getDstId(inEdges.get(inBegin - 1)) == minEdge.srcId)
-                  || (in < numEdges && edges.getDstId(inEdges.get(in)) == minEdge.srcId))) {
+              && ((outBegin > 0 && edges.getSrcId(outEdges.getInt(outBegin - 1)) == minEdge.srcId)
+                  || (out < numEdges && edges.getSrcId(outEdges.getInt(out)) == minEdge.srcId)
+                  || (inBegin > 0 && edges.getDstId(inEdges.getInt(inBegin - 1)) == minEdge.srcId)
+                  || (in < numEdges && edges.getDstId(inEdges.getInt(in)) == minEdge.srcId))) {
             // There were non-degenerate incident edges, so discard.
             continue;
           }
@@ -2743,11 +2793,13 @@ public class S2BuilderGraph {
       // Replace the contents of the provided "edges" and their associated input id sets with the
       // processed results.
       edges.swap(newEdges);
-      inputIds.swap(newInputIds);
+      // TODO(torrey): Consider implementing trim on EdgeList.
+      // edges.trim();
 
-      // TODO(torrey): Consider implementing shrinkToFit on IntVector and EdgeList.
-      // edges.shrinkToFit();
-      // inputIds.shrinkToFit();
+      inputIds.clear();
+      inputIds.addAll(newInputIds);
+      inputIds.trim();
+      newInputIds.clear();
     }
 
     /**
@@ -2776,9 +2828,9 @@ public class S2BuilderGraph {
      */
     private void copyEdges(int outBegin, int outEnd) {
       for (int i = outBegin; i < outEnd; ++i) {
-        int outEdge = outEdges.get(i);
+        int outEdge = outEdges.getInt(i);
         newEdges.add(edges.getSrcId(outEdge), edges.getDstId(outEdge));
-        newInputIds.add(inputIds.get(outEdge));
+        newInputIds.add(inputIds.getInt(outEdge));
       }
     }
 
@@ -2788,12 +2840,12 @@ public class S2BuilderGraph {
      */
     private int mergeInputIds(int outBegin, int outEnd) {
       if (outEnd - outBegin == 1) {
-        return inputIds.get(outEdges.get(outBegin)); // A single id, so no merging is needed.
+        return inputIds.getInt(outEdges.getInt(outBegin)); // A single id, so no merging is needed.
       }
 
-      IntVector tmpIds = new IntVector();
+      IntArrayList tmpIds = new IntArrayList();
       for (int i = outBegin; i < outEnd; ++i) {
-        idSetLexicon.idSet(inputIds.get(outEdges.get(i))).forEach(id -> tmpIds.add(id));
+        idSetLexicon.idSet(inputIds.getInt(outEdges.getInt(i))).forEach(id -> tmpIds.add(id));
       }
       return idSetLexicon.add(tmpIds);
     }

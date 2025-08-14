@@ -200,7 +200,7 @@ public class UVEdgeClipper {
 
     // Check that we didn't get the origin somehow, since we use it as a sentinel value, and that
     // none of the points are larger than we allowed for in our error bounds.
-    assert !v0.equalsPoint(S2Point.ORIGIN) && !v1.equalsPoint(S2Point.ORIGIN);
+    assert !v0.equalsPoint(S2Point.ZERO) && !v1.equalsPoint(S2Point.ZERO);
     assert v0.largestAbsComponent() <= 2;
     assert v1.largestAbsComponent() <= 2;
 

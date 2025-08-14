@@ -762,7 +762,7 @@ public class S2DensityTree {
   public static <F> FeatureDensityOp<F> createFeatureDensityOp(
       int approximateSizeBytes, int maxLevel) {
     BreadthFirstTreeBuilder acc = new BreadthFirstTreeBuilder(approximateSizeBytes, maxLevel);
-    FeatureDensityWeigher<F> weigher = new FeatureDensityWeigher<>();
+    FeatureDensityWeigher weigher = new FeatureDensityWeigher();
     return (shapes, features, weights) -> {
       weigher.init(shapes, features, weights);
       return acc.build(weigher);
@@ -785,7 +785,7 @@ public class S2DensityTree {
 
   /** A weigher of feature weights, where each feature may have multiple shapes. */
   @JsType
-  public static class FeatureDensityWeigher<T> implements CellWeightFunction {
+  public static class FeatureDensityWeigher implements CellWeightFunction {
     /** The region to test each cell against. */
     private S2ShapeIndexRegion region;
 
@@ -814,24 +814,38 @@ public class S2DensityTree {
      * @param featureLookup a lookup function that gets the features corresponding to each shape
      * @param weightLookup a lookup function that gets the weight of each feature
      */
-    public void init(
+    public <T> void init(
         S2ShapeIndex shapes, FeatureLookup<T> featureLookup, FeatureWeigher<T> weightLookup) {
-      region = new S2ShapeIndexRegion(shapes);
-      ids = new int[shapes.shapes.size()];
+      int[] ids = new int[shapes.shapes.size()];
       // Assign consecutive integer ids to features in shape ID order.
       IdentityHashMap<T, Integer> map = Maps.newIdentityHashMap();
-      for (int i = 0; i < this.ids.length; i++) {
+      for (int i = 0; i < ids.length; i++) {
         T feature = featureLookup.feature(shapes.shapes.get(i));
         ids[i] = map.computeIfAbsent(feature, s -> map.size());
       }
       // Compute the weights of each feature.
-      weights = new int[map.size()];
-      lastCall = new int[weights.length];
-      nextCall = 1;
+      int[] weights = new int[map.size()];
       map.forEach(
           (feature, id) -> {
             weights[id] = toIntExact(weightLookup.weight(feature));
           });
+      initFromArrays(shapes, ids, weights);
+    }
+
+    /**
+     * Inits this weigher to the given literal values. This allows minimizing copying but is more
+     * difficult to use, so consider {@link #init} if such inputs are already available.
+     *
+     * @param shapes the shapes to test against each weighted cell
+     * @param ids {@code ids[shapeID]} contains the row ID of each shape in 'shapes'
+     * @param weights {@code weights[rowID]} contains the weight of each row ID in 'ids'
+     */
+    public void initFromArrays(S2ShapeIndex shapes, int[] ids, int[] weights) {
+      this.region = new S2ShapeIndexRegion(shapes);
+      this.ids = ids;
+      this.weights = weights;
+      this.lastCall = new int[weights.length];
+      this.nextCall = 1;
     }
 
     @Override
@@ -1134,7 +1148,7 @@ public class S2DensityTree {
    * call. The path's current {@link #cell} is either from the tree, or has weight 0 and no children
    * if the current path is disjoint from the tree. Greatly accelerates calls to many nearby cells.
    */
-  public static class DecodedPath {
+  public static class DecodedPath implements CellWeightFunction {
     private S2DensityTree tree;
     private Cursor cursor;
     private final List<Cell> stack = new ArrayList<>();
@@ -1162,6 +1176,12 @@ public class S2DensityTree {
       this.tree = tree;
       this.cursor = tree.encoded.cursor();
       this.lastDecoded = null;
+    }
+
+    // Implements the CellWeightFunction API, so we can use trees as input to further weighting.
+    @Override public long applyAsLong(S2CellId id) {
+      Cell node = cell(id);
+      return node.hasChildren() ? node.weight() : -node.weight();
     }
 
     /**

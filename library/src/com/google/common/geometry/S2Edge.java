@@ -60,7 +60,7 @@ public class S2Edge implements Serializable, S2Shape {
 
   @Override
   public boolean equals(Object o) {
-    if (o == null || !(o instanceof S2Edge)) {
+    if (!(o instanceof S2Edge)) {
       return false;
     }
     S2Edge other = (S2Edge) o;

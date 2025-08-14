@@ -200,11 +200,12 @@ public class S2Earth {
   }
 
   /**
-   * Calculates the bearing angle between two S2LatLngs.
+   * Calculates the bearing angle between two S2LatLngs, at the location of the first point and
+   * oriented clockwise from north.
    *
    * <p>Sourced from http://www.movable-type.co.uk/scripts/latlong.html.
    *
-   * @return The bearing angle between two S2LatLngs.
+   * @return The bearing angle between two S2LatLngs, in the range -pi to pi.
    */
   public static S1Angle getInitialBearing(S2LatLng a, S2LatLng b) {
     double lat1 = a.latRadians();

@@ -28,7 +28,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
-import com.google.common.geometry.S2EdgeQuery.Edges;
+import com.google.common.geometry.S2CrossingEdgeQuery.Edges;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import java.util.Collections;
@@ -39,9 +39,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** Unit tests for {@link S2EdgeQuery}. */
+/** Unit tests for {@link S2CrossingEdgeQuery}. */
 @RunWith(JUnit4.class)
-public class S2EdgeQueryTest extends GeometryTestCase {
+public class S2CrossingEdgeQueryTest extends GeometryTestCase {
   public S2Point perturbAtDistance(S1Angle distance, S2Point a0, S2Point b0) {
     S2Point p = S2EdgeUtil.getPointOnLine(a0, b0, distance);
     if (data.oneIn(2)) {
@@ -108,9 +108,9 @@ public class S2EdgeQueryTest extends GeometryTestCase {
     for (int i = 0; i < edges.size(); ++i) {
       S2Point a = edges.get(i).getStart();
       S2Point b = edges.get(i).getEnd();
-      S2EdgeQuery query = new S2EdgeQuery(index);
+      S2CrossingEdgeQuery query = new S2CrossingEdgeQuery(index);
       // Shape id has to be 0 because only one shape was inserted.
-      S2EdgeQuery.Edges candidates = query.getCandidates(a, b, 0);
+      S2CrossingEdgeQuery.Edges candidates = query.getCandidates(a, b, 0);
 
       Edges result = Iterables.getOnlyElement(query.getCandidates(a, b));
       assertEquals(0, result.shapeId());
@@ -164,7 +164,7 @@ public class S2EdgeQueryTest extends GeometryTestCase {
   }
 
   /** Returns a list of all edges in {@code candidates}. */
-  private static List<Integer> edgesToList(S2EdgeQuery.Edges candidates) {
+  private static List<Integer> edgesToList(S2CrossingEdgeQuery.Edges candidates) {
     List<Integer> list = Lists.newArrayList();
     while (!candidates.isEmpty()) {
       list.add(candidates.nextEdge());
@@ -263,7 +263,7 @@ public class S2EdgeQueryTest extends GeometryTestCase {
     for (int i = 0; i < index.shapes.size(); ++i) {
       expected.add(i);
     }
-    Iterable<Edges> results = new S2EdgeQuery(index).getCandidates(a, b);
+    Iterable<Edges> results = new S2CrossingEdgeQuery(index).getCandidates(a, b);
     assertEquals(expected, ImmutableSet.copyOf(Iterables.transform(results, Edges::shapeId)));
   }
 
@@ -285,7 +285,7 @@ public class S2EdgeQueryTest extends GeometryTestCase {
     for (S2Polyline line : polylines) {
       index.add(line);
     }
-    S2EdgeQuery query = new S2EdgeQuery(index);
+    S2CrossingEdgeQuery query = new S2CrossingEdgeQuery(index);
     for (Edges edges : query.getCrossings(a0, a1)) {
       // Shapes with no crossings should be filtered out by this method.
       S2Polyline polyline = polylines.get(edges.shapeId());
@@ -309,7 +309,7 @@ public class S2EdgeQueryTest extends GeometryTestCase {
   }
 
   /**
-   * Tests that {@link S2EdgeQuery#getCells(S2Point, R2Vector, S2Point, R2Vector, S2PaddedCell,
+   * Tests that {@link S2CrossingEdgeQuery#getCells(S2Point, R2Vector, S2Point, R2Vector, S2PaddedCell,
    * List)} returns the correct value.
    */
   @Test
@@ -324,7 +324,7 @@ public class S2EdgeQueryTest extends GeometryTestCase {
       options.setMaxEdgesPerCell(5);
       S2ShapeIndex index = new S2ShapeIndex(options);
       index.add(loop);
-      S2EdgeQuery edgeQuery = new S2EdgeQuery(index);
+      S2CrossingEdgeQuery edgeQuery = new S2CrossingEdgeQuery(index);
 
       FaceSegment[] segments = FaceSegment.allFaces();
       int numSegments = S2EdgeUtil.getFaceSegments(a, b, segments);

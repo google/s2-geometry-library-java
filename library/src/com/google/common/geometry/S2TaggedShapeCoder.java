@@ -53,8 +53,8 @@ public class S2TaggedShapeCoder implements S2Coder<S2Shape> {
   private static final ImmutableList<Class<? extends S2Point.Shape>> POINT_SHAPE_CLASSES =
       ImmutableList.of(
           S2Point.Shape.class,
-          S2Point.Shape.singleton(S2Point.ORIGIN).getClass(),
-          S2Point.Shape.fromList(ImmutableList.of(S2Point.ORIGIN, S2Point.ORIGIN)).getClass());
+          S2Point.Shape.singleton(S2Point.ZERO).getClass(),
+          S2Point.Shape.fromList(ImmutableList.of(S2Point.ZERO, S2Point.ZERO)).getClass());
   private static final ImmutableList<Class<? extends S2LaxPolylineShape>>
       LAX_POLYLINE_SHAPE_CLASSES =
           ImmutableList.of(

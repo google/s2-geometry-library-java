@@ -26,6 +26,7 @@ import com.google.common.geometry.S2Builder.IsFullPolygonPredicate;
 import com.google.common.geometry.S2BuilderGraph.EdgeList;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -162,7 +163,7 @@ public class S2BuilderUtil {
     private GraphOptions options;
     private ArrayList<S2Point> vertices;
     private EdgeList edges;
-    private IntVector inputEdgeIdSetIds;
+    private IntArrayList inputEdgeIdSetIds;
     private IdSetLexicon inputEdgeIdSetLexicon;
     private IntVector labelSetIds;
     private IdSetLexicon labelSetLexicon;
@@ -189,7 +190,7 @@ public class S2BuilderUtil {
       this.options = new GraphOptions(graph.options());
       this.vertices = new ArrayList<>(graph.vertices());
       this.edges = new EdgeList(graph.edges());
-      this.inputEdgeIdSetIds = IntVector.copyOf(graph.inputEdgeIdSetIds());
+      this.inputEdgeIdSetIds = new IntArrayList(graph.inputEdgeIdSetIds());
       this.inputEdgeIdSetLexicon = new IdSetLexicon(graph.inputEdgeIdSetLexicon());
       this.labelSetIds = IntVector.copyOf(graph.labelSetIds());
       this.labelSetLexicon = new IdSetLexicon(graph.labelSetLexicon());

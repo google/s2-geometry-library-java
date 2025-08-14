@@ -341,6 +341,23 @@ public final class IntVectorTest {
   }
 
   @Test
+  public void testEnlargeClearsNewElements() {
+    IntVector vector = IntVector.ofSize(8);
+    vector.fillConsecutive();
+
+    // clear sets numElements to zero, but does not clear the backing array.
+    vector.clear();
+    // ensureCapacity() allocates a new array, but copies the old backing contents into it, so
+    // enlarge has to clear the backing array.
+    vector.enlarge(32);
+
+    // Verify that the entire vector was cleared.
+    for (int i = 0; i < vector.size(); i++) {
+      assertEquals(0, vector.get(i));
+    }
+  }
+
+  @Test
   public void testTruncateAndShrink() {
     IntVector vector = new IntVector();
     vector.resize(80000);

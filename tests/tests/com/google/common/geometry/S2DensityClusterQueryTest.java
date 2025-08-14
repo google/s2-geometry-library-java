@@ -15,21 +15,49 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.geometry.S2CellId.MAX_LEVEL;
+import static com.google.common.geometry.S2CellId.begin;
+import static com.google.common.geometry.S2CellId.end;
+import static com.google.common.geometry.S2CellId.fromFacePosLevel;
+import static com.google.common.geometry.S2DensityClusterQueryTest.EditableData.WIDTH;
+import static java.lang.Math.abs;
+import static java.lang.Math.ceil;
+import static java.lang.Math.floor;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+import static java.lang.Math.round;
+import static java.lang.Math.sqrt;
+import static java.lang.Math.toIntExact;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.geometry.S2DensityClusterQuery.CellInterpolator;
+import com.google.common.geometry.S2DensityClusterQuery.Cluster;
+import com.google.common.geometry.S2DensityClusterQueryTest.EditableData.Feature;
+import com.google.common.geometry.S2DensityClusterQueryTest.EditableData.ST;
+import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder;
+import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder.CellWeightFunction;
 import com.google.common.geometry.S2DensityTree.DecodedPath;
 import com.google.common.geometry.S2DensityTree.TreeEncoder;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.Map.Entry;
+import java.util.Random;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -37,21 +65,6 @@ import org.junit.runners.JUnit4;
 /** Unit tests for {@link S2DensityClusterQuery}. */
 @RunWith(JUnit4.class)
 public final class S2DensityClusterQueryTest extends GeometryTestCase {
-
-  /**
-   * Given a Map of S2CellId to weights for the leaves of a density tree, this function returns an
-   * expanded map, adding all the required ancestors of those leaves, assigning them the weight of
-   * the sum of the weights of all the leaves below them.
-   */
-  private static Map<S2CellId, Long> sumToRoot(Map<S2CellId, Long> leafWeights) {
-    return leafWeights.keySet().stream()
-        .flatMap(
-            cell ->
-                IntStream.range(0, cell.level() + 1)
-                    .mapToObj(level -> Map.entry(cell.parent(level), leafWeights.get(cell))))
-        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, Long::sum));
-  }
-
   // Set clustering in the scenario where clusters one or more whole face cells.
   @Test
   public void testClustersAsFaces() {
@@ -65,9 +78,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
             S2CellId.fromFace(5), 100L);
 
     // Build the tree
-    TreeEncoder encoder = new TreeEncoder();
-    sumToRoot(leaves).forEach(encoder::put);
-    S2DensityTree tree = encoder.build();
+    S2DensityTree tree = density(leaves);
 
     // Cluster the tree
     S2DensityClusterQuery query100 = new S2DensityClusterQuery(100);
@@ -110,9 +121,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
             S2CellId.fromFace(1).child(0).child(2), 25L,
             S2CellId.fromFace(1).child(2).child(0), 25L);
 
-    TreeEncoder encoder = new TreeEncoder();
-    sumToRoot(leaves).forEach(encoder::put);
-    S2DensityTree tree = encoder.build();
+    S2DensityTree tree = density(leaves);
 
     // Test that tree.normalize() and creating a new DecodedPath doesn't crash.
     DecodedPath unused = new DecodedPath(tree.normalize());
@@ -173,7 +182,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
             Map.entry(S2CellId.fromFace(0).child(2).child(2), 100L),
             Map.entry(S2CellId.fromFace(0).child(2).child(3), 100L));
 
-    // Note that sumToRoot() is not used here. We are deliberately creating a (valid) S2DensityTree
+    // Note that density() is not used here. We are deliberately creating a (valid) S2DensityTree
     // where deeper nodes in the tree have redundant weight.
     TreeEncoder encoder = new TreeEncoder();
     leaves.forEach(encoder::put);
@@ -208,9 +217,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
             S2CellId.fromFace(face), 100L);
 
     // Build the tree
-    TreeEncoder encoder = new TreeEncoder();
-    sumToRoot(leaves).forEach(encoder::put);
-    S2DensityTree tree = encoder.build();
+    S2DensityTree tree = density(leaves);
 
     // Cluster with size 50, which will split the face into two by interpolation.
     S2DensityClusterQuery query50 = new S2DensityClusterQuery(50);
@@ -257,9 +264,7 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
             S2CellId.fromFace(4).child(2).child(2), 25L,
             S2CellId.fromFace(4).child(3).child(0), 25L);
 
-    TreeEncoder encoder = new TreeEncoder();
-    sumToRoot(leaves).forEach(encoder::put);
-    S2DensityTree tree = encoder.build();
+    S2DensityTree tree = density(leaves);
 
     // Set up a DecodedPath for the tree.
     S2DensityTree.DecodedPath decoder = new S2DensityTree.DecodedPath(tree);
@@ -395,5 +400,389 @@ public final class S2DensityClusterQueryTest extends GeometryTestCase {
     S2DensityClusterQuery query = new S2DensityClusterQuery(1);
     assertEquals(1, query.minClusterWeight());
     assertEquals(1, query.maxClusterWeight());
+  }
+
+  @Test public void testClamp() {
+    S2CellId face = S2CellId.fromFace(1);
+    S2CellId begin = begin(MAX_LEVEL);
+    S2CellId end = end(MAX_LEVEL);
+    S2DensityTree density = density(ImmutableMap.of(
+        face.rangeMin(), 10L,
+        face.child(1).child(2), 11L,
+        face.child(2).child(1), 12L,
+        face.rangeMax(), 13L,
+        end.prev(), 14L));
+    assertRange(density, face.rangeMin(), end, begin, end);
+    assertRange(density, end.prev(), end, end.prev(), end);
+    assertRange(density, begin, begin, begin, face.rangeMin());
+    assertRange(density, end, end, end, end);
+    S2CellId face2 = face.next();
+    assertRange(density, face2.rangeMin(), face2.rangeMin(), face2, face2.next());
+    assertRange(
+        density(ImmutableMap.of(begin, 1L)),
+        begin.next(), begin.next(),
+        begin.next(), end); // Doesn't miss the density until level 30
+  }
+
+  @Test public void testCluster() {
+    S2CellId parent = S2CellId.fromFace(1).child(2);
+    long weight = 10;
+    S2DensityTree density = density(ImmutableMap.of(parent, weight));
+    for (int level = 1; level < 4; level++) {
+      double fraction = 1.0 / (1 << (2 * level));
+      long wc = round(ceil(fraction * weight));
+      for (S2CellId c = parent.childBegin(parent.level() + level);
+          c.rangeMin().lessThan(parent.rangeMax());
+          c = c.next()) {
+        S2CellId d = c.next().rangeMin();
+        assertEquals(wc, S2DensityClusterQuery.cluster(density, c.rangeMin(), d).weight());
+      }
+    }
+    assertEquals(0L, S2DensityClusterQuery.cluster(density, begin(30), parent.rangeMin()).weight());
+    assertEquals(10L, S2DensityClusterQuery.cluster(density, begin(30), end(30)).weight());
+  }
+
+  @Test public void testRegionKeys() {
+    S2CellId a = begin(30).advance(10);
+    S2CellId b = begin(30).advance(20);
+    S2CellId c = begin(30).advance(30);
+    S2CellId d = begin(30).advance(40);
+    Function<S2Region, String> sharder = S2DensityClusterQuery.regionKeys(
+        ImmutableMap.of(
+            "Foo", new Cluster(a, b, 10),
+            "Bar", new Cluster(c, d, 20)),
+        "Baz");
+    assertEquals("Baz", sharder.apply(new S2Cell(a.prev())));
+    assertEquals("Foo", sharder.apply(new S2Cell(a)));
+    assertEquals("Foo", sharder.apply(new S2Cell(b.prev()))); // prev gets inside half-open range
+    assertEquals("Baz", sharder.apply(new S2Cell(c.prev())));
+    assertEquals("Bar", sharder.apply(new S2Cell(c)));
+    assertEquals("Bar", sharder.apply(new S2Cell(d.prev()))); // prev gets inside half-open range
+    assertEquals("Baz", sharder.apply(new S2Cell(begin(30))));
+    assertEquals("Baz", sharder.apply(new S2Cell(end(30).prev()))); // prev gets inside valid range
+  }
+
+  @Test public void testEdit() {
+    EditableData data = new EditableData(4, 6);
+    // No records results in no clusters.
+    data.assertEdits("");
+    data.reset();
+    // One record results in one cluster.
+    data.assertEdits("0+0:1 -> 0:1,0:3=1", 0, 0, 1);
+    data.reset();
+    // Insert a cluster of 1 record, remove the record, and edit should remove the cluster.
+    data.assertEdits("0+0:1 -> 0:1,0:3=1", 0, 0, 1);
+    data.records.clear();
+    data.assertEdits("0+0:1 -> null");
+    data.reset();
+    // Add a cluster, then grow it to the max size. It almost splits.
+    data.assertEdits("0+0:1 -> 0:1,0:7=2", 0, 1, 1, 0, 5, 1);
+    data.assertEdits("0+0:1 -> 0:1,0:7=6", 0, 3, 4);
+    data.reset();
+    // Add a cluster of 2 records, then add a 3rd so it does split.
+    data.assertEdits("0+0:1 -> 0:1,0:7=2", 0, 1, 1, 0, 5, 1);
+    data.assertEdits("0+0:1 -> 0:1,0:5=6 | 1+0:5 -> 0:5,0:7=1", 0, 3, 5);
+    data.reset();
+    // Add a cluster of 1 record, and then 2 clusters of 1 record before it.
+    data.assertEdits("0+0:5 -> 0:5,0:7=4", 0, 5, 4);
+    data.assertEdits("1+0:1 -> 0:1,0:3=5 | 1+0:3 -> 0:3,0:5=5", 0, 1, 5, 0, 3, 5);
+    data.reset();
+    // Add a cluster of 1 record, and then 2 clusters of 1 record after it.
+    data.assertEdits("0+0:1 -> 0:1,0:3=5", 0, 1, 5);
+    data.assertEdits("1+0:3 -> 0:3,0:5=5 | 1+0:5 -> 0:5,0:7=5", 0, 3, 5, 0, 5, 5);
+    data.reset();
+  }
+
+  /**
+   * A more extended test that verifies the process ramps up and ramps down, and exercises the most
+   * common edge cases with a variety of distributions. Each distribution adds and removes a random
+   * number of features until the collection has 10k features, and then adds and removes a random
+   * number of features until the collection has 0 features. When ramping up, the added features are
+   * on average greater than the removed features, and vice-versa when ramping down. The boundary
+   * cases these tests hit include:
+   * <ul>
+   * <li>Cluster edits to empty tables, and edits that create empty tables.
+   * <li>Repeated splits and merges over time.
+   * <li>Density tree leaf cells that are larger than the desired cluster weight.
+   * <li>Density tree leaves that are far smaller than the desired cluster weight
+   * <li>Cluster edits that "steal" from the head of the next cluster or gap.
+   * <li>Gaps that are large enough to get assigned to both neighboring clusters.
+   * </ul>
+   *
+   * <p>This test also prints a CSV file on stdout that can be pasted into a spreadsheet to graph
+   * the clusters as a function of time. It provides the following columns:
+   * <ul>
+   * <li>distribution: the sampling distribution used to place new features
+   * <li>time: the integer time in the current distribution
+   * <li>count: the number of clusters at this time
+   * <li>sum: the number of features at this time
+   * <li>min: the minimum number of features in any cluster
+   * <li>max: the maximum number of features in any cluster
+   * <li>mean: the average number of features across the clusters
+   * <li>stdev: the standard deviation of the number of features across the clusters
+   * <li>hilbert: a graph of the hilbert curve, where empty Hilbert regions print '.' and clustered
+   * Hilbert regions print a single character to indicate the order in which the cluster in that
+   * region was introduced, counting from 0-9 and then A-Z. It's only able to reliably show clusters
+   * that span more than 1/64th of the Hilbert range.
+   * </ul>
+   */
+  @Test
+  public void testClusterEditDistributions() {
+    EditableData data = new EditableData(800, 1200);
+    S2CellId begin = S2CellId.begin(30); // start of hilbert curve
+    data.printHeader("distribution", System.out);
+    runDistribution(data, "Uniform", () -> begin.advance(nextLong(data.r, WIDTH)));
+    runDistribution(data, "GaussianCentered",
+        () -> begin.advance(WIDTH / 2 + round(data.r.nextGaussian() / 20 * WIDTH)));
+    runDistribution(data, "GaussianAtBegin",
+        () -> begin.advance(abs(round(data.r.nextGaussian() / 10 * WIDTH))));
+    // Note the skewed distribution requires a much larger density tree, so the clusters are trash.
+    runDistribution(data, "Skewed",
+        () -> begin.advance(data.r.nextLong() & ((1L << nextLong(data.r, 60)) - 1)));
+  }
+
+  /** Returns a random long with at most the given magnitude. J2CL does not have this method. */
+  private static long nextLong(Random r, long max) {
+    return abs(r.nextLong()) % max;
+  }
+
+  private void runDistribution(EditableData data, String label, Supplier<S2CellId> distribution) {
+    data.reset();
+    Map<ST, Character> ids = new HashMap<>(); // unique IDs for each cluster, easy to print
+    boolean rampUp = true;
+    for (data.time = 0; data.time == 0 || !data.records.isEmpty(); data.time++) {
+      rampUp &= data.records.size() < 10_000;
+      int numRemoved = rampUp ? data.r.nextInt(10) : data.r.nextInt(100);
+      int numAdded = rampUp ? max(data.r.nextInt(100), numRemoved) : data.r.nextInt(20);
+      for (int feature = 0; feature < numAdded; feature++) {
+        data.records.add(new Feature(distribution.get(), 1));
+      }
+      Collections.shuffle(data.records, data.r);
+      data.records.subList(max(0, data.records.size() - numRemoved), data.records.size()).clear();
+      data.editClusters();
+      if (!data.clusters.isEmpty()) {
+        data.printStats(label, ids, System.out);
+      }
+    }
+    assertEquals(ImmutableMap.of(), data.clusters);
+  }
+
+  static class EditableData {
+    /** The width of the hilbert curve in units we can pass to {@link S2CellId#advance}. */
+    public static final long WIDTH = S2CellId.end(30).distanceFromBegin();
+
+    private final S2DensityClusterQuery query;
+    private final Random r = new Random(0); // a shared source of randomness if needed
+    private final Map<ST, Cluster> clusters = new HashMap<>();
+    private final List<Feature> records = new ArrayList<>();
+    private int time;
+
+    EditableData(int min, int max) {
+      this.query = new S2DensityClusterQuery(min, max);
+    }
+
+    private void reset() {
+      clusters.clear();
+      records.clear();
+      time = 0;
+    }
+
+    /** Edits 'clusters' with the new density of 'records'. */
+    private void editClusters() {
+      // Use just enough bytes for the tree that we can create the expected clusters in each test.
+      // Making this value larger would not change the result, and making it smaller would only make
+      // for incorrect clusters.
+      BreadthFirstTreeBuilder builder = new BreadthFirstTreeBuilder(400, MAX_LEVEL);
+      S2CellIndex index = new S2CellIndex();
+      for (int i = 0; i < records.size(); i++) {
+        index.add(records.get(i).cell, i);
+      }
+      index.build();
+      S2CellUnion union = new S2CellUnion();
+      CellWeightFunction weigher = id -> {
+        union.cellIds().clear();
+        union.cellIds().add(id);
+        long sum = 0;
+        for (int label : index.getIntersectingLabels(union)) {
+          sum += records.get(label).weight;
+        }
+        return sum;
+      };
+      S2DensityTree density = builder.build(weigher);
+      query.edit(clusters, density, c -> new ST(time, c.begin()));
+    }
+
+    /** Checks that cluster edits are expected after adding tuples of face,pos,weight. */
+    private void assertEdits(String expectedStrings, long ... tuples) {
+      for (int i = 0; i < tuples.length; i += 3) {
+        S2CellId cell = fromFacePosLevel(toIntExact(tuples[i]), tuples[i + 1], MAX_LEVEL);
+        records.add(new Feature(cell, tuples[i + 2]));
+      }
+      Map<ST, Cluster> copy = new HashMap<>(clusters);
+      editClusters();
+      List<String> strings = new ArrayList<>();
+      for (Entry<ST, Cluster> cluster : clusters.entrySet()) {
+        if (!cluster.getValue().equals(copy.get(cluster.getKey()))) {
+          strings.add(cluster.getKey() + " -> " + cluster.getValue());
+        }
+      }
+      for (Entry<ST, Cluster> cluster : copy.entrySet()) {
+        if (!clusters.containsKey(cluster.getKey())) {
+          strings.add(cluster.getKey() + " -> " + null);
+        }
+      }
+      strings.sort(String::compareTo);
+      assertEquals(expectedStrings, Joiner.on(" | ").join(strings));
+      time++;
+    }
+
+    /** Prints the CSV stats header to 'out'. */
+    public void printHeader(String label, PrintStream out) {
+      out.println(label + ",time,count,sum,min,max,mean,stdev,hilbert");
+    }
+
+    /** Prints the current cluster stats at 'time' to the given output. */
+    public void printStats(String runLabel, Map<ST, Character> clusterLabels, PrintStream out) {
+      // Compute the histogram of cluster positions along the hilbert curve.
+      List<Entry<ST, Cluster>> sorted = new ArrayList<>(clusters.entrySet());
+      sorted.sort(Comparator.comparing(e -> e.getValue().begin()));
+      int n = 0;
+      char[] histogram = new char[64];
+      double scale = 1.0 * histogram.length / WIDTH;
+      for (var e : sorted) {
+        Cluster cluster = e.getValue();
+        int a = (int) round(floor(scale * cluster.begin().distanceFromBegin()));
+        int b = (int) round(floor(scale * cluster.end().distanceFromBegin()));
+        Arrays.fill(histogram, n, a, '.');
+        Arrays.fill(histogram, a, b, clusterLabels.computeIfAbsent(e.getKey(), k -> {
+          String base32 = Integer.toString(clusterLabels.size() + 1, 32);
+          checkState(base32.length() == 1);
+          return base32.charAt(0);
+        }));
+        n = b;
+      }
+      Arrays.fill(histogram, n, histogram.length, '.');
+
+      // Compute stats on the clusters.
+      long[] counts = new long[clusters.size()];
+      long sum = 0;
+      long min = Long.MAX_VALUE;
+      long max = Long.MIN_VALUE;
+      for (int i = 0; i < sorted.size(); i++) {
+        Cluster cluster = sorted.get(i).getValue();
+        counts[i] = records.stream().filter(f -> f.intersects(cluster)).count();
+        sum += counts[i];
+        min = min(min, counts[i]);
+        max = max(max, counts[i]);
+      }
+      double mean = 1.0 * sum / sorted.size();
+      double diff2 = 0;
+      for (long count : counts) {
+        double diff = count - mean;
+        diff2 += diff * diff;
+      }
+      double stdev = sqrt(diff2 / sorted.size());
+
+      // Print the csv for this increment.
+      out.println(Joiner.on(',').join(ImmutableList.of(runLabel, time, sorted.size(),
+          sum, min, max, round(mean), round(stdev), new String(histogram))));
+    }
+
+    /** A simple space+time key. */
+    static final class ST {
+      private final long time;
+      private final S2CellId cell;
+
+      /** Creates a new ST key. */
+      public ST(long time, S2CellId cell) {
+        this.time = time;
+        this.cell = cell;
+      }
+
+      @Override public int hashCode() {
+        return cell.hashCode() ^ (int) time;
+      }
+
+      @Override public boolean equals(Object other) {
+        if (other instanceof ST) {
+          ST st = (ST) other;
+          return cell.equals(st.cell) && time == st.time;
+        } else {
+          return false;
+        }
+      }
+
+      @Override public String toString() {
+        // A real implementation would probably allow any cell level, but it's convenient for testing
+        // if we restrict to level 30.
+        assertEquals(30, cell.level());
+        return time + "+" + cell.face() + ":" + Long.toHexString(cell.pos());
+      }
+    }
+
+    /** A simple spatially positioned feature for testing. */
+    static class Feature {
+      private final S2CellId cell;
+      private final long weight;
+
+      /** Creates a new feature. */
+      public Feature(S2CellId cell, long weight) {
+        this.cell = cell;
+        this.weight = weight;
+      }
+
+      /** Returns the S2CellId of this feature. */
+      public S2CellId getCell() {
+        return cell;
+      }
+
+      /** Returns the weight of this feature. */
+      public long getWeight() {
+        return weight;
+      }
+
+      /** Returns true if this feature intersects the given cluster. */
+      public boolean intersects(Cluster cluster) {
+        return cell.greaterOrEquals(cluster.begin()) && cell.lessThan(cluster.end());
+      }
+
+      @Override public int hashCode() {
+        return cell.hashCode() ^ (int) weight;
+      }
+
+      @Override public boolean equals(Object other) {
+        if (other instanceof Feature) {
+          Feature f = (Feature) other;
+          return cell.equals(f.cell) && weight == f.weight;
+        } else {
+          return false;
+        }
+      }
+    }
+  }
+
+  private void assertRange(S2DensityTree density,
+      S2CellId outBegin, S2CellId outEnd,
+      S2CellId inBegin, S2CellId inEnd) {
+    Cluster cluster = new Cluster(inBegin.rangeMin(), inEnd.rangeMin(), 0).clamp(density);
+    assertEquals(0, cluster.weight());
+    assertEquals(outBegin, cluster.begin());
+    assertEquals(outEnd, cluster.end());
+  }
+
+  /** Returns a tree that sums the weights of all entries into all parent cells of those entries. */
+  private static S2DensityTree density(Map<S2CellId, Long> bases) {
+    TreeEncoder encoder = new TreeEncoder();
+    Map<S2CellId, Long> map = new HashMap<>();
+    for (Map.Entry<S2CellId, Long> entry : bases.entrySet()) {
+      S2CellId cell = entry.getKey();
+      long weight = entry.getValue();
+      for (int level = 0; level <= cell.level(); level++) {
+        S2CellId parent = cell.parent(level);
+        map.put(parent, map.getOrDefault(parent, 0L) + weight);
+      }
+    }
+    map.forEach(encoder::put);
+    return encoder.build();
   }
 }

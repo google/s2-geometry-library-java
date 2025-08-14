@@ -182,7 +182,7 @@ public final class S2ClosestPointQuery<T> {
    */
   public void setConservativeMaxDistance(S1ChordAngle maxDistance) {
     setMaxDistance(
-        maxDistance.plusError(S2EdgeUtil.getMinDistanceMaxError(maxDistance)).successor());
+        maxDistance.plusError(S2EdgeUtil.getUpdateMinDistanceMaxError(maxDistance)).successor());
   }
 
   /**
@@ -248,12 +248,11 @@ public final class S2ClosestPointQuery<T> {
   }
 
   /** Returns the region in which point searches will be done. */
-  @Nullable
-  public S2Region getRegion() {
+  public @Nullable S2Region getRegion() {
     return region;
   }
 
-  /*
+  /**
    * Sets the region in which point searches will be done, or clears the region if {@code region} is
    * null.
    *
@@ -534,10 +533,11 @@ public final class S2ClosestPointQuery<T> {
     }
   }
 
+  @SuppressWarnings("ReferenceEquality")
   private void maybeAddResult(Entry<T> entry, Target target) {
     S1ChordAngle distance = target.getMinDistance(entry.point(), maxDistanceLimit);
+    // Deliberate use of reference equality: The previous 'max' reference is returned in this case.
     if (distance == maxDistanceLimit) {
-      // The previous 'max' reference is returned in this case, so only check object identity.
       return;
     }
     if (region != null && !region.contains(entry.point())) {

@@ -29,9 +29,10 @@ import java.util.List;
  * A query for visiting pairs of crossing edges in one S2ShapeIndex, or pairs of crossing edges
  * between two S2ShapeIndexes where one edge is from each index.
  *
- * <p>See also {@link S2EdgeQuery}, which finds edges or shapes that are crossed by a single edge at
- * a time. If you have one or just a few edges that aren't in an index, and want to find their
- * crossings of indexed edges or shapes, S2EdgeQuery may be faster than S2CrossingEdgesQuery.
+ * <p>See also {@link S2CrossingEdgeQuery}, which finds edges or shapes that are crossed by a single
+ * edge at a time. If you have one or just a few edges that aren't in an index, and want to find
+ * their crossings of indexed edges or shapes, S2CrossingEdgeQuery may be faster than
+ * S2CrossingEdgesQuery.
  *
  * <p>Otherwise, for finding crossings in bulk between all edges in an index or between two indexes,
  * this S2CrossingEdgesQuery will be much faster.
@@ -276,7 +277,7 @@ public class S2CrossingEdgesQuery {
     private EdgePairVisitor visitor;
     private int minCrossingSign;
     private boolean swapped;
-    private S2EdgeQuery bQuery;
+    private S2CrossingEdgeQuery bQuery;
 
     // Reused collections and objects.
     private final EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser();
@@ -306,7 +307,7 @@ public class S2CrossingEdgesQuery {
       this.visitor = visitor;
       minCrossingSign = (type == CrossingType.INTERIOR) ? 1 : 0;
       this.swapped = swapped;
-      bQuery = new S2EdgeQuery(bIndex);
+      bQuery = new S2CrossingEdgeQuery(bIndex);
     }
 
     /** Calls the visitor with the given edge information, swapping the order if needed. */
@@ -373,7 +374,7 @@ public class S2CrossingEdgesQuery {
         // Skip over the cells of B using binary search.
         bi.seekBeyond(ai);
       } else {
-        // If ai.id() intersects many edges of B, then it is faster to use S2EdgeQuery to narrow
+        // If ai.id() intersects many edges of B, then it is faster to use S2CrossingEdgeQuery to narrow
         // down the candidates. But if it intersects only a few edges, it is faster to check all
         // the crossings directly. We handle this by advancing "bi" and keeping track of how many
         // edges we would need to test.
@@ -386,7 +387,7 @@ public class S2CrossingEdgesQuery {
           if (cellEdges > 0) {
             bEdges += cellEdges;
             if (bEdges >= kEdgeQueryMinEdges) {
-              // There are too many edges, so use an S2EdgeQuery.
+              // There are too many edges, so use an S2CrossingEdgeQuery.
               if (!visitSubcellCrossings(ai.entry(), ai.id())) {
                 return false;
               }

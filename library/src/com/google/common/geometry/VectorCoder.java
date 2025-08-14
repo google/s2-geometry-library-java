@@ -17,7 +17,7 @@ package com.google.common.geometry;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.base.Supplier;
+import com.google.common.geometry.InMemoryOutputStream.ByteArrayInMemoryOutputStream;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.PrimitiveArrays.Longs;
@@ -25,22 +25,19 @@ import com.google.common.primitives.ImmutableLongArray;
 import com.google.common.primitives.Ints;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.List;
 
 /**
  * An encoder/decoder of {@link List}s. Decoding is on-demand, so {@link S2Coder#isLazy()} is true.
+ *
+ * <p>The basic {@link #encode(List, OutputStream)} method uses a new {@link
+ * ByteArrayInMemoryOutputStream} for temporary storage, which limits the encoded output to 2GB.
+ * Callers may override that method and / or use {@link #encode(List, OutputStream,
+ * InMemoryOutputStream)} to supply a different InMemoryOutputStream implementation. This allows for
+ * either reusing the buffer or avoiding the 2GB restriction.
  */
 public class VectorCoder<T> implements S2Coder<List<T>> {
-
-  /** Interface that convinces Java that the suppliers are indeed Serializable. */
-  public interface SerializableSupplier extends Supplier<InMemoryOutputStream>, Serializable {}
-
-  /** Default {@code InMemoryOutputStream} backed by {@code ByteArrayOutputStream}. */
-  private static final InMemoryOutputStream defaultInMemoryOutputStreamSupplier() {
-    return new InMemoryOutputStream.ByteArrayInMemoryOutputStream();
-  }
 
   /** An encoder/decoder of {@code List<byte[]>}. */
   static final VectorCoder<byte[]> BYTE_ARRAY =
@@ -110,29 +107,26 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
       new VectorCoder<>(S2TaggedShapeCoder.COMPACT);
 
   private final S2Coder<T> coder;
-  private final SerializableSupplier inMemoryOutputStreamSupplier;
 
   /**
    * Constructs a {@code VectorCoder} which encodes/decodes elements with the given {@code coder}.
    */
   public VectorCoder(S2Coder<T> coder) {
     this.coder = coder;
-    this.inMemoryOutputStreamSupplier = VectorCoder::defaultInMemoryOutputStreamSupplier;
-  }
-
-  /**
-   * Constructs a {@code VectorCoder} which encodes/decodes elements with the given {@code coder}
-   * and which will use the given inMemoryOutputStreamProvider to instantiate an in memory output
-   * stream.
-   */
-  public VectorCoder(S2Coder<T> coder, SerializableSupplier inMemoryOutputStreamSupplier) {
-    this.coder = coder;
-    this.inMemoryOutputStreamSupplier = inMemoryOutputStreamSupplier;
   }
 
   @Override
   public void encode(List<T> values, OutputStream output) throws IOException {
-    InMemoryOutputStream bos = inMemoryOutputStreamSupplier.get();
+    encode(values, output, new ByteArrayInMemoryOutputStream());
+  }
+
+  /**
+   * Encodes the given {@code values} to the given {@code output}, using a provided
+   * InMemoryOutputStream for temporary storage. This may be used by clients who want to either use
+   * a more capable buffer, or reuse a buffer for repeated encoding.
+   */
+  public void encode(List<T> values, OutputStream output, InMemoryOutputStream bos)
+      throws IOException {
     ImmutableLongArray.Builder offsetsBuilder = ImmutableLongArray.builder(values.size());
 
     for (T value : values) {
@@ -144,14 +138,9 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
   }
 
   @Override
-  public EncodedList<T> decode(PrimitiveArrays.Bytes data, PrimitiveArrays.Cursor cursor) {
-    Longs offsets;
-    // TODO(user): Throw IOExceptions here and below.
-    try {
-      offsets = UintVectorCoder.UINT64.decode(data, cursor);
-    } catch (IOException e) {
-      throw new IllegalStateException("Underlying IO error", e);
-    }
+  public EncodedList<T> decode(PrimitiveArrays.Bytes data, PrimitiveArrays.Cursor cursor)
+      throws IOException {
+    Longs offsets = UintVectorCoder.UINT64.decode(data, cursor);
     long offset = cursor.position;
     cursor.position += (offsets.length() > 0 ? offsets.get(offsets.length() - 1) : 0);
 
@@ -163,7 +152,7 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
         try {
           return coder.decode(data, data.cursor(offset + start, offset + end));
         } catch (IOException e) {
-          throw new IllegalStateException("Underlying IO error", e);
+          throw new IllegalArgumentException("Underlying IO error", e);
         }
       }
 

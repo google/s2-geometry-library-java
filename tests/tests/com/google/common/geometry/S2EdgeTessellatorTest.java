@@ -100,7 +100,7 @@ public class S2EdgeTessellatorTest extends GeometryTestCase {
     // Ensure that the maximum distance estimate is a lower bound, not an upper
     // bound, since we only want to record a failure of the distance estimation
     // algorithm if the number it returns is definitely too small.
-    return maxDist.plusError(S2EdgeUtil.getMinDistanceMaxError(maxDist)).toAngle();
+    return maxDist.plusError(S2EdgeUtil.getUpdateMinDistanceMaxError(maxDist)).toAngle();
   }
 
   // When there are longitudes greater than 180 degrees due to wrapping, the

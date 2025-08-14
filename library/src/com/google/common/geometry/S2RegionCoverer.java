@@ -19,7 +19,6 @@ import static com.google.common.primitives.Ints.min;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -29,6 +28,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import jsinterop.annotations.JsConstructor;
 import jsinterop.annotations.JsIgnore;
@@ -299,7 +299,7 @@ public final class S2RegionCoverer implements Serializable {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(minLevel, maxLevel, levelMod, maxCells);
+    return Objects.hash(minLevel, maxLevel, levelMod, maxCells);
   }
 
   public int minLevel() {

@@ -179,7 +179,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Cells have consistently numbered edges, ordered CCW around the boundary, numbered 0 to 3. If
  * we define edges 0 and 1 to be positive and edges 2 and 3 to be negative, then we can see that if
- * we tesselate the cells the sign values are equal-and-opposite across boundaries:
+ * we tessellate the cells the sign values are equal-and-opposite across boundaries:
  *
  * <pre>
  *             ┌───────┐      ┌───────┐      ┌───────┬───────┐

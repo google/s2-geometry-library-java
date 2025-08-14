@@ -151,7 +151,7 @@ public final class S2RobustCrossProd {
    * simple double operations. Incurs a speed hit.
    *
    * <p>An absent Optional is returned if the either the calculated cross product results in the
-   * zero S2Point S2Point.ORIGIN or if we detect Real error overflow when doing Real.strictMul.
+   * zero S2Point S2Point.ZERO or if we detect Real error overflow when doing Real.strictMul.
    */
   @VisibleForTesting
   static Optional<S2Point> realCrossProd(S2Point a, S2Point b) {
@@ -171,7 +171,7 @@ public final class S2RobustCrossProd {
       S2Point realResult =
           normalizableFromReal(new S2Point(cx.doubleValue(), cy.doubleValue(), cz.doubleValue()));
 
-      if (realResult.equalsPoint(S2Point.ORIGIN) || !isNormalizable(realResult)) {
+      if (realResult.equalsPoint(S2Point.ZERO) || !isNormalizable(realResult)) {
         return Optional.empty();
       }
       return Optional.of(realResult);
@@ -190,7 +190,7 @@ public final class S2RobustCrossProd {
     BigPoint bb = new BigPoint(b);
     BigPoint axb = ba.crossProd(bb);
     S2Point normalizable = normalizeFromBigDecimal(axb.x, axb.y, axb.z);
-    if (normalizable.equalsPoint(S2Point.ORIGIN)) {
+    if (normalizable.equalsPoint(S2Point.ZERO)) {
       return Optional.empty();
     }
     return Optional.of(normalizable);
@@ -350,7 +350,7 @@ public final class S2RobustCrossProd {
     }
 
     if (maxExponent == Integer.MIN_VALUE) {
-      return S2Point.ORIGIN;
+      return S2Point.ZERO;
     }
 
     // Subtract 1 from the negative of the maxExponent to ensure the largest value is between

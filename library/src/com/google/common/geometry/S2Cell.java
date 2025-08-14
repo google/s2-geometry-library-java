@@ -593,6 +593,10 @@ public final class S2Cell implements S2Region, Serializable {
     return cellId.contains(cell.cellId);
   }
 
+  /**
+   * Returns the reduced (min or max) squared chord distance from {@code uvw} to the four vertices
+   * of this cell.
+   */
   @SuppressWarnings("AndroidJdkLibsChecker")
   private double vertexChordDist2(S2Point uvw, DoubleBinaryOperator reducer) {
     double d1 = chordDist2(uvw, uMin, vMin);
@@ -636,9 +640,9 @@ public final class S2Cell implements S2Region, Serializable {
 
   /**
    * Given the dot product of a point P with the normal of a u- or v-edge at the given coordinate
-   * value, returns the distance from P to that edge.
+   * value, returns the squared chord angle distance from P to that edge.
    */
-  private static double edgeDistance(double dirIJ, double uv) {
+  private static double edgeDistance2(double dirIJ, double uv) {
     // Let P be the target point and let R be the closest point on the given edge AB. The desired
     // distance XR can be expressed as PR^2 = PQ^2 + QR^2 where Q is the point P projected onto the
     // plane through the great circle through AB. We can compute the distance PQ^2 perpendicular to
@@ -659,7 +663,21 @@ public final class S2Cell implements S2Region, Serializable {
    */
   @JsMethod(name = "getDistanceToPoint")
   public S1ChordAngle getDistance(S2Point targetXyz) {
-    return S1ChordAngle.fromLength2(getDistanceInternal(targetXyz, true));
+    return S1ChordAngle.fromLength2(getDistance2Internal(targetXyz, true));
+  }
+
+  /**
+   * Returns true if the given cell intersects or is adjacent to the given cell, and they are on the
+   * same face. Adjacent cells do not intersect, so we use the (u,v) ranges rather than
+   * S2CellId.intersects(), so as to include neighboring cells in this conditional. (Neighboring
+   * cells on different faces are not handled here.)
+   */
+  private boolean intersectOrAdjacentOnSameFace(S2Cell target) {
+    return face == target.face
+        && uMin <= target.uMax
+        && uMax >= target.uMin
+        && vMin <= target.vMax
+        && vMax >= target.vMin;
   }
 
   /**
@@ -667,13 +685,8 @@ public final class S2Cell implements S2Region, Serializable {
    * cells are adjacent.
    */
   public S1ChordAngle getDistance(S2Cell target) {
-    // If the cells intersect or are adjacent, the distance is zero. Adjacent cells do not
-    // intersect, so we use the (u,v) ranges rather than S2CellId.intersects(), so as to
-    // include neighboring cells in this conditional. (Neighboring cells on different faces are not
-    // handled here.)
-    if (face == target.face
-        && uMin <= target.uMax && uMax >= target.uMin
-        && vMin <= target.vMax && vMax >= target.vMin) {
+    // If the cells intersect or are adjacent, the distance is zero.
+    if (intersectOrAdjacentOnSameFace(target)) {
       return S1ChordAngle.ZERO;
     }
 
@@ -701,17 +714,55 @@ public final class S2Cell implements S2Region, Serializable {
 
   /**
    * Returns true if the distance from this cell to the given cell is less than or equal to the
-   * given distance.
+   * given distance. When getMaxDistance(target) is less than the given distance, this can be about
+   * 16x faster than computing the actual distance with {@link #getDistance}, as it will stop after
+   * comparing a single pair of vertices. However, when the result is false, it is roughly the same
+   * speed.
    */
+  @SuppressWarnings("ReferenceEquality")
   public boolean isDistanceLessOrEqual(S2Cell target, S1ChordAngle distance) {
-    // TODO(user): This could be far faster. Rather than actually computing the minimum
-    // distance, we can stop as soon as we find a pair of vertices that are within the distance
-    //threshold.
-    return getDistance(target).lessOrEquals(distance);
+    if (distance.isNegative()) {
+      return false;
+    }
+
+    // If the cells intersect or are adjacent, the distance is zero.
+    if (intersectOrAdjacentOnSameFace(target)) {
+      return true;
+    }
+
+    // Otherwise, the minimum distance always occurs between a vertex of one cell and an edge of the
+    // other cell (including the edge endpoints). This represents a total of 32 possible
+    // (vertex, edge) pairs.
+    //
+    // TODO(user): This could be optimized to be at least 5x faster by pruning the set of
+    // possible closest vertex/edge pairs using the faces and (u,v) ranges of both cells.
+    S2Point[] va = new S2Point[4];
+    S2Point[] vb = new S2Point[4];
+    for (int i = 0; i < 4; i++) {
+      va[i] = getVertex(i);
+      vb[i] = target.getVertex(i);
+    }
+
+    for (int i = 0; i < 4; i++) {
+      for (int j = 0; j < 4; j++) {
+        // Note the deliberate use of reference equality here. S1EdgeUtil.updateMinDistance returns
+        // the same S1ChordAngle instance if it is not updated.
+        if (distance != S2EdgeUtil.updateMinDistance(va[i], vb[j], vb[(j + 1) & 3], distance)) {
+          return true;
+        }
+        if (distance != S2EdgeUtil.updateMinDistance(vb[i], va[j], va[(j + 1) & 3], distance)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
-  /** Returns the chord distance to targetXyz, with interior distance 0 iff toInterior is true. */
-  private double getDistanceInternal(S2Point targetXyz, boolean toInterior) {
+  /**
+   * Returns the squared chord distance to targetXyz, with interior distance 0 iff toInterior is
+   * true.
+   */
+  private double getDistance2Internal(S2Point targetXyz, boolean toInterior) {
     // All calculations are done in the (u,v,w) coordinates of this cell's face.
     S2Point targetUvw = S2Projections.faceXyzToUvw(face, targetXyz);
 
@@ -726,25 +777,25 @@ public final class S2Cell implements S2Region, Serializable {
     if (dir00 < 0) {
       inside = false; // Target is to the left of the cell.
       if (vEdgeIsClosest(targetUvw, false)) {
-        return edgeDistance(-dir00, uMin);
+        return edgeDistance2(-dir00, uMin);
       }
     }
     if (dir01 > 0) {
       inside = false; // Target is to the right of the cell.
       if (vEdgeIsClosest(targetUvw, true)) {
-        return edgeDistance(dir01, uMax);
+        return edgeDistance2(dir01, uMax);
       }
     }
     if (dir10 < 0) {
       inside = false; // Target is below the cell.
       if (uEdgeIsClosest(targetUvw, false)) {
-        return edgeDistance(-dir10, vMin);
+        return edgeDistance2(-dir10, vMin);
       }
     }
     if (dir11 > 0) {
       inside = false; // Target is above the cell.
       if (uEdgeIsClosest(targetUvw, true)) {
-        return edgeDistance(dir11, vMax);
+        return edgeDistance2(dir11, vMax);
       }
     }
     if (inside) {
@@ -756,10 +807,10 @@ public final class S2Cell implements S2Region, Serializable {
       // quadrilaterals after they are projected onto the sphere. Therefore the simplest approach is
       // just to find the minimum distance to any of the four edges.
       return Doubles.min(
-          edgeDistance(-dir00, uMin),
-          edgeDistance(dir01, uMax),
-          edgeDistance(-dir10, vMin),
-          edgeDistance(dir11, vMax));
+          edgeDistance2(-dir00, uMin),
+          edgeDistance2(dir01, uMax),
+          edgeDistance2(-dir10, vMin),
+          edgeDistance2(dir11, vMax));
     }
 
     // Otherwise, the closest point is one of the four cell vertices. Note that it is *not* trivial
@@ -894,7 +945,7 @@ public final class S2Cell implements S2Region, Serializable {
 
   /** Returns the distance from the cell boundary to the given point. */
   public S1ChordAngle getBoundaryDistance(S2Point target) {
-    return S1ChordAngle.fromLength2(getDistanceInternal(target, false));
+    return S1ChordAngle.fromLength2(getDistance2Internal(target, false));
   }
 
   private void init(S2CellId id) {

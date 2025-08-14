@@ -52,6 +52,16 @@ public final class S2BuilderTest extends GeometryTestCase {
   // Iteration multiplier for randomized tests.
   private static final int ITERATION_MULTIPLIER = 1;
 
+  /** Verify that S2Builder.Builder.intersectionTolerance depends on splitCrossingEdges. */
+  @Test
+  public void testBuilderIntersectionTolerance() {
+    S2Builder.Builder builder = new S2Builder.Builder();
+    S1Angle nonSplitTolerance = builder.intersectionTolerance();
+    builder.setSplitCrossingEdges(true);
+    S1Angle splitTolerance = builder.intersectionTolerance();
+    assertTrue(splitTolerance.radians() > nonSplitTolerance.radians());
+  }
+
   /** Tests adding a polygon and getting the same polygon back again. */
   @Test
   public void testAddShape() {
@@ -1372,7 +1382,8 @@ public final class S2BuilderTest extends GeometryTestCase {
     // errors.
     S1ChordAngle ca = S1ChordAngle.fromS1Angle(snapRadius);
     S1Angle snapRadiusWithError =
-        ca.plusError(ca.getS1AngleConstructorMaxError() + S2EdgeUtil.getMinDistanceMaxError(ca))
+        ca.plusError(
+                ca.getS1AngleConstructorMaxError() + S2EdgeUtil.getUpdateMinDistanceMaxError(ca))
             .toAngle();
 
     int nonDegenerate = 0;
@@ -1772,7 +1783,7 @@ public final class S2BuilderTest extends GeometryTestCase {
       // Verifies that the source and destination vertex ids are the same, in the same order.
       assertTrue(expected.edges().isEqualTo(actual.edges()));
       // Verifies that the IdSetId for each input edge id is the same.
-      assertTrue(expected.inputEdgeIdSetIds().isEqualTo(actual.inputEdgeIdSetIds()));
+      assertTrue(expected.inputEdgeIdSetIds().equals(actual.inputEdgeIdSetIds()));
     }
   }
 

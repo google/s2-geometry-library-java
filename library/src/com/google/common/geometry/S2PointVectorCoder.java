@@ -594,8 +594,8 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
 
   /** Return type of {@link #chooseBase}. */
   private static final class Base {
-    long base;
-    int baseBits;
+    final long base;
+    final int baseBits;
 
     Base(long base, int baseBits) {
       this.base = base;
@@ -609,10 +609,10 @@ public class S2PointVectorCoder implements S2Coder<List<S2Point>> {
    * <p>(If such an encoding is not possible then level < 0).
    */
   private static final class CellPoint {
-    short level;
-    short face;
-    int si;
-    int ti;
+    final short level;
+    final short face;
+    final int si;
+    final int ti;
 
     CellPoint(int level, FaceSiTi faceSiTi) {
       this.level = (short) level;

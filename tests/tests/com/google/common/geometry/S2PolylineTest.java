@@ -181,6 +181,7 @@ public class S2PolylineTest extends GeometryTestCase {
     assertEquals(1, vertices.size());
   }
 
+  @SuppressWarnings("IdentifierName")
   @Test
   public void testUninterpolate() {
     S2Point pointA = new S2Point(1, 0, 0);
@@ -388,6 +389,7 @@ public class S2PolylineTest extends GeometryTestCase {
     assertEquals(2, edgeIndex);
   }
 
+  @SuppressWarnings("IdentifierName")
   @Test
   public void testProject() {
     S2Point pointA = new S2Point(1, 0, 0);
@@ -691,7 +693,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
     if ((lhs == null) || (rhs == null)) {
       assertFalse(
-          "Your check is dubious...why would you expect an object " + "to be equal to null?",
+          "Your check is dubious...why would you expect an object to be equal to null?",
           expectedResult);
     }
 

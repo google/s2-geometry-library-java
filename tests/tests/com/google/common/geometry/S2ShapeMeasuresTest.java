@@ -17,10 +17,10 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2TextFormat.makeIndexWithLegacyShapes;
+import static com.google.common.geometry.S2TextFormat.makeLaxPolygonOrDie;
 import static com.google.common.geometry.S2TextFormat.makeLoop;
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static com.google.common.geometry.S2TextFormat.makePolygon;
-import static com.google.common.geometry.S2TextFormat.makePolygonOrDie;
 import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
@@ -137,10 +137,9 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
   @Test
   public void testPerimeterTwoLoopPolygon() {
     // To ensure that all edges are 1 degree long, we use degenerate loops.
-    S2Polygon invalidPolygon = uncheckedCreate(() -> makePolygonOrDie("0:0, 1:0; 0:1, 0:2, 0:3"));
-    assertEquals(
-        S1Angle.degrees(6),
-        S2ShapeMeasures.perimeter(invalidPolygon.shape()));
+    S2LaxPolygonShape invalidPolygon =
+        uncheckedCreate(() -> makeLaxPolygonOrDie("0:0, 1:0; 0:1, 0:2, 0:3"));
+    assertEquals(S1Angle.degrees(6), S2ShapeMeasures.perimeter(invalidPolygon));
   }
 
   @Test
@@ -419,7 +418,7 @@ public class S2ShapeMeasuresTest extends GeometryTestCase {
 
   @Test
   public void testLoopCentroid() {
-    assertEquals(S2Point.ORIGIN, S2ShapeMeasures.loopCentroid(S2LaxPolygonShape.FULL, 0));
+    assertEquals(S2Point.ZERO, S2ShapeMeasures.loopCentroid(S2LaxPolygonShape.FULL, 0));
 
     // Construct spherical caps of random height, and approximate their boundary with closely spaced
     // vertices. Then check that the centroid is correct.

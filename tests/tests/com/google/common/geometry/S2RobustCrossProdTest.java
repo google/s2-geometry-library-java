@@ -184,7 +184,7 @@ public class S2RobustCrossProdTest extends GeometryTestCase {
       for (double y : ternary) {
         for (double z : ternary) {
           S2Point a = new S2Point(x, y, z).normalize();
-          if (a.equals(S2Point.ORIGIN)) {
+          if (a.equals(S2Point.ZERO)) {
             continue;
           }
           for (double scale : scales) {

@@ -22,7 +22,6 @@ import static java.lang.Math.cos;
 import static java.lang.Math.sin;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultiset;
@@ -41,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
@@ -54,15 +54,23 @@ import org.jspecify.annotations.Nullable;
  * area.
  *
  * <p>Loops are not allowed to have any duplicate vertices (whether adjacent or not), and non-
- * adjacent edges are not allowed to intersect. Loops must have at least 3 vertices (except for the
- * "empty" and "full" loops discussed below). Loop vertices must be unit length. Although these
- * restrictions are not enforced in optimized code, you may get unexpected results if they are
- * violated.
+ * adjacent edges are not allowed to intersect. Loops must have at least 3 vertices, except that
+ * every single-vertex loop is considered to be either "full" or "empty", as discussed below.
+ * Loop vertices must be valid and unit length. Although these restrictions are not enforced in
+ * optimized code, you may get unexpected results if they are violated. Assertion errors may be
+ * thrown if assertions are enabled.
  *
- * <p>There are two special loops: the "empty" loop contains no points, while the "full" loop
- * contains all points. These loops do not have any edges, but to preserve the invariant that every
- * loop can be represented as a vertex chain, they are defined as having exactly one vertex each (
- * {@link #empty()} and {@link #full()}.)
+ * <p>S2Loop can also represent two special cases: The "empty" loop contains no points, while the
+ * "full" loop contains all points. These loops do not have any edges, but to preserve the invariant
+ * that every loop can be represented as a vertex chain, they are defined as single vertex loops.
+ * Any single vertex loop represents either the empty or full loop. See {@link #isEmpty()} and
+ * {@link #isFull()}.)
+ *
+ * <p>Note that {@link S2Polygon} has stricter conventions for full and empty loops. It only
+ * considers single-vertex loops to be full or empty if the single vertex in the loop is equal to
+ * the ones in the "canonical" empty or full loops, as returned by {@link #empty()} and
+ * {@link #full()}. All other single-vertex loops are considered invalid to S2Polygon. That is
+ * safer, as "accidental" single-vertex loops may arise from snapping or other operations.
  *
  * <p>Point containment of loops is defined such that if the sphere is subdivided into faces
  * (loops), every point is contained by exactly one face. This implies that loops do not necessarily
@@ -81,10 +89,17 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
   /** Max angle that intersections can be off by and yet still be considered collinear. */
   public static final double MAX_INTERSECTION_ERROR = 1e-15;
 
-  /** The single vertex that defines a loop that contains no area. */
+  /**
+   * A canonical vertex for defining the empty loop that contains no area. However, note that *any*
+   * loop with a single vertex having a positive Z coordinate is considered to be the empty loop.
+   */
   static final S2Point EMPTY_VERTEX = S2Point.Z_POS;
 
-  /** The single vertex that defines a loop that contains the whole sphere. */
+  /**
+   * A canonical vertex for defining the full loop that contains the whole sphere. However, note
+   * that *any* loop with a single vertex having a negative Z coordinate is considered to be the
+   * full loop.
+   */
   static final S2Point FULL_VERTEX = S2Point.Z_NEG;
 
   /** Spatial index for this loop. */
@@ -119,8 +134,9 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
 
   /**
    * Constructs a loop with the given vertices. The last vertex is implicitly connected to the
-   * first. All points must be unit length. Loops must have at least 3 vertices (except for the
-   * "empty" and "full" loops; see {@link #empty()} and {@link #full()}.
+   * first. All points must be unit length. Loops must have at least 3 vertices, except that single
+   * vertex loops are allowed, because any loop with a single vertex is considered to be either
+   * "empty" or "full": see {@link #empty()} and {@link #full()}.
    *
    * @param vertices the vertices for this new loop
    */
@@ -293,16 +309,16 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
   }
 
   /**
-   * Returns a new loop with one vertex that defines an empty loop (i.e., a loop with no edges that
-   * contains no points.)
+   * Returns a new canonical single-vertex loop that defines an empty loop (i.e., a loop with no
+   * edges that contains no points.)
    */
   public static final S2Loop empty() {
     return new S2Loop(Collections.singletonList(EMPTY_VERTEX));
   }
 
   /**
-   * Returns a new loop with one vertex that creates a full loop (i.e., a loop with no edges that
-   * contains all points). See {@link #empty()} for further details.
+   * Returns a new canonical single-vertex loop that defines a full loop (i.e., a loop with no edges
+   * that contains all points).
    */
   public static final S2Loop full() {
     return new S2Loop(Collections.singletonList(FULL_VERTEX));
@@ -313,6 +329,10 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    * doesn't check for equivalent loops that were initialized in different ways, etc. For instance,
    * two loops with the same vertices in the same order but starting at different positions are not
    * considered equal here.
+   *
+   * <p>Also, any single-vertex loop defines either the empty or full loop, but this method
+   * does not consider two "full" loops to be equal unless they use the same vertex, and likewise
+   * for "empty" loops. TODO(torrey): That should be fixed.
    */
   @Override
   public boolean equals(Object obj) {
@@ -320,7 +340,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
       S2Loop that = (S2Loop) obj;
       return Arrays.equals(this.vertices, that.vertices)
           && (this.originInside == that.originInside)
-          && Objects.equal(this.bound, that.bound);
+          && Objects.equals(this.bound, that.bound);
     }
     return false;
   }
@@ -410,19 +430,28 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     };
   }
 
-  /** Returns true if this is the special "empty" loop that contains no points. */
+  /**
+   * Returns true if this is an "empty" loop that contains no points. Note that any single-vertex
+   * loop is considered to be either empty or full.
+   */
   @Override
   public boolean isEmpty() {
     return isEmptyOrFull() && !originInside;
   }
 
-  /** Returns true if this is the special "full" loop that contains all points. */
+  /**
+   * Returns true if this is a "full" loop that contains all points.  Note that any single-vertex
+   * loop is considered to be either empty or full.
+   */
   @Override
   public boolean isFull() {
     return isEmptyOrFull() && originInside;
   }
 
-  /** Returns true if this loop is either "empty" or "full". */
+  /**
+   * Returns true if this loop has a single vertex, and thus is defined to be either the "empty" or
+   * "full" loop.
+   */
   public boolean isEmptyOrFull() {
     return numVertices == 1;
   }
@@ -584,8 +613,8 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
 
   /**
    * Returns the area of the loop interior, i.e. the region on the left side of the loop regardless
-   * of whether it is a shell or a hole. This value is between 0 and 4*Pi, or explicitly 0 if the
-   * loop is invalid.
+   * of whether it is a shell or a hole. This is measured in steradians, and the value is between 0
+   * and 4*Pi, or explicitly 0 if the loop has fewer than 3 vertices.
    */
   public double getArea() {
     if (isEmptyOrFull()) {
@@ -598,7 +627,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
 
   /**
    * Returns the true centroid of the loop multiplied by the area of the loop, or null if this loop
-   * is empty, full, or invalid.
+   * is empty, full, or has fewer than 3 vertices.
    *
    * <p>The result is not unit length, so you may want to normalize it. Also note that in general,
    * the centroid may not be contained by the loop. See {@link S2} for additional centroid details.
@@ -1228,11 +1257,8 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    * <p>Always keeps the first vertex from the loop, and if {@code vertexFilter} is not null, also
    * keeps vertices for which {@code vertexFilter.shouldKeepVertex()} is true.
    */
-  // Covered by tests of S2Polygon.initToSimplified.
-  @Nullable
-  @JsIgnore // J2CL warning "Predicate<S2Point> is not usable by JavaScript", probably because
-  // Predicate is not a JsType.
-  public S2Loop simplify(S1Angle tolerance, Predicate<S2Point> vertexFilter) {
+  @JsIgnore // Predicate is not a JsType.
+  public @Nullable S2Loop simplify(S1Angle tolerance, Predicate<S2Point> vertexFilter) {
     if (vertices.length < 2) {
       // Unable to simplify further, just return whatever this loop is.
       return this;
@@ -1271,7 +1297,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    * Returns true if the point is contained by the loop. The containment test is exact, placing
    * {@code p} arbitrarily within or without the loop depending on orientation of the edges, such
    * that given two loops sharing an edge, and a point on that edge, only one of the loops will
-   * contain it. The point does not need to be normalized.
+   * contain it. The point does not need to be normalized, but does need to be valid.
    */
   @Override
   public boolean contains(S2Point p) {
@@ -1303,7 +1329,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     return contains(it, p);
   }
 
-  // Package-private. Used only by S2Polygon.
+  // Package-private. Used only by S2Polygon and S2Loop itself.
   boolean bruteForceContains(S2Point p) {
     // Empty and full loops don't need a special case, but invalid loops with zero vertices do, so
     // we might as well handle them all at once.
@@ -1453,12 +1479,13 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     // All vertices must be unit length.
     for (int i = 0; i < numVertices; ++i) {
       if (!S2.isUnitLength(vertex(i))) {
-        error.init(S2Error.Code.NOT_UNIT_LENGTH, "Vertex " + i + " is not unit length.");
+        error.init(S2Error.Code.NOT_UNIT_LENGTH, "Vertex %d is not unit length.", i);
         return true;
       }
     }
 
-    // Loops must have at least 3 vertices (except for 'empty' and 'full').
+    // Valid loops must have at least three vertices, or one vertex. Every single-vertex loop is
+    // considered to be either empty or full.
     if (numVertices < 3) {
       if (isEmptyOrFull()) {
         // Skip the remaining tests.
@@ -1474,7 +1501,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     for (int i = 0; i < numVertices; ++i) {
       if (vertex(i).equalsPoint(vertex(i + 1))) {
         error.init(
-            S2Error.Code.DUPLICATE_VERTICES, "Edge " + i + " is degenerate (duplicate vertex).");
+            S2Error.Code.DUPLICATE_VERTICES, "Edge %d is degenerate (duplicate vertex).", i);
         return true;
       }
     }
@@ -1498,12 +1525,11 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
 
   private void initOriginAndBound() {
     if (numVertices < 3) {
-      // Check for the special 'empty' and 'full' loops (which have one vertex).
+      // Check for 'empty' and 'full' loops. Any loop with a single vertex is either empty or full.
       if (isEmptyOrFull()) {
         // If the vertex is in the southern hemisphere then the loop is full, otherwise it is empty.
         originInside = (vertex(0).z < 0);
       } else {
-        // Bail out without trying to access non-existent vertices.
         originInside = false;
       }
     } else {
@@ -1515,19 +1541,31 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
       //
       // In any case, we initialize originInside by first guessing that it is outside, and then
       // seeing whether we get the correct containment result for vertex 1. If the result is
-      // incorrect, the origin must be inside the loop instead. Note that the S2Loop is not
-      // necessarily valid and so we need to check the requirements of angleContainsVertex() first.
-      boolean v1Inside =
-          !vertex(0).equalsPoint(vertex(1))
-              && !vertex(2).equalsPoint(vertex(1))
-              && S2Predicates.angleContainsVertex(vertex(0), vertex(1), vertex(2));
+      // incorrect, the origin must be inside the loop instead. Note that "inside" may not be well
+      // defined if the loop is invalid.
+      boolean v1Inside = validAngleContainsVertex(vertex(0), vertex(1), vertex(2));
 
       originInside = false; // Initialize before calling contains().
-      if (v1Inside != contains(vertex(1))) {
+      if (vertex(1).isValid() && v1Inside != contains(vertex(1))) {
         originInside = true;
       }
     }
     initBound();
+  }
+
+  /**
+   * Returns true if the angle formed by the three points is valid and contains the vertex.
+   *
+   * <p>Note that the S2Loop is not necessarily valid and so we need to check the requirements of
+   * angleContainsVertex() first.
+   */
+  private boolean validAngleContainsVertex(S2Point a, S2Point b, S2Point c) {
+    return a.isValid()
+        && b.isValid()
+        && c.isValid()
+        && !a.equalsPoint(b)
+        && !c.equalsPoint(b)
+        && S2Predicates.angleContainsVertex(a, b, c);
   }
 
   /** Initializes the bound. Requires {@code bound == null}. */
@@ -1889,7 +1927,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     private int bjPrev;
 
     // Temporary data declared here to avoid repeated memory allocations.
-    private final S2EdgeQuery bQuery;
+    private final S2CrossingEdgeQuery bQuery;
     private final List<S2ShapeIndex.Cell> bCells;
 
     /**
@@ -1904,7 +1942,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
       this.swapped = swapped;
       aCrossingTarget = swapped ? relation.bCrossingTarget() : relation.aCrossingTarget();
       bCrossingTarget = swapped ? relation.aCrossingTarget() : relation.bCrossingTarget();
-      bQuery = new S2EdgeQuery(b.index);
+      bQuery = new S2CrossingEdgeQuery(b.index);
       bCells = Lists.newArrayList();
     }
 
@@ -1978,10 +2016,10 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
      */
     private boolean hasCrossing(LoopRangeIterator ai, LoopRangeIterator bi) {
       assert ai.id().contains(bi.id());
-      // If ai.id() intersects many edges of B, then it is faster to use S2EdgeQuery to narrow down
-      // the candidates. But if it intersects only a few edges, it is faster to check all the
-      // crossings directly. We handle this by advancing 'bi' and keeping track of how many edges we
-      // would need to test.
+      // If ai.id() intersects many edges of B, then it is faster to use S2CrossingEdgeQuery to
+      // narrow down the candidates. But if it intersects only a few edges, it is faster to check
+      // all the crossings directly. We handle this by advancing 'bi' and keeping track of how many
+      // edges we would need to test.
 
       // Tuned using Caliper benchmarking.
       final int edgeQueryMinEdges = 40;
@@ -1992,7 +2030,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
         if (bi.numEdges() > 0) {
           totalEdges += bi.numEdges();
           if (totalEdges >= edgeQueryMinEdges) {
-            // There are too many edges to test them directly, so use S2EdgeQuery.
+            // There are too many edges to test them directly, so use S2CrossingEdgeQuery.
             if (cellCrossesAnySubcell(ai.clipped(), ai.id())) {
               return true;
             }
@@ -2025,8 +2063,8 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
       int aNumClipped = aClipped.numEdges();
       for (int i = 0; i < aNumClipped; ++i) {
         int aj = aClipped.edge(i);
-        // Use an S2EdgeQuery starting at 'bRoot' to find the index cells of B that might contain
-        // crossing edges.
+        // Use an S2CrossingEdgeQuery starting at 'bRoot' to find the index cells of B that might
+        // contain crossing edges.
         if (!bQuery.getCells(a.vertex(aj), a.vertex(aj + 1), bRoot, bCells)) {
           continue;
         }

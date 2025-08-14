@@ -132,7 +132,7 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
 
   /**
    * Returns a new DistanceCollector for finding a minimum S1ChordAngle, starting from an initial
-   * value of infinity.
+   * value of infinity. The minimum possible distance is S1ChordAngle.zero.
    */
   public static final DistanceCollector<S1ChordAngle> minCollector() {
     return new DistanceCollector<S1ChordAngle>() {
@@ -164,6 +164,9 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
 
       @Override
       public boolean update(S2Point p1, S2Point p2) {
+        if (min.isZero()) {
+          return false;
+        }
         // TODO(user): Benchmark using S2Predicates.compareDistance() to reject distances
         // further than the current best before accurately computing the actual distance.
         return update(new S1ChordAngle(p1, p2));
@@ -171,36 +174,52 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
 
       @Override
       public boolean update(S2Point p, S2Point v0, S2Point v1) {
+        if (min.isZero()) {
+          return false;
+        }
         // TODO(user): Move or copy the S2EdgeUtil code into this class.
         return update(S2EdgeUtil.updateMinDistance(p, v0, v1, min));
       }
 
       @Override
       public boolean update(S2Point v0, S2Point v1, S2Point w0, S2Point w1) {
+        if (min.isZero()) {
+          return false;
+        }
+
         // TODO(user): Move or copy the S2EdgeUtil code into this class.
         return update(S2EdgeUtil.getEdgePairMinDistance(v0, v1, w0, w1, min));
       }
 
       @Override
-      public boolean update(S2Point p, S2Cell c) {
-        return update(c.getDistance(p));
+      public boolean update(S2Point p, S2Cell cell) {
+        if (min.isZero()) {
+          return false;
+        }
+        return update(cell.getDistance(p));
       }
 
       @Override
-      public boolean update(S2Point v0, S2Point v1, S2Cell c) {
-        return update(c.getDistanceToEdge(v0, v1));
+      public boolean update(S2Point v0, S2Point v1, S2Cell cell) {
+        if (min.isZero()) {
+          return false;
+        }
+        return update(cell.getDistanceToEdge(v0, v1));
       }
 
       @Override
-      public boolean update(S2Cell c1, S2Cell c2) {
-        return update(c1.getDistance(c2));
+      public boolean update(S2Cell cell1, S2Cell cell2) {
+        if (min.isZero()) {
+          return false;
+        }
+        return update(cell1.getDistance(cell2));
       }
     };
   }
 
   /**
    * Returns a new DistanceCollector for finding a maximum S1ChordAngle, starting from an initial
-   * value of negative.
+   * value of negative. The maximum possible distance is S1ChordAngle.STRAIGHT.
    */
   public static final DistanceCollector<S1ChordAngle> maxCollector() {
     return new DistanceCollector<S1ChordAngle>() {
@@ -232,6 +251,9 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
 
       @Override
       public boolean update(S2Point p1, S2Point p2) {
+        if (max.isStraight()) {
+          return false;
+        }
         S1ChordAngle dist = new S1ChordAngle(p1, p2);
         // For greater accuracy and consistency with update(S2Point, S2Point, S2Point),
         // recompute large chord distances by subtracting the antipodal distance from STRAIGHT.
@@ -244,28 +266,43 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
 
       @Override
       public boolean update(S2Point p, S2Point v0, S2Point v1) {
+        if (max.isStraight()) {
+          return false;
+        }
         // TODO(user): Move or copy the S2EdgeUtil code into this class.
         return update(S2EdgeUtil.updateMaxDistance(p, v0, v1, max));
       }
 
       @Override
       public boolean update(S2Point v0, S2Point v1, S2Point w0, S2Point w1) {
+        if (max.isStraight()) {
+          return false;
+        }
         // TODO(user): Move or copy the S2EdgeUtil code into this class.
         return update(S2EdgeUtil.getEdgePairMaxDistance(v0, v1, w0, w1, max));
       }
 
       @Override
       public boolean update(S2Point p, S2Cell c) {
+        if (max.isStraight()) {
+          return false;
+        }
         return update(c.getMaxDistance(p));
       }
 
       @Override
       public boolean update(S2Point v0, S2Point v1, S2Cell c) {
+        if (max.isStraight()) {
+          return false;
+        }
         return update(c.getMaxDistance(v0, v1));
       }
 
       @Override
       public boolean update(S2Cell c1, S2Cell c2) {
+        if (max.isStraight()) {
+          return false;
+        }
         return update(c1.getMaxDistance(c2));
       }
     };
@@ -429,6 +466,11 @@ public final class S1ChordAngle implements S1Distance<S1ChordAngle>, Serializabl
   @Override
   public boolean isZero() {
     return length2 == 0;
+  }
+
+  /** Returns whether the chord distance is exactly 2 (squared chord distance is exactly 4). */
+  public boolean isStraight() {
+    return length2 == MAX_LENGTH2;
   }
 
   /** Returns whether the chord distance is negative. */

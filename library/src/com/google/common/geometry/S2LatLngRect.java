@@ -523,8 +523,7 @@ public final class S2LatLngRect extends S2LatLngRectBase {
 
     /** Returns a new immutable S2LatLngRect copied from the current state of this builder. */
     public S2LatLngRect build() {
-      S2LatLngRect r = new S2LatLngRect(new R1Interval(lat), new S1Interval(lng));
-      return r;
+      return new S2LatLngRect(new R1Interval(lat), new S1Interval(lng));
     }
 
     /** A builder initialized to be empty (such that it doesn't contain anything). */

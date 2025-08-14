@@ -22,6 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.S2Builder.EdgeType;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -66,8 +68,10 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
 
   @Test
   public void testInvalidPolygon() {
+    // TODO(user): When S2Polygon reworking is done, only one of these errors will occur.
     checkS2PolygonError(
-        ImmutableList.of("0:0, 0:10, 10:0, 10:10, 0:0"), S2Error.Code.LOOP_SELF_INTERSECTION);
+        ImmutableList.of("0:0, 0:10, 10:0, 10:10, 0:0"),
+        ImmutableSet.of(S2Error.Code.LOOP_SELF_INTERSECTION, S2Error.Code.OVERLAPPING_GEOMETRY));
   }
 
   /**
@@ -89,7 +93,15 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
     // Internal assertions must be disabled to allow invalid polygons to be built.
     boolean result = uncheckedCreate(() -> builder.build(error));
     assertFalse(result);
-    assertEquals(S2Error.Code.POLYGON_LOOPS_SHARE_EDGE, error.code());
+
+    // Different implementations of S2Polygon validation find one or the other. Both are reasonable.
+    // TODO(user): When S2Polygon reworking is done, only one of these errors will occur.
+    ImmutableSet<S2Error.Code> expectedCodes =
+        ImmutableSet.of(
+            S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS,
+            S2Error.Code.POLYGON_LOOPS_SHARE_EDGE);
+
+    assertTrue("Got " + error.code(), expectedCodes.contains(error.code()));
     S2Polygon output = layer.getPolygon();
     assertEquals(2, output.numLoops());
     S2Loop loop0 = makeLoopOrDie("0:0, 0:2, 2:2, 2:0");
@@ -260,9 +272,9 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
   }
 
   /**
-   * Checks that building the given S2TextFormat polygons in 'inputStrs' in an S2PolygonLayer
-   * with either of DIRECTED or UNDIRECTED edges produces an S2Polygon with the same S2TextFormat
-   * as 'expectedStr'.
+   * Checks that building the given S2TextFormat polygons in 'inputStrs' in an S2PolygonLayer with
+   * either of DIRECTED or UNDIRECTED edges produces an S2Polygon with the same S2TextFormat as
+   * 'expectedStr'.
    */
   private void checkS2Polygon(List<String> inputStrs, String expectedStr) {
     checkS2Polygon(inputStrs, expectedStr, EdgeType.DIRECTED);
@@ -270,8 +282,8 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
   }
 
   /**
-   * Checks that building the given S2TextFormat polygon in 'inputStr' in an S2PolygonLayer
-   * with either of DIRECTED or UNDIRECTED edges produces the same polygon as output.
+   * Checks that building the given S2TextFormat polygon in 'inputStr' in an S2PolygonLayer with
+   * either of DIRECTED or UNDIRECTED edges produces the same polygon as output.
    */
   private void checkS2PolygonUnchanged(String inputStr) {
     checkS2Polygon(ImmutableList.of(inputStr), inputStr);
@@ -279,10 +291,10 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
 
   /**
    * Checks that building the given S2TextFormat *polylines* in 'inputStrs' into an S2PolygonLayer
-   * with the given EdgeType results in an error with the 'expectedError' code.
+   * with the given EdgeType results in an error with one of the 'expectedError' codes.
    */
   private void checkS2PolygonError(
-      List<String> inputStrs, S2Error.Code expectedError, EdgeType edgeType) {
+      List<String> inputStrs, Set<S2Error.Code> expectedError, EdgeType edgeType) {
     S2Builder.Builder builderOptions = new S2Builder.Builder();
     S2Builder builder = builderOptions.build();
 
@@ -297,10 +309,15 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
     // Internal assertions must be disabled to allow invalid polygons to be built.
     boolean result = uncheckedCreate(() -> builder.build(error));
     assertFalse(result);
-    assertEquals(expectedError, error.code());
+    assertTrue(expectedError.contains(error.code()));
   }
 
   private void checkS2PolygonError(List<String> inputStrs, S2Error.Code expectedError) {
+    checkS2PolygonError(inputStrs, ImmutableSet.of(expectedError), EdgeType.DIRECTED);
+    checkS2PolygonError(inputStrs, ImmutableSet.of(expectedError), EdgeType.UNDIRECTED);
+  }
+
+  private void checkS2PolygonError(List<String> inputStrs, Set<S2Error.Code> expectedError) {
     checkS2PolygonError(inputStrs, expectedError, EdgeType.DIRECTED);
     checkS2PolygonError(inputStrs, expectedError, EdgeType.UNDIRECTED);
   }
@@ -320,9 +337,9 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
   }
 
   /**
-   * Adds the given polyline to the given builder, and also updates the provided EdgeLabelMap
-   * with the labels for each added edge. Edges are identified by the combination of their
-   * (unordered) endpoints.
+   * Adds the given polyline to the given builder, and also updates the provided EdgeLabelMap with
+   * the labels for each added edge. Edges are identified by the combination of their (unordered)
+   * endpoints.
    */
   private static void addPolylineWithLabels(
       S2Polyline polyline,
@@ -419,5 +436,4 @@ public final class S2PolygonLayerTest extends GeometryTestCase {
       assertEquals(expectedLabelIds, actualLabelIds);
     }
   }
-
 }

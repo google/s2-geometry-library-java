@@ -285,18 +285,31 @@ public final class S2ClosedSetNormalizerTest {
     //  - Polyline edges coincident with polygon edges are removed
     S2ShapeIndex a =
         S2TextFormat.makeIndexOrDie(
-            "0:0 | 10:10 | 20:20 # 0:0, 0:10 | 0:0, 10:0 | 15:15, 16:16 # 0:0, 0:10, 10:10, 10:0;"
+            "0:0 | 10:10 | 20:20 # " //
+                + "0:0, 0:10 | 0:0, 10:0 | 15:15, 16:16 # " //
+                + "0:0, 0:10, 10:10, 10:0;" //
                 + " 0:0, 1:1; 2:2; 10:10, 11:11; 12:12");
     S2ShapeIndex b =
         S2TextFormat.makeIndexOrDie(
-            "0:10 | 10:0 | 3:3 | 16:16 # 10:10, 0:10 | 10:10, 10:0 | 5:5, 6:6 # 19:19, 19:21,"
-                + " 21:21, 21:19");
+            "0:10 | 10:0 | 3:3 | 16:16 # " //
+                + "10:10, 0:10 | 10:10, 10:0 | 5:5, 6:6 # " //
+                + "19:19, 19:21, 21:21, 21:19");
     S2ShapeIndex result = new S2ShapeIndex();
     S2Error error = new S2Error();
     assertTrue(computeUnion(a, b, result, error));
-    assertEquals(
-        "12:12 # 15:15, 16:16 | 10:10, 11:11 # 19:19, 19:21, 21:21, 21:19; 0:0, 0:10, 10:10, 10:0",
-        S2TextFormat.toString(result));
+
+    // The loops in the unioned polygon may be in either order.
+    String actual = S2TextFormat.toString(result);
+    String exp1 =
+        "12:12 # " //
+            + "15:15, 16:16 | 10:10, 11:11 # " //
+            + "0:0, 0:10, 10:10, 10:0; 19:19, 19:21, 21:21, 21:19";
+    String exp2 =
+        "12:12 # " //
+            + "15:15, 16:16 | 10:10, 11:11 # " //
+            + "19:19, 19:21, 21:21, 21:19; 0:0, 0:10, 10:10, 10:0";
+
+    assertTrue(exp1.equals(actual) || exp2.equals(actual));
   }
 
   private static class CopyGraphLayer implements S2BuilderLayer {

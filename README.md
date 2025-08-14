@@ -57,6 +57,36 @@ varying degrees of completeness and maturity. This Java implementation is
 heavily used within Google and is generally mature, aside from the newest
 features, but is not as complete as C++.
 
+## 2025 Q3 Release Highlights
+
+*   S2Polygon operations have migrated from the old implementations to
+    S2BooleanOperation, matching the C++ implementation. The old implementations
+    are still available, as fragile tests or code may depend on their specific
+    behaviors, but are deprecated and will eventually be removed.
+
+*   S2BufferOperation, S2WindingOperation, and supporting classes have been
+    ported from C++.
+
+*   Bug fixes & correctness improvements in S2ContainPointQuery, S2EdgeUtil,
+    S2Builder, and S2Predicates.
+
+*   Renamed S2EdgeQuery to S2CrossingEdgeQuery, matching the C++ implementation.
+
+*   Substantial reworking of S2DensityClusterQuery.
+
+*   Renamed S2Point.ORIGIN to S2Point.ZERO
+
+*   More migration from the internal "primitives" library to FastUtil.
+
+*   Many improvements, clarifications, and corrections to Javadoc.
+
+*   Migrated from com.google.common.base.Objects to java.util.Objects
+
+*   Internal migration from deprecated S2EdgeUtil.getClosestPoint() to
+    project().
+
+*   S2EdgeUtil.getMinDistanceMaxError() renamed getUpdateMinDistanceMaxError().
+
 ## 2025 Q2 Release Highlights
 
 Over 100 additional classes have been ported from C++, as well as more methods

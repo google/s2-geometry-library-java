@@ -39,6 +39,26 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class S2PointTest extends GeometryTestCase {
   @Test
+  public void testIsValid() {
+    assertTrue(S2Point.X_POS.isValid());
+    assertTrue(S2LatLng.fromDegrees(49.1, 112.3).toPoint().isValid());
+
+    // Non-normalized points are valid, although many operations require normalized points.
+    assertTrue(new S2Point(3, 4, 5).isValid());
+
+    // Even S2Point.ZERO (0, 0, 0) is valid, although most operations won't work on it.
+    assertTrue(new S2Point(0, 0, 0).isValid());
+
+    // But infinities and NaNs are not.
+    assertFalse(new S2Point(Double.POSITIVE_INFINITY, 0, 0).isValid());
+    assertFalse(new S2Point(0, Double.POSITIVE_INFINITY, 0).isValid());
+    assertFalse(new S2Point(0, 0, Double.POSITIVE_INFINITY).isValid());
+    assertFalse(new S2Point(Double.NaN, 0, 0).isValid());
+    assertFalse(new S2Point(0, Double.NaN, 0).isValid());
+    assertFalse(new S2Point(0, 0, Double.NaN).isValid());
+  }
+
+  @Test
   public void testAddition() {
     S2Point a = new S2Point(1, 2, 3);
     S2Point b = new S2Point(1, 1, 1);
@@ -274,8 +294,8 @@ public class S2PointTest extends GeometryTestCase {
   }
 
   @Test
-  public void testBuilder_origin() {
-    assertEquals(S2Point.ORIGIN, new S2Point.Builder().build());
+  public void testBuilder_zero() {
+    assertEquals(S2Point.ZERO, new S2Point.Builder().build());
   }
 
   @Test

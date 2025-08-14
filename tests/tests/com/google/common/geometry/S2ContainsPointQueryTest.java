@@ -94,6 +94,23 @@ public class S2ContainsPointQueryTest extends GeometryTestCase {
     assertTrue(q2.shapeContains(2, makePoint("0:7")));
   }
 
+  // In the CLOSED model, a line contains all its vertices, and only its vertices.
+  @Test
+  public void testLineContainsOnlyVertices() {
+    S2ShapeIndex index = makeIndexWithLegacyShapes("# 0:0, 10:10, 0:10, 10:0 #");
+    S2ContainsPointQuery q = new S2ContainsPointQuery(index, Options.CLOSED);
+    assertTrue(q.contains(makePoint("0:0")));
+    assertTrue(q.contains(makePoint("10:10")));
+    assertTrue(q.contains(makePoint("0:10")));
+    assertTrue(q.contains(makePoint("10:0")));
+
+    assertFalse(q.contains(makePoint("0:5"))); // Line crosses this point but does not contain it.
+    assertFalse(q.contains(makePoint("5:5"))); // The line self-intersects itself here, no vertex
+    assertFalse(q.contains(makePoint("5:0"))); // This point isn't on the line in any sense.
+    assertFalse(q.contains(makePoint("10:5"))); // Not on the line in any sense.
+    assertFalse(q.contains(makePoint("5:10"))); // The line crosses this point.
+  }
+
   @Test
   public void testGetContainingShapes() {
     // Also tests shapeContains().

@@ -30,6 +30,7 @@ import com.google.common.geometry.S2PolygonDegeneracyFinder.PolygonDegeneracyLis
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -168,7 +169,7 @@ public class S2LaxPolygonLayer implements S2BuilderShapesLayer {
       S2BuilderGraph g,
       IntVector edgesToDiscard,
       EdgeList newEdges,
-      IntVector newInputEdgeIdSetIds) {
+      IntArrayList newInputEdgeIdSetIds) {
     assert edgesToDiscard.isSorted();
     newEdges.clear();
     newInputEdgeIdSetIds.clear();
@@ -198,7 +199,7 @@ public class S2LaxPolygonLayer implements S2BuilderShapesLayer {
     // Some cases are implemented by constructing a new graph with certain degenerate edges removed
     // (overwriting "g"). "newEdges" is where the edges for the new graph are stored.
     EdgeList newEdges = new EdgeList();
-    IntVector newInputEdgeIdSetIds = new IntVector();
+    IntArrayList newInputEdgeIdSetIds = new IntArrayList();
     ArrayList<List<S2Point>> loops = new ArrayList<>();
     DegenerateBoundaries degenerateBoundaries = options.degenerateBoundaries();
 

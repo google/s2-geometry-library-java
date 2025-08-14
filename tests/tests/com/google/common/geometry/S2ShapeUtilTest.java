@@ -20,6 +20,7 @@ import static com.google.common.geometry.S2TextFormat.makeLoop;
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static com.google.common.geometry.S2TextFormat.makePolygon;
 import static com.google.common.geometry.S2TextFormat.makePolygonOrDie;
+import static java.util.stream.Collectors.toCollection;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -389,14 +390,13 @@ public class S2ShapeUtilTest extends GeometryTestCase {
   // compared to the corresponding S2LaxPolygonShape.
   private void verifyShapeToS2Polygon(
       List<List<S2Point>> loops, int expectedNumLoops, int expectedNumVertices) {
-    S2LaxPolygonShape laxPolygon = S2LaxPolygonShape.create(loops);
-    S2Polygon polygon = uncheckedCreate(() -> S2ShapeUtil.shapeToS2Polygon(laxPolygon));
-
+    S2Polygon polygon =
+        uncheckedCreate(() -> S2ShapeUtil.shapeToS2Polygon(S2LaxPolygonShape.create(loops)));
     assertEquals(expectedNumLoops, polygon.numLoops());
     assertEquals(expectedNumVertices, polygon.getNumVertices());
 
     // S2Polygon init methods may reorder loops.
-    var actualLoops =
+    ImmutableSet<List<S2Point>> actualLoops =
         polygon.getLoops().stream().map(S2Loop::orientedVertices).collect(toImmutableSet());
     assertEquals(ImmutableSet.copyOf(loops), actualLoops);
   }
@@ -450,5 +450,117 @@ public class S2ShapeUtilTest extends GeometryTestCase {
         assertEquals(loop.orientedVertex(j), loops.get(i).get(j));
       }
     }
+  }
+
+  // ShapeToS2LaxPolygonShape tests
+
+  // Creates an S2Polygon.Shape from the provided loops, and ensures that the
+  // S2LaxPolygonShape produced by shapeToS2LaxPolygon on that input represents the same polygon.
+  private void verifyShapeToS2LaxPolygon(
+      List<List<S2Point>> loops, int expectedNumLoops, int expectedNumVertices) {
+    // This must be a mutable list because the S2Polygon constructor will clear it.
+    ArrayList<S2Loop> s2loops =
+        loops.stream().map(S2Loop::new).collect(toCollection(ArrayList::new));
+
+    // Allow invalid S2Polygons here.
+    S2Polygon polygon = uncheckedCreate(() -> new S2Polygon(s2loops));
+    // The expected lax polygon loops are the oriented vertices of the S2Polygon loops.
+    ImmutableSet<List<S2Point>> expectedLoops =
+        polygon.getLoops().stream().map(S2Loop::orientedVertices).collect(toImmutableSet());
+
+    // Create the lax polygon from the polygon.shape().
+    S2LaxPolygonShape laxPolygon = S2ShapeUtil.shapeToS2LaxPolygon(polygon.shape());
+    assertEquals(expectedNumLoops, laxPolygon.numChains());
+    assertEquals(expectedNumVertices, laxPolygon.numVertices());
+
+    ImmutableSet<List<S2Point>> actualLoops = ImmutableSet.copyOf(laxPolygon.chains());
+    assertEquals(expectedLoops, actualLoops);
+  }
+
+  @Test
+  public void polygonWithHoleToS2LaxPolygon() {
+    // a polygon with one shell and one hole
+    var shell = S2TextFormat.parsePointsOrDie("0:0, 0:10, 10:10, 10:0");
+    var hole = S2TextFormat.parsePointsOrDie("4:4, 6:4, 6:6, 4:6");
+    verifyShapeToS2LaxPolygon(ImmutableList.of(shell, hole), 2, 8);
+  }
+
+  @Test
+  public void multiPolygonToS2LaxPolygon() {
+    // a polygon with multiple shells
+    var shell1 = S2TextFormat.parsePointsOrDie("0:0, 0:2, 2:2, 2:0");
+    var shell2 = S2TextFormat.parsePointsOrDie("0:4, 0:6, 3:6");
+    verifyShapeToS2LaxPolygon(ImmutableList.of(shell1, shell2), 2, 7);
+  }
+
+  @Test
+  public void twoHolesToS2LaxPolygon() {
+    // a polygon shell with two holes
+    var shell = S2TextFormat.parsePointsOrDie("0:0, 0:10, 10:10, 10:0");
+    var hole1 = S2TextFormat.parsePointsOrDie("1:1, 3:3, 1:3");
+    var hole2 = S2TextFormat.parsePointsOrDie("2:6, 4:7, 2:8");
+    verifyShapeToS2LaxPolygon(ImmutableList.of(shell, hole1, hole2), 3, 10);
+  }
+
+  @Test
+  public void intersectingLoopsToS2LaxPolygon() {
+    var shell1 = S2TextFormat.parsePointsOrDie("0:0, 0:2, 2:2, 2:0");
+    var shell2 = S2TextFormat.parsePointsOrDie("1:1, 1:3, 3:3, 3:1");
+    verifyShapeToS2LaxPolygon(ImmutableList.of(shell1, shell2), 2, 8);
+  }
+
+  @Test
+  public void fullPolygonToS2LaxPolygon() {
+    // verify that a full polygon is converted correctly
+    var polygon = S2TextFormat.makePolygonOrDie("full");
+    var laxPolygon = S2ShapeUtil.shapeToS2LaxPolygon(polygon.shape());
+    assertTrue(laxPolygon.isFull());
+  }
+
+  // ShapeToS2LaxPolylineShape tests
+
+  // Creates an S2Polyline.Shape from the provided chain, and ensures that the S2LaxPolylineShape
+  // produced by shapeToS2LaxPolyline on that input represents the same line. Note that conversion
+  // of multilines (multiple 1-dimensional chains in a single shape) is not tested here.
+  private void verifyShapeToS2LaxPolyline(List<S2Point> chain, int expectedNumVertices) {
+    // Allow invalid S2Polylines here.
+    S2Polyline polyline = uncheckedCreate(() -> new S2Polyline(chain));
+
+    // Create the lax polyline from the polyline.shape().
+    S2LaxPolylineShape laxPolyline = S2ShapeUtil.shapeToS2LaxPolyline(polyline.shape());
+    assertEquals(1, laxPolyline.numChains());
+    assertEquals(expectedNumVertices, laxPolyline.numVertices());
+
+    List<S2Point> actualChain = laxPolyline.chains().get(0);
+    assertEquals(chain, actualChain);
+  }
+
+  @Test
+  public void simpleLineToS2LaxPolyline() {
+    var line = S2TextFormat.parsePointsOrDie("0:0, 0:10, 10:10, 10:0");
+    verifyShapeToS2LaxPolyline(line, 4);
+  }
+
+  @Test
+  public void singleDegenerateEdgeToS2LaxPolyline() {
+    // An S2Polyline represents a degenerate 1-dimensional edge as a single point.
+    S2Polyline polyline =
+        uncheckedCreate(() -> new S2Polyline(S2TextFormat.parsePointsOrDie("0:10")));
+
+    // An S2LaxPolylineShape represents a degenerate edge as two identical points.
+    // Create the lax polyline from the polyline.shape().
+    S2LaxPolylineShape laxPolyline = S2ShapeUtil.shapeToS2LaxPolyline(polyline.shape());
+    assertEquals(1, laxPolyline.numChains());
+    assertEquals(2, laxPolyline.numVertices());
+
+    assertEquals(S2TextFormat.parsePointsOrDie("0:10, 0:10"), laxPolyline.chains().get(0));
+  }
+
+  @Test
+  public void lineWithDegenerateEdgeToS2LaxPolyline() {
+    // This is an invalid S2Polyline, but verifyShapeToS2LaxPolyline permits that, and the resulting
+    // lax polyline has the same 5 points.
+    var line = S2TextFormat.parsePointsOrDie("1:1, 1:3, 1:3, 3:3, 3:1");
+    verifyShapeToS2LaxPolyline(line, 5);
   }
 }

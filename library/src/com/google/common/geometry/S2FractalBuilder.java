@@ -67,7 +67,7 @@ public class S2FractalBuilder {
    */
   private double offsetFraction = 0;
 
-  private Random rand;
+  private final Random rand;
 
   /** You must call setMaxLevel() or setLevelForApproxMaxEdges() before calling makeLoop(). */
   public S2FractalBuilder(Random rand) {

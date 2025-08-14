@@ -15,8 +15,8 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.base.Objects;
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /** A point consisting of BigDecimal coordinates. */
 final class BigPoint implements Comparable<BigPoint> {
@@ -109,6 +109,6 @@ final class BigPoint implements Comparable<BigPoint> {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(x, y, z);
+    return Objects.hash(x, y, z);
   }
 }

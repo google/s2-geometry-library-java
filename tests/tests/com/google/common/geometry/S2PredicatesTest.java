@@ -16,7 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.geometry.S2.M_PI_2;
-import static com.google.common.geometry.S2Point.ORIGIN;
+import static com.google.common.geometry.S2Point.ZERO;
 import static com.google.common.geometry.S2Predicates.sign;
 import static com.google.common.geometry.S2RobustCrossProd.robustCrossProd;
 import static java.lang.Math.PI;
@@ -176,7 +176,7 @@ public class S2PredicatesTest extends GeometryTestCase {
     // Remove any accidental (0, 0, 0) points, sort, and remove duplicates.
     points =
         points.stream()
-            .filter(x -> !x.equalsPoint(ORIGIN))
+            .filter(x -> !x.equalsPoint(ZERO))
             .distinct()
             .sorted()
             .collect(Collectors.toList());
@@ -259,7 +259,7 @@ public class S2PredicatesTest extends GeometryTestCase {
    */
   private void addTangentPoints(S2Point a, S2Point b, List<S2Point> points) {
     S2Point dir = S2Point.crossProd(robustCrossProd(a, b), a).normalize();
-    if (dir.equalsPoint(ORIGIN)) {
+    if (dir.equalsPoint(ZERO)) {
       return;
     }
     for (; ; ) {
@@ -771,7 +771,7 @@ public class S2PredicatesTest extends GeometryTestCase {
 
     /**
      * Checks that the result at one level of precision is consistent with the result at the next
-     * higher level of Returns the minimum precision that yielded a non-zero result.
+     * higher level of precision. Returns the minimum precision that yielded a non-zero result.
      */
     int checkConsistency(S2Point x, S2Point y, double r2) {
       int dblSign = test(x, y, r2);
@@ -802,16 +802,23 @@ public class S2PredicatesTest extends GeometryTestCase {
 
     // Test cases where the closest point is an edge endpoint.
     c.coverage(p(1e-15, -1, 0), p(1, 0, 0), p(1, 1, 0), RIGHT, -1, DOUBLE);
+    c.coverage(p(-1, -1, 1), p(1, 0, 0), p(1, 1, 0), RIGHT, 1, DOUBLE);
     c.coverage(p(1e-18, -1, 0), p(1, 0, 0), p(1, 1, 0), RIGHT, -1, EXACT);
     c.coverage(p(1e-100, -1, 0), p(1, 0, 0), p(1, 1, 0), RIGHT, -1, EXACT);
     c.coverage(p(0, -1, 0), p(1, 0, 0), p(1, 1, 0), RIGHT, 0, EXACT);
+
+    // Test cases where x == -a or x == -b.
+    c.coverage(p(-1, 0, 0), p(1, 0, 0), p(1, 1, 0), RIGHT, 1, DOUBLE);
+    c.coverage(p(-1, 0, 0), p(1, 0, 0), p(1e-18, 1, 0), RIGHT, 1, EXACT);
+    c.coverage(p(-1, 0, 0), p(1, 0, 0), p(1e-100, 1, 0), RIGHT, 1, EXACT);
+    c.coverage(p(0, -1, 0), p(1, 0, 0), p(0, 1, 0), RIGHT, 0, EXACT);
   }
 
   /**
    * This test chooses random inputs such that the distance between "x" and the line (a0, a1) is
    * very close to the threshold distance "r". It then checks that the answer given by a method at
-   * one level of precision is consistent with the answer given at the next higher level of See also
-   * the comments in the CompareDistances consistency test.
+   * one level of precision is consistent with the answer given at the next higher level of
+   * precision. See also the comments in the CheckCompareDistance consistency test.
    */
   @Test
   public void testCompareEdgeDistanceConsistency() {
@@ -867,9 +874,10 @@ public class S2PredicatesTest extends GeometryTestCase {
       assertEquals(expectedSign, exactSign);
       if (dblSign != 0) {
         assertEquals(exactSign, dblSign);
+        assertEquals(expectedPrec, DOUBLE);
+      } else {
+        assertEquals(expectedPrec, EXACT);
       }
-
-      assertEquals(expectedPrec, dblSign != 0 ? DOUBLE : EXACT);
 
       // Make sure that the top-level function returns the expected result.
       assertEquals(expectedSign, S2Predicates.compareEdgeDistance(x, a0, a1, r2));
@@ -877,7 +885,7 @@ public class S2PredicatesTest extends GeometryTestCase {
 
     /**
      * Checks that the result at one level of precision is consistent with the result at the next
-     * higher level of Returns the minimum precision that yielded a non-zero result.
+     * higher level of precision. Returns the minimum precision that yielded a non-zero result.
      */
     int consistency(S2Point x, S2Point a0, S2Point a1, double r2) {
       int dblSign = CompareEdgeDistance.triage(x, a0, a1, r2);
@@ -1377,6 +1385,86 @@ public class S2PredicatesTest extends GeometryTestCase {
         length2(1.005e-30),
         Excluded.FIRST,
         EXACT);
+
+    // Test cases for the (d < 0) portion of the algorithm (see the implementation). In all of these
+    // cases A is closer to X0, B is closer to X1, and AB goes in the opposite direction as edge X
+    // when projected onto it (since this is what d < 0 means).
+
+    // 1. Cases that require Pi/2 < d(X0,X1) + r < Pi. Only one site is kept.
+    //
+    //    - A and B project to the interior of X.
+    x.coverage(
+        p(1, -1e-5, 1e-4),
+        p(1, -1.00000001e-5, 0),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.FIRST,
+        DOUBLE);
+    //    - A and B project to opposite sides of X1.
+    x.coverage(
+        p(1, 1e-10, 0.1),
+        p(1, -1e-10, 1e-8),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.FIRST,
+        DOUBLE);
+    //    - A and B both project to points past X1, and B is closer to the great circle through edge
+    //      X.
+    x.coverage(
+        p(1, 2e-10, 0.1),
+        p(1, 1e-10, 0),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.FIRST,
+        DOUBLE);
+    //    - Like the test above, but A is closer to the great circle through X.
+    x.coverage(
+        p(1, 1.1, 0),
+        p(1, 1.01, 0.01),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.FIRST,
+        DOUBLE);
+
+    // 2. Cases that require d(X0,X1) + r > Pi and where only one site is kept.
+    //
+    //    - B is closer to edge X (in fact it's right on the edge), but when A and B are projected
+    //      onto the great circle through X they are more than 90 degrees apart. This case requires
+    //      that the sin(d) < 0 case in the algorithm is handled *before* the cos(d) < 0 case.
+    x.coverage(
+        p(1, 1.1, 0),
+        p(1, -1, 0),
+        p(-1, 0, 0),
+        p(1, -1e-10, 0),
+        S1ChordAngle.fromDegrees(70).getLength2(),
+        Excluded.FIRST,
+        DOUBLE);
+
+    // 3. Cases that require d(X0,X1) + r > Pi and where both sites are kept.
+    //
+    //    - A projects to a point past X0, B projects to a point past X1, neither site should be
+    //      excluded, and A is closer to the great circle through edge X.
+    x.coverage(
+        p(-1, 0.1, 0.001),
+        p(1, 1.1, 0),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.NEITHER,
+        DOUBLE);
+    //    - Like the above, but B is closer to the great circle through edge X.
+    x.coverage(
+        p(-1, 0.1, 0),
+        p(1, 1.1, 0.001),
+        p(-1, -1, 0),
+        p(1, 0, 0),
+        S1ChordAngle.fromRadians(1).getLength2(),
+        Excluded.NEITHER,
+        DOUBLE);
 
     // These two sites are exactly 60 degrees away from the point (1, 1, 0), which is the midpoint
     // of edge X. This case requires symbolic perturbations to resolve correctly. Site A is closer

@@ -15,6 +15,7 @@
  */
 package com.google.common.geometry;
 
+import static java.lang.Double.isFinite;
 import static java.lang.Math.abs;
 import static java.lang.Math.atan2;
 import static java.lang.Math.cos;
@@ -48,8 +49,11 @@ import jsinterop.annotations.JsType;
 @JsType
 @Immutable
 public final class S2Point implements S2Region, Comparable<S2Point>, Serializable {
-  /** Origin of the coordinate system, [0,0,0]. */
-  public static final S2Point ORIGIN = new S2Point(0, 0, 0);
+  /**
+   * Origin of the coordinate system, [0,0,0]. Obviously, this is not on the unit sphere, and isn't
+   * a valid vertex of any S2 shape.
+   */
+  public static final S2Point ZERO = new S2Point(0, 0, 0);
 
   /** Direction of the x-axis. */
   public static final S2Point X_POS = new S2Point(1, 0, 0);
@@ -134,6 +138,11 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
   /** Returns the 'y' component. */
   public double getY() {
     return y;
+  }
+
+  /** Returns true if this S2Point is valid, meaning none of its components are infinite or NaN. */
+  public boolean isValid() {
+    return isFinite(x) && isFinite(y) && isFinite(z);
   }
 
   /** Returns the 'z' component. */
@@ -253,7 +262,7 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
 
   /**
    * Returns a copy of 'this' rescaled to be unit-length, unless the {@link #norm()} is zero, in
-   * which case {@link #ORIGIN} is returned.
+   * which case {@code S2Point.ORIGIN} is returned.
    */
   public S2Point normalize() {
     return S2Point.normalize(this);
@@ -261,7 +270,7 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
 
   /**
    * Returns a copy of 'p' rescaled to be unit-length, unless the {@link #norm()} is zero, in which
-   * case {@link #ORIGIN} is returned.
+   * case {@code S2Point.ORIGIN} is returned.
    */
   @JsIgnore
   public static final S2Point normalize(S2Point p) {
@@ -725,7 +734,7 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
     private double y;
     private double z;
 
-    /** Constructs a new builder initialized to {@link #ORIGIN}. */
+    /** Constructs a new builder initialized to {@code S2Point.ORIGIN}. */
     public Builder() {}
 
     /** Adds point. */

@@ -77,6 +77,9 @@ import jsinterop.annotations.JsType;
  * methods for converting directly between these two representations. For cells that represent 2D
  * regions rather than discrete points, it is better to use the S2Cell class.
  *
+ * <p>Note that S2CellIds should be compared using the methods provided by the class, as the
+ * underlying values are handled as unsigned longs.
+ *
  * @author danieldanciu@google.com (Daniel Danciu) ported from util/geometry
  * @author ericv@google.com (Eric Veach) original author
  */
@@ -210,7 +213,7 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
     }
   };
 
-  /** The id of the cell. */
+  /** The id of the cell. Handled as an unsigned value. */
   private final long id;
 
   /**
@@ -237,7 +240,7 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
    * indexes.
    */
   public static S2CellId sentinel() {
-    return SENTINEL; // -1
+    return SENTINEL; // The id is -1 as a long, but is MAX_UNSIGNED, or 0xffffffffffffffffL.
   }
 
   /** Returns the cell corresponding to a given S2 cube face. */
@@ -325,7 +328,8 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
 
   /**
    * Returns a normalized S2Point corresponding to the center of the cell. This method returns the
-   * same result as {@link S2Cell#getCenter()}.
+   * same result as {@link S2Cell#getCenter()}. This cell id must be valid, or results are
+   * undefined.
    *
    * <p>The maximum directional error in toPoint() compared to the exact mathematical result is
    * 1.5 * DBL_EPSILON radians, and the maximum length error is 2 * DBL_EPSILON: the same as
@@ -337,9 +341,11 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
 
   /**
    * Return the direction vector corresponding to the center of the cell. The vector returned by
-   * toPointRaw is not necessarily unit length.
+   * toPointRaw is not necessarily unit length. This cell id must be valid, or results are
+   * undefined.
    */
   public S2Point toPointRaw() {
+    assert isValid() : "Invalid S2CellId: " + id;
     long center = getCenterSiTi();
     return S2Projections.faceSiTiToXyz(face(), getSi(center), getTi(center));
   }
@@ -431,7 +437,10 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
     return (int) center;
   }
 
-  /** Return the S2LatLng corresponding to the center of the cell with this cell id. */
+  /**
+   * Return the S2LatLng corresponding to the center of the cell with this cell id. This cell id
+   * must be valid, or results are undefined.
+   */
   public S2LatLng toLatLng() {
     return new S2LatLng(toPointRaw());
   }
@@ -1141,6 +1150,50 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
       }
     }
     return true;
+  }
+
+  /**
+   * Return the largest cell with the same rangeMin() and such that rangeMax() < limit.rangeMin().
+   * Returns "limit" if no such cell exists. This method can be used to generate a small set of
+   * S2CellIds that covers a given range (a "tiling"). This example shows how to generate a tiling
+   * for a semi-open range of leaf cells [start, limit):
+   *
+   * <pre>{@code
+   * for (S2CellId id = start.maximumTile(limit);
+   *      !id.equals(limit); id = id.next().maximumTile(limit)) { ... }
+   * }</pre>
+   *
+   * <p>Note that in general the cells in the tiling will be of different sizes; they gradually get
+   * larger (near the middle of the range) and then gradually get smaller (as "limit" is
+   * approached).
+   */
+  public S2CellId maximumTile(S2CellId limit) {
+    S2CellId id = this;
+    long startId = rangeMinAsLong(id.id);
+    long limitMinId = rangeMinAsLong(limit.id);
+
+    if (unsignedLongGreaterOrEquals(startId, limitMinId)) {
+      return limit;
+    }
+
+    // If the cell is too large, shrink it.
+    if (unsignedLongGreaterOrEquals(rangeMaxAsLong(id.id), limit.id)) {
+      do {
+        id = new S2CellId(childBeginAsLong(id.id)); // child(0)
+      } while (unsignedLongGreaterOrEquals(rangeMaxAsLong(id.id), limit.id));
+      return id;
+    }
+
+    // The cell may be too small. Grow it if necessary.
+    while (!id.isFace()) {
+      S2CellId parent = new S2CellId(parentAsLong(id.id));
+      if (unsignedLongLessThan(rangeMinAsLong(parent.id), startId)
+          || unsignedLongGreaterOrEquals(rangeMaxAsLong(parent.id), limit.id)) {
+        break;
+      }
+      id = parent;
+    }
+    return id;
   }
 
   // ///////////////////////////////////////////////////////////////////

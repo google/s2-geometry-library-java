@@ -16,13 +16,15 @@
 
 package com.google.common.geometry;
 
+import static com.google.common.collect.Iterables.concat;
+import static com.google.common.collect.Iterables.transform;
 import static com.google.common.geometry.S2.skipAssertions;
-import static com.google.common.geometry.S2Projections.MAX_DIAG;
 import static com.google.common.geometry.S2Projections.MIN_WIDTH;
 import static java.lang.Math.PI;
 import static java.lang.Math.abs;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
+import static java.lang.Math.sqrt;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -34,15 +36,21 @@ import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
-import com.google.common.geometry.S2EdgeQuery.Edges;
+import com.google.common.geometry.S2Builder.SnapFunction;
+import com.google.common.geometry.S2BuilderGraph.PolylineType;
+import com.google.common.geometry.S2BuilderSnapFunctions.IdentitySnapFunction;
+import com.google.common.geometry.S2BuilderSnapFunctions.S2CellIdSnapFunction;
+import com.google.common.geometry.S2CrossingEdgeQuery.Edges;
 import com.google.common.geometry.S2Projections.FaceSiTi;
 import com.google.common.geometry.S2Shape.MutableEdge;
+import com.google.common.geometry.S2ValidationQueries.S2LegacyValidQuery;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.AbstractList;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -51,11 +59,13 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An S2Polygon is an S2Region object that represents a polygon. A polygon is defined by zero or
@@ -93,18 +103,19 @@ import jsinterop.annotations.JsType;
  * GeometryTestCase#uncheckedInitialize(Runnable)}.
  *
  * <p>Most clients will not call these init methods directly; instead they should use {@link
- * S2PolygonBuilder}, which has better support for dealing with imperfect data.
+ * S2Builder}, which has better support for dealing with imperfect data.
  *
  * <p>When the polygon is initialized, the given loops are automatically converted into a canonical
  * form consisting of "shells" and "holes". Shells and holes are both oriented CCW, and are nested
  * hierarchically. The loops are reordered to correspond to a preorder traversal of the nesting
- * hierarchy; initOriented may also invert some loops.
+ * hierarchy; initOriented may also invert some loops. The set of input S2Loop objects is always
+ * preserved; the caller can use this to determine how the loops were reordered, if desired.
  *
  * <p>Polygons may represent any region of the sphere with a polygonal boundary, including the
- * entire sphere (known as the "full" polygon). The full polygon consists of a single full loop (see
- * {@link S2Loop#full()}), whereas the empty polygon has no loops at all.
+ * entire sphere (known as the "full" polygon). The full polygon consists of a single canonical full
+ * loop, as returned by {@link S2Loop#full()}, whereas the empty polygon has no loops at all.
  *
- * <p>Polygons have the following restrictions:
+ * <p>Valid polygons have the following restrictions:
  *
  * <ul>
  *   <li>Vertices must be unit length.
@@ -118,7 +129,14 @@ import jsinterop.annotations.JsType;
  *       must have at least three vertices.
  * </ul>
  *
- * These restrictions are enforced by some constructors and methods when assertions are enabled.
+ * <p>Note that S2Polygon has stricter validity rules for full and empty loops than {@link S2Loop}:
+ * S2Polygon only accepts the *canonical* full and empty loops as valid, as returned by {@link
+ * S2Loop#full()} and {@link S2Loop#empty()}, and considers any other single-vertex loop invalid. In
+ * contrast, S2Loop considers every single-vertex loop to be valid, and either empty or full. The
+ * S2Polygon convention is safer, as "accidental" single-vertex loops may arise from snapping or
+ * other operations.
+ *
+ * <p>These restrictions are enforced by some constructors and methods when assertions are enabled.
  * Clients are recommended to check any polygons that might be invalid with {@link #isValid()}
  * before operating on them, otherwise unexpected results may be returned.
  *
@@ -126,7 +144,7 @@ import jsinterop.annotations.JsType;
  * @author ericv@google.com (Eric Veach) original author
  */
 @JsType
-@SuppressWarnings("Assertion")
+@SuppressWarnings({"Assertion", "IdentifierName"})
 public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Serializable {
 
   /** Version number of the lossless encoding format for S2Polygon. */
@@ -134,6 +152,12 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /** Version number of the compressed encoding format for S2Polygon. */
   private static final byte COMPRESSED_ENCODING_VERSION = 4;
+
+  /**
+   * Special S2Loop instance used as the "parent" of the polygon's outermost shell loops while
+   * constructing the loop nesting hierarchy. The content is unimportant: comparison is by identity.
+   */
+  public static final S2Loop ROOT = new S2Loop(new S2Point[] {});
 
   /** Returns false for all shapes. */
   private static boolean reverseNone(S2Shape input) {
@@ -170,7 +194,9 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   private S2LatLngRect subregionBound;
 
-  /** The spatial index for this S2Polygon. */
+  /**
+   * The spatial index for this S2Polygon. Contains either no shapes, or a single S2Polygon.Shape.
+   */
   @VisibleForTesting transient S2ShapeIndex index;
 
   /**
@@ -178,16 +204,58 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * contains(S2Point) because this method has a simple brute force implementation that is
    * relatively cheap. For this one method we keep track of the number of calls made and only build
    * the index once enough calls have been made that we think an index would be worthwhile.
+   *
+   * <p>NOTE: This counts downward: it is initialized to the maximum allowed based on the number of
+   * vertices, decremented for each call, and an index is built when it reaches zero.
    */
   private final AtomicInteger unindexedContainsCalls = new AtomicInteger();
 
-  /** True if this polygon has at least one hole. */
-  private boolean hasHoles = false;
+  /**
+   * True if initOriented() was called and the given loops had inconsistent orientations (i.e., it
+   * is not possible to construct a polygon such that the interior is on the left-hand side of all
+   * loops). We need to remember this error so that it can be returned later by
+   * findValidationError(), since it is not possible to detect this error once the polygon has been
+   * initialized. This field is not preserved by encode/decode.
+   */
+  private boolean errorInconsistentLoopOrientations = false;
 
   /** Total number of vertices in all loops. */
   private int numVertices = 0;
 
-  /** Creates an empty polygon. It can be made non-empty by calling {@link #init(List)}. */
+  /**
+   * Creates an empty polygon and then calls {@link #initNested(List)} with the given loops. The
+   * resulting polygon is asserted to be valid, if assertions are enabled. Takes ownership of the
+   * given loops, which must not be subsequently modified by the caller.
+   *
+   * <p>Among other requirements, valid loops must have at least three vertices, or be a *canonical*
+   * full or empty loop. This is stricter than the S2Loop conventions. See the class Javadoc for
+   * details.
+   */
+  public static S2Polygon fromLoops(List<S2Loop> loops) {
+    S2Polygon polygon = new S2Polygon();
+    polygon.uncheckedInitNested(loops);
+    polygon.assertValid();
+    return polygon;
+  }
+
+  /**
+   * Creates an empty polygon and then calls {@link #initNested(List)} with the given loops. The
+   * resulting polygon is asserted to be valid, if assertions are enabled. Takes ownership of the
+   * given loops, which must not be subsequently modified by the caller.
+   *
+   * <p>Among other requirements, valid loops must have at least three vertices, or be a *canonical*
+   * full or empty loop. This is stricter than the S2Loop conventions. See the class Javadoc for
+   * details.
+   */
+  @JsMethod(name = "fromLoopArray")
+  public static S2Polygon fromLoops(S2Loop... loops) {
+    return fromLoops(Arrays.asList(loops));
+  }
+
+  /**
+   * Creates an empty polygon. It can be made non-empty by calling {@link #init(List)} or one of the
+   * other initialization methods.
+   */
   @JsIgnore
   public S2Polygon() {
     bound = S2LatLngRect.empty();
@@ -195,7 +263,10 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     initIndex(); // No need to check validity on an empty polygon.
   }
 
-  /** Creates an S2Polygon for a given cell. */
+  /**
+   * Convenience constructor that creates an S2Polygon with a single loop corresponding to the given
+   * cell.
+   */
   @JsIgnore
   public S2Polygon(S2Cell cell) {
     loops.add(new S2Loop(cell));
@@ -204,33 +275,60 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /**
    * Creates an empty polygon and then calls {@link #initNested(List)} with the given loops. Clears
-   * the given list. The resulting polygon is asserted to be valid, if assertions are enabled.
+   * the given list. The resulting polygon is asserted to be valid, if assertions are enabled. See
+   * also {@link #fromLoops(List)} which is similar, but does not clear the given list.
+   *
+   * <p>Among other requirements, valid loops must have at least three vertices, or be a *canonical*
+   * full or empty loop. This is stricter than the S2Loop conventions. See the class Javadoc for
+   * details.
    */
   @JsIgnore
   public S2Polygon(List<S2Loop> loops) {
     uncheckedInitNested(loops);
+    loops.clear();
+
     // TODO(user): Enable assertions that polygons are valid here.
     // assertValid();
   }
 
-  /**
-   * Constructor from a single loop. The resulting polygon is asserted to be valid, if assertions
-   * are enabled.
-   */
+  /** Convenience constructor that calls {@link #initOneLoop(S2Loop)}. */
   @JsIgnore
   public S2Polygon(S2Loop loop) {
-    if (literalEmpty(loop)) {
-      this.bound = S2LatLngRect.empty();
-      this.subregionBound = S2LatLngRect.empty();
-    } else {
-      this.numVertices = loop.numVertices();
-      this.bound = loop.getRectBound();
-      this.subregionBound = loop.getSubregionBound();
-      loops.add(loop);
+    initOneLoop(loop);
+  }
+
+  /**
+   * Initializes this polygon from a single loop. Converts a canonical empty loop into a valid empty
+   * polygon, which has no loops. A canonical full loop results in a valid full polygon. Otherwise,
+   * the loop must have at least three vertices to be considered valid. This is stricter than the
+   * S2Loop conventions. See the class Javadoc for details.
+   *
+   * <p>The resulting polygon is asserted to be valid, if assertions are enabled.
+   */
+  public void initOneLoop(S2Loop loop) {
+    clearLoops();
+    if (isCanonicalEmptyLoop(loop)) {
+      // A canonical empty loop produces a valid empty polygon, with no loops.
+      initLoopProperties();
+      return;
     }
-    initIndex();
+
+    loops.add(loop);
+    initOneLoop();
     // TODO(user): Enable assertions that polygons are valid here.
     // assertValid();
+  }
+
+  /** Given that this.loops contains a single non-empty loop, initializes all other fields. */
+  private void initOneLoop() {
+    assert loops.size() == 1;
+    S2Loop loop = loops.get(0);
+    loop.setDepth(0);
+    errorInconsistentLoopOrientations = false;
+    numVertices = loop.numVertices();
+    bound = loop.getRectBound();
+    subregionBound = loop.getSubregionBound();
+    initIndex();
   }
 
   /** Copy constructor. */
@@ -239,28 +337,69 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     copy(src);
   }
 
-  /** Returns true iff the loop is the empty loop (as opposed to an invalid 1 vertex loop). */
+  /**
+   * Returns true if the loop is a canonical empty loop, with a single vertex S2Loop.EMPTY_VERTEX,
+   * as opposed to a single vertex loop that (accidentally) happens to be {@link S2Loop#isEmpty()}.
+   * See also {@link #isCanonicalFullLoop(S2Loop)}.
+   */
   @VisibleForTesting
-  static boolean literalEmpty(S2Loop loop) {
+  static boolean isCanonicalEmptyLoop(S2Loop loop) {
     return loop.numVertices() == 1 && loop.vertex(0).equalsPoint(S2Loop.EMPTY_VERTEX);
   }
 
-  /** Initializes this polygon to a copy of the given polygon. */
-  void copy(S2Polygon src) {
-    reset();
-    this.bound = src.bound;
-    this.subregionBound = src.subregionBound;
-    this.hasHoles = src.hasHoles;
-    this.numVertices = src.numVertices;
+  /**
+   * Returns true if the loop is a canonical full loop, with a single vertex S2Loop.FULL_VERTEX, as
+   * opposed to an single vertex loop that (accidentally) happens to be {@link S2Loop#isFull()}.
+   *
+   * <p>Other than canonical full and empty loops, loops must have at least three vertices to be
+   * valid, according to S2Polygon conventions. S2Loop has looser conventions, and considers *any*
+   * single-vertex loop to be valid, and either empty or full.
+   */
+  @VisibleForTesting
+  static boolean isCanonicalFullLoop(S2Loop loop) {
+    return loop.numVertices() == 1 && loop.vertex(0).equalsPoint(S2Loop.FULL_VERTEX);
+  }
 
+  /**
+   * Returns true if the loop has fewer than three vertices, except if it is a canonical empty or
+   * full loop.
+   */
+  static boolean isInvalidLoopTooFewVertices(S2Loop loop) {
+    int numVertices = loop.numVertices();
+    return numVertices == 0
+        || (numVertices == 1 && !isCanonicalEmptyLoop(loop) && !isCanonicalFullLoop(loop))
+        || numVertices == 2;
+  }
+
+  /**
+   * Initializes this polygon to a copy of the given polygon, including making copies of the
+   * (mutable) loops.
+   */
+  void copy(S2Polygon src) {
+    clearLoops();
     for (int i = 0; i < src.numLoops(); ++i) {
       loops.add(new S2Loop(src.loop(i)));
     }
+
+    // Don't copy errorInconsistentLoopOrientations, since this is not a property of the polygon,
+    // but only of the way the polygon was constructed.
+    this.numVertices = src.numVertices;
+    this.unindexedContainsCalls.set(src.unindexedContainsCalls.get());
+    this.bound = src.bound;
+    this.subregionBound = src.subregionBound;
     initIndex();
   }
 
-  /** Initializes the polygon index. */
+  /** Initializes the polygon index, which should contain no shapes. */
   private void initIndex() {
+    // The index should be empty: either null, freshly created, or cleared by the caller.
+    if (index != null) {
+      assert index.getShapes().isEmpty();
+    } else {
+      index = new S2ShapeIndex();
+    }
+    index.add(shape());
+
     // See S2Loop for the details behind 'maxUnindexedContainsCalls'.
     int maxUnindexedContainsCalls;
     if (numVertices <= 8) {
@@ -273,16 +412,6 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
       maxUnindexedContainsCalls = 2;
     }
     this.unindexedContainsCalls.set(maxUnindexedContainsCalls);
-
-    // The index should be empty: either freshly created, or cleared by the caller.
-    if (index != null) {
-      assert index.getShapes().isEmpty();
-    } else {
-      index = new S2ShapeIndex();
-    }
-    for (int i = 0; i < numLoops(); ++i) {
-      index.add(loop(i));
-    }
   }
 
   /**
@@ -314,16 +443,39 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     return this;
   }
 
+  /**
+   * Two polygons are equal if and only if they have exactly the same loops. The loops must appear
+   * in the same order, and corresponding loops must have the same linear vertex ordering (i.e.,
+   * cyclic rotations are not allowed).
+   */
   @Override
   public boolean equals(Object o) {
     if (o instanceof S2Polygon) {
-      S2Polygon that = (S2Polygon) o;
-      return this.numVertices == that.numVertices
-          && this.bound.equals(that.bound)
-          && this.loops.equals(that.loops);
-    } else {
+      return equalsPolygon((S2Polygon) o);
+    }
+    return false;
+  }
+
+  /**
+   * Return true if two polygons have exactly the same loops. The loops must appear in the same
+   * order, and corresponding loops must have the same linear vertex ordering (i.e., cyclic
+   * rotations are not allowed).
+   */
+  public boolean equalsPolygon(S2Polygon b) {
+    if (numLoops() != b.numLoops()) {
       return false;
     }
+    if (numVertices != b.numVertices) {
+      return false;
+    }
+    for (int i = 0; i < numLoops(); ++i) {
+      S2Loop aLoop = loop(i);
+      S2Loop bLoop = b.loop(i);
+      if ((bLoop.depth() != aLoop.depth()) || !bLoop.equals(aLoop)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override
@@ -357,12 +509,9 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     return 0;
   }
 
-  /**
-   * Initializes a polygon by calling {@link #initNested(List)}. Asserts that the resulting polygon
-   * is valid, if assertions are enabled.
-   */
+  /** An alias for {@link #initNested(List)}. */
   public void init(List<S2Loop> loops) {
-    initNested(loops); // initNested asserts validity, if assertions are enabled.
+    initNested(loops);
   }
 
   /**
@@ -371,48 +520,54 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * set of points on its left-hand side.) Asserts that the resulting polygon is valid, if
    * assertions are enabled.
    *
-   * <p>This method takes ownership of the given loops and clears the given list. It then figures
-   * out the loop nesting hierarchy and assigns every loop a depth. Shells have even depths, and
-   * holes have odd depths. Note that the loops are reordered so the hierarchy can be traversed more
-   * easily (see {@link #getParent(int)}, {@link #getLastDescendant(int)}, and {@link
-   * S2Loop#depth()}). Loops which are literalEmpty() are ignored, but otherwise invalid loops will
-   * cause assertion failures, if assertions are enabled.
+   * <p>This method takes ownership of the given loops and clears the given list. (See also {@link
+   * #fromLoops(List)}, which does not clear the given list). It then figures out the loop nesting
+   * hierarchy and assigns every loop a depth. Shells have even depths, and holes have odd depths.
+   * Note that the loops are reordered so the hierarchy can be traversed more easily (see {@link
+   * #getParent(int)}, {@link #getLastDescendant(int)}, and {@link S2Loop#depth()}). Loops for which
+   * {@link #isCanonicalEmptyLoop(S2Loop)} are ignored, but otherwise invalid loops will result in
+   * an invalid S2Polygon, and cause assertion failures, if assertions are enabled.
    *
    * <p>This method may be called more than once, in which case any existing loops are deleted
    * before being replaced by the input loops.
+   *
+   * <p>Among other requirements, valid loops must have at least three vertices, or be a *canonical*
+   * full or empty loop. This is stricter than the S2Loop conventions. See the class Javadoc for
+   * details.
    */
-  public void initNested(List<S2Loop> loops) {
-    uncheckedInitNested(loops);
+  public void initNested(List<S2Loop> nestedLoops) {
+    uncheckedInitNested(nestedLoops);
+    nestedLoops.clear();
+
     // TODO(user): Enable assertions that polygons are valid here.
     // assertValid();
   }
 
-  /** As above, but package private and does not assert that the polygon is valid. */
-  void uncheckedInitNested(List<S2Loop> loops) {
-    reset();
-
-    if (loops.size() == 1) {
-      // Since we know size()==1, use remove(0) instead of get(0) followed by clear().
-      S2Loop loop = loops.remove(0);
-      if (literalEmpty(loop)) {
-        this.initLoopProperties();
-      } else {
-        this.loops.add(loop);
-        initOneLoop();
-      }
+  /**
+   * As above, but package private, does not assert that the polygon is valid, and does not clear or
+   * modify the given list of loops. However, loops will be modified: they may be inverted and their
+   * depth will be set.
+   */
+  void uncheckedInitNested(List<S2Loop> nestedLoops) {
+    if (nestedLoops.size() == 1) {
+      initOneLoop(nestedLoops.get(0));
       return;
     }
 
-    IdentityHashMap<S2Loop, List<S2Loop>> loopMap = Maps.newIdentityHashMap();
-    // Yes, a null key is valid. It is used here to refer to the root of the loopMap.
-    loopMap.put(null, Lists.<S2Loop>newArrayList());
+    clearLoops();
 
-    for (S2Loop loop : loops) {
-      if (!literalEmpty(loop)) {
-        insertLoop(loop, null, loopMap);
+    // There are multiple loops, so nesting must be computed.
+    IdentityHashMap<S2Loop, List<S2Loop>> loopMap = Maps.newIdentityHashMap();
+    // Add an entry for the root of the map.
+    loopMap.put(ROOT, new ArrayList<>());
+    // Insert each loop into the loop map, reorganizing as needed at each step so that every loop is
+    // mapped to its immediate nested children, and the root key has all the outermost
+    // shells as children.
+    for (S2Loop loop : nestedLoops) {
+      if (!isCanonicalEmptyLoop(loop)) {
+        insertLoop(loop, loopMap);
       }
     }
-    loops.clear();
 
     // Sort all of the lists of loops; in this way we guarantee a total ordering on loops in the
     // polygon. Loops will be sorted by their natural ordering, while also preserving the
@@ -424,13 +579,34 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     // correct position in the children list before inserting.
     sortValueLoops(loopMap);
 
-    // Set all the loop depths and refill the 'loops' list, in depth-first traversal order, starting
-    // at the root.
-    initLoop(null, -1, loopMap);
+    // Build "this.loops" in depth-first traversal order from the loop map.
+    initLoops(loopMap);
 
-    // TODO(user): Add tests or preconditions for these asserts (here and elsewhere).
-    // forall i != j : containsChild(loop(i), loop(j), loopMap) == loop(i).containsNested(loop(j)));
+    // Computes numVertices, bound, subregionBound, and initializes the index.
     initLoopProperties();
+  }
+
+  /** Builds this.loops in depth-first traversal order from the loop map. */
+  @SuppressWarnings("ReferenceEquality") // IdentityHashMap, ROOT is special.
+  private void initLoops(IdentityHashMap<S2Loop, List<S2Loop>> loopMap) {
+    ArrayDeque<S2Loop> loopStack = new ArrayDeque<>();
+    loopStack.addFirst(ROOT);
+    int depth = -1;
+    while (!loopStack.isEmpty()) {
+      S2Loop loop = loopStack.removeFirst();
+
+      if (loop != ROOT) {
+        depth = loop.depth();
+        loops.add(loop);
+      }
+      List<S2Loop> children = loopMap.get(loop);
+      for (int i = children.size() - 1; i >= 0; --i) {
+        S2Loop child = children.get(i);
+        assert child != null;
+        child.setDepth(depth + 1);
+        loopStack.addFirst(child);
+      }
+    }
   }
 
   /**
@@ -440,7 +616,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * automatically be inverted.) Asserts that the resulting polygon is valid, if assertions are
    * enabled.
    */
-  public void initOriented(List<S2Loop> loops) {
+  public void initOriented(List<S2Loop> orientedLoops) {
     // Here is the algorithm:
     //
     // 1. Remember which of the given loops contain S2.origin().
@@ -469,11 +645,10 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     //    the nesting hierarchy. Note that because we normalized all the loops initially, this step
     //    is only necessary if the polygon requires at least one non-normalized loop to represent
     //    it.
-    Preconditions.checkState(this.loops.isEmpty());
-
+    clearLoops();
     Set<S2Loop> containedOrigin = Sets.newIdentityHashSet();
-    for (S2Loop loop : loops) {
-      if (literalEmpty(loop)) {
+    for (S2Loop loop : orientedLoops) {
+      if (isCanonicalEmptyLoop(loop)) {
         continue;
       }
       if (loop.containsOrigin()) {
@@ -492,7 +667,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
         }
       }
     }
-    initNested(loops); // initNested asserts validity, if assertions are enabled.
+
+    initNested(orientedLoops); // initNested asserts validity, if assertions are enabled.
 
     if (numLoops() > 0) {
       S2Loop originLoop = loop(0);
@@ -510,23 +686,28 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
     // Verify that the original loops had consistent shell/hole orientations. Each original loop L
     // should have been inverted if and only if it now represents a hole.
-    for (S2Loop loop : loops) {
-      if (!literalEmpty(loop)) {
-        assert (containedOrigin.contains(loop) != loop.containsOrigin()) == loop.isHole();
+    for (S2Loop loop : this.loops) {
+      if ((containedOrigin.contains(loop) != loop.containsOrigin()) != loop.isHole()) {
+        // There is no point in saving the loop index, because the error is a property of the entire
+        // set of loops. In general there is no way to determine which ones are incorrect.
+        errorInconsistentLoopOrientations = true;
+        // Assertion of validity normally happens in initNested(), called above, but this error is
+        // detected too late for that.
+        // TODO(user): Enable assertions that polygons are valid here.
+        // assert S2.skipAssertions || !errorInconsistentLoopOrientations;
       }
     }
   }
 
-  /** Computes hasHoles, numVertices, bound, subregionBound, and the index. */
+  /**
+   * Computes numVertices, bound, subregionBound, and the index. Note this is not called by
+   * decodeUncompressed.
+   */
   private void initLoopProperties() {
-    // Note this is not called by decodeUncompressed.
-    hasHoles = false;
     numVertices = 0;
     S2LatLngRect.Builder builder = S2LatLngRect.Builder.empty();
     for (S2Loop loop : loops) {
-      if (loop.isHole()) {
-        hasHoles = true;
-      } else {
+      if (loop.depth() == 0) {
         builder.union(loop.getRectBound());
       }
       numVertices += loop.numVertices();
@@ -536,40 +717,35 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     initIndex();
   }
 
-  /** Given that this.loops contains a single loop, initializes all other fields. */
-  private void initOneLoop() {
-    assert loops.size() == 1;
-    S2Loop loop = loops.get(0);
-    assert !literalEmpty(loop);
-    loop.setDepth(0);
-    hasHoles = false;
-    numVertices = loop.numVertices();
-    bound = loop.getRectBound();
-    subregionBound = loop.getSubregionBound();
-    initIndex();
-  }
-
   /**
    * Initializes a polygon from a set of {@link S2Loop}s. The loops must form a valid polygon, which
-   * is checked if assertions are enabled.
+   * is checked if assertions are enabled. Among other requirements, valid loops must have at least
+   * three vertices, or be a *canonical* full or empty loop. This is stricter than the S2Loop
+   * conventions. See the class Javadoc for details.
    *
    * <p>Unlike {@link #init} this method assumes the caller already knows the nesting of loops
    * within other loops. The passed-in map maps from parents to their immediate child loops, with
-   * {@code null} mapping to the list of top-most shell loops. Immediate child loops must be
-   * completely spatially contained within their parent loop, but not contained in any other loop,
-   * except for ancestors of the parent. This method avoids the cost of determining nesting
+   * {@code SD2Polygon.ROOT} mapping to the list of top-most shell loops. Immediate child loops must
+   * be completely spatially contained within their parent loop, but not contained in any other
+   * loop, except for ancestors of the parent. This method avoids the cost of determining nesting
    * internally, but if the passed in nesting is wrong, future operations on the S2Polygon may be
    * arbitrarily incorrect.
    *
-   * <p>Note that unlike {@link #init}, the passed-in container of loops is not cleared; however,
-   * the passed-in loops become owned by the S2Polygon and should not be modified by the caller
+   * <p>The passed-in loops become owned by the S2Polygon and should not be modified by the caller
    * after calling this method.
    *
    * @param nestedLoops loops with nesting.
    */
-  public void initWithNestedLoops(Map<S2Loop, List<S2Loop>> nestedLoops) {
-    Preconditions.checkState(numLoops() == 0);
-    initLoop(null, -1, nestedLoops);
+  public void initWithNestedLoops(IdentityHashMap<S2Loop, List<S2Loop>> nestedLoops) {
+    // Now that we use ROOT instead of NULL to identify the root of the loop hierarchy, we have to
+    // catch callers using the old convention.
+    if (nestedLoops.containsKey(null)) {
+      throw new IllegalArgumentException(
+          "Use S2Polygon.ROOT, not null, to identify the root of the nesting hierarchy.");
+    }
+
+    clearLoops();
+    initLoop(ROOT, -1, nestedLoops);
 
     // Empty the map as an indication we have taken ownership of the loops.
     nestedLoops.clear();
@@ -582,34 +758,34 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   /** Appends the loops of this polygon to the given list and resets this polygon to be empty. */
   public void release(List<S2Loop> loops) {
     loops.addAll(this.loops);
-    reset();
-    initIndex();
+    clearLoops();
   }
 
-  /** Clears the loops list and other state, and resets the index if it exists. */
-  private void reset() {
+  /** Clears the loops list and other state, and resets the index. */
+  private void clearLoops() {
     loops.clear();
     if (index != null) {
       index.reset();
     }
+    numVertices = 0;
     bound = S2LatLngRect.empty();
     subregionBound = S2LatLngRect.empty();
-    hasHoles = false;
-    numVertices = 0;
+    errorInconsistentLoopOrientations = false;
   }
 
   /**
    * Returns a new polygon containing explicitly the given loops, for testing. Allows construction
-   * of invalid polygons, but if that is all you need, consider {@code S2TestSupport#unsafeCreate(()
-   * -> new S2Polygon(loops));} instead.
+   * of invalid polygons, but if that is all you need, consider {@code
+   * GeometryTestCase#unsafeCreate(() -> new S2Polygon(loops));} instead.
    *
    * <p>This factory method differs from the normal constructor in that it does not assert polygon
    * validity, does not skip empty loops, does not set loop depths, and does not reorder the given
-   * loops according to nesting. It does set the polygon hasHoles, numVertices, bound,
-   * subregionBound, and index as usual.
+   * loops according to nesting. It does set the polygon numVertices, bound, subregionBound, and
+   * index as usual.
    */
   static S2Polygon fromExplicitLoops(List<S2Loop> loops) {
     S2Polygon polygon = new S2Polygon();
+    polygon.clearLoops();
     for (S2Loop loop : loops) {
       polygon.loops.add(loop);
     }
@@ -630,11 +806,14 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /**
    * Returns true if each loop on this polygon is valid, and if the relationships between all loops
-   * are valid.
+   * are valid. Note that validity is checked automatically during initialization when Java
+   * assertions are enabled, as they normally are for unit tests.
    *
    * <p>Specifically, this verifies that {@link S2Loop#isValid} is true for each {@link S2Loop}, and
    * additionally that loops do not cross each other, no loop is empty, the full loop only appears
    * in the full polygon, and that the loop nesting hierarchy is valid.
+   *
+   * <p>Note that an empty polygon is valid.
    */
   public boolean isValid() {
     S2Error error = new S2Error();
@@ -647,83 +826,87 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   public boolean findValidationError(S2Error error) {
     for (int i = 0; i < numLoops(); ++i) {
-      // Check for loop errors that don't require building an S2ShapeIndex.
-      if (loop(i).findValidationErrorNoIndex(error)) {
-        error.init(error.code(), "Loop " + i + ": " + error.text());
-        return true;
-      }
-      // Check that no loop is empty, and that the full loop only appears in the full polygon.
-      if (loop(i).isEmpty()) {
-        error.init(S2Error.Code.POLYGON_EMPTY_LOOP, "Loop " + i + ": empty loops are not allowed.");
-        return true;
-      }
-      if (loop(i).isFull() && numLoops() > 1) {
+      S2Loop loop = loop(i);
+      if (isInvalidLoopTooFewVertices(loop)) {
         error.init(
-            S2Error.Code.POLYGON_EXCESS_FULL_LOOP,
-            "Loop " + i + ": full loop appears in non-full polygon (more than one loop).");
+            S2Error.Code.LOOP_NOT_ENOUGH_VERTICES,
+            "Loop %d: has only %d vertices, at least three are required.",
+            i,
+            loop.numVertices());
         return true;
       }
     }
-    // Finally, check for loop self-intersections and loop pairs that cross (including duplicate
-    // edges and vertices).
-    if (S2ShapeUtil.findAnyCrossing(index, loops, error)) {
-      return true;
-    }
 
-    // Finally, verify the loop nesting hierarchy.
-    return findLoopNestingError(error);
-  }
-
-  /** Returns true if there is an error in the loop nesting hierarchy. */
-  private boolean findLoopNestingError(S2Error error) {
-    // First check that the loop depths make sense.
-    for (int lastDepth = -1, i = 0; i < numLoops(); i++) {
-      int depth = loop(i).depth();
+    // S2LegacyValidQuery doesn't have access to the loop depth information via the S2Shape API,
+    // so we'll validate it manually. We just have to check that the depth values are non-negative,
+    // and that we don't skip depths.
+    int lastDepth = -1;
+    for (int i = 0; i < numLoops(); ++i) {
+      S2Loop loop = loop(i);
+      int depth = loop.depth();
       if (depth < 0 || depth > lastDepth + 1) {
         error.init(
-            S2Error.Code.POLYGON_INVALID_LOOP_DEPTH, "Loop %d: invalid loop depth (%d)", i, depth);
+            S2Error.Code.POLYGON_INVALID_LOOP_DEPTH,
+            Platform.formatString("Loop %d: invalid loop depth (%d)", i, depth));
         return true;
       }
       lastDepth = depth;
-    }
-    // Then check that they correspond to the actual loop nesting. This test is quadratic in the
-    // number of loops but the cost per iteration is small.
-    for (int i = 0; i < numLoops(); i++) {
-      int last = getLastDescendant(i);
-      for (int j = 0; j < numLoops(); j++) {
-        if (i == j) {
-          continue;
-        }
-        // Is loop j nested inside loop i, according to the loop nesting hierarchy?
-        boolean nested = (j >= i + 1) && (j <= last);
-        boolean bReverse = false;
-        if (loop(i).containsNonCrossingBoundary(loop(j), bReverse) != nested) {
+
+      // S2LegacyValidQuery will go into an infinite loop if there are NaN vertices. Check they
+      // are unit-length like S2Loop.findValidationErrorNoIndex does for the no-validation-query
+      // case.
+      for (int j = 0; j < loop.numVertices(); ++j) {
+        if (!S2.isUnitLength(loop.vertex(j))) {
           error.init(
-              S2Error.Code.POLYGON_INVALID_LOOP_NESTING,
-              "Invalid nesting: loop %d should %scontain loop %d",
-              i,
-              nested ? "" : "not ",
-              j);
+              S2Error.Code.NOT_UNIT_LENGTH,
+              Platform.formatString("Loop %d: Vertex %d is not unit length", i, j));
           return true;
         }
       }
     }
-    return false;
+
+    // Check whether initOriented detected inconsistent loop orientations.
+    if (errorInconsistentLoopOrientations) {
+      error.init(
+          S2Error.Code.POLYGON_INCONSISTENT_LOOP_ORIENTATIONS,
+          "Inconsistent loop orientations detected");
+      return true;
+    }
+
+    // Finally, check that the geometry is topologically valid.
+    S2LegacyValidQuery query = new S2LegacyValidQuery();
+    return !query.validate(index, error);
   }
 
-  /** Returns true if this polygon contains no area and no edges. */
+  /** Returns true if this polygon contains no loops, and thus no area and no edges. */
   public boolean isEmpty() {
     return loops.isEmpty();
   }
 
-  /** Returns true if this polygon contains the entire sphere and has no edges. */
+  /**
+   * Returns true if this is the full polygon, which has a single canonical full loop. That is, a
+   * loop with a single vertex that is equal to the single vertex in {@link S2Loop#full()}. Note
+   * that this is stricter than {@link S2Loop#isFull()}, which returns true for any single-vertex
+   * loop where the vertex has a negative z-value.
+   */
   public boolean isFull() {
-    return loops.size() == 1 && loops.get(0).isFull();
+    return loops.size() == 1 && isCanonicalFullLoop(loops.get(0));
   }
 
-  /** Returns the number of loops in this polygon. */
+  /**
+   * Returns the number of loops in this polygon. A full polygon has one loop. An empty polygon has
+   * no loops.
+   */
   public int numLoops() {
     return loops.size();
+  }
+
+  /**
+   * Returns the total number of vertices in all loops. A full polygon has one vertex, {@code
+   * S2Loop.FULL_VERTEX}. An empty polygon has no vertices.
+   */
+  public int numVertices() {
+    return numVertices;
   }
 
   /**
@@ -793,7 +976,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   private S2AreaCentroid getAreaCentroid(boolean doCentroid) {
     double areaSum = 0;
-    S2Point centroidSum = S2Point.ORIGIN;
+    S2Point centroidSum = S2Point.ZERO;
     for (int i = 0; i < numLoops(); ++i) {
       S2AreaCentroid areaCentroid = doCentroid ? loop(i).getAreaAndCentroid() : null;
       double loopArea = doCentroid ? areaCentroid.getArea() : loop(i).getArea();
@@ -834,9 +1017,9 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
-   * Returns the true centroid of the polygon, weighted by the area of the polygon (see s2.h for
-   * details on centroids). Note that the centroid might not be contained by the polygon, and is not
-   * normalized.
+   * Returns the true centroid of the polygon, multiplied by the area of the polygon (see S2.java
+   * for details on centroids). Note that the centroid might not be contained by the polygon, and is
+   * not normalized.
    */
   public S2Point getCentroid() {
     return getAreaCentroid(true).getCentroid();
@@ -845,8 +1028,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   /**
    * If all of the polygon's vertices happen to be the centers of S2Cells at some level, then
    * returns that level, otherwise returns -1. See also {@link #initToSnapped(S2Polygon, int)} and
-   * {@link S2PolygonBuilder.Options.Builder#setSnapToCellCenters(boolean)}. Returns -1 if the
-   * polygon has no vertices.
+   * {@link S2BuilderSnapFunctions.S2CellIdSnapFunction}. Returns -1 if the polygon has no vertices.
    */
   public int getSnapLevel() {
     int snapLevel = -1;
@@ -880,7 +1062,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * polygons.
    *
    * <p>See also {@link #initToSnapped(S2Polygon, int)} and {@link
-   * S2PolygonBuilder.Options.Builder#setSnapToCellCenters(boolean)}.
+   * S2BuilderSnapFunctions.S2CellIdSnapFunction}.
    */
   int getBestSnapLevel() {
     int[] histogram = new int[S2CellId.MAX_LEVEL + 1];
@@ -912,26 +1094,31 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * P, the origin, and the nearest point on the polygon to P. This angle in radians is equivalent
    * to the arclength along the unit sphere. The given point must be normalized (unit length).
    *
-   * <p>If the point is contained inside the polygon, the distance returned is 0.
+   * <p>If the point is contained by the polygon, the distance returned is 0. If the polygon is
+   * empty, returns {@link S1Angle.INFINITY}.
    */
   public S1Angle getDistance(S2Point p) {
     if (contains(p)) {
       return S1Angle.radians(0);
     }
+    return getDistanceToBoundary(p);
+  }
 
-    // The farthest point from p on the sphere is its antipode, which is an angle of PI radians.
-    // This is an upper bound on the angle.
-    S1Angle minDistance = S1Angle.radians(PI);
-    for (int i = 0; i < numLoops(); i++) {
-      minDistance = S1Angle.min(minDistance, loop(i).getDistance(p));
-    }
-
-    return minDistance;
+  /**
+   * Returns the distance from the given point to the polygon boundary. If the polygon is empty or
+   * full, returns {@link S1Angle.INFINITY}, since the polygon has no boundary. The given point must
+   * be unit length.
+   */
+  public S1Angle getDistanceToBoundary(S2Point p) {
+    S2ClosestEdgeQuery.Builder builder = S2ClosestEdgeQuery.builder().setIncludeInteriors(false);
+    S2ClosestEdgeQuery.Query query = builder.build(index);
+    S2ClosestEdgeQuery.PointTarget<S1ChordAngle> target = new S2ClosestEdgeQuery.PointTarget<>(p);
+    return query.getDistance(target).toAngle();
   }
 
   /**
    * Returns the overlap fraction of polygon b on polygon a, i.e. the ratio of area of intersection
-   * to the area of polygon a.
+   * to the area of polygon a. As a special case, if polygon 'a' is empty, the result is 1.
    */
   public static double getOverlapFraction(S2Polygon a, S2Polygon b) {
     S2Polygon intersection = new S2Polygon();
@@ -941,7 +1128,27 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     if (aArea > 0) {
       return intersectionArea >= aArea ? 1 : intersectionArea / aArea;
     } else {
-      return 0;
+      // Special case: consider 0/0 to be 1.
+      return (intersectionArea == 0) ? 1 : 0;
+    }
+  }
+
+  /**
+   * Old implementation of getOverlapFraction, which will be removed when all callers have migrated.
+   *
+   * @deprecated Use {@link #getOverlapFraction(S2Polygon, S2Polygon)} instead.
+   */
+  @Deprecated
+  public static double getOverlapFractionOld(S2Polygon a, S2Polygon b) {
+    S2Polygon intersection = new S2Polygon();
+    intersection.initToIntersectionOld(a, b);
+    double intersectionArea = intersection.getArea();
+    double aArea = a.getArea();
+    if (aArea > 0) {
+      return intersectionArea >= aArea ? 1 : intersectionArea / aArea;
+    } else {
+      // Special case: consider 0/0 to be 1.
+      return (intersectionArea == 0) ? 1 : 0;
     }
   }
 
@@ -962,75 +1169,70 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
-   * Returns a point on the polygon that is closest to point P. The distance between these two
-   * points should be the result of {@link #getDistance(S2Point)}. The given point must be
+   * If the given point is contained by the polygon, it is returned. Otherwise, returns the closest
+   * point on the polygon boundary to the given point. If the polygon is empty, returns the given
+   * point.
+   *
+   * <p>Note that the result may or may not be contained by the polygon. The given point must be
    * normalized (unit length).
-   *
-   * <p>If point P is contained within a polygon loop, it is returned.
-   *
-   * <p>The polygon must not be empty.
    */
   public S2Point project(S2Point p) {
-    Preconditions.checkState(!loops.isEmpty());
     if (contains(p)) {
       return p;
     }
-    S2Point normalized = S2Point.normalize(p);
+    return projectToBoundary(p);
+  }
 
-    // The farthest point from p on the sphere is its antipode, which is an angle of PI radians.
-    // This is an upper bound on the angle.
-    S1Angle minDistance = S1Angle.radians(PI);
-    int minLoopIndex = 0;
-    int minVertexIndex = 0;
-    for (int loopIndex = 0; loopIndex < loops.size(); loopIndex++) {
-      S2Loop loop = loops.get(loopIndex);
-      for (int vertexIndex = 0; vertexIndex < loop.numVertices(); vertexIndex++) {
-        S1Angle distanceToSegment =
-            S2EdgeUtil.getDistance(
-                normalized, loop.vertex(vertexIndex), loop.vertex(vertexIndex + 1));
-        if (minDistance.greaterThan(distanceToSegment)) {
-          minDistance = distanceToSegment;
-          minLoopIndex = loopIndex;
-          minVertexIndex = vertexIndex;
-        }
-      }
+  /**
+   * Return the closest point on the polygon boundary to the given point. If the polygon is empty or
+   * full, return the input argument since the polygon has no boundary. The given point "x" should
+   * be unit length.
+   */
+  public S2Point projectToBoundary(S2Point x) {
+    if (isEmpty() || isFull()) {
+      return x;
     }
-    S2Loop minLoop = loop(minLoopIndex);
-    return S2EdgeUtil.getClosestPoint(
-        p, minLoop.vertex(minVertexIndex), minLoop.vertex(minVertexIndex + 1));
+    S2ClosestEdgeQuery.Builder builder = S2ClosestEdgeQuery.builder().setIncludeInteriors(false);
+    S2ClosestEdgeQuery.Query query = builder.build(index);
+    S2ClosestEdgeQuery.PointTarget<S1ChordAngle> target = new S2ClosestEdgeQuery.PointTarget<>(x);
+    Optional<S2BestEdgesQueryBase.Result<S1ChordAngle>> edge = query.findClosestEdge(target);
+    // A closest edge should always be found, since this polygon is not empty or full, and therefore
+    // has a boundary.
+    Preconditions.checkState(edge.isPresent());
+    return query.project(x, edge.get());
   }
 
   /**
    * Returns true if this polygon contains the given other polygon, i.e., if polygon A contains all
-   * points contained by polygon B.
+   * points contained by polygon B. This is the old implementation, which will be removed as soon as
+   * all callers have migrated.
+   *
+   * @deprecated Use {@link #contains(S2Polygon)} instead.
    */
-  public boolean contains(S2Polygon b) {
-    // If both polygons have one loop, use the more efficient S2Loop method.
-    // Note that S2Loop.contains does its own bounding rectangle check.
-    if (numLoops() == 1 && b.numLoops() == 1) {
-      return loop(0).contains(b.loop(0));
-    }
+  @Deprecated
+  public boolean containsOld(S2Polygon b) {
+    // It's worth checking bounding rectangles, since they are precomputed. Note that the first
+    // bound has been expanded to account for possible numerical errors in the second bound.
 
-    // Otherwise if neither polygon has holes, we can still use the more efficient S2Loop.contains()
-    // method (rather than CompareBoundary), but it's worthwhile to do our own bounds check first.
     if (!subregionBound.contains(b.getRectBound())) {
-      // Even though bound(A) does not contain bound(B), it is still possible that A contains B.
-      // This can only happen when the union of the two bounds spans all longitudes. For example,
-      // suppose that B consists of two shells with a longitude gap between them, while A consists
-      // of one shell that surrounds both shells of B but goes the other way around the sphere (so
-      // that it does not intersect the longitude gap).
-      if (!bound.lng().union(b.getRectBound().lng()).isFull()) {
+      // It is possible that A contains B even though bound(A) does not contain bound(B). This can
+      // only happen when polygon B has at least two outer shells and the union of the two bounds
+      // spans all longitudes. For example, suppose that B consists of two shells with a longitude
+      // gap between them, while A consists of one shell that surrounds both shells of B but goes
+      // the other way around the sphere (so that it does not intersect the longitude gap).
+      //
+      // For convenience we just check whether B has at least two loops rather than two outer
+      // shells.
+      if (b.numLoops() == 1 || !bound.lng().union(b.bound.lng()).isFull()) {
         return false;
       }
     }
 
-    if (!hasHoles && !b.hasHoles) {
-      for (int j = 0; j < b.numLoops(); ++j) {
-        if (!anyLoopContains(b.loop(j))) {
-          return false;
-        }
-      }
-      return true;
+    // The following case is not handled by S2BooleanOperation because it only determines whether
+    // the boundary of the result is empty (which does not distinguish between the full and empty
+    // polygons).
+    if (isEmpty() && b.isFull()) {
+      return false;
     }
 
     // Polygon A contains B iff B does not intersect the complement of A. From the intersection
@@ -1043,6 +1245,37 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
+   * Returns true if this polygon contains the given other polygon, i.e., if polygon A contains all
+   * points contained by polygon B.
+   */
+  public boolean contains(S2Polygon b) {
+    // It's worth checking bounding rectangles, since they are precomputed. Note that the first
+    // bound has been expanded to account for possible numerical errors in the second bound.
+    if (!subregionBound.contains(b.getRectBound())) {
+      // It is possible that A contains B even though bound(A) does not contain bound(B). This can
+      // only happen when polygon B has at least two outer shells and the union of the two bounds
+      // spans all longitudes. For example, suppose that B consists of two shells with a longitude
+      // gap between them, while A consists of one shell that surrounds both shells of B but goes
+      // the other way around the sphere (so that it does not intersect the longitude gap).
+      //
+      // For convenience we just check whether B has at least two loops rather than two outer
+      // shells.
+      if (b.numLoops() == 1 || !bound.lng().union(b.bound.lng()).isFull()) {
+        return false;
+      }
+    }
+
+    // The following case is not handled by S2BooleanOperation because it only determines whether
+    // the boundary of the result is empty (which does not distinguish between the full and empty
+    // polygons).
+    if (isEmpty() && b.isFull()) {
+      return false;
+    }
+
+    return S2BooleanOperation.contains(index, b.index);
+  }
+
+  /**
    * Returns true if this polygon (A) approximately contains the given other polygon (B). This is
    * true if it is possible to move the vertices of B no further than "vertexMergeRadius" such that
    * A contains the modified B.
@@ -1052,6 +1285,23 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   public boolean approxContains(S2Polygon b, S1Angle vertexMergeRadius) {
     S2Polygon difference = new S2Polygon();
+    difference.initToDifference(b, this, new IdentitySnapFunction(vertexMergeRadius));
+    return difference.numLoops() == 0;
+  }
+
+  /**
+   * Returns true if this polygon (A) approximately contains the given other polygon (B). This is
+   * true if it is possible to move the vertices of B no further than "vertexMergeRadius" such that
+   * A contains the modified B.
+   *
+   * <p>For example, the empty polygon will contain any polygon whose maximum width is no more than
+   * vertexMergeRadius.
+   *
+   * @deprecated Use {@link #approxContains(S2Polygon, S1Angle)} instead.
+   */
+  @Deprecated
+  public boolean approxContainsOld(S2Polygon b, S1Angle vertexMergeRadius) {
+    S2Polygon difference = new S2Polygon();
     difference.initToDifferenceSloppy(b, this, vertexMergeRadius);
     return difference.numLoops() == 0;
   }
@@ -1059,9 +1309,13 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   /**
    * Returns true if this polygon intersects the given other polygon, i.e., if there is a point that
    * is contained by both polygons. Note that polygons merely "touching" at a common point or shared
-   * (but reversed) edge are not considered intersecting.
+   * (but reversed) edge are not considered intersecting. This is the old implementation, which will
+   * be removed as soon as all callers have migrated.
+   *
+   * @deprecated Use {@link #intersects(S2Polygon)} instead.
    */
-  public boolean intersects(S2Polygon b) {
+  @Deprecated
+  public boolean intersectsOld(S2Polygon b) {
     // If both polygons have one loop, use the more efficient S2Loop method.
     // Note that S2Loop.intersects does its own bounding rectangle check.
     if (numLoops() == 1 && b.numLoops() == 1) {
@@ -1073,7 +1327,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     if (!bound.intersects(b.getRectBound())) {
       return false;
     }
-    if (!hasHoles && !b.hasHoles) {
+    if (!hasHoles() && !b.hasHoles()) {
       for (S2Loop loop : b.loops) {
         if (anyLoopIntersects(loop)) {
           return true;
@@ -1083,10 +1337,30 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     }
 
     // Polygon A is disjoint from B if A excludes the entire boundary of B and B excludes all shell
-    // boundaries of A.  (It can be shown that B must then exclude the entire boundary of A.)  The
+    // boundaries of A. (It can be shown that B must then exclude the entire boundary of A.)  The
     // first call below returns false if the boundaries cross, therefore the second call does not
     // need to check for crossing edges.
     return !excludesBoundary(b) || !b.excludesNonCrossingShells(this);
+  }
+
+  /**
+   * Returns true if this polygon intersects the given other polygon, i.e., if there is a point that
+   * is contained by both polygons. Note that polygons merely "touching" at a common point or shared
+   * (but reversed) edge are not considered intersecting.
+   */
+  public boolean intersects(S2Polygon b) {
+    // It's worth checking bounding rectangles, since they are precomputed.
+    if (!this.bound.intersects(b.bound)) {
+      return false;
+    }
+
+    // The following case is not handled by S2BooleanOperation because it only determines whether
+    // the boundary of the result is empty (which does not distinguish between the full and empty
+    // polygons).
+    if (isFull() && b.isFull()) {
+      return true;
+    }
+    return S2BooleanOperation.intersects(index, b.index);
   }
 
   /**
@@ -1096,7 +1370,10 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * to the exterior rather than the interior of B. If {@code addSharedEdges} is true, then the
    * output will include any edges that are shared between A and B (both edges must be in the same
    * direction after any edge reversals are taken into account).
+   *
+   * @deprecated This method is only used by other deprecated methods.
    */
+  @Deprecated
   private static void clipBoundary(
       final S2Polygon a,
       boolean reverseA,
@@ -1119,7 +1396,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
           intersections.add(new ParametrizedS2Point(0, a0));
         }
         inside = ((intersections.size() & 0x1) == 0x1);
-        // assert (b.contains(a1) ^ invertB == inside);
+        assert (b.contains(a1) ^ invertB == inside);
         if (inside) {
           intersections.add(new ParametrizedS2Point(1, a1));
         }
@@ -1145,7 +1422,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /** Initializes this polygon to the complement of the given polygon. */
   public void initToComplement(S2Polygon a) {
-    Preconditions.checkState(numLoops() == 0);
+    clearLoops();
     copy(a);
     invert();
   }
@@ -1156,62 +1433,76 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * the cell union, but rounding issues may cause this not to be the case.
    */
   public static S2Polygon fromCellUnionBorder(S2CellUnion cells) {
-    // Due to rounding errors, we can't compute an exact union - when a small cell is adjacent to a
-    // larger cell, the shared edges can fail to line up exactly. Two cell edges cannot come closer
-    // then minWidth at S2CellId.MAX_LEVEL, so if we have the builder snap edges within half that
-    // distance, then we should always merge shared edges without merging different edges.
-    double snapRadius = 0.5 * MIN_WIDTH.getValue(S2CellId.MAX_LEVEL);
-    S2PolygonBuilder builder =
-        new S2PolygonBuilder(
-            S2PolygonBuilder.Options.DIRECTED_XOR.toBuilder()
-                .setMergeDistance(S1Angle.radians(snapRadius))
-                .build());
+    // We use S2Builder to compute the union. Due to rounding errors, we can't compute an exact
+    // union - when a small cell is adjacent to a larger cell, the shared edges can fail to line up
+    // exactly. Two cell edges cannot come closer then MIN_WIDTH, so if we have S2Builder snap edges
+    // within half that distance, then we should always merge shared edges without merging different
+    // edges.
+    S1Angle snapRadius = S1Angle.radians(0.5 * MIN_WIDTH.getValue(S2CellId.MAX_LEVEL));
+
+    S2Builder builder = new S2Builder.Builder(new IdentitySnapFunction(snapRadius)).build();
+    S2PolygonLayer layer = new S2PolygonLayer();
+    builder.startLayer(layer);
+    // If there are no loops, either the cell union is empty, or it consists of all six faces. In
+    // latter case, the result should be the full polygon rather than the empty one.
+    builder.addIsFullPolygonPredicate(g -> !cells.isEmpty());
+
     for (S2CellId id : cells) {
       builder.addLoop(new S2Loop(new S2Cell(id)));
     }
-    S2Polygon result = builder.assemblePolygon();
 
-    // If there are no loops, check whether the result should be the full polygon rather than the
-    // empty one. There are only two ways that this can happen: either the cell union is empty, or
-    // it consists of all six faces.
-    if (result.numLoops() == 0 && !cells.cellIds().isEmpty()) {
-      // assert 6L << (2 * S2CellId.MAX_LEVEL) == cells.leafCellsCovered();
-      result.invert();
-    }
-    return result;
+    S2Error error = new S2Error();
+    boolean unused = builder.build(error);
+    assert error.ok() : error.text();
+    return layer.getPolygon();
   }
 
   /**
-   * Use S2PolygonBuilder to build this polygon by assembling the edges of a given polygon after
-   * snapping its vertices to the center of cells at the given level. If snapping to S2 leaves, at
-   * MAX_LEVEL (30), this will simplify the polygon with a tolerance of {@code
-   * S2Projections.maxDiag.getValue(S2CellId.MAX_LEVEL)}, or approximately 0.13 microdegrees, or
-   * 1.5cm on the surface of the Earth. Such a polygon can be efficiently compressed when
-   * serialized.
+   * Initializes the polygon from input polygon "a" using the given S2Builder. If the result has an
+   * empty boundary (no loops), also decides whether the result should be the full polygon rather
+   * than the empty one based on the area of the input polygon.
    */
-  public void initToSnapped(final S2Polygon a, int snapLevel) {
-    // TODO(user): Remove (tolerance * 0.1) from initToSimplified and use that instead.
-    // Ensure that there will be no two vertices within the max leaf cell diagonal of each other,
-    // therefore no two vertices in the same leaf cell, and that no vertex will cross an edge after
-    // the points have been snapped to the centers of leaf cells. Add 1e-15 to the tolerance so we
-    // don't set a tighter than leaf cell level because of numerical inaccuracy.
-    S2PolygonBuilder.Options options =
-        S2PolygonBuilder.Options.builder()
-            .setRobustnessRadius(S1Angle.radians(MAX_DIAG.getValue(snapLevel) / 2.0 + 1e-15))
-            .setSnapToCellCenters(true)
-            .build();
+  private void initFromBuilder(final S2Polygon a, S2Builder builder) {
+    S2PolygonLayer layer = new S2PolygonLayer();
+    layer.setPolygon(this);
+    builder.startLayer(layer);
+    // If there are no loops, the result should be the full polygon rather than the empty one if the
+    // input area and bounds are more than a hemisphere.
+    builder.addIsFullPolygonPredicate(g -> a.bound.area() > 2 * PI && a.getArea() > 2 * PI);
+    builder.addPolygon(a);
+    S2Error error = new S2Error();
+    boolean unused = builder.build(error);
+    // TODO(torrey): Perhaps this should throw S2Exception, rather than only asserting? C++ only
+    // does LOG(DFATAL), FWIW.
+    assert error.ok() : error.text();
+  }
 
-    S2PolygonBuilder polygonBuilder = new S2PolygonBuilder(options);
-    polygonBuilder.addPolygon(a);
-    polygonBuilder.assemblePolygon(this, null);
+  /**
+   * Snaps the vertices of the given polygon using the given SnapFunction. For example, {@code
+   * IntLatLngSnapFunction(6)} snaps to E6 coordinates. This can change the polygon topology
+   * (merging loops, for example), but the resulting polygon is guaranteed to be valid, and no
+   * vertex will move by more than snapFunction.snapRadius(). See {@link S2Builder} for other
+   * guarantees (e.g., minimum edge-vertex separation).
+   *
+   * <p>Note that this method is a thin wrapper over S2Builder, so if you are starting with data
+   * that is not in S2Polygon format (e.g., integer E7 coordinates) then it is faster to just use
+   * S2Builder directly.
+   */
+  @JsMethod(name = "initToSnapFunction")
+  public void initToSnapped(final S2Polygon input, SnapFunction snapFunction) {
+    S2Builder builder = new S2Builder.Builder(snapFunction).build();
+    initFromBuilder(input, builder);
+  }
 
-    // If there are no loops, check whether the result should be the full
-    // polygon rather than the empty one. (See InitToIntersectionSloppy.)
-    if (numLoops() == 0) {
-      if (a.bound.area() > 2.0 * PI && a.getArea() > 2.0 * PI) {
-        invert();
-      }
-    }
+  /**
+   * Convenience function that snaps the vertices to S2CellId centers at the given level. If
+   * snapping to S2 leaves, at MAX_LEVEL (30), this will simplify the polygon with a tolerance of
+   * {@code S2Projections.maxDiag.getValue(S2CellId.MAX_LEVEL)}, or approximately 0.13 microdegrees,
+   * or 1.5cm on the surface of the Earth. Polygons can be efficiently encoded after they have been
+   * snapped.
+   */
+  public void initToSnapped(final S2Polygon polygon, int snapLevel) {
+    initToSnapped(polygon, new S2CellIdSnapFunction(snapLevel));
   }
 
   /** Inverts this polygon (replacing it by its complement.) */
@@ -1225,11 +1516,11 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     if (isEmpty()) {
       loops.add(S2Loop.full());
     } else if (isFull()) {
-      reset();
+      clearLoops();
     } else {
       // Find the loop whose area is largest (i.e., whose turning angle is smallest), minimizing
       // calls to getTurningAngle(). In particular, for polygons with a single shell at level 0
-      // there is not need to call GetTurningAngle() at all. (This method is relatively expensive.)
+      // there is not need to call getTurningAngle() at all. (This method is relatively expensive.)
       int best = -1;
       double bestAngle = 0;
       for (int i = 1; i < numLoops(); ++i) {
@@ -1253,7 +1544,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
         best = 0;
       }
 
-      // Build the new loops vector, starting with the inverted loop.
+      // Build the new loops list, starting with the inverted loop.
       loop(best).invert();
       List<S2Loop> newLoops = Lists.newArrayListWithCapacity(numLoops());
       newLoops.add(loop(best));
@@ -1277,12 +1568,134 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
         }
       }
       Preconditions.checkState(loops.size() == newLoops.size());
-      reset();
+      clearLoops();
       loops.addAll(newLoops);
     }
 
+    index.reset();
     initLoopProperties();
     // Asserting validity of the resulting polygon is not necessary, assuming the input was valid.
+  }
+
+  /**
+   * Initializes this polygon to the result of the given boolean operation on the two provided
+   * polygons, returning true on success, or returning false and setting 'error' on failure.
+   *
+   * <p>The polygons must be valid. This is checked, if assertions are enabled.
+   */
+  private boolean initToOperation(
+      S2BooleanOperation.OpType opType,
+      SnapFunction snapFunction,
+      final S2Polygon a,
+      final S2Polygon b,
+      S2Error error) {
+    // S2BooleanOperation on invalid inputs is likely to fail.
+    a.assertValid();
+    b.assertValid();
+
+    S2BooleanOperation.Builder builder = new S2BooleanOperation.Builder(snapFunction);
+    S2PolygonLayer layer = new S2PolygonLayer();
+    layer.setPolygon(this);
+    S2BooleanOperation op = builder.build(opType, layer);
+    return op.build(a.index(), b.index(), error);
+  }
+
+  /**
+   * Initializes this polygon to the result of the given boolean operation on the two provided
+   * polygons. Returns true on success, false on failure. The polygons must be valid.
+   *
+   * @throws AssertionError if input polygons are invalid or the operation fails, and Java
+   *     assertions are enabled.
+   */
+  private boolean initToOperation(
+      S2BooleanOperation.OpType opType,
+      SnapFunction snapFunction,
+      final S2Polygon a,
+      final S2Polygon b) {
+    S2Error error = new S2Error();
+    boolean success = initToOperation(opType, snapFunction, a, b, error);
+    assert success : "initToOperation failed: " + error;
+    return success;
+  }
+
+  /**
+   * Initializes this polygon to the intersection of the given two polygons. Uses a default snap
+   * function, which is the IdentitySnapFunction with a snap radius of {@link
+   * S2EdgeUtil#INTERSECTION_MERGE_RADIUS} (equal to about 1.8e-15 radians or 11 nanometers on the
+   * Earth's surface). This means that vertices may be positioned arbitrarily, but vertices that are
+   * extremely close together can be merged together. The reason for a non-zero default snap radius
+   * is that it helps to eliminate narrow cracks and slivers when T-vertices are present. For
+   * example, adjacent S2Cells at different levels do not share exactly the same boundary, so there
+   * can be a narrow crack between them. If a polygon is intersected with those cells and the pieces
+   * are unioned together, the result would have a narrow crack unless the snap radius is set to a
+   * non-zero value.
+   *
+   * <p>Note that if you want to encode the vertices in a lower-precision representation (such as
+   * S2CellIds or E7), it is much better to use a suitable SnapFunction rather than rounding the
+   * vertices yourself, because this will create self-intersections unless you ensure that the
+   * vertices and edges are sufficiently well-separated first. In particular you need to use a snap
+   * function whose {@link SnapFunction#minEdgeVertexSeparation()} is at least twice the maximum
+   * distance that a vertex can move when rounded.
+   *
+   * <p>Returns true on success, false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
+   */
+  @CanIgnoreReturnValue
+  public boolean initToIntersection(final S2Polygon a, final S2Polygon b) {
+    return initToIntersection(a, b, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * Initializes this polygon to the intersection of the given two polygons, using the given
+   * "snapFunction". Returns true if successful, false otherwise. Should not fail if the polygons
+   * are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
+   */
+  @JsMethod(name = "initToSnappedIntersection")
+  @CanIgnoreReturnValue
+  public boolean initToIntersection(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction) {
+    if (!a.bound.intersects(b.bound)) {
+      initNested(new ArrayList<>());
+      return true;
+    }
+    return initToOperation(S2BooleanOperation.OpType.INTERSECTION, snapFunction, a, b);
+  }
+
+  /**
+   * Initializes this polygon to the intersection of the given two polygons, using the given
+   * "snapFunction".
+   *
+   * <p>The snapFunction allows you to specify a minimum spacing between output vertices, and/or
+   * that the vertices should be snapped to a discrete set of points (e.g. S2CellId centers or E7
+   * lat/lng coordinates). Any snap function can be used, including the IdentitySnapFunction with a
+   * snapRadius of zero (which preserves the input vertices exactly).
+   *
+   * <p>The boundary of the output polygon before snapping is guaranteed to be accurate to within
+   * {@link S2EdgeUtil#INTERSECTION_ERROR} of the exact result. Snapping can move the boundary by an
+   * additional distance that depends on the snap function. Finally, any degenerate portions of the
+   * output polygon are automatically removed (i.e., regions that do not contain any points) since
+   * S2Polygon does not allow such regions.
+   *
+   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
+   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
+   *
+   * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
+   * this function should never return an error provided that both input polygons are valid (i.e.,
+   * {@link #isValid()} returns true).
+   */
+  @JsMethod(name = "initToSnappedIntersectionOrError")
+  @CanIgnoreReturnValue
+  public boolean initToIntersection(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction, S2Error error) {
+    if (!a.bound.intersects(b.bound)) {
+      initNested(new ArrayList<>());
+      return true;
+    }
+    return initToOperation(S2BooleanOperation.OpType.INTERSECTION, snapFunction, a, b, error);
   }
 
   /**
@@ -1293,8 +1706,11 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * <p>If you are going to convert the resulting polygon to a lower-precision format, it is
    * necessary to increase the merge radius. See {@link #initToIntersectionSloppy(S2Polygon,
    * S2Polygon, S1Angle)} below.
+   *
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon) or one of the variants above.
    */
-  public void initToIntersection(final S2Polygon a, final S2Polygon b) {
+  @Deprecated
+  public void initToIntersectionOld(final S2Polygon a, final S2Polygon b) {
     initToIntersectionSloppy(a, b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
   }
 
@@ -1309,10 +1725,14 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * (i.e., no duplicate vertices, etc.) For example, if you are going to convert them to {@code
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
+   *
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon, SnapFunction) or one of the
+   * variants above. An IdentitySnapFunction(vertexMergeRadius) will produce similar results.
    */
+  @Deprecated
   public void initToIntersectionSloppy(
       final S2Polygon a, final S2Polygon b, S1Angle vertexMergeRadius) {
-    Preconditions.checkState(numLoops() == 0);
+    clearLoops();
     if (a.isEmpty() || b.isEmpty()) {
       // From the check above we are already empty.
     } else if (a.isFull()) {
@@ -1383,16 +1803,91 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
-   * Initializes this polygon to the union of the given two polygons. Uses a default merge radius,
-   * just large enough to compensate for errors that occur when computing intersection points
-   * between edges ({@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}).
+   * Initializes this polygon to the union of the given two polygons. Uses a default snap function,
+   * which is the IdentitySnapFunction with a snap radius of {@link
+   * S2EdgeUtil#INTERSECTION_MERGE_RADIUS} (equal to about 1.8e-15 radians or 11 nanometers on the
+   * Earth's surface). This means that vertices may be positioned arbitrarily, but vertices that are
+   * extremely close together can be merged together. The reason for a non-zero default snap radius
+   * is that it helps to eliminate narrow cracks and slivers when T-vertices are present. For
+   * example, adjacent S2Cells at different levels do not share exactly the same boundary, so there
+   * can be a narrow crack between them. If a polygon is intersected with those cells and the pieces
+   * are unioned together, the result would have a narrow crack unless the snap radius is set to a
+   * non-zero value.
    *
-   * <p>If you are going to convert the resulting polygon to a lower-precision format, it is
-   * necessary to increase the merge radius. See {@link #initToUnionSloppy(S2Polygon, S2Polygon,
-   * S1Angle)} below.
+   * <p>Note that if you want to encode the vertices in a lower-precision representation (such as
+   * S2CellIds or E7), it is much better to use a suitable SnapFunction rather than rounding the
+   * vertices yourself, because this will create self-intersections unless you ensure that the
+   * vertices and edges are sufficiently well-separated first. In particular you need to use a snap
+   * function whose {@link SnapFunction#minEdgeVertexSeparation()} is at least twice the maximum
+   * distance that a vertex can move when rounded.
+   *
+   * <p>Returns true on success, false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails or an input polygon is invalid, and Java
+   *     assertions are enabled.
    */
-  public void initToUnion(final S2Polygon a, final S2Polygon b) {
-    initToUnionSloppy(a, b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+  @CanIgnoreReturnValue
+  public boolean initToUnion(final S2Polygon a, final S2Polygon b) {
+    return initToUnion(a, b, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * Like {@link #initToUnion(S2Polygon, S2Polygon, SnapFunction, S2Error)} below, initializes this
+   * polygon to the union of the given two polygons. Returns true on success, false otherwise.
+   * Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails or an input polygon is invalid, and Java
+   *     assertions are enabled.
+   */
+  @JsMethod(name = "initToSnappedUnion")
+  @CanIgnoreReturnValue
+  public boolean initToUnion(final S2Polygon a, final S2Polygon b, SnapFunction snapFunction) {
+    return initToOperation(S2BooleanOperation.OpType.UNION, snapFunction, a, b);
+  }
+
+  /**
+   * Initializes this polygon to the union of the given two polygons, and snaps the result using the
+   * given "snapFunction". The snapFunction allows you to specify a minimum spacing between output
+   * vertices, and/or that the vertices should be snapped to a discrete set of points (e.g. S2CellId
+   * centers or E7 lat/lng coordinates). Any snap function can be used, including the
+   * IdentitySnapFunction with a snapRadius of zero (which preserves the input vertices exactly).
+   *
+   * <p>The boundary of the output polygon before snapping is guaranteed to be accurate to within
+   * {@link S2EdgeUtil#INTERSECTION_ERROR} of the exact result. Snapping can move the boundary by an
+   * additional distance that depends on the snap function. Finally, any degenerate portions of the
+   * output polygon are automatically removed (i.e., regions that do not contain any points) since
+   * S2Polygon does not allow such regions.
+   *
+   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
+   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
+   *
+   * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
+   * this function should never return an error provided that both input polygons are valid (i.e.,
+   * {@link #isValid()} returns true). The provided polygons are checked for validity when
+   * assertions are enabled.
+   */
+  @JsMethod(name = "initToSnappedUnionOrError")
+  public boolean initToUnion(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction, S2Error error) {
+    return initToOperation(S2BooleanOperation.OpType.UNION, snapFunction, a, b, error);
+  }
+
+  /**
+   * Initializes this polygon to the union of the given two polygons, and snaps the result so that
+   * vertices within "vertexMergeRadius" of each other are merged together. The provided polygons
+   * must be valid, which is is checked when assertions are enabled.
+   *
+   * @throws IllegalArgumentException if initToUnion fails, which should only happen if an input
+   *     polygon is invalid.
+   */
+  @JsMethod(name = "initToUnionMergeRadius")
+  public void initToUnion(final S2Polygon a, final S2Polygon b, S1Angle vertexMergeRadius) {
+    S2Error error = new S2Error();
+    boolean success = initToUnion(a, b, new IdentitySnapFunction(vertexMergeRadius), error);
+    if (!success) {
+      throw new IllegalArgumentException(error.text());
+    }
   }
 
   /**
@@ -1405,9 +1900,13 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * (i.e., no duplicate vertices, etc.) For example, if you are going to convert them to {@code
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
+   *
+   * @deprecated Use {@link #initToUnion(S2Polygon, S2Polygon, SnapFunction)}. A SnapFunction of
+   *     IdentitySnapFunction(vertexMergeRadius) should provide similar results.
    */
+  @Deprecated
   public void initToUnionSloppy(final S2Polygon a, final S2Polygon b, S1Angle vertexMergeRadius) {
-    Preconditions.checkState(numLoops() == 0);
+    clearLoops();
     if (a.isEmpty() || b.isFull()) {
       copy(b);
     } else if (b.isEmpty() || a.isFull()) {
@@ -1447,15 +1946,72 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /**
    * Initializes this polygon to the difference (A - B) of the given two polygons. Uses a default
-   * merge radius, just large enough to compensate for errors that occur when computing intersection
-   * points between edges ({@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}).
+   * snap function, which is the IdentitySnapFunction with a snap radius of {@link
+   * S2EdgeUtil#INTERSECTION_MERGE_RADIUS} (equal to about 1.8e-15 radians or 11 nanometers on the
+   * Earth's surface). This means that vertices may be positioned arbitrarily, but vertices that are
+   * extremely close together can be merged together. The reason for a non-zero default snap radius
+   * is that it helps to eliminate narrow cracks and slivers when T-vertices are present. For
+   * example, adjacent S2Cells at different levels do not share exactly the same boundary, so there
+   * can be a narrow crack between them. If a polygon is intersected with those cells and the pieces
+   * are unioned together, the result would have a narrow crack unless the snap radius is set to a
+   * non-zero value.
    *
-   * <p>If you are going to convert the resulting polygon to a lower-precision format, it is
-   * necessary to increase the merge radius. See {@link #initToDifferenceSloppy(S2Polygon,
-   * S2Polygon, S1Angle)} below.
+   * <p>Note that if you want to encode the vertices in a lower-precision representation (such as
+   * S2CellIds or E7), it is much better to use a suitable SnapFunction rather than rounding the
+   * vertices yourself, because this will create self-intersections unless you ensure that the
+   * vertices and edges are sufficiently well-separated first. In particular you need to use a snap
+   * function whose {@link SnapFunction#minEdgeVertexSeparation()} is at least twice the maximum
+   * distance that a vertex can move when rounded.
+   *
+   * <p>Returns true on success, false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
    */
-  public void initToDifference(final S2Polygon a, final S2Polygon b) {
-    initToDifferenceSloppy(a, b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+  @CanIgnoreReturnValue
+  public boolean initToDifference(final S2Polygon a, final S2Polygon b) {
+    return initToDifference(a, b, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * Like {@link #initToDifference(S2Polygon, S2Polygon, SnapFunction)} below, initializes this
+   * polygon to the difference (A - B) of the given two polygons, using the given "snapFunction".
+   *
+   * <p>Returns true on success, false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
+   */
+  @JsMethod(name = "initToSnappedDifference")
+  @CanIgnoreReturnValue
+  public boolean initToDifference(final S2Polygon a, final S2Polygon b, SnapFunction snapFunction) {
+    return initToOperation(S2BooleanOperation.OpType.DIFFERENCE, snapFunction, a, b);
+  }
+
+  /**
+   * Initializes this polygon to the difference (A - B) of the given two polygons, using the given
+   * "snapFunction". The snapFunction allows you to specify a minimum spacing between output
+   * vertices, and/or that the vertices should be snapped to a discrete set of points (e.g. S2CellId
+   * centers or E7 lat/lng coordinates). Any snap function can be used, including the
+   * IdentitySnapFunction with a snapRadius of zero (which preserves the input vertices exactly).
+   *
+   * <p>The boundary of the output polygon before snapping is guaranteed to be accurate to within
+   * {@link S2EdgeUtil#INTERSECTION_ERROR} of the exact result. Snapping can move the boundary by an
+   * additional distance that depends on the snap function. Finally, any degenerate portions of the
+   * output polygon are automatically removed (i.e., regions that do not contain any points) since
+   * S2Polygon does not allow such regions.
+   *
+   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
+   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
+   *
+   * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
+   * note that this function should never return an error provided that both input polygons are
+   * valid (i.e., {@link #isValid()} returns true).
+   */
+  @JsMethod(name = "initToSnappedDifferenceOrError")
+  @CanIgnoreReturnValue
+  public boolean initToDifference(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction, S2Error error) {
+    return initToOperation(S2BooleanOperation.OpType.DIFFERENCE, snapFunction, a, b, error);
   }
 
   /**
@@ -1469,10 +2025,14 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * (i.e., no duplicate vertices, etc.) For example, if you are going to convert them to {@code
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
+   *
+   * @deprecated Use {@link #initToDifference(S2Polygon, S2Polygon, SnapFunction)}. A SnapFunction
+   *     of IdentitySnapFunction(vertexMergeRadius) should provide similar results.
    */
+  @Deprecated
   public void initToDifferenceSloppy(
       final S2Polygon a, final S2Polygon b, S1Angle vertexMergeRadius) {
-    Preconditions.checkState(numLoops() == 0);
+    clearLoops();
     if (a.isEmpty() || b.isFull()) {
       // From the check above, this polygon is already empty.
     } else if (a.isFull()) {
@@ -1514,6 +2074,78 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
+   * Initializes this polygon to the symmetric difference of the given two polygons. Uses a default
+   * snap function, which is the IdentitySnapFunction with a snap radius of {@link
+   * S2EdgeUtil#INTERSECTION_MERGE_RADIUS} (equal to about 1.8e-15 radians or 11 nanometers on the
+   * Earth's surface). This means that vertices may be positioned arbitrarily, but vertices that are
+   * extremely close together can be merged together. The reason for a non-zero default snap radius
+   * is that it helps to eliminate narrow cracks and slivers when T-vertices are present. For
+   * example, adjacent S2Cells at different levels do not share exactly the same boundary, so there
+   * can be a narrow crack between them. If a polygon is intersected with those cells and the pieces
+   * are unioned together, the result would have a narrow crack unless the snap radius is set to a
+   * non-zero value.
+   *
+   * <p>Note that if you want to encode the vertices in a lower-precision representation (such as
+   * S2CellIds or E7), it is much better to use a suitable SnapFunction rather than rounding the
+   * vertices yourself, because this will create self-intersections unless you ensure that the
+   * vertices and edges are sufficiently well-separated first. In particular you need to use a snap
+   * function whose {@link SnapFunction#minEdgeVertexSeparation()} is at least twice the maximum
+   * distance that a vertex can move when rounded.
+   *
+   * <p>Returns true on success, false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
+   */
+  @CanIgnoreReturnValue
+  public boolean initToSymmetricDifference(final S2Polygon a, final S2Polygon b) {
+    return initToSymmetricDifference(
+        a, b, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * As {@link #initToSymmetricDifference(S2Polygon, S2Polygon, SnapFunction)} below, initializes
+   * this polygon to the symmetric difference of the given two polygons. Returns true on success,
+   * false otherwise. Should not fail if the polygons are valid.
+   *
+   * @throws AssertionError if the operation fails and Java assertions are enabled.
+   */
+  @JsMethod(name = "initToSnappedSymmetricDifference")
+  @CanIgnoreReturnValue
+  public boolean initToSymmetricDifference(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction) {
+    return initToOperation(S2BooleanOperation.OpType.SYMMETRIC_DIFFERENCE, snapFunction, a, b);
+  }
+
+  /**
+   * initializes this polygon to the symmetric difference of the given two polygons, using the given
+   * "snapFunction". The snapFunction allows you to specify a minimum spacing between output
+   * vertices, and/or that the vertices should be snapped to a discrete set of points (e.g. S2CellId
+   * centers or E7 lat/lng coordinates). Any snap function can be used, including the
+   * IdentitySnapFunction with a snapRadius of zero (which preserves the input vertices exactly).
+   *
+   * <p>The boundary of the output polygon before snapping is guaranteed to be accurate to within
+   * {@link S2EdgeUtil#INTERSECTION_ERROR} of the exact result. Snapping can move the boundary by an
+   * additional distance that depends on the snap function. Finally, any degenerate portions of the
+   * output polygon are automatically removed (i.e., regions that do not contain any points) since
+   * S2Polygon does not allow such regions.
+   *
+   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
+   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
+   *
+   * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
+   * note that this function should never return an error provided that both input polygons are
+   * valid (i.e., {@link #isValid()} returns true).
+   */
+  @JsMethod(name = "initToSnappedSymmetricDifferenceOrError")
+  @CanIgnoreReturnValue
+  public boolean initToSymmetricDifference(
+      final S2Polygon a, final S2Polygon b, SnapFunction snapFunction, S2Error error) {
+    return initToOperation(
+        S2BooleanOperation.OpType.SYMMETRIC_DIFFERENCE, snapFunction, a, b, error);
+  }
+
+  /**
    * Initializes this polygon to a polygon that contains fewer vertices and is within tolerance of
    * the polygon a, with some caveats.
    *
@@ -1534,103 +2166,287 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * </ul>
    */
   public void initToSimplified(S2Polygon a, S1Angle tolerance, boolean snapToCellCenters) {
-    initToSimplifiedInternal(a, tolerance, snapToCellCenters, null);
-  }
-
-  /**
-   * Initializes this polygon to a polygon that contains fewer vertices and is within tolerance of
-   * the polygon a, while ensuring that the vertices on the cell boundary are preserved.
-   *
-   * <p>Precondition: Polygon a is contained in the cell.
-   */
-  public void initToSimplifiedInCell(S2Polygon a, final S2Cell cell, S1Angle tolerance) {
-    initToSimplifiedInternal(
-        a,
-        tolerance,
-        false,
-        new Predicate<S2Point>() {
-          /** Edges of the cell to test against. */
-          private final S2Point[] corners = {
-            cell.getVertex(0), cell.getVertex(1), cell.getVertex(2), cell.getVertex(3)
-          };
-
-          /** Max distance to test against. */
-          private final S1Angle d = S1Angle.radians(1e-15);
-
-          /** Returns true if the vertex is close to any edge of 'cell'. */
-          @Override
-          public boolean apply(S2Point vertex) {
-            for (int i = 0; i < 4; i++) {
-              if (S2EdgeUtil.getDistance(vertex, corners[i], corners[(i + 1) % 4]).lessThan(d)) {
-                return true;
-              }
-            }
-            return false;
-          }
-        });
-  }
-
-  /**
-   * Simplifies the polygon. The algorithm is straightforward and naive:
-   *
-   * <ol>
-   *   <li>Simplify each loop by removing points while staying in the tolerance zone. This uses
-   *       {@link S2Polyline#subsampleVertices(S1Angle)}, which is not guaranteed to be optimal in
-   *       terms of number of points.
-   *   <li>Break any edge in pieces such that no piece intersects any other.
-   *   <li>Use the polygon builder to regenerate the full polygon.
-   *   <li>If {@code vertexFilter} is not null, the vertices for which it returns true are kept in
-   *       the simplified polygon.
-   * </ol>
-   */
-  private void initToSimplifiedInternal(
-      S2Polygon a, S1Angle tolerance, boolean snapToCellCenters, Predicate<S2Point> vertexFilter) {
-    S2PolygonBuilder.Options.Builder options = S2PolygonBuilder.Options.UNDIRECTED_XOR.toBuilder();
-    options.setValidate(false);
-    if (vertexFilter != null) {
-      // If there is a vertex filter, then we want to do as little vertex merging as possible so
-      // that the vertices we want to keep don't move. But on the other hand, when we break
-      // intersecting edges into pieces there is some error in the intersection point.
-      // S2PolygonBuilder needs to be able to move vertices by up to this amount in order to produce
-      // valid output.
-      options.setMergeDistance(S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+    SnapFunction snapFunction;
+    if (snapToCellCenters) {
+      // Get the cell level such that vertices will not move by more than 'tolerance'.
+      int level = S2CellIdSnapFunction.levelForMaxSnapRadius(tolerance);
+      snapFunction = new S2CellIdSnapFunction(level);
     } else {
-      // Ideally, we would want to set the vertex merge radius of the builder roughly to tolerance
-      // (and in fact forego the edge splitting step). Alas, if we do that, we are liable to the
-      // 'chain effect', where vertices are merged with close by vertices and so on, so that a
-      // vertex can move by an arbitrary distance. So we remain conservative:
-      options.setMergeDistance(S1Angle.radians(tolerance.radians() * 0.10));
-      options.setSnapToCellCenters(snapToCellCenters);
+      // Will snap to points whose distance from the input point is no greater than 'tolerance'.
+      snapFunction = new IdentitySnapFunction(tolerance);
     }
 
-    // Simplify each loop separately and add to the edge index.
-    S2PolygonBuilder builder = new S2PolygonBuilder(options.build());
-    S2ShapeIndex index = new S2ShapeIndex();
-    for (int i = 0; i < a.numLoops(); i++) {
-      S2Loop simpler = a.loop(i).simplify(tolerance, vertexFilter);
-      if (simpler != null) {
-        index.add(simpler);
-      }
-    }
+    initToSimplified(a, snapFunction);
+  }
 
-    if (!index.shapes.isEmpty()) {
-      breakEdgesAndAddToBuilder(index, builder);
-      builder.assemblePolygon(this, null);
-      // If there are no loops, check whether the result should be the full
-      // polygon rather than the empty one. (See InitToIntersectionSloppy.)
-      if (numLoops() == 0) {
-        if (a.bound.area() > 2 * PI && a.getArea() > 2 * PI) {
-          invert();
+  /**
+   * Returns this polygon if {@link #getNumVertices()} is under 'maxVertices', or returns a copy of
+   * this polygon that has been simplified to at most 'maxVertices' distinct vertices. Note that if
+   * the given 'maxVertices' is less than 24, then 24 is used instead.
+   *
+   * <p>The result is simplified using {@link S2CellIdSnapFunction} at the highest level that snaps
+   * vertices enough to get under the given limit. The result may be smaller than requested, and may
+   * be quantized in appearance due to the rectilinear nature of the S2CellId coordinates at a given
+   * level.
+   */
+  public S2Polygon simplify(int maxVertices) {
+    maxVertices = max(24, maxVertices);
+    if (getNumVertices() <= maxVertices) {
+      return this;
+    }
+    Iterable<S2Point> vertices = concat(transform(getLoops(), S2Loop::vertices));
+    for (int level = S2CellId.MAX_LEVEL; level >= 0; level--) {
+      S2CellIdSnapFunction snapFunction = new S2CellIdSnapFunction(level);
+      int n = 0;
+      S2Point last = S2Point.ZERO;
+      for (S2Point v : vertices) {
+        v = snapFunction.snapPoint(v);
+        if (!v.equalsPoint(last)) {
+          last = v;
+          n++;
+          if (n > maxVertices) {
+            break; // try the next level
+          }
         }
       }
+      if (n <= maxVertices) {
+        S2Polygon simplified = new S2Polygon();
+        simplified.initToSimplified(this, snapFunction);
+        return simplified;
+      }
     }
+    throw new IllegalStateException("Unable to simplify");
+  }
+
+  /**
+   * Snaps the input polygon according to the given "snapFunction" and reduces the number of
+   * vertices if possible, while ensuring that no vertex moves further than
+   * snapFunction.snapRadius().
+   *
+   * <p>A zero snap radius will leave the input geometry unmodified.
+   *
+   * <p>Simplification works by replacing nearly straight chains of short edges with longer edges,
+   * in a way that preserves the topology of the input polygon up to the creation of degeneracies.
+   * This means that loops or portions of loops may become degenerate, in which case they are
+   * removed.
+   *
+   * <p>For example, if there is a very small island in the original polygon, it may disappear
+   * completely. (Even if there are dense islands, they could all be removed rather than being
+   * replaced by a larger simplified island if more area is covered by water than land.)
+   *
+   * <p>What's more, since we snap at the same time that we simplify, edges that come within the
+   * snap radius of a vertex may have a vertex inserted resulting in a "pinch" that forces S2Builder
+   * to produce multiple output loops.
+   */
+  @JsMethod(name = "initToSimplifiedSnapFunction")
+  public void initToSimplified(S2Polygon a, SnapFunction snapFunction) {
+    S2Builder builder = new S2Builder.Builder(snapFunction).setSimplifyEdgeChains(true).build();
+    initFromBuilder(a, builder);
+  }
+
+  /**
+   * Like {@link #initToSimplified}, except that any vertices or edges on the boundary of the given
+   * S2Cell are preserved if possible. This method requires that the polygon has already been
+   * clipped so that it does not extend outside the cell by more than "boundaryTolerance". In other
+   * words, it operates on polygons that have already been intersected with a cell.
+   *
+   * <p>Typically this method is used in geometry-processing pipelines that intersect polygons with
+   * a collection of S2Cells and then process those cells in parallel, where each cell generates
+   * some geometry that needs to be simplified. In contrast, if you just need to simplify the
+   * _input_ geometry then it is easier and faster to do the simplification before computing the
+   * intersection with any S2Cells.
+   *
+   * <p>"boundaryTolerance" specifies how close a vertex must be to the cell boundary to be kept.
+   * The default tolerance of 1e-15 is large enough to handle any reasonable way of interpolating
+   * points along the cell boundary, such as S2.getIntersection(), S2.interpolate(), or direct (u,v)
+   * interpolation using S2.faceUVtoXYZ(). However, if the vertices have been snapped to a
+   * lower-precision representation (e.g., S2CellId centers or E7 coordinates) then you will need to
+   * set this tolerance explicitly. For example, if the vertices were snapped to E7 coordinates then
+   * "boundaryTolerance" should be set to {@code IntLatLngSnapFunction.minSnapRadiusForExponent(7);}
+   *
+   * <p>Degenerate portions of loops are always removed, so if a vertex on the cell boundary belongs
+   * only to degenerate regions then it will not be kept. For example, if the input polygon is a
+   * narrow strip of width less than "snapRadius" along one side of the cell, then the entire loop
+   * may become degenerate and be removed.
+   *
+   * <p>REQUIRES: all vertices of "a" are within "boundaryTolerance" of "cell".
+   */
+  public void initToSimplifiedInCell(
+      S2Polygon a, final S2Cell cell, S1Angle snapRadius, S1Angle boundaryTolerance) {
+    // The polygon to be simplified consists of "boundary edges" that follow the cell boundary and
+    // "interior edges" that do not. We want to simplify the interior edges while leaving the
+    // boundary edges unchanged. It's not sufficient to call S2Builder.forceVertex() on all boundary
+    // vertices. For example, suppose the polygon includes a triangle ABC where all three vertices
+    // are on the cell boundary and B is a cell corner. Then if interior edge AC snaps to vertex B,
+    // this loop would become degenerate and be removed. Similarly, we don't want boundary edges to
+    // snap to interior vertices, since this also would cause portions of the polygon along the
+    // boundary to be removed.
+    //
+    // Instead we use a two-pass algorithm. In the first pass, we simplify *only* the interior
+    // edges, using forceVertex() to ensure that any edge endpoints on the cell boundary do not
+    // move. In the second pass, we add the boundary edges (which are guaranteed to still form loops
+    // with the interior edges) and build the output polygon.
+    //
+    // Note that in theory, simplifying the interior edges could create an intersection with one of
+    // the boundary edges, since if two interior edges intersect very near the boundary then the
+    // intersection point could be slightly outside the cell (by at most INTERSECTION_ERROR). This
+    // is the *only* way that a self-intersection can be created, and it is expected to be extremely
+    // rare. Nevertheless we use a small snap radius in the second pass in order to eliminate any
+    // such self-intersections.
+    //
+    // We also want to preserve the cyclic vertex order of loops, so that the original polygon can
+    // be reconstructed when no simplification is possible (i.e., idempotency). In order to do this,
+    // we group the input edges into a sequence of polylines. Each polyline contains only one type
+    // of edge (interior or boundary). We use S2Builder to simplify the interior polylines, while
+    // the boundary polylines are passed through unchanged. Each interior polyline is in its own
+    // S2Builder layer in order to keep the edges in sequence. This lets us ensure that in the
+    // second pass, the edges are added in their original order so that S2PolygonLayer can
+    // reconstruct the original loops.
+
+    // We want an upper bound on how much "u" or "v" can change when a point on the boundary of the
+    // S2Cell is moved away by up to "boundaryTolerance". Inverting this, instead we could compute a
+    // lower bound on how far a point can move away from an S2Cell edge when "u" or "v" is changed
+    // by a given amount. The latter quantity is simply (MIN_WIDTH.deriv() / 2) under the
+    // S2_LINEAR_PROJECTION model, where we divide by 2 because we want the bound in terms of
+    // {@code (u = 2 * s - 1)} rather than "s" itself. Consulting s2metrics.cc, this value is
+    // sqrt(2/3)/2 = sqrt(1/6). Going back to the original problem, this gives:
+    double boundaryToleranceUV = sqrt(6) * boundaryTolerance.radians();
+
+    // The first pass yields a collection of simplified polylines that preserve the original cyclic
+    // vertex order.
+    List<S2Polyline> polylines = simplifyEdgesInCell(a, cell, boundaryToleranceUV, snapRadius);
+
+    // The second pass eliminates any intersections between interior edges and boundary edges, and
+    // then assembles the edges into a polygon.
+    S2Builder.Builder options =
+        new S2Builder.Builder(
+            new IdentitySnapFunction(S1Angle.radians(S2EdgeUtil.INTERSECTION_ERROR)));
+    options.setIdempotent(false); // Force snapping up to the given radius
+    S2Builder builder = options.build();
+    S2PolygonLayer layer = new S2PolygonLayer();
+    layer.setPolygon(this);
+    builder.startLayer(layer);
+    // If there are no loops, the result should be the full polygon rather than the empty one if the
+    // input area and bounds are more than a hemisphere.
+    builder.addIsFullPolygonPredicate(g -> a.bound.area() > 2 * PI && a.getArea() > 2 * PI);
+
+    for (S2Polyline polyline : polylines) {
+      builder.addPolyline(polyline);
+    }
+
+    S2Error error = new S2Error();
+    if (!builder.build(error)) {
+      throw new IllegalArgumentException("Could not build polygon: " + error);
+    }
+  }
+
+  /**
+   * Just like {@link #initToSimplifiedInCell(S2Polygon, S2Cell, S1Angle, S1Angle)} above, but uses
+   * a default boundaryTolerance of 1e-15 radians.
+   */
+  @JsIgnore
+  public void initToSimplifiedInCell(S2Polygon a, final S2Cell cell, S1Angle snapRadius) {
+    initToSimplifiedInCell(a, cell, snapRadius, S1Angle.radians(1e-15));
+  }
+
+  /** See comments in {@link #initToSimplifiedInCell}. */
+  private List<S2Polyline> simplifyEdgesInCell(
+      S2Polygon a, S2Cell cell, double toleranceUV, S1Angle snapRadius) {
+    S2Builder.Builder options = new S2Builder.Builder(new IdentitySnapFunction(snapRadius));
+    options.setSimplifyEdgeChains(true);
+    S2Builder builder = options.build();
+
+    // The output consists of a sequence of polylines. Polylines consisting of interior edges are
+    // simplified using S2Builder, while polylines consisting of boundary edges are returned
+    // unchanged.
+    List<S2Polyline> outputPolylines = new ArrayList<>();
+    List<S2PolylineLayer> interiorPolylines = new ArrayList<>();
+    for (int i = 0; i < a.numLoops(); ++i) {
+      S2Loop aLoop = a.loop(i);
+      S2Point v0 = aLoop.orientedVertex(0);
+      byte mask0 = getCellEdgeIncidenceMask(cell, v0, toleranceUV);
+      boolean inInterior = false; // Was the last edge an interior edge?
+      for (int j = 1; j <= aLoop.numVertices(); ++j) {
+        S2Point v1 = aLoop.orientedVertex(j);
+        byte mask1 = getCellEdgeIncidenceMask(cell, v1, toleranceUV);
+        if ((mask0 & mask1) != 0) {
+          // This is an edge along the cell boundary. Such edges do not get simplified; we add them
+          // directly to the output. (We create a separate polyline for each edge to keep things
+          // simple.)  We call forceVertex on all boundary vertices to ensure that they don't move,
+          // and so that nearby interior edges are snapped to them.
+          assert !inInterior;
+          builder.forceVertex(v1);
+          outputPolylines.add(new S2Polyline(new S2Point[] {v0, v1}));
+        } else {
+          // This is an interior edge. If this is the first edge of an interior chain, then start a
+          // new S2Builder layer. Also ensure that any polyline vertices on the boundary do not
+          // move, so that they will still connect with any boundary edge(s) there.
+          if (!inInterior) {
+            S2PolylineLayer layer = new S2PolylineLayer();
+            builder.startLayer(layer);
+            interiorPolylines.add(layer);
+            inInterior = true;
+          }
+          builder.addEdge(v0, v1);
+          if (mask1 != 0) {
+            builder.forceVertex(v1);
+            inInterior = false; // Terminate this polyline.
+          }
+        }
+        v0 = v1;
+        mask0 = mask1;
+      }
+    }
+
+    // Process the interior edges and gather the resulting polylines.
+    S2Error error = new S2Error();
+    boolean unused = builder.build(error);
+    assert error.ok() : "InitToSimplifiedInCell failed: " + error.text();
+
+    for (S2PolylineLayer layer : interiorPolylines) {
+      outputPolylines.add(layer.getPolyline());
+    }
+
+    return outputPolylines;
+  }
+
+  /**
+   * Given a point "p" inside an S2Cell or on its boundary, return a mask indicating which of the
+   * S2Cell edges the point lies on. All boundary comparisons are to within a maximum "u" or "v"
+   * error of "toleranceUV". Bit "i" in the result is set if and only "p" is incident to the edge
+   * corresponding to S2Cell.edge(i).
+   */
+  byte getCellEdgeIncidenceMask(S2Cell cell, S2Point p, double toleranceUV) {
+    byte mask = 0;
+    @Nullable R2Vector uv = S2Projections.faceXyzToUv(cell.face(), p);
+    if (uv != null) {
+      R2Rect bound = cell.getBoundUV();
+      assert bound.expanded(toleranceUV).contains(uv);
+      if (abs(uv.get(1) - bound.y().lo()) <= toleranceUV) {
+        mask |= 1;
+      }
+      if (abs(uv.get(0) - bound.x().hi()) <= toleranceUV) {
+        mask |= 2;
+      }
+      if (abs(uv.get(1) - bound.y().hi()) <= toleranceUV) {
+        mask |= 4;
+      }
+      if (abs(uv.get(0) - bound.x().lo()) <= toleranceUV) {
+        mask |= 8;
+      }
+    }
+    return mask;
   }
 
   /**
    * Takes a set of possibly intersecting edges, stored in the S2ShapeIndex, and breaks the edges
    * into small pieces so that there is no intersection anymore, and adds all these edges to the
    * builder.
+   *
+   * @deprecated Instead of using the deprecated S2PolygonBuilder, use S2Builder, and set the
+   *     splitCrossingEdges option.
    */
+  @Deprecated
   public static void breakEdgesAndAddToBuilder(S2ShapeIndex index, S2PolygonBuilder builder) {
     // If there are self intersections, we add the pieces separately.
     // addSharedEdges ("true" below) can be false or true: it makes no difference due to the way we
@@ -1660,17 +2476,92 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     }
   }
 
-  /** Returns a polygon that is the union of the given polygons. */
-  @JsIgnore // J2CL warning "Iterable<S2Polygon> is not usable by JavaScript", but not clear why.
+  /**
+   * Returns a polygon that is the union of the given polygons.
+   *
+   * <p>This is a convenience wrapper for the union method below which provides a default
+   * snapFunction, with a snap radius of {@link S2EdgeUtil#INTERSECTION_MERGE_RADIUS}, (equal to
+   * about 1.8e-15 radians or 11 nanometers on the Earth's surface). This means that vertices may be
+   * positioned arbitrarily, but vertices that are extremely close together can be
+   * merged together. The reason for a non-zero default snap radius is that it helps to eliminate
+   * narrow cracks and slivers when T-vertices are present. For example, adjacent S2Cells at
+   * different levels do not share exactly the same boundary, so there can be a narrow crack between
+   * them. If a polygon is intersected with those cells and the pieces are unioned together, the
+   * result would have a narrow crack unless the snap radius is set to a non-zero value.
+   */
   public static S2Polygon union(Iterable<S2Polygon> polygons) {
+    return union(polygons, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * Returns a polygon that is the union of the given polygons. The current implementation
+   * repeatedly unions pairs of polygons and snaps each intermediate result with the given
+   * snapFunction, using {@link #initToUnion(S2Polygon, S2Polygon, SnapFunction)}.
+   *
+   * @throws AssertionError if the operation fails or an input polygon is invalid, and Java
+   * assertions are enabled.
+   */
+  @JsMethod(name = "unionSnapped")
+  public static S2Polygon union(Iterable<S2Polygon> polygons, SnapFunction snapFunction) {
+    // Create a priority queue of polygons in order of number of vertices.
+    TreeMultimap<Integer, S2Polygon> queue = TreeMultimap.create();
+    for (S2Polygon polygon : polygons) {
+      queue.put(polygon.getNumVertices(), polygon);
+    }
+
+    // Repeatedly union the two smallest polygons and add the result to the queue until we have a
+    // single polygon to return.
+    Set<Map.Entry<Integer, S2Polygon>> queueSet = queue.entries();
+    while (queueSet.size() > 1) {
+      // Pop the two simplest polygons from queue.
+      queueSet = queue.entries();
+      Iterator<Map.Entry<Integer, S2Polygon>> smallestIter = queueSet.iterator();
+
+      Map.Entry<Integer, S2Polygon> smallest = smallestIter.next();
+      S2Polygon aPolygon = smallest.getValue();
+      smallestIter.remove();
+
+      smallest = smallestIter.next();
+      S2Polygon bPolygon = smallest.getValue();
+      smallestIter.remove();
+
+      // Union and add result back to queue.
+      S2Polygon unionPolygon = new S2Polygon();
+      boolean unused = unionPolygon.initToUnion(aPolygon, bPolygon, snapFunction);
+
+      queue.put(unionPolygon.getNumVertices(), unionPolygon);
+    }
+
+    if (queue.isEmpty()) {
+      return new S2Polygon();
+    } else {
+      return queue.get(queue.asMap().firstKey()).first();
+    }
+  }
+
+  /**
+   * Returns a polygon that is the union of the given polygons; combines vertices that form edges
+   * that are within {@link S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE} of each other.
+   *
+   * @deprecated Use {@link #union(Iterable<S2Polygon>)} instead. Note that the new implementation
+   * is built on S2Builder and S2BooleanOperation, instead of S2PolygonBuilder, and the results are
+   * not identical.
+   */
+  @JsIgnore
+  @Deprecated
+  public static S2Polygon unionSloppy(Iterable<S2Polygon> polygons) {
     return unionSloppy(polygons, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
   }
 
   /**
    * Returns a polygon that is the union of the given polygons; combines vertices that form edges
    * that are almost identical, as defined by {@code vertexMergeRadius}.
+   *
+   * @deprecated Use {@link #union(Iterable<S2Polygon>, SnapFunction)} instead. Note that the new
+   *     implementation is built on S2Builder and S2BooleanOperation, instead of S2PolygonBuilder,
+   *     and the results are not identical.
    */
-  @JsIgnore // J2CL warning "Iterable<S2Polygon> is not usable by JavaScript", but not clear why.
+  @Deprecated
   public static S2Polygon unionSloppy(Iterable<S2Polygon> polygons, S1Angle vertexMergeRadius) {
     // Effectively create a priority queue of polygons in order of number of vertices. Repeatedly
     // union the two smallest polygons and add the result to the queue until we have a single
@@ -1690,23 +2581,17 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
       Iterator<Map.Entry<Integer, S2Polygon>> smallestIter = queueSet.iterator();
 
       Map.Entry<Integer, S2Polygon> smallest = smallestIter.next();
-      int aSize = smallest.getKey().intValue();
       S2Polygon aPolygon = smallest.getValue();
       smallestIter.remove();
 
       smallest = smallestIter.next();
-      int bSize = smallest.getKey().intValue();
       S2Polygon bPolygon = smallest.getValue();
       smallestIter.remove();
 
       // Union and add result back to queue.
       S2Polygon unionPolygon = new S2Polygon();
       unionPolygon.initToUnionSloppy(aPolygon, bPolygon, vertexMergeRadius);
-      int unionSize = aSize + bSize;
-      queue.put(unionSize, unionPolygon);
-      // We assume that the number of vertices in the union polygon is the sum of the number of
-      // vertices in the original polygons, which is not always true, but will almost always be a
-      // decent approximation, and faster than recomputing.
+      queue.put(unionPolygon.getNumVertices(), unionPolygon);
     }
 
     if (queue.isEmpty()) {
@@ -1717,16 +2602,94 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
-   * Intersects this polygon with the {@link S2Polyline} {@code in} and returns the resulting zero
-   * or more polylines. The polylines are ordered in the order they would be encountered by
-   * traversing {@code in} from beginning to end. Note that the output may include polylines with
-   * only one vertex, but there will not be any zero-vertex polylines.
+   * Returns true if this polygon contains the given polyline. Note that a polygon contains its
+   * boundary edges, but not reversed boundary edges.
+   */
+  @JsMethod(name = "containsPolyline")
+  public boolean contains(S2Polyline b) {
+    return subtractFromPolyline(b).isEmpty();
+    // TODO(user): This would be much faster if implemented as S2BooleanOperation.isEmpty(),
+    // similar to the "disjoint" method below, but with OpType.DIFFERENCE. However, the
+    // S2BooleanOperation options need to be set correctly to maintain the existing, desired
+    // boundary containment behavior. With default options, boundary edges are not contained.
+  }
+
+  /**
+   * Returns true if this polygon and the given polyline are disjoint, i.e. have no points in
+   * common.
+   */
+  public boolean disjoint(S2Polyline b) {
+    // TODO(user): Add this method to the C++ implementation.
+    S2ShapeIndex polylineIndex = new S2ShapeIndex();
+    polylineIndex.add(b.shape());
+    return S2BooleanOperation.isEmpty(
+        S2BooleanOperation.OpType.INTERSECTION, index(), polylineIndex);
+  }
+
+  /**
+   * Returns true if this polygon intersects the given polyline, i.e. have at least one point in
+   * common.
+   */
+  public boolean intersectsPolyline(S2Polyline b) {
+    // TODO(user): Add this method to the C++ implementation.
+    return !disjoint(b);
+  }
+
+  /**
+   * Performs the given S2BooleanOperation.OpType on this polygon and the given S2Polyline. Snaps
+   * the resulting edges with the given SnapFunction and sends them to an S2PolylineVectorLayer,
+   * which assembles the edges into polylines. The polylines are returned without being validated.
+   * Note that degenerate polylines are discarded.
+   */
+  public List<S2Polyline> operationWithPolyline(
+      S2BooleanOperation.OpType opType, SnapFunction snapFunction, S2Polyline a) {
+    S2PolylineVectorLayer.Options layerOptions = new S2PolylineVectorLayer.Options();
+    layerOptions.setPolylineType(PolylineType.WALK);
+    S2PolylineVectorLayer layer = new S2PolylineVectorLayer(layerOptions);
+
+    S2ShapeIndex lineIndex = new S2ShapeIndex();
+    lineIndex.add(a.shape());
+
+    S2BooleanOperation op = new S2BooleanOperation.Builder(snapFunction).build(opType, layer);
+    S2Error error = new S2Error();
+    boolean built = op.build(lineIndex, index(), error);
+    if (built && error.ok()) {
+      return layer.getPolylines();
+    }
+
+    // Failures should not happen, as S2BooleanOperation.build() does not set any errors, nor does
+    // S2PolylineVectorLayer when not validating results.
+    throw new IllegalStateException(
+        "OperationWithPolyline failed for " + opType + ": " + error.text());
+  }
+
+  /**
+   * Intersects this polygon with the polyline "in", and then assembles the results into zero or
+   * more polylines. The returned polylines are ordered in the order they would be encountered by
+   * traversing "in" from beginning to end.
    *
-   * <p>This is equivalent to calling {@link #intersectWithPolylineSloppy} with the {@code
-   * vertexMergeRadius} set to {@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE}.
+   * <p>Note that degenerate polylines are discarded, so it is possible to have an S2Polyline and
+   * S2Polygon where polygon.intersects(polyline) is true, but the result of
+   * polygon.intersectWithPolyline(polyline) is empty.
    */
   public List<S2Polyline> intersectWithPolyline(S2Polyline in) {
-    return intersectWithPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+    return intersectWithPolyline(
+        in, new IdentitySnapFunction(S2EdgeUtil.INTERSECTION_MERGE_RADIUS));
+  }
+
+  /**
+   * Intersects this polygon with the polyline "in", snaps the resulting edges with the given
+   * SnapFunction, and then assembles the results into zero or more polylines. The returned
+   * polylines are ordered in the order they would be encountered by traversing "in" from beginning
+   * to end.
+   *
+   * <p>Note that degenerate polylines are discarded, so it is possible to have an S2Polyline and
+   * S2Polygon where polygon.intersects(polyline) is true, but the result of
+   * polygon.intersectWithPolyline(polyline) is empty.
+   */
+  @JsMethod(name = "intersectWithPolylineSnapped")
+  public List<S2Polyline> intersectWithPolyline(S2Polyline in, SnapFunction snapFunction) {
+    return operationWithPolyline(S2BooleanOperation.OpType.INTERSECTION, snapFunction, in);
   }
 
   /**
@@ -1734,35 +2697,62 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * ensure that all adjacent vertices in the sequence obtained by concatenating the output
    * polylines will be farther than {@code vertexMergeRadius} apart. Note that this can change the
    * number of output polylines and/or yield single-vertex polylines.
+   *
+   * @deprecated Use intersectWithPolyline(in, new IdentitySnapFunction(vertexMergeRadius)) but note
+   *     it has slightly different behavior.
    */
+  @Deprecated
   public List<S2Polyline> intersectWithPolylineSloppy(S2Polyline in, S1Angle vertexMergeRadius) {
     return internalClipPolyline(false, in, vertexMergeRadius);
   }
 
-  /** Same as {@link #intersectWithPolyline}, but subtracts this polygon from the given polyline. */
+  /**
+   * Subtracts this polygon from the given {@link S2Polyline}, and snaps the resulting edges
+   * using an IdentitySnapFunction with the minimum merge radius. Assembles the results into zero or
+   * more polylines.
+   *
+   * <p>The polylines are ordered in the order they would be encountered by traversing the
+   * given polyline {@code in} from beginning to end. Note that degenerate polylines are discarded.
+   */
   public List<S2Polyline> subtractFromPolyline(S2Polyline in) {
-    return subtractFromPolylineSloppy(in, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
+    return subtractFromPolyline(in, S2EdgeUtil.INTERSECTION_MERGE_RADIUS);
   }
 
   /**
-   * Same as {@link #intersectWithPolylineSloppy}, but subtracts this polygon from the given
-   * polyline.
+   * Subtracts this polygon from the given {@link S2Polyline}, and snaps the resulting edges using
+   * an IdentitySnapFunction with the given snapRadius. Assembles the results into zero or more
+   * polylines.
+   *
+   * <p>The returned polylines are ordered in the order they would be encountered by traversing the
+   * given polyline {@code in} from beginning to end. Note that degenerate polylines are discarded.
+   * (This method is named ApproxSubtractFromPolyline in the C++ implementation.)
    */
+  @JsMethod(name = "approxSubtractFromPolyline")
+  public List<S2Polyline> subtractFromPolyline(S2Polyline in, S1Angle snapRadius) {
+    return subtractFromPolyline(in, new IdentitySnapFunction(snapRadius));
+  }
+
+  /**
+   * Subtracts this polygon from the given {@link S2Polyline}, and snaps the resulting edges using
+   * the given SnapFunction. Assembles the results into zero or more polylines.
+   *
+   * <p>The returned polylines are ordered in the order they would be encountered by traversing the
+   * given polyline {@code in} from beginning to end. Note that degenerate polylines are discarded.
+   */
+  @JsMethod(name = "subtractFromPolylineSnapped")
+  public List<S2Polyline> subtractFromPolyline(S2Polyline in, S2Builder.SnapFunction snapFunction) {
+    return operationWithPolyline(S2BooleanOperation.OpType.DIFFERENCE, snapFunction, in);
+  }
+
+  /**
+   * Similar to {@link #intersectWithPolylineSloppy}, but subtracts this polygon from the given
+   * polyline.
+   *
+   * @deprecated Use {@link #subtractFromPolyline(S2Polyline)} instead.
+   */
+  @Deprecated
   public List<S2Polyline> subtractFromPolylineSloppy(S2Polyline in, S1Angle vertexMergeRadius) {
     return internalClipPolyline(true, in, vertexMergeRadius);
-  }
-
-  /** Returns true if this polygon contains the given polyline, within the default tolerance. */
-  @JsMethod(name = "containsPolyline")
-  public boolean contains(S2Polyline b) {
-    return approxContains(b, S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE);
-  }
-
-  /** Returns true if this polygon contains the given polyline, within the given tolerance. */
-  @JsMethod(name = "approxContainsPolyline")
-  public boolean approxContains(S2Polyline b, S1Angle tolerance) {
-    List<S2Polyline> difference = subtractFromPolylineSloppy(b, tolerance);
-    return difference.isEmpty();
   }
 
   /**
@@ -1776,10 +2766,14 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * that edge. We then divide the intersection points into pairs, and output a clipped polyline
    * segment for each one. We keep track of whether we're inside or outside of the polygon at all
    * times to decide which segments to output.
+   *
+   * @deprecated Used only by the deprecated methods subtractFromPolylineSloppy and
+   * intersectWithPolylineSloppy.
    */
+  @Deprecated
   private List<S2Polyline> internalClipPolyline(boolean invert, S2Polyline a, S1Angle mergeRadius) {
     List<S2Polyline> out = Lists.newArrayList();
-    EdgeClipper clipper = new EdgeClipper(index, true, S2Polygon::reverseNone);
+    EdgeClipper clipper = new EdgeClipper(index(), true, S2Polygon::reverseNone);
     List<ParametrizedS2Point> intersections = Lists.newArrayList();
     List<S2Point> vertices = Lists.newArrayList();
     int n = a.numVertices();
@@ -1878,6 +2872,61 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
+   * Returns true if two polygons have the same boundary. More precisely, this method requires that
+   * both polygons have loops with the same cyclic vertex order and the same nesting hierarchy.
+   * (This implies that vertices may be cyclically rotated between corresponding loops, and the loop
+   * ordering may be different between the two polygons as long as the nesting hierarchy is the
+   * same.)
+   */
+  @VisibleForTesting
+  boolean boundaryEquals(S2Polygon b) {
+    if (numLoops() != b.numLoops()) {
+      return false;
+    }
+
+    for (int i = 0; i < numLoops(); ++i) {
+      S2Loop aLoop = loop(i);
+      boolean success = false;
+      for (int j = 0; j < numLoops(); ++j) {
+        S2Loop bLoop = b.loop(j);
+        if ((bLoop.depth() == aLoop.depth()) && bLoop.boundaryEquals(aLoop)) {
+          success = true;
+          break;
+        }
+      }
+      if (!success) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Return true if two polygons are approximately equal to within the given tolerance. This is true
+   * if it is possible to move the vertices of the two polygons so that they contain the same set of
+   * points.
+   *
+   * <p>Note that according to this model, small regions less than "tolerance" in width do not need
+   * to be considered, since these regions can be collapsed into degenerate loops (which contain no
+   * points) by moving their vertices.
+   *
+   * <p>This model is not as strict as using the Hausdorff distance would be, and it is also not as
+   * strict as {@link #boundaryNear(S2Polygon, double)} (defined below). However, it is a good
+   * choice for comparing polygons that have been snapped, simplified, unioned, etc, since these
+   * operations use a model similar to this one (i.e., degenerate loops or portions of loops are
+   * automatically removed).
+   */
+  public boolean approxEquals(S2Polygon b, S1Angle tolerance) {
+    // TODO(user): This can be implemented more cheaply with S2Builder, by simply adding all
+    // the edges from one polygon, adding the reversed edge from the other polygon, and turning on
+    // the options to split edges and discard sibling pairs. Then the polygons are approximately
+    // equal if the output graph has no edges.
+    S2Polygon symmetricDifference = new S2Polygon();
+    symmetricDifference.initToSymmetricDifference(b, this, new IdentitySnapFunction(tolerance));
+    return symmetricDifference.isEmpty();
+  }
+
+  /**
    * Returns true if two polygons have the same boundary, except for vertex perturbations. Both
    * polygons must have loops with the same cyclic vertex order and the same nesting hierarchy, but
    * the vertex locations are allowed to differ by up to {@code maxErrorRadians} radians. Note: This
@@ -1970,26 +3019,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   @Override
   @JsIgnore
   public boolean contains(S2Cell cell) {
-    S2Iterator<S2ShapeIndex.Cell> it = index.iterator();
-    S2ShapeIndex.CellRelation relation = it.locate(cell.id());
-
-    // If 'cell' is disjoint from all index cells, it is not contained. Similarly, if 'cell' is
-    // subdivided into one or more index cells, then it is not contained, since index cells are
-    // subdivided only if they (nearly) intersect a sufficient number of edges. (But note that if
-    // 'cell' itself is an index cell, then it may be contained, since it could be a cell with no
-    // indexed edges in the polygon interior.)
-    if (relation != S2ShapeIndex.CellRelation.INDEXED) {
-      return false;
-    }
-
-    // Otherwise check if any edges intersect 'cell'. At this point, the iterator is guaranteed to
-    // to point to an index cell containing 'cell'.
-    if (boundaryApproxIntersects(it, cell)) {
-      return false;
-    }
-
-    // Otherwise check if the polygon contains the center of 'cell'.
-    return contains(it, cell.getCenter());
+    return new S2ShapeIndexRegion(index()).contains(cell);
   }
 
   /**
@@ -1998,75 +3028,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   @Override
   public boolean mayIntersect(S2Cell target) {
-    S2Iterator<S2ShapeIndex.Cell> it = index.iterator();
-    S2ShapeIndex.CellRelation relation = it.locate(target.id());
-
-    // If 'target' does not overlap any index cell, there is no intersection.
-    if (relation == S2ShapeIndex.CellRelation.DISJOINT) {
-      return false;
-    }
-
-    // If 'target' properly contains an index cell, then there is an intersection to within the
-    // S2ShapeIndex error bound (see contains). But if 'target' itself is an index cell, then it may
-    // not be contained, since it could be a cell with no indexed edges that is contained by both a
-    // shell and a hole, and is therefore in the polygon exterior.
-    if (relation == S2ShapeIndex.CellRelation.SUBDIVIDED) {
-      return true;
-    }
-
-    // Otherwise check if any edges intersect 'target'.
-    if (boundaryApproxIntersects(it, target)) {
-      return true;
-    }
-
-    // Otherwise check if the polygon contains the center of 'target'.
-    return contains(it, target.getCenter());
-  }
-
-  /**
-   * Returns true if the polygon boundary intersects {@code target}. It may also return true when
-   * the polygon boundary does not intersect {@code target} but some edge comes within the
-   * worst-case error tolerance.
-   *
-   * <p>Requires: {@code it.id().contains(target.id())} (This condition is true whenever {@code
-   * it.locate(target)} returns INDEXED.
-   */
-  private boolean boundaryApproxIntersects(S2Iterator<S2ShapeIndex.Cell> it, S2Cell target) {
-    // assert (it.id().contains(target.id()))
-    S2ShapeIndex.Cell cell = it.entry();
-    R2Rect bound = target.getBoundUV().expanded(S2EdgeUtil.MAX_CELL_EDGE_ERROR);
-    R2Vector v0 = new R2Vector();
-    R2Vector v1 = new R2Vector();
-    for (int a = 0; a < cell.numShapes(); ++a) {
-      S2ShapeIndex.S2ClippedShape aClipped = cell.clipped(a);
-      int aNumClipped = aClipped.numEdges();
-      if (aNumClipped == 0) {
-        continue;
-      }
-
-      // We can save some work if 'target' is the index cell itself (given that there is at least
-      // one indexed edge).
-      if (it.compareTo(target.id()) == 0) {
-        return true;
-      }
-
-      // Otherwise, check whether any of the edges intersect 'target'.
-      S2Loop aLoop = loops.get(aClipped.shapeId());
-      for (int i = 0; i < aNumClipped; ++i) {
-        int ai = aClipped.edge(i);
-        if (S2EdgeUtil.clipToPaddedFace(
-                aLoop.vertex(ai),
-                aLoop.vertex(ai + 1),
-                target.face(),
-                S2EdgeUtil.MAX_CELL_EDGE_ERROR,
-                v0,
-                v1)
-            && S2EdgeUtil.intersectsRect(v0, v1, bound)) {
-          return true;
-        }
-      }
-    }
-    return false;
+    return new S2ShapeIndexRegion(index()).mayIntersect(target);
   }
 
   /**
@@ -2102,42 +3064,9 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
       return inside;
     }
 
-    // Otherwise we look up the S2ShapeIndex cell containing this point.
-    S2Iterator<S2ShapeIndex.Cell> it = index.iterator();
-    if (!it.locate(p)) {
-      return false;
-    }
-    return contains(it, p);
-  }
-
-  /**
-   * Given an iterator that is already positioned at the S2ShapeIndex.Cell containing {@code p},
-   * return {@code contains(p)}.
-   */
-  private boolean contains(S2Iterator<S2ShapeIndex.Cell> it, S2Point p) {
-    // Test containment by drawing a line segment from the cell center to the given point and
-    // counting edge crossings.
-    S2ShapeIndex.Cell cell = it.entry();
-    boolean inside = false;
-    S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(it.center(), p);
-    for (int a = 0; a < cell.numShapes(); ++a) {
-      S2ShapeIndex.S2ClippedShape aClipped = cell.clipped(a);
-      inside ^= aClipped.containsCenter();
-      int aNumClipped = aClipped.numEdges();
-      if (aNumClipped > 0) {
-        int aiPrev = -2;
-        S2Loop aLoop = loops.get(aClipped.shapeId());
-        for (int i = 0; i < aNumClipped; ++i) {
-          int ai = aClipped.edge(i);
-          if (ai != aiPrev + 1) {
-            crosser.restartAt(aLoop.vertex(ai));
-          }
-          aiPrev = ai;
-          inside ^= crosser.edgeOrVertexCrossing(aLoop.vertex(ai + 1));
-        }
-      }
-    }
-    return inside;
+    // Otherwise we use a ContainsPointQuery to determine point containment.
+    S2ContainsPointQuery query = new S2ContainsPointQuery(index);
+    return query.contains(p);
   }
 
   /** For each map entry, sorts the value list. */
@@ -2147,32 +3076,31 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     }
   }
 
-  private static void insertLoop(S2Loop newLoop, S2Loop parent, Map<S2Loop, List<S2Loop>> loopMap) {
-    List<S2Loop> children = loopMap.get(parent);
+  /** Add the given "newLoop" to the loopMap to the deepest loop containing it. */
+  private static void insertLoop(S2Loop newLoop, Map<S2Loop, List<S2Loop>> loopMap) {
+    // Insert a new loop list to hold the children of newLoop (if any).
+    List<S2Loop> newChildren = loopMap.computeIfAbsent(newLoop, k -> new ArrayList<S2Loop>());
+    S2Loop parent = ROOT;
 
-    if (children == null) {
-      children = Lists.newArrayList();
-      loopMap.put(parent, children);
-    }
-
-    // TODO(torrey): Port cl/109131349 (avoid recursion), other improvements from C++.
-    for (S2Loop child : children) {
-      if (child.containsNested(newLoop)) {
-        insertLoop(newLoop, child, loopMap);
-        return;
+    // Find the deepest-nested loop containing "newLoop". That parent's "children" list is where
+    // newLoop will be added.
+    List<S2Loop> children = null;
+    for (boolean done = false; !done; ) {
+      children = loopMap.get(parent);
+      done = true;
+      for (S2Loop child : children) {
+        if (child.containsNested(newLoop)) {
+          parent = child;
+          done = false;
+          break;
+        }
       }
     }
 
-    // Some of the children of the parent loop may now be children of the new loop.
-    // If newLoop is already in the loopMap, get its list of children.
-    List<S2Loop> newChildren = loopMap.get(newLoop);
+    // Some of the other children of the parent loop may now be children of the new loop.
     for (int i = 0; i < children.size(); ) {
       S2Loop child = children.get(i);
       if (newLoop.containsNested(child)) {
-        if (newChildren == null) {
-          newChildren = new ArrayList<>();
-          loopMap.put(newLoop, newChildren);
-        }
         newChildren.add(child);
         children.remove(i);
       } else {
@@ -2183,13 +3111,15 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   }
 
   /**
-   * If the given loop is not null, it must be in the given loopMap, and is assigned the given
-   * depth. Then the children of the loop are recursively initialized with depth+1. If the given
-   * loop is null, then the top-level loops in the loopMap (children of the 'null' loop) are
-   * initialized recursively.
+   * If the given loop is not {@code ROOT}, it must be in the given loopMap, and is assigned the
+   * given depth. Then the children of the loop are recursively initialized with depth+1. If the
+   * given loop is {@code ROOT}, then the top-level loops in the loopMap (children of the ROOT loop)
+   * are initialized recursively.
    */
-  private void initLoop(S2Loop loop, int depth, Map<S2Loop, List<S2Loop>> loopMap) {
-    if (loop != null) {
+  @SuppressWarnings("ReferenceEquality") // ROOT is a specific instance.
+  private void initLoop(S2Loop loop, int depth, IdentityHashMap<S2Loop, List<S2Loop>> loopMap) {
+    Preconditions.checkNotNull(loop); // Can't fail. Existing initLoop() callers check this.
+    if (loop != ROOT) {
       loop.setDepth(depth);
       loops.add(loop);
     }
@@ -2298,16 +3228,6 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     return true;
   }
 
-  /** Returns true if any loop contains the given loop. */
-  private boolean anyLoopContains(S2Loop b) {
-    for (S2Loop loop : loops) {
-      if (loop.contains(b)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   /** Returns true if any loop intersects the given loop. */
   private boolean anyLoopIntersects(S2Loop b) {
     for (S2Loop loop : loops) {
@@ -2325,7 +3245,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     sb.append("Polygon: (").append(numLoops()).append(") loops:\n");
     for (int i = 0; i < numLoops(); ++i) {
       S2Loop s2Loop = loop(i);
-      sb.append("loop <\n");
+      sb.append("loop with depth ").append(s2Loop.depth()).append(" <\n");
       for (int v = 0; v < s2Loop.numVertices(); ++v) {
         S2Point s2Point = s2Loop.vertex(v);
         sb.append(s2Point.toDegreesString());
@@ -2351,6 +3271,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   @JsIgnore // OutputStream is not available to J2CL.
   public void encode(OutputStream output) throws IOException {
+    // TODO(torrey): The C++ implementation takes a CodingHint (FAST or COMPACT) and for COMPACT,
+    // just uses S2CellId.MAX_LEVEL rather than attempting to find the best snap level.
     int level = getNumVertices() == 0 ? S2CellId.MAX_LEVEL : getBestSnapLevel();
     LittleEndianOutput encoder = new LittleEndianOutput(output);
     if (level == -1) {
@@ -2374,12 +3296,24 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     encoder.writeByte(LOSSLESS_ENCODING_VERSION);
     // Placeholder value for backward compatibility; previously stored the "owns_loops_" value.
     encoder.writeByte((byte) 1);
-    encoder.writeByte((byte) (hasHoles ? 1 : 0));
+    // Encode obsolete "hasHoles" field for backwards compatibility.
+    encoder.writeByte((byte) (hasHoles() ? 1 : 0));
     encoder.writeInt(loops.size());
     for (S2Loop loop : loops) {
       loop.encode(encoder);
     }
     bound.encode(encoder);
+  }
+
+  /** Returns true if any of the loops of this polygon are holes. */
+  private boolean hasHoles() {
+    boolean hasHoles = false;
+    for (S2Loop loop : loops) {
+      if (loop.isHole()) {
+        hasHoles = true;
+      }
+    }
+    return hasHoles;
   }
 
   private void encodeCompressed(int level, LittleEndianOutput encoder) throws IOException {
@@ -2389,8 +3323,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     for (int i = 0; i < numLoops(); i++) {
       loop(i).encodeCompressed(level, encoder);
     }
-    // Do not write the bound, numVertices, or hasHoles as they can be cheaply recomputed by
-    // decodeCompressed. Microbenchmarks show the speed difference is inconsequential.
+    // Do not write the bound or numVertices as they can be cheaply recomputed by decodeCompressed.
+    // Microbenchmarks show the speed difference is inconsequential.
   }
 
   /**
@@ -2429,29 +3363,36 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   @JsIgnore // LittleEndianInput wraps InputStream and is not available to J2CL.
   public static S2Polygon decodeUncompressed(LittleEndianInput decoder) throws IOException {
     S2Polygon result = new S2Polygon();
-    // Ignore irrelevant serialized owns_loops_ value.
+    result.clearLoops();
+
+    // Ignore obsolete serialized owns_loops_ value.
     byte unused = decoder.readByte();
-    // Whether or not there are holes.
-    result.hasHoles = (decoder.readByte() == 1);
-    result.numVertices = 0;
+    // Ignore obsolete serialized has_holes_ value.
+    unused = decoder.readByte();
+
     // Polygons with no loops are explicitly allowed here: a newly created polygon has zero loops
     // and such polygons encode and decode properly.
     int numLoops = decoder.readInt();
     if (numLoops < 0) {
       throw new IOException("Can only decode polygons with up to 2^31 - 1 loops. Got " + numLoops);
     }
+    result.numVertices = 0;
+
     for (int i = 0; i < numLoops; i++) {
       S2Loop loop = S2Loop.decode(decoder);
-      if (!literalEmpty(loop)) {
-        result.numVertices += loop.numVertices();
-        result.loops.add(loop);
+      if (isCanonicalEmptyLoop(loop)) {
+        continue;
       }
+      result.numVertices += loop.numVertices();
+      result.loops.add(loop);
     }
 
     result.bound = S2LatLngRect.decode(decoder);
     result.subregionBound = S2EdgeUtil.RectBounder.expandForSubregions(result.bound);
     result.initIndex();
-    // TODO(user): Check that the decoded polygon is valid when Java assertions are enabled.
+
+    // TODO(user): Strengthen this assertion-only check to throw an IOException upon
+    // decoding an invalid polygon.
     // result.assertValid();
     return result;
   }
@@ -2474,20 +3415,20 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     if (numLoops < 0) {
       throw new IOException("Can only decode polygons with up to 2^31 - 1 loops. Got " + numLoops);
     }
+    S2Polygon result = new S2Polygon();
+    result.clearLoops();
+
     // Instantiating with the S2Polygon(List<S2Loops>) constructor might cause loops to get
     // reordered, which would break idempotence across platforms. The loops are in exactly the order
     // that we want.
-    // TODO(torrey): Store a single S2Polygon.Shape in the index instead of a collection of S2Loop
-    // shapes. Verify cross-platform compatibility.
-    S2Polygon result = new S2Polygon();
-    result.index.reset(); // Remove the empty polygon shape from the index.
     for (int i = 0; i < numLoops; i++) {
       S2Loop loop = S2Loop.decodeCompressed(level, decoder);
-      if (!literalEmpty(loop)) {
-        result.loops.add(loop);
+      if (isCanonicalEmptyLoop(loop)) {
+        continue;
       }
+      result.loops.add(loop);
     }
-    // Recompute other properties, like bound, numVertices and hasHoles, and initialize the index.
+    // Recompute other properties, like bound and numVertices, and initialize the index.
     result.initLoopProperties();
     // TODO(user): Strengthen this assertion-only check to actually throw an IOException upon
     // decoding an invalid polygon.
@@ -2498,9 +3439,11 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   /**
    * EdgeClipper finds all the intersections of a given edge with the edges contained in an
    * S2ShapeIndex. It is used to implement polygon operations such as intersection and union.
+   *
+   * <p>TODO(user): Remove this class when the last (deprecated) uses of it are removed.
    */
   private static class EdgeClipper {
-    private final S2EdgeQuery query;
+    private final S2CrossingEdgeQuery query;
     private final boolean addSharedEdges;
     private final Predicate<S2Shape> reverseEdges;
     private final S2ShapeIndex index;
@@ -2515,7 +3458,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     public EdgeClipper(
         S2ShapeIndex index, boolean addSharedEdges, Predicate<S2Shape> reverseEdges) {
       this.index = index;
-      this.query = new S2EdgeQuery(index);
+      this.query = new S2CrossingEdgeQuery(index);
       this.addSharedEdges = addSharedEdges;
       this.reverseEdges = reverseEdges;
     }
@@ -2532,22 +3475,17 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
       // Iterate through the candidate loops, and then the candidate edges within each loop.
       S2EdgeUtil.EdgeCrosser crosser = new S2EdgeUtil.EdgeCrosser(a0, a1);
-      MutableEdge result = new MutableEdge();
+      MutableEdge edge = new MutableEdge();
       do {
         Edges edges = candidates.next();
         final S2Shape bShape = index.getShapes().get(edges.shapeId());
-        int b1Prev = -2;
         while (!edges.isEmpty()) {
-          int edge = edges.nextEdge();
-          bShape.getEdge(edge, result);
-          if (edge != b1Prev + 1) {
-            crosser.restartAt(result.getStart());
-          }
-          int crossing = crosser.robustCrossing(result.getEnd());
+          int edgeId = edges.nextEdge();
+          bShape.getEdge(edgeId, edge);
+          int crossing = crosser.robustCrossing(edge.getStart(), edge.getEnd());
           if (crossing >= 0) {
             addIntersection(
-                a0, a1, result.getStart(), result.getEnd(), bShape, crossing, intersections);
-            b1Prev = edge;
+                a0, a1, edge.getStart(), edge.getEnd(), bShape, crossing, intersections);
           }
         }
       } while (candidates.hasNext());
@@ -2566,7 +3504,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
         S2Shape bShape,
         int crossing,
         List<ParametrizedS2Point> intersections) {
-      // assert (crossing >= 0);
+      assert crossing >= 0;
       if (crossing > 0) {
         // There is a proper edge crossing.
         S2Point x = S2EdgeUtil.getIntersection(a0, a1, b0, b1);
@@ -2582,7 +3520,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
         // included in the output (which is incorrect). The 'addSharedEdges' flag gives explicit
         // over whether these shared edges are included in the output; if it is false, shared edges
         // are excluded by changing their intersection parameter from 0 to 1. This allows exactly
-        // one copy of shared edges to be preserved, by calling ClipBoundary() twice with opposite
+        // one copy of shared edges to be preserved, by calling clipBoundary() twice with opposite
         // values of the 'addSharedEdges' flag.
         double t = (a0.equalsPoint(b0) || a0.equalsPoint(b1)) ? 0 : 1;
         if (!addSharedEdges && a1.equalsPoint(reverseEdges.apply(bShape) ? b0 : b1)) {
@@ -2767,7 +3705,10 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     @Override
     public int getChainLength(int chainId) {
       Preconditions.checkElementIndex(chainId, numChains());
-      return polygon.isFull() ? 0 : polygon.loops.get(chainId).numVertices();
+      // Full or empty S2Loops have one vertex, but S2Shape represents full or empty loops as chains
+      // with no vertices.
+      int numVertices = polygon.loops.get(chainId).numVertices();
+      return numVertices == 1 ? 0 : numVertices;
     }
 
     @Override

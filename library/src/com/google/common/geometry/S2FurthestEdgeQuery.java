@@ -489,7 +489,9 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     @CanIgnoreReturnValue
     public Builder setConservativeMinDistance(S1ChordAngle minDistance) {
       this.distanceLimit =
-          minDistance.plusError(-S2EdgeUtil.getMinDistanceMaxError(minDistance)).predecessor();
+          minDistance
+              .plusError(-S2EdgeUtil.getUpdateMinDistanceMaxError(minDistance))
+              .predecessor();
       return this;
     }
 
@@ -688,10 +690,11 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
      * returns true whenever the true, exact distance is greater than or equal to "limit".
      */
     public boolean isConservativeDistanceGreaterOrEqual(
-       Target<S1ChordAngle> target, S1ChordAngle limit) {
+        Target<S1ChordAngle> target, S1ChordAngle limit) {
       // Note that from here on down, the distanceLimit, maxResults, and maxError fields are used,
       // not the same-named Options fields.
-      distanceLimit = limit.plusError(-S2EdgeUtil.getMinDistanceMaxError(limit)).predecessor();
+      distanceLimit =
+          limit.plusError(-S2EdgeUtil.getUpdateMinDistanceMaxError(limit)).predecessor();
       maxResults = 1;
       maxError = worstDistance();
 

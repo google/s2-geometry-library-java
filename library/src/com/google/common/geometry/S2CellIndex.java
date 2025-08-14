@@ -444,7 +444,7 @@ public class S2CellIndex {
 
     /** The (non-inclusive) end of the current range of leaf S2CellIds. */
     public S2CellId limitId() {
-      assert (!done());
+      assert !done();
       return rangeNodes.get(offset + 1).startId;
     }
 
@@ -467,7 +467,7 @@ public class S2CellIndex {
 
     /** Advances the iterator to the next range of leaf cells. */
     public void next() {
-      assert (!done());
+      assert !done();
       seekAndLoad(offset + 1);
     }
 
