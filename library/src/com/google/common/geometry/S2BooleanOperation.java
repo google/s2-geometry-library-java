@@ -1045,15 +1045,21 @@ public class S2BooleanOperation {
     }
 
     /** Clears all the contents and reinitializes to contain 'size' empty CrossingGraphVectors. */
-    public void reinitialize(int size) {
-      this.size = size;
+    public void reinitialize(int newSize) {
+      // Clear any vectors that are no longer in use, to release their memory.
+      for (int v = newSize; v < this.size; v++) {
+        if (vectors[v] != null) {
+          vectors[v].clear();
+        }
+      }
+      this.size = newSize;
 
       // Only reallocate a larger array if required.
-      if (vectors.length < size) {
-        vectors = Arrays.copyOf(vectors, size);
+      if (vectors.length < newSize) {
+        vectors = Arrays.copyOf(vectors, newSize);
       }
       // Clear the contents of each vector.
-      for (int v = 0; v < size; ++v) {
+      for (int v = 0; v < newSize; ++v) {
         if (vectors[v] == null) {
           vectors[v] = new CrossingGraphEdgeVector();
         } else {
