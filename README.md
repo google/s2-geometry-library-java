@@ -40,6 +40,26 @@ Parameters for the benchmarks can be passed on the command line. For example, to
 run just the S2Loop benchmarks,
 ```java -jar benchmarks/target/benchmarks.jar S2Loop```
 
+## Maven Repository Management
+
+GitHub Packages requires authentication, even for public packages. Add a
+`<server>` entry to your Maven `settings.xml` with your GitHub username and a
+[personal access token](https://github.com/settings/tokens) that has the
+`read:packages` scope. This file is located at `~/.m2/settings.xml` on macOS
+and Linux, or `%USERPROFILE%\.m2\settings.xml` on Windows:
+
+```xml
+<settings>
+  <servers>
+    <server>
+      <id>github</id>
+      <username>YOUR_GITHUB_USERNAME</username>
+      <password>YOUR_GITHUB_TOKEN</password>
+    </server>
+  </servers>
+</settings>
+```
+
 ## S2 implementations
 
 The S2 library has implementations in several languages. In addition to this
