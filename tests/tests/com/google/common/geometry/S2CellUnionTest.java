@@ -264,9 +264,6 @@ public class S2CellUnionTest extends GeometryTestCase {
             assertEquals(1, u.size());
             assertEquals(yId, u.cellId(0));
           } else if (yId.contains(xId)) {
-            if (!u.contains(xId)) {
-              u.getIntersection(xCells, yId);
-            }
             assertTrue(u.contains(xId));
           }
         }
