@@ -40,6 +40,16 @@ Parameters for the benchmarks can be passed on the command line. For example, to
 run just the S2Loop benchmarks,
 ```java -jar benchmarks/target/benchmarks.jar S2Loop```
 
+### Documentation
+
+To generate Javadoc for the library:
+
+```
+mvn javadoc:javadoc -pl library
+```
+
+The generated documentation will be available in `library/target/site/apidocs/`.
+
 ## S2 implementations
 
 The S2 library has implementations in several languages. In addition to this
