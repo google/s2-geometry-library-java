@@ -1707,7 +1707,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * necessary to increase the merge radius. See {@link #initToIntersectionSloppy(S2Polygon,
    * S2Polygon, S1Angle)} below.
    *
-   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon) or one of the variants above.
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon)} or one of the variants above.
    */
   @Deprecated
   public void initToIntersectionOld(final S2Polygon a, final S2Polygon b) {
@@ -1726,7 +1726,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
    *
-   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon, SnapFunction) or one of the
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon, SnapFunction)} or one of the
    * variants above. An IdentitySnapFunction(vertexMergeRadius) will produce similar results.
    */
   @Deprecated
