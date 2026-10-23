@@ -19,8 +19,8 @@ import static com.google.common.geometry.Platform.nextAfter;
 import static java.lang.Math.PI;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import com.google.common.annotations.GwtIncompatible;
 import org.junit.Test;
@@ -86,18 +86,10 @@ public class S1AngleTest extends GeometryTestCase {
 
     // Overflow starts at 214.7483648 degrees.
     // Don't use assertThrows since GWT doesn't understand that.
-    try {
-      S1Angle.degrees(215).e7();
-      fail("IllegalArgumentException expected, not thrown.");
-    } catch (IllegalArgumentException unused) {
-      // Good, test passed.
-    }
-    try {
-      S1Angle.degrees(-215).e7();
-      fail("IllegalArgumentException expected, not thrown.");
-    } catch (IllegalArgumentException unused) {
-      // Good, test passed.
-    }
+    // Good, test passed.
+    assertThrows(IllegalArgumentException.class, () -> S1Angle.degrees(215).e7());
+    // Good, test passed.
+    assertThrows(IllegalArgumentException.class, () -> S1Angle.degrees(-215).e7());
   }
 
   @Test

@@ -17,7 +17,6 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.GeometryTestCase.assertExactly;
 import static java.lang.Double.MAX_VALUE;
-import static java.lang.Double.MIN_VALUE;
 import static java.lang.Double.NEGATIVE_INFINITY;
 import static java.lang.Double.NaN;
 import static java.lang.Double.POSITIVE_INFINITY;
@@ -161,22 +160,26 @@ public class PlatformTest {
     assertExactly(-3.1415926535897927, Platform.nextAfter(-Math.PI, POSITIVE_INFINITY));
 
     // -min
-    assertExactly(-9.9E-324, Platform.nextAfter(-MIN_VALUE, NEGATIVE_INFINITY));
-    assertExactly(-MIN_VALUE, Platform.nextAfter(-MIN_VALUE, -MIN_VALUE));
-    assertExactly(NEGATIVE_ZERO, Platform.nextAfter(-MIN_VALUE, 0));
+    assertExactly(-9.9E-324, Platform.nextAfter(-Double.MIN_VALUE, NEGATIVE_INFINITY));
+    assertExactly(
+        -Double.MIN_VALUE,
+        Platform.nextAfter(-Double.MIN_VALUE, -Double.MIN_VALUE));
+    assertExactly(NEGATIVE_ZERO, Platform.nextAfter(-Double.MIN_VALUE, 0));
 
     // zero.
-    assertExactly(-MIN_VALUE, Platform.nextAfter(0, NEGATIVE_INFINITY));
-    assertExactly(-MIN_VALUE, Platform.nextAfter(-0.0, -MAX_VALUE));
+    assertExactly(-Double.MIN_VALUE, Platform.nextAfter(0, NEGATIVE_INFINITY));
+    assertExactly(-Double.MIN_VALUE, Platform.nextAfter(-0.0, -MAX_VALUE));
     assertExactly(0.0, Platform.nextAfter(0, 0));
-    assertExactly(MIN_VALUE, Platform.nextAfter(0, MIN_VALUE));
+    assertExactly(Double.MIN_VALUE, Platform.nextAfter(0, Double.MIN_VALUE));
 
     // +min
-    assertExactly(0.0, Platform.nextAfter(MIN_VALUE, -MAX_VALUE));
-    assertExactly(0.0, Platform.nextAfter(MIN_VALUE, -MIN_VALUE));
-    assertExactly(0.0, Platform.nextAfter(MIN_VALUE, 0));
-    assertExactly(MIN_VALUE, Platform.nextAfter(MIN_VALUE, MIN_VALUE));
-    assertExactly(9.9E-324, Platform.nextAfter(MIN_VALUE, Math.PI));
+    assertExactly(0.0, Platform.nextAfter(Double.MIN_VALUE, -MAX_VALUE));
+    assertExactly(0.0, Platform.nextAfter(Double.MIN_VALUE, -Double.MIN_VALUE));
+    assertExactly(0.0, Platform.nextAfter(Double.MIN_VALUE, 0));
+    assertExactly(
+        Double.MIN_VALUE,
+        Platform.nextAfter(Double.MIN_VALUE, Double.MIN_VALUE));
+    assertExactly(9.9E-324, Platform.nextAfter(Double.MIN_VALUE, Math.PI));
 
     // +pi
     assertExactly(3.1415926535897927, Platform.nextAfter(Math.PI, -Math.PI));

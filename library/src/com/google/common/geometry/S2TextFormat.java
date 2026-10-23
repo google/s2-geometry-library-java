@@ -20,7 +20,6 @@ import static java.lang.Double.parseDouble;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.ByteArrayInputStream;
@@ -415,7 +414,7 @@ public final class S2TextFormat {
    * after passing it through the encode/decode roundtrip.
    */
   public static S2Polyline makePolylineWithEncodeDecodeRoundtrip(String str) {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     parseVertices(str, vertices);
     try {
       ByteArrayOutputStream bos = new ByteArrayOutputStream();

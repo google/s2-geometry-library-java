@@ -1606,10 +1606,10 @@ public final class S2BuilderTest extends GeometryTestCase {
    * The test for whether one Voronoi site excludes another along a given input edge boils down to a
    * test of whether two angle intervals "a" and "b" overlap. Let "ra" and "rb" be the semi-widths
    * of the two intervals, and let "d" be the angle between their centers. Then "a" contains "b" if
-   * (rb + d <= ra), and "b" contains "a" if (rb - d >= ra). However the actual code uses the sines
-   * of the angles, e.g. sin(rb + d) <= sin(ra). This works fine most of the time, but the first
-   * condition (rb + d <= ra) also needs to check that rb + d < 90 degrees. This test verifies that
-   * case.
+   * {@code (rb + d <= ra)}, and "b" contains "a" if {@code (rb - d >= ra)}. However the actual code
+   * uses the sines of the angles, e.g. {@code sin(rb + d) <= sin(ra)}. This works fine most of the
+   * time, but the first condition {@code (rb + d <= ra)} also needs to check that {@code rb + d <
+   * 90} degrees. This test verifies that case.
    */
   @Test
   public void testAdjacentCoverageIntervalsSpanMoreThan90Degrees() {

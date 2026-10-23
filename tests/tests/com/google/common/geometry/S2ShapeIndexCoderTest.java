@@ -18,6 +18,7 @@ package com.google.common.geometry;
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static com.google.common.geometry.S2TextFormat.makePolyline;
 import static java.lang.Math.max;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -316,6 +317,43 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
     }
   }
 
+  @Test
+  public void testInvalidNumClippedShapeIndex() throws IOException {
+    List<S2Shape> shapes = new java.util.ArrayList<>();
+    shapes.add(makePolyline("1:1, 2:2"));
+    shapes.add(makePolyline("3:3, 4:4"));
+
+    java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+    VectorCoder.FAST_SHAPE.encode(shapes, output);
+
+    long maxEdges = 10;
+    int version = S2ShapeIndex.CURRENT_ENCODING_VERSION;
+    com.google.common.geometry.EncodedInts.writeVarint64(output, maxEdges << 2 | version);
+
+    List<S2CellId> cellIds = new java.util.ArrayList<>();
+    cellIds.add(new S2CellId(0x123456789ABCDEFFL));
+    S2CellIdVectorCoder.INSTANCE.encode(cellIds, output);
+
+    java.io.ByteArrayOutputStream cellOutput = new java.io.ByteArrayOutputStream();
+    // Invalid cell: numClipped = 3, which is (3 << 3) | 3 = 27
+    com.google.common.geometry.EncodedInts.writeVarint64(cellOutput, 27);
+
+    List<byte[]> encodedCells = new java.util.ArrayList<>();
+    encodedCells.add(cellOutput.toByteArray());
+
+    VectorCoder.BYTE_ARRAY.encode(encodedCells, output);
+
+    byte[] invalidIndexBytes = output.toByteArray();
+
+    S2ShapeIndex decoded = decode(invalidIndexBytes);
+    S2Iterator<S2ShapeIndex.Cell> iter = decoded.iterator();
+
+    IllegalArgumentException exception =
+        assertThrows(IllegalArgumentException.class, () -> iter.entry().clippedShapes());
+
+    org.junit.Assert.assertTrue(exception.getMessage().contains("Invalid numClipped: 3"));
+  }
+
   // This tests an invalid encoded shape index that was found by C++ fuzzing.
   // TODO(torrey): Port s2index_util_valid and its tests to Java, move this there.
   @Test
@@ -343,7 +381,7 @@ public class S2ShapeIndexCoderTest extends GeometryTestCase {
    */
   private static void validateIndex(String utf8) {
     try {
-      S2ShapeIndex decoded = decode(utf8.getBytes("UTF-8"));
+      S2ShapeIndex decoded = decode(utf8.getBytes(UTF_8));
 
       // decode() returns an EncodedS2ShapeIndex which decodes cells lazily. To validate the cell
       // decoding, we need to iterate over those cells and their clipped shapes.

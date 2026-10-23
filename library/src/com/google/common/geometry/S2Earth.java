@@ -17,7 +17,6 @@
 package com.google.common.geometry;
 
 
-import com.google.common.annotations.GwtCompatible;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
@@ -37,7 +36,6 @@ import jsinterop.annotations.JsType;
  * @author norris@google.com (Norris Boyd)
  */
 @JsType
-@GwtCompatible
 public class S2Earth {
   private S2Earth() {}
 

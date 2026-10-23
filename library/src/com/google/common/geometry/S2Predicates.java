@@ -503,7 +503,7 @@ public final class S2Predicates {
    *   <li>Otherwise if {@code a == c}, then {@code orderedCCW(a,b,c,o)} is false
    * </ol>
    *
-   * REQUIRES: a != o && b != o && c != o
+   * REQUIRES: {@code a != o && b != o && c != o}
    */
   public static boolean orderedCCW(S2Point a, S2Point b, S2Point c, S2Point o) {
     // assert S2.skipAssertions || !a.equalsPoint(o);
@@ -679,7 +679,7 @@ public final class S2Predicates {
       // imagine that rather than projecting every point to lie exactly on the unit sphere, instead
       // each point is positioned on its own tiny pedestal that raises it just off the surface of
       // the unit sphere. This means that the distance AX is actually the true distance AX plus the
-      // (symbolic) heights of the pedestals for A and X. The pedestals are infinitesmally thin, so
+      // (symbolic) heights of the pedestals for A and X. The pedestals are infinitesimally thin, so
       // they do not affect distance measurements except at the two endpoints. If several points
       // project to exactly the same point on the unit sphere, we imagine that they are placed on
       // separate pedestals placed close together, where the distance between pedestals is much,
@@ -1466,6 +1466,7 @@ public final class S2Predicates {
     }
 
     /** Returns a BigDecimal-based test result. Exact but very slow. */
+    @SuppressWarnings("CompareToZero") // Multiplying signs is safe
     public static int exact(BigPoint p, BigPoint q, BigPoint a, BigPoint b, BigPoint c, int abc) {
       // Return zero if the edge PQ is degenerate. (Also see the comments in sosTest.)
       if (p.isLinearlyDependent(q)) {
@@ -1589,7 +1590,7 @@ public final class S2Predicates {
       // PQ, and therefore Sign(P, Q, Z) is nonzero.
       //
       // This function could be extended to handle the case where P and Q are linearly dependent as
-      // follows. First, suppose that every point has both a pedestal peturbation as described
+      // follows. First, suppose that every point has both a pedestal perturbation as described
       // above, and also the three axis-aligned perturbations described in the "Simulation of
       // Simplicity" paper, where all pedestal perturbations are defined to be much, much larger
       // than any axis-aligned perturbation. Note that since pedestal perturbations have no effect
@@ -1885,7 +1886,7 @@ public final class S2Predicates {
       // increasing distance from X0).
       //
       // However when edge X is long and/or the snap radius "r" is large, there are two cases where
-      // where d < 0 can occur:
+      // d < 0 can occur:
       //
       // 1. d(A,X0) > Pi/2 and d(B,X1) < Pi/2 or the symmetric case (swap < and >).
       //    This can only happen when d(X0,X1) + r > Pi/2. Note that {A,B} may

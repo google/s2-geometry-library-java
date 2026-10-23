@@ -22,6 +22,8 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.PrimitiveIterator.OfInt;
+import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
 /**
@@ -36,30 +38,9 @@ public final class Ints {
   /** How many elements should {@link IntSequence#debugString()} include? */
   static final int DEBUG_STRING_MAX_ELEMENTS = 16;
 
-  /** An Android-compatible replacement for java.util.function.IntConsumer */
-  public interface IntConsumer {
-    void accept(int element);
-  }
-
   /** A consumer of pairs of integers. */
   public interface IntBiConsumer {
     void accept(int key, int value);
-  }
-
-  /** An Android-compatible replacement for java.util.PrimitiveIterator.OfInt */
-  public static interface OfInt {
-    int nextInt();
-    boolean hasNext();
-    default void forEachRemaining(IntConsumer action) {
-      while (hasNext()) {
-        action.accept(nextInt());
-      }
-    }
-  }
-
-  /** An Android-compatible replacement for java.util.function.IntPredicate */
-  public static interface IntPredicate {
-    boolean test(int value);
   }
 
   /**
@@ -104,7 +85,8 @@ public final class Ints {
           throw new NoSuchElementException();
         }
 
-        @Override public void forEachRemaining(IntConsumer action) {
+        @Override
+        public void forEachRemaining(IntConsumer action) {
           if (hasNext) {
             hasNext = false;
             action.accept(value);

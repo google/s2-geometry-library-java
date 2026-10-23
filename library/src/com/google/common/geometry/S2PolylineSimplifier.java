@@ -202,7 +202,7 @@ public class S2PolylineSimplifier {
    * <pre>Then this method ensures that {@code
    *   (1) distance(AB, P) > r, and
    *   (2) if dotProd(AB, AP) > 0, then sign(ABP) > 0 iff discOnLeft is true.
-   * }
+   * }</pre>
    *
    * <p>The second condition says that "discOnLeft" has an effect if and only if P is not behind the
    * source vertex A with respect to the direction AB.
@@ -210,11 +210,12 @@ public class S2PolylineSimplifier {
    * <p>If your input is a polyline, you can compute "discOnLeft" as follows. Let the polyline be
    * ABCDE and assume that it already avoids a set of points X_i. Suppose that you have already
    * added ABC to the simplifier, and now want to extend the edge chain to D. First find the X_i
-   * that are near the edge CD, then discard the ones such that {@code AX_i <= AC} or {@code AX_i >= AD}
-   * (since these points have either already been considered or aren't relevant yet). Now X_i is to
-   * the left of the polyline if and only if S2Predicates.orderedCCW(A, D, X_i, C) (in other words,
-   * if X_i is to the left of the angle wedge ACD). Note that simply testing S2Predicates.sign(C, D,
-   * X_i) or S2Predicates.sign(A, D, X_i) does not handle all cases correctly.
+   * that are near the edge CD, then discard the ones such that {@code AX_i <= AC} or {@code AX_i >=
+   * AD} (since these points have either already been considered or aren't relevant yet). Now X_i is
+   * to the left of the polyline if and only if S2Predicates.orderedCCW(A, D, X_i, C) (in other
+   * words, if X_i is to the left of the angle wedge ACD). Note that simply testing
+   * S2Predicates.sign(C, D, X_i) or S2Predicates.sign(A, D, X_i) does not handle all cases
+   * correctly.
    *
    * <p>Returns true if the disc can be avoided given previous constraints, or if the discs to avoid
    * have not been processed yet. Returns false if the disc cannot be avoided.
@@ -265,7 +266,7 @@ public class S2PolylineSimplifier {
     //   sin(semiwidth) = sin(r) / sin(a)
     //
     // where "a" is the angle between "src" and "p". Rather than measuring these angles, instead we
-    // measure the squared chord lengths through the interior of the sphere (i.e., Cartersian
+    // measure the squared chord lengths through the interior of the sphere (i.e., Cartesian
     // distance). Letting "r2" be the squared chord distance corresponding to "r", and "a2" be the
     // squared chord distance corresponding to "a", we use the relationships
     //

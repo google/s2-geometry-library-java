@@ -49,7 +49,7 @@ public class S2CellRangeIterator<T extends S2Iterator.Entry> implements S2Iterat
    * <p>The index must live for the duration of the iterator.
    */
   public static S2CellRangeIterator<S2ShapeIndex.Cell> makeS2CellRangeIterator(S2ShapeIndex index) {
-    return new S2CellRangeIterator<S2ShapeIndex.Cell>(index.iterator());
+    return new S2CellRangeIterator<>(index.iterator());
   }
 
   /** Builds a new S2CellRangeIterator from an S2Iterator */

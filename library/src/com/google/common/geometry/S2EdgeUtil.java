@@ -1620,7 +1620,7 @@ public class S2EdgeUtil {
   /**
    * Given a line segment from (a0,a1) to (b0,b1) and a bounding interval for each axis, clip the
    * segment further if necessary so that "bound0" does not extend outside the given interval
-   * "clip". "diag" is a a precomputed helper variable that indicates which diagonal of the bounding
+   * "clip". "diag" is a precomputed helper variable that indicates which diagonal of the bounding
    * box is spanned by AB: it is 0 if AB has positive slope, and 1 if AB has negative slope.
    */
   static boolean clipBoundAxis(
@@ -1713,14 +1713,14 @@ public class S2EdgeUtil {
    * <ol>
    *   <li>If x == a, then x1 = a1 (exactly).
    *   <li>If x == b, then x1 = b1 (exactly).
-   *   <li>If If a <= x <= b and a1 <= b1, then a1 <= x1 <= b1 (even if a1 == b1).
+   *   <li>If a <= x <= b and a1 <= b1, then a1 <= x1 <= b1 (even if a1 == b1).
    *   <li>More generally, if x is between a and b, then x1 is between a1 and b1.
    * </ol>
    *
-   * <p>Results are undefined if a==b. When a <= x <= b or b <= x <= a we can prove the error
-   * bound on the resulting value is 2.25*DBL_EPSILON. The error for extrapolating an x value
-   * outside of a and b can be much worse. See the gappa proof in s2edge_clipping.h in the C++
-   * implementation of S2.
+   * <p>Results are undefined if a==b. When a <= x <= b or b <= x <= a we can prove the error bound
+   * on the resulting value is 2.25*DBL_EPSILON. The error for extrapolating an x value outside of a
+   * and b can be much worse. See the gappa proof in s2edge_clipping.h in the C++ implementation of
+   * S2.
    */
   static double interpolateDouble(double x, double a, double b, double a1, double b1) {
     assert a != b;
@@ -3017,15 +3017,15 @@ public class S2EdgeUtil {
     // The last two operations are done in double precision, which creates a directional error of
     // up to 2 * DBL_EPSILON. (BigPoint.toS2Point() and S2Point.normalize() each contribute up to
     // DBL_EPSILON of directional error.)
-    S2Point x = exact.result.toS2Point().normalize();
+    S2Point x = exact.result.normalizedPoint();
 
     if (x.equals(ZERO)) {
       // The two edges are exactly collinear, but we still consider them to be "crossing" because of
       // simulation of simplicity. Out of the four endpoints, exactly two lie in the interior of
       // the other edge. Of those two we return the one that is lexicographically smallest.
       x = new S2Point(10, 10, 10); // Greater than any valid S2Point
-      S2Point aNorm = exact.aNorm.toS2Point().normalize();
-      S2Point bNorm = exact.bNorm.toS2Point().normalize();
+      S2Point aNorm = exact.aNorm.normalizedPoint();
+      S2Point bNorm = exact.bNorm.normalizedPoint();
       // Note: To support antipodal edges properly, we would need to add a crossProd() function that
       // computes the cross product using simulation of simplicity and rounds the result to the
       // nearest floating-point representation.
@@ -3098,7 +3098,7 @@ public class S2EdgeUtil {
       b0 = b1;
       b1 = temp;
     }
-    return a0.lessThan(b0) || (a0.equalsPoint(b0) && b0.lessThan(b1));
+    return a0.lessThan(b0) || (a0.equalsPoint(b0) && a1.lessThan(b1));
   }
 
   /**

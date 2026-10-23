@@ -30,7 +30,6 @@ import com.google.common.geometry.S2ShapeIndex.Cell;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.geometry.primitives.IntPairVector;
 import com.google.common.geometry.primitives.IntVector;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.common.geometry.primitives.PooledList;
 import com.google.common.geometry.primitives.Sorter.SortableCollection;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -38,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.PrimitiveIterator.OfInt;
 import java.util.Set;
 
 /**

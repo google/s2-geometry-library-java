@@ -44,6 +44,21 @@ public interface S2Coder<T> extends Serializable {
     B apply(A input) throws IOException;
   }
 
+  /**
+   * A coder of {@code Void} that encodes nothing and decodes to {@code null}. Useful to pass
+   * incomplete pairs or tuples of values where one of the elements isn't needed, and may be
+   * statically removed from the wire format for some but not all users.
+   */
+  S2Coder<Void> VOID = new S2Coder<>() {
+    @Override public void encode(Void value, OutputStream output) {}
+    @Override public Void decode(Bytes data, Cursor cursor) {
+      return null;
+    }
+    @Override public boolean isLazy() {
+      return false;
+    }
+  };
+
   /** A coder of an unboxed varint. */
   @SuppressWarnings("CheckedExceptionNotThrown")
   S2Coder<Long> UNBOXED_VARINT =
@@ -56,6 +71,11 @@ public interface S2Coder<T> extends Serializable {
         @Override
         public Long decode(Bytes data, Cursor cursor) throws IOException {
           return data.readVarint64(cursor);
+        }
+
+        @Override
+        public boolean isLazy() {
+          return false;
         }
       };
 
@@ -166,10 +186,18 @@ public interface S2Coder<T> extends Serializable {
   }
 
   /**
-   * Must return true if the implementation of {@link #decode(Bytes)} retains a reference to the
-   * buffer it is given. Lazy decoding is usually cheaper at decode time, but may be more expensive
-   * if the entire object will be inspected. Callers should ensure that the bytes given to decode()
-   * are unaltered for as long as the resulting {@code T} is in use.
+   * Returns true if {@link #decode(Bytes, Cursor)} may retain a reference to the underlying byte
+   * buffer after returning, or false if decoding is fully eager and the buffer may be safely
+   * mutated or reused immediately.
+   *
+   * <p>Defaults to {@code true} for safety, ensuring callers make defensive copies of mutable or
+   * recyclable buffers unless explicitly told otherwise.
+   *
+   * <p>Implementations should override this to return {@code false} when the decoded object is
+   * completely materialized into independent heap values (e.g. primitives, strings, protos, or
+   * deep copies) and retains no references into the input {@link Bytes} data. Returning {@code
+   * false} enables caller optimizations such as buffer pooling, in-place processing, and
+   * avoiding defensive byte array copies in distributed frameworks like Flume.
    */
   default boolean isLazy() {
     return true;
@@ -184,7 +212,6 @@ public interface S2Coder<T> extends Serializable {
       SerializableFunction<T, U> decode) {
     S2Coder<T> base = this;
     return new S2Coder<U>() {
-      @JsIgnore // OutputStream is not available to J2CL.
       @Override
       public void encode(U value, OutputStream output) throws IOException {
         base.encode(encode.apply(value), output);

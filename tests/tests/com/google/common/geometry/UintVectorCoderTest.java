@@ -59,7 +59,7 @@ public class UintVectorCoderTest {
 
   @Test
   public void testEmpty_uint64() throws IOException {
-    List<Long> expected = Lists.newArrayList();
+    List<Long> expected = new ArrayList<>();
 
     byte[] data = encodeUint64Vector(expected);
     List<Long> actual = decodeUint64Vector(data);
@@ -70,7 +70,7 @@ public class UintVectorCoderTest {
 
   @Test
   public void testEmpty_uint32() throws IOException {
-    List<Integer> expected = Lists.newArrayList();
+    List<Integer> expected = new ArrayList<>();
 
     byte[] data = encodeUint32Vector(expected);
     List<Integer> actual = decodeUint32Vector(data);

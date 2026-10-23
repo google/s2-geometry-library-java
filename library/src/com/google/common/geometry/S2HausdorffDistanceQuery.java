@@ -251,7 +251,7 @@ public final class S2HausdorffDistanceQuery {
     // When maxDistance is updated, targetPoint is updated to the corresponding point on the target.
     targetPoint = null;
 
-    // This approximation of Haussdorff distance is based on computing closest point distances from
+    // This approximation of Hausdorff distance is based on computing closest point distances from
     // the _vertices_ of the target index to the _edges_ of the source index. Hence we iterate over
     // all shapes in the target index, then over all chains in those shapes, then over all edges in
     // those chains, and then over the edges' vertices.
@@ -290,7 +290,7 @@ public final class S2HausdorffDistanceQuery {
     // When maxDistance is updated, targetPoint is updated to the corresponding point on the target.
     targetPoint = null;
 
-    // This approximation of Haussdorff distance is based on computing closest point distances from
+    // This approximation of Hausdorff distance is based on computing closest point distances from
     // the _vertices_ of the target index to the _edges_ of the source index. Hence we iterate over
     // all shapes in the target index, then over all chains in those shapes, then over all edges in
     // those chains, and then over the edges' vertices.

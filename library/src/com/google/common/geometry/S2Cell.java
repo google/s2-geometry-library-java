@@ -359,8 +359,7 @@ public final class S2Cell implements S2Region, Serializable {
     // Intel CPUs that support SSE4.1 have the ROUNDSD instruction, and ARM CPUs with VFP have the
     // VCVT instruction, both of which can implement nearest rounding efficiently regardless of the
     // current FPU rounding mode.
-    return (int)
-        Math.round(S2Projections.LIMIT_IJ * S2Projections.uvToST(getUVCoordOfBoundary(b)));
+    return (int) Math.round(S2Projections.LIMIT_IJ * S2Projections.uvToST(getUVCoordOfBoundary(b)));
   }
 
   /**
@@ -494,14 +493,11 @@ public final class S2Cell implements S2Region, Serializable {
     S2LatLngRect bound;
     switch (face) {
       case 0:
-        bound =
-            new S2LatLngRect(
-                new R1Interval(-M_PI_4, M_PI_4), new S1Interval(-M_PI_4, M_PI_4));
+        bound = new S2LatLngRect(new R1Interval(-M_PI_4, M_PI_4), new S1Interval(-M_PI_4, M_PI_4));
         break;
       case 1:
         bound =
-            new S2LatLngRect(
-                new R1Interval(-M_PI_4, M_PI_4), new S1Interval(M_PI_4, 3 * M_PI_4));
+            new S2LatLngRect(new R1Interval(-M_PI_4, M_PI_4), new S1Interval(M_PI_4, 3 * M_PI_4));
         break;
       case 2:
         bound = new S2LatLngRect(new R1Interval(POLE_MIN_LAT, M_PI_2), S1Interval.full());
@@ -509,13 +505,11 @@ public final class S2Cell implements S2Region, Serializable {
       case 3:
         bound =
             new S2LatLngRect(
-                new R1Interval(-M_PI_4, M_PI_4),
-                new S1Interval(3 * M_PI_4, -3 * M_PI_4));
+                new R1Interval(-M_PI_4, M_PI_4), new S1Interval(3 * M_PI_4, -3 * M_PI_4));
         break;
       case 4:
         bound =
-            new S2LatLngRect(
-                new R1Interval(-M_PI_4, M_PI_4), new S1Interval(-3 * M_PI_4, -M_PI_4));
+            new S2LatLngRect(new R1Interval(-M_PI_4, M_PI_4), new S1Interval(-3 * M_PI_4, -M_PI_4));
         break;
       default:
         bound = new S2LatLngRect(new R1Interval(-M_PI_2, -POLE_MIN_LAT), S1Interval.full());
@@ -597,7 +591,6 @@ public final class S2Cell implements S2Region, Serializable {
    * Returns the reduced (min or max) squared chord distance from {@code uvw} to the four vertices
    * of this cell.
    */
-  @SuppressWarnings("AndroidJdkLibsChecker")
   private double vertexChordDist2(S2Point uvw, DoubleBinaryOperator reducer) {
     double d1 = chordDist2(uvw, uMin, vMin);
     double d2 = chordDist2(uvw, uMin, vMax);
@@ -862,8 +855,10 @@ public final class S2Cell implements S2Region, Serializable {
     // If the antipodal target intersects the cell, the distance is S1ChordAngle.STRAIGHT.
     // The antipodal UV is the transpose of the original UV, interpreted within the opposite face.
     if (face == (target.face >= 3 ? target.face - 3 : target.face + 3)
-        && uMin <= target.vMax && uMax >= target.vMin
-        && vMin <= target.uMax && vMax >= target.uMin) {
+        && uMin <= target.vMax
+        && uMax >= target.vMin
+        && vMin <= target.uMax
+        && vMax >= target.uMin) {
       return S1ChordAngle.STRAIGHT;
     }
 

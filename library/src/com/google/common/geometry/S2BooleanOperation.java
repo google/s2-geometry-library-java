@@ -38,13 +38,13 @@ import com.google.common.geometry.primitives.IntPairVector;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -180,7 +180,7 @@ import java.util.Objects;
  * builder.setSnapFunction(snapFunction);
  * S2PolygonLayer layer = new S2PolygonLayer();
  * S2BooleanOperation op = builder.build(OpType.INTERSECTION, layer, options);
- * S2Error error = new S2Error;
+ * S2Error error = new S2Error();
  * if (!op.build(a, b, error)) {
  *   logger.atError(error);
  *   return ...;
@@ -496,7 +496,7 @@ public class S2BooleanOperation {
      *
      * <p>- If the model is SEMI_OPEN, the result is as degenerate as possible. New degeneracies
      * will not be created, but all degeneracies that coincide with the opposite region's boundary
-     * are retained unless this would cause a duplicate polygon edge to be created. This model is is
+     * are retained unless this would cause a duplicate polygon edge to be created. This model is
      * very useful for working with input data that has both positive and negative degeneracies
      * (i.e., degenerate shells and holes).
      */
@@ -1626,8 +1626,8 @@ public class S2BooleanOperation {
         // Swap the edges if necessary so that they are in B chain order.
         if (bReversed) {
           int tmp = bFirstEdgeId;
-          bLastEdgeId = bFirstEdgeId;
-          bFirstEdgeId = tmp;
+          bFirstEdgeId = bLastEdgeId;
+          bLastEdgeId = tmp;
         }
 
         // The B subchain connects the first and last vertices of A. We test whether the chain
@@ -1845,7 +1845,7 @@ public class S2BooleanOperation {
    *   <li>Part of the elements iterated over by a CrossingIterator
    *   <li>The minimum of two ShapeEdgeIds is selected during iteration and referenced
    *   <li>Constructed while processing edges of the chain
-   *   <li>Stored as keys in a HashMap to Boolean, isDegenerateHole
+   *   <li>Stored as keys in a Long2BooleanOpenHashMap, isDegenerateHole
    * </ol>
    */
   private static class ShapeEdgeId implements Comparable<ShapeEdgeId> {
@@ -2654,7 +2654,7 @@ public class S2BooleanOperation {
     /** The point from region A matches a point from region B. */
     boolean matchesPoint = false;
 
-    /** The point from revion A matches a _contained_ vertex of a polyline from region B. */
+    /** The point from region A matches a _contained_ vertex of a polyline from region B. */
     boolean matchesPolyline = false;
 
     /** The point from region A matches a polygon vertex from region B. */
@@ -2875,7 +2875,7 @@ public class S2BooleanOperation {
 
   /**
    * A list of IndexCrossings that may be sorted and iterated. Each IndexCrossing contains two
-   * ShapeEdgeIds and details of type type of crossing.
+   * ShapeEdgeIds and details of type of crossing.
    */
   private static class IndexCrossings {
     // TODO(torrey): This is likely worth optimizing.
@@ -3043,15 +3043,12 @@ public class S2BooleanOperation {
     private static class SourceIdMap extends HashMap<Long, Integer> {}
     private final SourceIdMap sourceIdMap = new SourceIdMap();
 
-    // TODO(torrey): Consider alternatives to HashMap. C++ uses a flat_hash_map<ShapeEdgeId, bool>.
-    // A ShapeEdgeId is just two ints.
-
     /**
      * For each edge in region B that defines a degenerate loop (either a point loop or a sibling
      * pair), indicates whether that loop represents a shell or a hole. This information is used
      * during the second pass of addBoundaryPair() to determine the output for degenerate edges.
      */
-    private final Map<ShapeEdgeId, Boolean> isDegenerateHole = new HashMap<>();
+    private final Long2BooleanOpenHashMap isDegenerateHole = new Long2BooleanOpenHashMap();
 
     /**
      * Indicates whether the point being processed along the current edge chain is in the polygonal
@@ -3387,7 +3384,7 @@ public class S2BooleanOperation {
 
       // Verify that edge crossings are being counted correctly.
       inside ^= (r.a1Crossings & 1) == 1;
-      // This is a releatively expensive check and must only be done in debug mode. One of the
+      // This is a relatively expensive check and must only be done in debug mode. One of the
       // reasons this can fail is if one of the S2BooleanOperation inputs has overlapping polygon
       // interiors, which is not allowed.
       assert !it.crossingsComplete()
@@ -3541,7 +3538,7 @@ public class S2BooleanOperation {
         // (We don't need to do this for vertex a1 since it is the same as vertex a0 of the
         // following A loop edge.)
         if (r.loopMatchesA0()) {
-          isDegenerateHole.put(r.a0LoopMatchId, inside);
+          isDegenerateHole.put(shapeEdgeIdToKey(r.a0LoopMatchId), inside);
           if (isPoint) {
             return true;
           }
@@ -3565,8 +3562,8 @@ public class S2BooleanOperation {
         if (r.matchesPolygon() || r.matchesSibling()) {
           // For sibling pairs, also remember their shell/hole status.
           if (r.matchesPolygon() && r.matchesSibling()) {
-            isDegenerateHole.put(r.polygonMatchId, inside);
-            isDegenerateHole.put(r.siblingMatchId, inside);
+            isDegenerateHole.put(shapeEdgeIdToKey(r.polygonMatchId), inside);
+            isDegenerateHole.put(shapeEdgeIdToKey(r.siblingMatchId), inside);
           }
           assert r.interiorCrossings == 0;
           inside ^= (r.a1Crossings & 1) == 1;
@@ -3594,7 +3591,10 @@ public class S2BooleanOperation {
           // Both sides are point loops. The edge is kept only:
           //  - for closed intersection, open union, and open difference;
           //  - if A and B are both holes or both shells.
-          inside = createDegen || keepDegenA || (inside == isDegenerateHole.get(r.a0LoopMatchId));
+          inside =
+              createDegen
+                  || keepDegenA
+                  || (inside == isDegenerateHole.get(shapeEdgeIdToKey(r.a0LoopMatchId)));
         } else if (r.a0MatchesPolygon) {
           // A point loop in A matches a polygon vertex in B. Note that this code can emit an extra
           // isolated vertex if A represents a point hole, but this doesn't matter (see comments on
@@ -3612,7 +3612,7 @@ public class S2BooleanOperation {
           inside =
               createDegen
                   || keepDegenA
-                  || (!r.matchesSibling() || inside) == isDegenerateHole.get(aId);
+                  || (!r.matchesSibling() || inside) == isDegenerateHole.get(shapeEdgeIdToKey(aId));
         } else {
           // Matching edges are kept unless the B geometry is a sibling pair, in which case it is
           // kept only for closed intersection, open union, and open difference.
@@ -3624,7 +3624,7 @@ public class S2BooleanOperation {
         if (isDegenerate(aId)) {
           // The A edge has a sibling. The edge is kept only if A is a sibling pair shell and the
           // operation is closed intersection, open union, or open difference.
-          inside = (createDegen || keepDegenA) && !isDegenerateHole.get(aId);
+          inside = (createDegen || keepDegenA) && !isDegenerateHole.get(shapeEdgeIdToKey(aId));
         } else {
           inside = createDegen;
         }
@@ -3999,8 +3999,12 @@ public class S2BooleanOperation {
       return (polylineModel != PolylineModel.OPEN || edgeId > chainStart);
     }
 
+    private long shapeEdgeIdToKey(ShapeEdgeId shapeEdgeId) {
+      return ((long) shapeEdgeId.shapeId << 32) | shapeEdgeId.edgeId;
+    }
+
     private boolean isDegenerate(ShapeEdgeId aId) {
-      return isDegenerateHole.containsKey(aId);
+      return isDegenerateHole.containsKey(shapeEdgeIdToKey(aId));
     }
 
     private void addCrossing(SourceEdgeCrossing crossing) {

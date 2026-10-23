@@ -20,7 +20,7 @@ import static java.lang.Math.PI;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -40,7 +40,7 @@ public class S2ShapeIndexMeasuresTest extends GeometryTestCase {
 
     // Create an index with an empty point set.
     S2ShapeIndex shapeIndex = new S2ShapeIndex();
-    shapeIndex.add(S2Point.Shape.fromList(Lists.newArrayList()));
+    shapeIndex.add(S2Point.Shape.fromList(new ArrayList<>()));
     assertEquals(0, S2ShapeIndexMeasures.dimension(shapeIndex));
   }
 

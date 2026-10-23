@@ -19,7 +19,10 @@ import static com.google.common.geometry.S2.DBL_EPSILON;
 import static com.google.common.geometry.S2.M_PI_2;
 import static com.google.common.geometry.S2.M_PI_4;
 import static com.google.common.geometry.S2.M_SQRT2;
+import static java.lang.Math.abs;
 import static java.lang.Math.atan;
+import static java.lang.Math.cos;
+import static java.lang.Math.sin;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -147,6 +150,102 @@ public class S2CapTest extends GeometryTestCase {
     assertTrue(concave.contains(hemi));
     assertTrue(concave.interiorIntersects(hemi.complement()));
     assertFalse(concave.contains(S2Cap.fromAxisHeight(concave.axis().neg(), 0.1)));
+  }
+
+  @Test
+  public void testInteriorIntersects() {
+    // Caps with radius <= 2^-26 radians (~9.5 cm on the Earth) have r^2 <= 2^-52, so 4 - r^2
+    // rounds to 4.0 in IEEE 754 double and complement() becomes full(). Verify that such caps
+    // still intersect their own interior and their center point (b/569363274).
+    S2Cap tiny = S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.radians(1e-9));
+    assertTrue(tiny.interiorIntersects(tiny));
+    assertTrue(tiny.interiorIntersects(S2Cap.fromAxisAngle(S2Point.X_POS, S1Angle.ZERO)));
+    assertFalse(tiny.interiorIntersects(S2Cap.empty()));
+
+    // Exact boundary cases: two antipodal hemispheres (r^2 == 2.0 each, sum == 4.0) share only the
+    // equator, and a hemisphere does not interior-intersect a singleton on its boundary.
+    S2Cap hemi = S2Cap.fromAxisHeight(S2Point.X_POS, 1.0);
+    assertFalse(hemi.interiorIntersects(hemi.complement()));
+    assertFalse(hemi.interiorIntersects(S2Cap.fromAxisChord(S2Point.Y_POS, S1ChordAngle.ZERO)));
+
+    for (int i = 0; i < 100; ++i) {
+      S2Point center = data.getRandomPoint();
+      double r = data.logUniform(1e-12, 1.49e-8);
+      S2Cap cap = S2Cap.fromAxisAngle(center, S1Angle.radians(r));
+      assertTrue(cap.interiorIntersects(cap));
+      assertTrue(cap.interiorIntersects(S2Cap.fromAxisAngle(center, S1Angle.ZERO)));
+    }
+
+    // Every leaf S2Cell (level 30, ~1 cm) has getCapBound() radius ~1.12e-9 rad < 2^-26 rad.
+    for (int i = 0; i < 50; ++i) {
+      S2Cell cell = new S2Cell(data.getRandomCellId(S2CellId.MAX_LEVEL));
+      S2Cap bound = cell.getCapBound();
+      assertTrue(bound.interiorIntersects(bound));
+      assertTrue(bound.interiorIntersects(S2Cap.fromAxisAngle(cell.getCenter(), S1Angle.ZERO)));
+    }
+
+    // Full cap interior is the entire sphere, so it intersects every non-empty cap regardless of
+    // center, including at the antipode of full().axis() where S1ChordAngle(axis, other.axis) is
+    // STRAIGHT and r^2 + 4.0 rounds to 4.0 for r^2 <= 2^-51.
+    S2Cap full = S2Cap.full();
+    S2Point antipode = full.axis().neg();
+    S2Cap antipodeSingleton = S2Cap.fromAxisAngle(antipode, S1Angle.ZERO);
+    S2Cap antipodeTiny = S2Cap.fromAxisAngle(antipode, S1Angle.radians(1e-9));
+    assertTrue(full.interiorIntersects(antipodeSingleton));
+    assertFalse(antipodeSingleton.interiorIntersects(full));
+    assertTrue(full.interiorIntersects(antipodeTiny));
+    assertTrue(antipodeTiny.interiorIntersects(full));
+    for (int i = 0; i < 50; ++i) {
+      S2Point p = data.getRandomPoint();
+      assertTrue(full.interiorIntersects(S2Cap.fromAxisAngle(p, S1Angle.ZERO)));
+      assertTrue(full.interiorIntersects(S2Cap.fromAxisAngle(p, S1Angle.radians(1e-9))));
+      assertFalse(S2Cap.fromAxisAngle(p, S1Angle.ZERO).interiorIntersects(full));
+      assertTrue(S2Cap.fromAxisAngle(p, S1Angle.radians(1e-9)).interiorIntersects(full));
+    }
+
+    // Antipodal and nearly-antipodal super-hemispherical caps: a^2 + b^2 > 4 iff A + B > pi.
+    for (int i = 0; i < 50; ++i) {
+      S2Point center = data.getRandomPoint();
+      Matrix frame = data.getRandomFrameAt(center);
+      // A point 1e-9 rad from -center has chord distance to center that rounds to 4.0 (STRAIGHT).
+      S2Point nearlyAntipodal =
+          center.neg().mul(cos(1e-9)).add(frame.getCol(0).mul(sin(1e-9))).normalize();
+      S2Cap largeA = S2Cap.fromAxisAngle(center, S1Angle.degrees(100));
+      assertTrue(largeA.interiorIntersects(S2Cap.fromAxisAngle(center.neg(), S1Angle.degrees(81))));
+      assertFalse(
+          largeA.interiorIntersects(S2Cap.fromAxisAngle(center.neg(), S1Angle.degrees(79))));
+      assertTrue(
+          largeA.interiorIntersects(S2Cap.fromAxisAngle(nearlyAntipodal, S1Angle.degrees(81))));
+      assertFalse(
+          largeA.interiorIntersects(S2Cap.fromAxisAngle(nearlyAntipodal, S1Angle.degrees(79))));
+    }
+
+    // Randomized small caps compared against the exact angular criterion.
+    for (int i = 0; i < 500; ++i) {
+      Matrix frame = data.getRandomFrame();
+      S2Point p1 = frame.getCol(2);
+      double r1 = data.logUniform(1e-12, 1e-4);
+      double r2 = data.logUniform(1e-12, 1e-4);
+      double scale = data.nextBoolean() ? data.uniform(0.0, 0.99) : data.uniform(1.01, 2.0);
+      double d = (r1 + r2) * scale;
+      S2Point p2 = p1.mul(cos(d)).add(frame.getCol(0).mul(sin(d))).normalize();
+      S2Cap c1 = S2Cap.fromAxisAngle(p1, S1Angle.radians(r1));
+      S2Cap c2 = S2Cap.fromAxisAngle(p2, S1Angle.radians(r2));
+      assertEquals(scale < 1.0, c1.interiorIntersects(c2));
+    }
+
+    // Randomized general caps compared against the exact angular criterion.
+    for (int i = 0; i < 500; ++i) {
+      S2Point p1 = data.getRandomPoint();
+      S2Point p2 = data.getRandomPoint();
+      S2Cap c1 = S2Cap.fromAxisAngle(p1, S1Angle.radians(data.uniform(0.0, 2.5)));
+      S2Cap c2 = S2Cap.fromAxisAngle(p2, S1Angle.radians(data.uniform(0.0, 2.5)));
+      double sum = c1.angle().radians() + c2.angle().radians();
+      double dist = new S1Angle(p1, p2).radians();
+      if (abs(sum - dist) > 1e-12) {
+        assertEquals(sum > dist, c1.interiorIntersects(c2));
+      }
+    }
   }
 
   @Test

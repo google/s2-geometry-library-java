@@ -26,11 +26,11 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 import com.google.common.geometry.S2CrossingEdgeQuery.Edges;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2Shape.MutableEdge;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -125,8 +125,8 @@ public class S2CrossingEdgeQueryTest extends GeometryTestCase {
       assertTrue(candidatesList.get(0) >= 0);
       assertTrue(candidatesList.get(candidatesList.size() - 1) < shape.numEdges());
       numCandidates += candidatesList.size();
-      List<Integer> missingCandidates = Lists.newArrayList();
-      List<Integer> expectedCrossings = Lists.newArrayList();
+      List<Integer> missingCandidates = new ArrayList<>();
+      List<Integer> expectedCrossings = new ArrayList<>();
       for (int j = 0; j < shape.numEdges(); ++j) {
         shape.getEdge(j, tempEdge);
         S2Point c = tempEdge.getStart();
@@ -165,7 +165,7 @@ public class S2CrossingEdgeQueryTest extends GeometryTestCase {
 
   /** Returns a list of all edges in {@code candidates}. */
   private static List<Integer> edgesToList(S2CrossingEdgeQuery.Edges candidates) {
-    List<Integer> list = Lists.newArrayList();
+    List<Integer> list = new ArrayList<>();
     while (!candidates.isEmpty()) {
       list.add(candidates.nextEdge());
     }
@@ -330,7 +330,7 @@ public class S2CrossingEdgeQueryTest extends GeometryTestCase {
       int numSegments = S2EdgeUtil.getFaceSegments(a, b, segments);
       for (int i = 0; i < numSegments; ++i) {
         S2PaddedCell pCell = new S2PaddedCell(S2CellId.fromFace(segments[i].face), 0);
-        List<S2ShapeIndex.Cell> cells = Lists.newArrayList();
+        List<S2ShapeIndex.Cell> cells = new ArrayList<>();
         edgeQuery.getCells(a, segments[i].a, b, segments[i].b, pCell, cells);
         assertFalse(cells.isEmpty());
       }

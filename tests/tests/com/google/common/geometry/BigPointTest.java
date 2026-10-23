@@ -41,6 +41,39 @@ public class BigPointTest {
     assertEquals(new BigDecimal("14.52"), b.dotProd(a));
   }
 
+  @Test
+  public void testNormalizedPoint() {
+    // Zero vector.
+    BigPoint p = createBp("0", "0", "0");
+    S2Point normalized = p.normalizedPoint();
+    assertEquals(0.0, normalized.norm(), 1e-15);
+    assertEquals(new S1Angle(normalized, S2Point.ZERO).radians(), 0.0, 1e-15);
+
+    // Ordinary vector without underflow.
+    p = createBp("1", "2", "3");
+    normalized = p.normalizedPoint();
+    assertEquals(1.0, normalized.norm(), 1e-15);
+    assertEquals(new S1Angle(normalized, new S2Point(1, 2, 3)).radians(), 0.0, 1e-15);
+
+    // All underflowing components; normalized vector is nearly Y_NEG.
+    p = createBp("1e-400", "-2e-200", "3e-300");
+    normalized = p.normalizedPoint();
+    assertEquals(1.0, normalized.norm(), 1e-15);
+    assertEquals(new S1Angle(normalized, S2Point.Y_NEG).radians(), 0.0, 1e-15);
+
+    // One underflowing component; no scaling needed.
+    p = createBp("1", "2e-200", "1");
+    normalized = p.normalizedPoint();
+    assertEquals(1.0, normalized.norm(), 1e-15);
+    assertEquals(new S1Angle(normalized, new S2Point(1, 0, 1)).radians(), 0.0, 1e-15);
+
+    // Two components underflow; scaling needed.
+    p = createBp("0", "2e-200", "3e-200");
+    normalized = p.normalizedPoint();
+    assertEquals(1.0, normalized.norm(), 1e-15);
+    assertEquals(new S1Angle(normalized, new S2Point(0, 2, 3)).radians(), 0.0, 1e-15);
+  }
+
   private static BigPoint createBp(String x, String y, String z) {
     return new BigPoint(new BigDecimal(x), new BigDecimal(y), new BigDecimal(z));
   }

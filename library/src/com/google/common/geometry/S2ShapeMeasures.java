@@ -473,7 +473,7 @@ public final class S2ShapeMeasures {
    * <p>Scaling by the polyline length makes it easy to compute the centroid of several polylines
    * (by simply adding up their centroids).
    *
-   * <p>CAVEAT: Returns {@link S2Point#ORIGIN} for degenerate polylines (e.g., AA). [Note that this
+   * <p>CAVEAT: Returns {@link S2Point#ZERO} for degenerate polylines (e.g., AA). [Note that this
    * answer is correct; the result of this function is a line integral over the polyline, whose
    * value is always zero if the polyline is degenerate].
    */

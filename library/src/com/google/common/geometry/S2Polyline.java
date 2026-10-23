@@ -374,7 +374,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
   }
 
   /**
-   * Removes any point from the given List of points that is exactly equal to to its next neighbor.
+   * Removes any point from the given List of points that is exactly equal to its next neighbor.
    * Valid S2Polylines may not have duplicate adjacent points, so this may be useful to make a list
    * of points into a valid polyline. The resulting list of points may have only one point.
    */
@@ -446,7 +446,7 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
     if (vertices.length == 0) {
       return this;
     }
-    List<S2Point> results = Lists.newArrayList();
+    List<S2Point> results = new ArrayList<>();
     results.add(vertex(0));
     S1Angle clampedTolerance = S1Angle.max(tolerance, S1Angle.ZERO);
     for (int i = 0; i < vertices.length - 1; ) {
@@ -558,14 +558,15 @@ public final class S2Polyline implements S2Shape, S2Region, Serializable {
     }
 
     // Initial value larger than any possible distance on the unit sphere.
-    S1Angle minDistance = S1Angle.radians(10);
+    S1ChordAngle minDistance = S1ChordAngle.INFINITY;
     int minIndex = -1;
 
     // Find the line segment in the polyline that is closest to the point given.
     for (int i = 0; i < numVertices() - 1; ++i) {
-      S1Angle distanceToSegment = S2EdgeUtil.getDistance(point, vertex(i), vertex(i + 1));
-      if (distanceToSegment.lessThan(minDistance)) {
-        minDistance = distanceToSegment;
+      S1ChordAngle nextDistance =
+          S2EdgeUtil.updateMinDistance(point, vertex(i), vertex(i + 1), minDistance);
+      if (!minDistance.equals(nextDistance)) {
+        minDistance = nextDistance;
         minIndex = i;
       }
     }

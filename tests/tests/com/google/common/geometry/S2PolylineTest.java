@@ -27,17 +27,17 @@ import static java.lang.Math.sin;
 import static java.lang.Math.tan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -60,7 +60,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testBasic() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     S2Polyline empty = new S2Polyline(vertices);
     assertEquals(empty.getRectBound(), S2LatLngRect.empty());
     S2Polyline reversedEmpty = empty.reversed();
@@ -78,7 +78,7 @@ public class S2PolylineTest extends GeometryTestCase {
       S2Point x = data.getRandomPoint();
       S2Point y = x.crossProd(data.getRandomPoint()).normalize();
 
-      List<S2Point> vertices = Lists.newArrayList();
+      List<S2Point> vertices = new ArrayList<>();
       for (double theta = 0; theta < 2 * S2.M_PI; theta += pow(data.nextDouble(), 10)) {
         S2Point p = x.mul(cos(theta)).add(y.mul(sin(theta)));
         if (vertices.isEmpty() || !p.equals(vertices.get(vertices.size() - 1))) {
@@ -97,7 +97,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testMayIntersect() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(1, -1.1, 0.8).normalize());
     vertices.add(new S2Point(1, -0.8, 1.1).normalize());
     S2Polyline line = new S2Polyline(vertices);
@@ -109,7 +109,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testInterpolate() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(1, 0, 0));
     vertices.add(new S2Point(0, 1, 0));
     vertices.add(new S2Point(0, 1, 1).normalize());
@@ -130,7 +130,7 @@ public class S2PolylineTest extends GeometryTestCase {
   @Test
   public void testInterpolateIsUnitLength() {
     S2Error error = new S2Error();
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     for (int trial = 0; trial < 50; ++trial) {
       S2Cap cap = data.getRandomCap(0.2, 0.3);
       for (int i = 0; i < 50; ++i) {
@@ -225,7 +225,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testEqualsAndHashCode() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(1, 0, 0));
     vertices.add(new S2Point(0, 1, 0));
     vertices.add(S2Point.normalize(new S2Point(0, 1, 1)));
@@ -236,7 +236,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
     checkEqualsAndHashCodeMethods(line1, line2, true);
 
-    List<S2Point> moreVertices = Lists.newLinkedList(vertices);
+    List<S2Point> moreVertices = new LinkedList<>(vertices);
     moreVertices.remove(0);
 
     S2Polyline line3 = new S2Polyline(moreVertices);
@@ -256,7 +256,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testEncodeDecodeCompressed() throws IOException {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     parseVertices("0:0, 0:10, 10:20, 20:30, 30:50, 40:70", vertices);
     S2Polyline polyline = new S2Polyline(snapPointsToLevel(vertices, 20));
     ByteArrayOutputStream compact = new ByteArrayOutputStream();
@@ -269,7 +269,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testDecodeLevelTooHigh() throws Exception {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     parseVertices("0:0, 0:10, 10:20, 20:30, 30:50, 40:70", vertices);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     LittleEndianOutput encoder = new LittleEndianOutput(outputStream);
@@ -281,13 +281,13 @@ public class S2PolylineTest extends GeometryTestCase {
     S2PointCompression.encodePointsCompressed(vertices, S2CellId.MAX_LEVEL, encoder);
 
     // Attempt to decode the invalid data.
-    try {
-      S2Polyline unusedPolyline =
-          S2Polyline.decode(new ByteArrayInputStream(outputStream.toByteArray()));
-      fail("Expected an IOException to be thrown.");
-    } catch (IOException expectedException) {
-      // Test passes.
-    }
+    // Test passes.
+    assertThrows(
+        IOException.class,
+        () -> {
+          S2Polyline unusedPolyline =
+              S2Polyline.decode(new ByteArrayInputStream(outputStream.toByteArray()));
+        });
   }
 
   @Test
@@ -302,7 +302,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testGetSnapLevel() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     parseVertices("0:10, 10:20, 20:30", vertices);
     // Unsnapped polyline.
     S2Polyline polyline = new S2Polyline(vertices);
@@ -343,7 +343,7 @@ public class S2PolylineTest extends GeometryTestCase {
 
   @Test
   public void testGetNearestEdgeIndexAndProjectToEdge() {
-    List<S2Point> latLngs = Lists.newArrayList();
+    List<S2Point> latLngs = new ArrayList<>();
     latLngs.add(S2LatLng.fromDegrees(0, 0).toPoint());
     latLngs.add(S2LatLng.fromDegrees(0, 1).toPoint());
     latLngs.add(S2LatLng.fromDegrees(0, 2).toPoint());
@@ -429,7 +429,7 @@ public class S2PolylineTest extends GeometryTestCase {
   @Test
   public void testIntersectsEmptyPolyline() {
     S2Polyline line1 = makePolyline("1:1, 4:4");
-    S2Polyline emptyPolyline = new S2Polyline(Lists.<S2Point>newArrayList());
+    S2Polyline emptyPolyline = new S2Polyline(new ArrayList<S2Point>());
     assertFalse(emptyPolyline.intersects(line1));
   }
 
@@ -537,7 +537,7 @@ public class S2PolylineTest extends GeometryTestCase {
   @Test
   public void testValid() {
     // A simple normalized line must be valid.
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(1, 0, 0));
     vertices.add(new S2Point(0, 1, 0));
     S2Polyline line = new S2Polyline(vertices);
@@ -547,14 +547,14 @@ public class S2PolylineTest extends GeometryTestCase {
   @Test
   public void testInvalid() {
     // A non-normalized line must be invalid.
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(1, 0, 0));
     vertices.add(new S2Point(0, 2, 0));
     S2Polyline line = uncheckedCreate(() -> new S2Polyline(vertices));
     assertFalse(line.isValid());
 
     // Lines with duplicate points must be invalid.
-    List<S2Point> vertices2 = Lists.newArrayList();
+    List<S2Point> vertices2 = new ArrayList<>();
     vertices2.add(new S2Point(1, 0, 0));
     vertices2.add(new S2Point(0, 1, 0));
     vertices2.add(new S2Point(0, 1, 0));
@@ -639,7 +639,7 @@ public class S2PolylineTest extends GeometryTestCase {
       // Create an S2Polyline from a regular loop, and test that its vertices can be found by
       // S2ShapeIndex.CellIterator's locate() method.
       S2Loop loop = S2Loop.makeRegularLoop(data.getRandomPoint(), radius, numVertices);
-      List<S2Point> vertices = Lists.newArrayList();
+      List<S2Point> vertices = new ArrayList<>();
       for (int i = 0; i < numVertices; ++i) {
         vertices.add(loop.vertex(i));
       }
@@ -715,7 +715,7 @@ public class S2PolylineTest extends GeometryTestCase {
   public void testS2PolylineSerialization() {
     // This is an invalid polyline, with vertices that are not unit length, but we want to make sure
     // that it serializes and deserializes correctly anyway, so internal assertions are disabled.
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     vertices.add(new S2Point(0, 0, 0));
     vertices.add(new S2Point(0, 0.1, 0));
     vertices.add(new S2Point(0.5, 1e6, 7));

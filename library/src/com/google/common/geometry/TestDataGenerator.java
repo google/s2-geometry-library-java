@@ -673,7 +673,7 @@ public class TestDataGenerator {
         Matrix frame = data.getRandomFrameAt(queryCap.axis());
         double radius = queryCap.angle().radians();
         double spacing = 2 * radius / sqrtNumPoints;
-        List<S2Point> points = Lists.newArrayList();
+        List<S2Point> points = new ArrayList<>();
         for (int i = 0; i < sqrtNumPoints; ++i) {
           for (int j = 0; j < sqrtNumPoints; ++j) {
             S2Point q =

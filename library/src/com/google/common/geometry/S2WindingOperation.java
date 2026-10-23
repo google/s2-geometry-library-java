@@ -507,7 +507,7 @@ public class S2WindingOperation {
 
   /**
    * The purpose of WindingOracle is to compute winding numbers with respect to a set of input loops
-   * after snapping. It is given the input edges (via S2Builder), the output eges (an
+   * after snapping. It is given the input edges (via S2Builder), the output edges (an
    * S2Builder.Graph), and the winding number at a reference point with respect to the input edges
    * ("refInputEdgeId" and "refWindingIn"). getWindingNumber() can then be called to compute the
    * winding number at any point with respect to the snapped loops. The main algorithm uses this to

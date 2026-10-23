@@ -294,17 +294,12 @@ public final class BestEdgesBenchmarkHarness {
       indexRadius = kmToAngle(indexRadiusKm);
 
       // Create the factory from the factoryType.
-      switch (factoryType) {
-        case FRACTAL_LOOP:
-          this.factory = data.new FractalLoopShapeFactory();
-          break;
-        case REGULAR_LOOP:
-          this.factory = data.new RegularLoopShapeFactory();
-          break;
-        case POINT_CLOUD:
-          this.factory = data.new PointCloudShapeFactory();
-          break;
-      }
+      this.factory =
+          switch (factoryType) {
+            case FRACTAL_LOOP -> data.new FractalLoopShapeFactory();
+            case REGULAR_LOOP -> data.new RegularLoopShapeFactory();
+            case POINT_CLOUD -> data.new PointCloudShapeFactory();
+          };
 
       // Create indexes, with closest or furthest edge queries on them, and collections of closest
       // or furthest targets. This method is provided by subclasses.

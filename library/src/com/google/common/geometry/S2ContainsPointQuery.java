@@ -21,9 +21,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
-import com.google.common.geometry.S2ShapeUtil.IntPredicate;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import java.util.function.IntPredicate;
 
 /**
  * A query for whether one or more shapes in an {@link S2ShapeIndex} contain a given S2Point.

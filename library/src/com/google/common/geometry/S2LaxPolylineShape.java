@@ -213,7 +213,7 @@ public interface S2LaxPolylineShape extends S2ShapeAspect.EdgeAspect.Open {
     /**
      * Constructs a SimpleList wrapping the given List of vertices. As described above, it is not
      * possible to construct a single-vertex S2LaxPolylineShape, so if such a list is encountered
-     * here is is likely due to corrupt input to the S2LaxPolylineShape decoder.
+     * here it is likely due to corrupt input to the S2LaxPolylineShape decoder.
      */
     private SimpleList(List<S2Point> vertices) throws IOException {
       if (vertices.size() == 1) {

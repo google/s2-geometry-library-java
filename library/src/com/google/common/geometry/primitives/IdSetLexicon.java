@@ -18,11 +18,11 @@ package com.google.common.geometry.primitives;
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.primitives.Ints.ImmutableIntSequence;
 import com.google.common.geometry.primitives.Ints.IntBiConsumer;
-import com.google.common.geometry.primitives.Ints.IntConsumer;
 import com.google.common.geometry.primitives.Ints.IntSequence;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import java.util.Collection;
 import java.util.NoSuchElementException;
+import java.util.PrimitiveIterator.OfInt;
+import java.util.function.IntConsumer;
 
 /**
  * IdSetLexicon is a class for compactly representing immutable sets of non-negative integers such

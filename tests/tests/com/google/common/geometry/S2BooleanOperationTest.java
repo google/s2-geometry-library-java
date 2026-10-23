@@ -2690,4 +2690,37 @@ public final class S2BooleanOperationTest extends GeometryTestCase {
     }
     System.err.println("Dissolved result\n" + S2TextFormat.toString(outputIndex));
   }
+
+  // Former crash reported in b/448995688.
+  @Test
+  public void testApproxContainsRegression() {
+    S2Polygon polygonA =
+        new S2Polygon(
+            new S2Loop(
+                ImmutableList.of(
+                    new S2Point(0.07407494298826503, 0.8905206059286511, 0.44887186728258327),
+                    new S2Point(0.07407481408029526, 0.8905196803490244, 0.448873724815834),
+                    new S2Point(0.0740750941456095, 0.8905196293667524, 0.448873779741946),
+                    new S2Point(0.07407508029744697, 0.89051940344475, 0.4488742302330723),
+                    new S2Point(0.07407620556014231, 0.8905192893558006, 0.44887427087665804),
+                    new S2Point(0.07407637419096104, 0.8905201277648097, 0.4488725797288891),
+                    new S2Point(0.07407559536565332, 0.8905202160569234, 0.44887253309280845),
+                    new S2Point(0.07407564325254606, 0.8905205242569072, 0.4488719137503758))));
+    S2Polygon polygonB =
+        new S2Polygon(
+            new S2Loop(
+                ImmutableList.of(
+                    new S2Point(0.07407403758933616, 0.8905204208267099, 0.44887238391978734),
+                    new S2Point(0.07407402853123958, 0.8905202227664729, 0.44887277834716666),
+                    new S2Point(0.07407479027207091, 0.8905201074297563, 0.44887288145915444),
+                    new S2Point(0.07407478328977411, 0.8905199937683641, 0.4488731081044684),
+                    new S2Point(0.07407483246301555, 0.8905199905067497, 0.44887310646042783),
+                    new S2Point(0.07407485963585765, 0.8905199605254983, 0.4488731614560989),
+                    new S2Point(0.0740748756874536, 0.890520242658633, 0.4488725990825211),
+                    new S2Point(0.07407479701024446, 0.890520247877221, 0.4488726017129847),
+                    new S2Point(0.07407480166143231, 0.8905203335142595, 0.448872431049704))));
+
+    assertFalse(polygonA.approxContains(polygonB, S1Angle.radians(7.8e-8 /*=0.5 meters*/)));
+    assertTrue(polygonA.approxContains(polygonB, S1Angle.radians(9.4e-7 /*=6.0 meters*/)));
+  }
 }

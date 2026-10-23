@@ -15,12 +15,11 @@
  */
 package com.google.common.geometry;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A sharding function that provides shard IDs whose boundaries intersect an {@link S2Region}. This
@@ -28,6 +27,9 @@ import java.util.Map;
  * size from the regions; in that case, {@link S2CellUnion coverings} of the region tend to cover
  * too much area (any simple covering of the Pacific Ocean for example) or too complex (small
  * regions are often contained by a single cell of the shard's covering).
+ *
+ * <p>Note that false positive intersections are possible, but false negatives are not. See {@link
+ * #getIntersectingShards} for more details.
  */
 public class S2RegionSharder {
   private final S2CellIndex index;
@@ -60,15 +62,15 @@ public class S2RegionSharder {
     Map<Integer, S2CellUnion> shardCoverings = intersections(region);
     int bestShard = defaultShard;
     long bestSum = 0;
-    // Sort the keys to make the selection deterministic.
-    ImmutableList<Integer> sortedKeys = ImmutableList.sortedCopyOf(shardCoverings.keySet());
-    for (int shardId : sortedKeys) {
+    for (int shardId : shardCoverings.keySet()) {
       S2CellUnion shardCovering = shardCoverings.get(shardId);
       long sum = 0;
       for (S2CellId id : shardCovering.cellIds()) {
         sum += id.lowestOnBit();
       }
-      if (sum > bestSum) {
+      // Prefer the smaller shard number to break ties, to make the selection deterministic.
+      // Note, that sum can never be zero because all coverings have at least one cell.
+      if (sum > bestSum || (sum == bestSum && shardId < bestShard)) {
         bestShard = shardId;
         bestSum = sum;
       }
@@ -77,10 +79,14 @@ public class S2RegionSharder {
   }
 
   /**
-   * Returns a list of shard numbers which intersect with {@code region}. Shard numbers are not
-   * guaranteed to be sorted in any particular order. If no shards overlap, returns an empty list.
+   * Returns a set of shard numbers which intersect with {@code region}. Shard numbers are not
+   * guaranteed to be sorted in any particular order. If no shards overlap, returns an empty set.
+   *
+   * <p>Note that the first pass (fast path) of intersection testing is done with the covering of
+   * the input S2Region. The second pass uses S2Region.mayIntersect(). False positive intersections
+   * are possible, but false negatives are not.
    */
-  public Collection<Integer> getIntersectingShards(S2Region region) {
+  public Set<Integer> getIntersectingShards(S2Region region) {
     return intersections(region).keySet();
   }
 
@@ -88,16 +94,12 @@ public class S2RegionSharder {
     // Compute the intersection between the region covering and each shard covering.
     S2CellUnion regionCovering = new S2CellUnion();
     region.getCellUnionBound(regionCovering.cellIds());
+    regionCovering.normalize(); // required by visitIntersectingCells
     Map<Integer, S2CellUnion> shardCoverings = new HashMap<>();
     index.visitIntersectingCells(
         regionCovering,
         (cell, shardId) -> {
-          S2CellUnion shard = shardCoverings.get(shardId);
-          if (shard == null) {
-            shard = new S2CellUnion();
-            shardCoverings.put(shardId, shard);
-          }
-          shard.cellIds().add(cell);
+          shardCoverings.computeIfAbsent(shardId, k -> new S2CellUnion()).cellIds().add(cell);
           return true;
         });
 

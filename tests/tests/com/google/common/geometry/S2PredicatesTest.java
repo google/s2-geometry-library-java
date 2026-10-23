@@ -410,11 +410,11 @@ public class S2PredicatesTest extends GeometryTestCase {
    * <p>Let M_1, M_2, ... be the sequence of submatrices whose determinant sign is tested by that
    * function. Then the i<sup>th</sup> test below is a 3x3 matrix M (with rows A, B, C) such that:
    *
-   * <pre>
+   * <pre>{@code
    * det(M) = 0
    * det(M_j) = 0 for j < i
    * det(M_i) != 0
-   * </pre>
+   * }</pre>
    *
    * where {@code A < B < C} in lexicographic order.
    *

@@ -35,7 +35,6 @@ import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.IntComparator;
 import com.google.common.geometry.primitives.Ints.IntList;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.common.geometry.primitives.Sorter;
 import com.google.common.geometry.primitives.Sorter.SortableCollection;
 import com.google.common.primitives.UnsignedLongs;
@@ -49,6 +48,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.PrimitiveIterator.OfInt;
 import jsinterop.annotations.JsType;
 
 /**
@@ -147,7 +147,7 @@ import jsinterop.annotations.JsType;
  *   logger.atError().log(error.text());
  *    ...
  *  }
- * }</pre>
+ * }
  */
 @SuppressWarnings("Assertion")
 public class S2Builder {
@@ -622,7 +622,7 @@ public class S2Builder {
   }
 
   /**
-   * Adds a point to the current layer, as a degenerate edge. The sementics depend on the layer:
+   * Adds a point to the current layer, as a degenerate edge. The semantics depend on the layer:
    *
    * <p>If the current layer will build points, this adds a point.
    *
@@ -720,7 +720,7 @@ public class S2Builder {
     // normalized in S2Polygon by calling S2Loop.invert(). S2Loop.invert() reverses the order of the
     // vertices, so to end up with the original vertex order (0, 1, ..., n-1) we need to build a
     // clockwise loop with vertex order (n-1, n-2, ..., 0). This is done by adding the edge
-    // (n-1, n-2) first, and then ensuring that nuild() assembles loops starting from edges in the
+    // (n-1, n-2) first, and then ensuring that build() assembles loops starting from edges in the
     // order they were added.
     for (int i = 0; i < loop.numVertices(); ++i) {
       addEdge(loop.orientedVertex(i), loop.orientedVertex(i + 1));
@@ -3227,7 +3227,7 @@ public class S2Builder {
      * calculation used. For example, if {@link S2EdgeUtil#getIntersection(S2Point, S2Point,
      * S2Point, S2Point)} is used then the error should be set to {@link
      * S2EdgeUtil#INTERSECTION_ERROR}. If {@link S2EdgeUtil#getPointOnLine(S2Point, S2Point,
-     * S2Point)} is used then the error should be set to {@link S2EdgeUtil#GET_POINT_ON_LINE_ERROR}.
+     * S1Angle)} is used then the error should be set to {@link S2EdgeUtil#GET_POINT_ON_LINE_ERROR}.
      * If {@link S2EdgeUtil#project(S2Point, S2Point, S2Point)} is used then the error should be set
      * to {@link S2EdgeUtil#GET_POINT_ON_RAY_PERPENDICULAR_ERROR}. If more than one method is used
      * then the intersection tolerance should be set to the maximum such error.
@@ -3237,7 +3237,7 @@ public class S2Builder {
      * S2EdgeUtil#INTERSECTION_ERROR} away from the true mathematical intersection of the edges AB
      * and CD. Furthermore such intersection points are subject to further snapping in order to
      * ensure that no pair of vertices is closer than the specified snap radius. For example,
-     * suppose the computed intersection point X of edges AB and CD is 1 nanonmeter away from both
+     * suppose the computed intersection point X of edges AB and CD is 1 nanometer away from both
      * edges, and the snap radius is 1 meter. In that case X might snap to another vertex Y exactly
      * 1 meter away, which would leave us with a vertex Y that could be up to 1.000000001 meters
      * from the edges AB and/or CD. This means that AB and/or CD might not snap to Y leaving us with

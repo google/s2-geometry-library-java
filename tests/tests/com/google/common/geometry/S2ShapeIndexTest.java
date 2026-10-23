@@ -24,11 +24,11 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2ShapeIndex.CellRelation;
 import com.google.common.geometry.S2ShapeIndex.S2ClippedShape;
 import com.google.common.geometry.S2ShapeUtil.S2EdgeVectorShape;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -77,7 +77,7 @@ public class S2ShapeIndexTest extends GeometryTestCase {
     // Construct two loops centered around the cube vertex at the start of the Hilbert curve.
     S2Point center = S2Point.normalize(new S2Point(1, -1, -1));
     S2Polygon polygon = concentricLoopsPolygon(center, 2, TestPlatform.S2_SHAPEINDEX_NUM_EDGES);
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     polygon.release(loops);
     S2ShapeIndex index = new S2ShapeIndex();
     for (S2Loop loop : loops) {
@@ -473,7 +473,7 @@ public class S2ShapeIndexTest extends GeometryTestCase {
     assertTrue(it.atBegin());
     it.finish();
     assertTrue(it.done());
-    List<S2CellId> ids = Lists.newArrayList();
+    List<S2CellId> ids = new ArrayList<>();
     S2CellId minCellId = S2CellId.begin(S2CellId.MAX_LEVEL);
     for (it.restart(); !it.done(); it.next()) {
       S2CellId cellid = it.id();
@@ -547,7 +547,7 @@ public class S2ShapeIndexTest extends GeometryTestCase {
     } else {
       S2Loop origLoop = loops.get(i);
       for (int j = 0; j < origLoop.numVertices(); j++) {
-        List<S2Point> vertices = Lists.newArrayList();
+        List<S2Point> vertices = new ArrayList<>();
         for (int k = 0; k < origLoop.numVertices(); k++) {
           vertices.add(origLoop.vertex(j + k));
         }
@@ -567,7 +567,7 @@ public class S2ShapeIndexTest extends GeometryTestCase {
    */
   private static void checkHasCrossing(String polygonStr, boolean hasCrossing) {
     S2Polygon polygon = makeVerbatimPolygon(polygonStr);
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     polygon.release(loops);
     checkHasCrossingPermutations(loops, 0, hasCrossing);
   }

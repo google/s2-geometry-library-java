@@ -250,8 +250,8 @@ public class S2CellIteratorJoin<E1 extends S2Iterator.Entry, E2 extends S2Iterat
 
   /**
    * Given an S2Cell 'cellA' and a list of S2Cells 'cellsB', filters the cells from B that are
-   * within the tolerance distance distance of cellA A and passes them to processCellPairs().
-   * Returns false if the visitor ever does, true otherwise.
+   * within the tolerance distance of cellA A and passes them to processCellPairs(). Returns false
+   * if the visitor ever does, true otherwise.
    */
   private <V extends BiPredicate<S2CellRangeIterator<E1>, S2CellRangeIterator<E2>>>
       boolean processNearby(S2Cell cellA, List<S2Cell> cellsB, V visitor) {
@@ -350,7 +350,7 @@ public class S2CellIteratorJoin<E1 extends S2Iterator.Entry, E2 extends S2Iterat
         iterA,
         cellA.id(),
         iterA -> {
-          // If the index cell doesn't have it's endpoint in this cell then ignore it.
+          // If the index cell doesn't have its endpoint in this cell then ignore it.
           // This makes it so that we only see each index cell in a single A cell.
           // TODO(user): This conditional is almost certainly not needed any more, as the
           // cell iterator join is driven from side A, and only ever subdivides the B side. If

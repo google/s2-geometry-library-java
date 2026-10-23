@@ -18,8 +18,8 @@ package com.google.common.geometry;
 import static java.lang.Math.PI;
 import static java.lang.Math.scalb;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import java.math.BigDecimal;
 import org.junit.Test;
@@ -173,24 +173,26 @@ public class RealTest extends GeometryTestCase {
     assertAlmostEquals(nonStrict.doubleValue(), a);
 
     // Check that strict Real multiplication does error.
-    try {
-      Real unused = Real.strictMul(a, b);
-      fail();
-    } catch (ArithmeticException e) {
-      assertEquals("twoProductError underflowed", e.getMessage());
-    }
+    ArithmeticException e =
+        assertThrows(
+            ArithmeticException.class,
+            () -> {
+              Real unused = Real.strictMul(a, b);
+            });
+    assertEquals("twoProductError underflowed", e.getMessage());
 
     // Check first situation where error is 0 but the output is equal to one of the operands.
     double eps = 2.594E-321;
     Real nonStrictZero = Real.mul(eps, eps);
     assertAlmostEquals(nonStrictZero.doubleValue(), 0.0);
 
-    try {
-      Real unused = Real.strictMul(eps, eps);
-      fail();
-    } catch (ArithmeticException e) {
-      assertEquals("twoProductError underflowed", e.getMessage());
-    }
+    ArithmeticException e2 =
+        assertThrows(
+            ArithmeticException.class,
+            () -> {
+              Real unused = Real.strictMul(eps, eps);
+            });
+    assertEquals("twoProductError underflowed", e2.getMessage());
 
     // Check edge cases for operands being 1.0 or 0.0
     Real isZero = Real.strictMul(a, 0);
@@ -200,24 +202,26 @@ public class RealTest extends GeometryTestCase {
     assertIdentical(isA.doubleValue(), a);
 
     // Check commutativity.
-    try {
-      Real unused = Real.strictMul(b, a);
-      fail();
-    } catch (ArithmeticException e) {
-      assertEquals("twoProductError underflowed", e.getMessage());
-    }
+    ArithmeticException e3 =
+        assertThrows(
+            ArithmeticException.class,
+            () -> {
+              Real unused = Real.strictMul(b, a);
+            });
+    assertEquals("twoProductError underflowed", e3.getMessage());
   }
 
   @Test
   public void testStrictMulScale() {
     Real realA = new Real(-2.594E-321);
     double scaleA = 0.9991685425907498;
-    try {
-      Real unused = realA.strictMul(scaleA);
-      fail();
-    } catch (ArithmeticException e) {
-      assertEquals("twoProductError underflowed", e.getMessage());
-    }
+    ArithmeticException e =
+        assertThrows(
+            ArithmeticException.class,
+            () -> {
+              Real unused = realA.strictMul(scaleA);
+            });
+    assertEquals("twoProductError underflowed", e.getMessage());
 
     // Check edge cases for operands being 1.0 or 0.0
     Real isZero = realA.strictMul(0.0);
@@ -229,12 +233,13 @@ public class RealTest extends GeometryTestCase {
     // Check commutativity
     Real realB = new Real(0.9991685425907498);
     double scaleB = -2.594E-321;
-    try {
-      Real unused = realB.strictMul(scaleB);
-      fail();
-    } catch (ArithmeticException e) {
-      assertEquals("twoProductError underflowed", e.getMessage());
-    }
+    ArithmeticException e2 =
+        assertThrows(
+            ArithmeticException.class,
+            () -> {
+              Real unused = realB.strictMul(scaleB);
+            });
+    assertEquals("twoProductError underflowed", e2.getMessage());
   }
 
   private static Real det(S2Point a, S2Point b, S2Point c) {

@@ -600,6 +600,15 @@ public class S2ShapeIndexCoder implements S2Coder<S2ShapeIndex> {
     if ((header & 7) == 3) {
       // This cell contains more than one shape.
       numClipped = Ints.checkedCast(header >>> 3);
+      // numClipped == 0 is not allowed since cells must not be empty.
+      // numClipped == 1 is not allowed since that case is encoded with a different tag.
+      if (numClipped <= 1) {
+        throw new IllegalArgumentException("Invalid numClipped: " + numClipped);
+      }
+      if (numClipped > shapes.size()) {
+        throw new IllegalArgumentException(
+            "Invalid numClipped: " + numClipped + " > shapes.size: " + shapes.size());
+      }
       header = data.readVarint32(cursor);
     }
 
@@ -645,7 +654,6 @@ public class S2ShapeIndexCoder implements S2Coder<S2ShapeIndex> {
     }
 
     @Override
-    @JsIgnore // OutputStream is not available to J2CL.
     public void encode(S2ClippedShape[] values, OutputStream output) {
       throw new UnsupportedOperationException();
     }

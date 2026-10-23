@@ -21,10 +21,10 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -357,7 +357,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
         !onlyPointsIndexed,
         "Attempting to index a region when helper has been told only to index points");
     ImmutableList.Builder<Term> termBuilder = ImmutableList.builder();
-    Set<S2CellId> ancestors = Sets.newHashSet();
+    Set<S2CellId> ancestors = new HashSet<>();
     for (S2CellId cellId : cellIds) {
       int level = cellId.level();
       checkValidLevel(level);
@@ -407,7 +407,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
   public Collection<Term> getQueryTerms(Iterable<S2CellId> cellIds) {
     // See Rules 1 and 2 in the class javadoc, about the basic approaches.
     ImmutableList.Builder<Term> termBuilder = ImmutableList.builder();
-    Set<S2CellId> ancestors = Sets.newHashSet();
+    Set<S2CellId> ancestors = new HashSet<>();
     for (S2CellId cellId : cellIds) {
       int level = cellId.level();
       checkValidLevel(level);
@@ -492,7 +492,7 @@ public class S2IndexingHelperImpl implements S2IndexingHelper {
   }
 
   private List<S2CellId> getDenormalizedCellIds(S2CellUnion cellUnion) {
-    ArrayList<S2CellId> cellIds = Lists.newArrayList();
+    ArrayList<S2CellId> cellIds = new ArrayList<>();
     cellUnion.denormalize(minLevel(), levelMod(), cellIds);
     return ImmutableList.copyOf(cellIds);
   }

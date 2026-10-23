@@ -17,7 +17,7 @@
 package com.google.common.geometry;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2IndexingHelper.Term;
@@ -211,12 +211,8 @@ public class S2IndexingHelperImplTest {
             .setLevelMod(levelMod)
             .setOnlyPointIndexed()
             .build();
-    try {
-      helper.getIndexTerms(cellIds);
-      fail("Expected exception");
-    } catch (IllegalStateException e) {
-      // expected exception
-    }
+    // expected exception
+    assertThrows(IllegalStateException.class, () -> helper.getIndexTerms(cellIds));
   }
 
   @Test

@@ -631,6 +631,7 @@ public class S2BufferOperation {
    *       sibling pairs such as ABCBDB).
    *   <li>Full polygons are supported. Note that since full polygons do not have a boundary, they
    *       are not affected by buffering.
+   * </ul>
    */
   public void addShape(S2Shape shape) {
     bufferShape(shape);

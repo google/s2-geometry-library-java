@@ -511,7 +511,7 @@ public class GeometryTestCase {
   }
 
   /** A helper for testing {@link S2Coder} implementations. */
-  static <T> T roundtrip(S2Coder<T> coder, T value) {
+  public static <T> T roundtrip(S2Coder<T> coder, T value) {
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     try {
       coder.encode(value, output);
@@ -823,7 +823,7 @@ public class GeometryTestCase {
 
     /** Returns a new Pair containing the given values. */
     public static <A, B> Pair<A, B> of(A a, B b) {
-      return new Pair<A, B>(a, b);
+      return new Pair<>(a, b);
     }
 
     @Override

@@ -22,11 +22,11 @@ import com.google.common.geometry.S2Builder.GraphOptions.SiblingPairs;
 import com.google.common.geometry.S2BuilderGraph.EdgeList;
 import com.google.common.geometry.S2BuilderUtil.GraphShape;
 import com.google.common.geometry.primitives.IntVector;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.PrimitiveIterator.OfInt;
 
 /**
  * S2PolygonDegeneracyFinder provides public static methods {@link

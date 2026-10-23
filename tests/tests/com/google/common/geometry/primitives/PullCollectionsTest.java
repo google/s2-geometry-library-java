@@ -33,7 +33,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** Tests for {@link PullCollections}. */
+/** Tests for {@link Pullable}. */
 @RunWith(JUnit4.class)
 public final class PullCollectionsTest {
   private static final int SEED = 123455;
@@ -353,13 +353,15 @@ public final class PullCollectionsTest {
     assertThrows(IndexOutOfBoundsException.class, () -> pullList.get(0, element));
 
     // set() on an empty pullList
-    assertThrows(IndexOutOfBoundsException.class, () -> pullList.set(0, MutableLong.of(1)));
+    MutableLong value = MutableLong.of(1);
+    assertThrows(IndexOutOfBoundsException.class, () -> pullList.set(0, value));
 
     // get() and set() past the last element.
     pullList.resize(20);
     assertEquals(20, pullList.size());
 
-    assertThrows(IndexOutOfBoundsException.class, () -> pullList.set(20, MutableLong.of(1)));
+    MutableLong value2 = MutableLong.of(1);
+    assertThrows(IndexOutOfBoundsException.class, () -> pullList.set(20, value2));
     assertThrows(IndexOutOfBoundsException.class, () -> pullList.get(20, element));
   }
 

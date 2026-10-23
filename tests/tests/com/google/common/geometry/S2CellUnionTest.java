@@ -29,6 +29,8 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Range;
+import com.google.common.collect.RangeSet;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -46,7 +48,7 @@ import org.junit.runners.JUnit4;
 public class S2CellUnionTest extends GeometryTestCase {
   @Test
   public void testBasic() {
-    ArrayList<S2CellId> ids = Lists.newArrayList();
+    ArrayList<S2CellId> ids = new ArrayList<>();
     S2CellUnion empty = new S2CellUnion().initFromCellIds(ids);
     assertEquals(0, empty.size());
 
@@ -57,7 +59,7 @@ public class S2CellUnionTest extends GeometryTestCase {
     assertEquals(face1Id, face1Union.cellId(0));
 
     S2CellId face2Id = S2CellId.fromFace(2);
-    ArrayList<Long> cellids = Lists.newArrayList();
+    ArrayList<Long> cellids = new ArrayList<>();
     cellids.add(face2Id.id());
     S2CellUnion face2Union = new S2CellUnion().initFromIds(cellids);
     assertEquals(1, face2Union.size());
@@ -90,12 +92,12 @@ public class S2CellUnionTest extends GeometryTestCase {
       randomCells.add(data.getRandomCellId(S2CellId.MAX_LEVEL));
     }
 
-    S2CellUnion union = new S2CellUnion().initFromCellIds(Lists.newArrayList(randomCells));
+    S2CellUnion union = new S2CellUnion().initFromCellIds(new ArrayList<>(randomCells));
 
     // Add one more
     while (!randomCells.add(data.getRandomCellId(S2CellId.MAX_LEVEL))) {}
 
-    S2CellUnion unionPlusOne = new S2CellUnion().initFromCellIds(Lists.newArrayList(randomCells));
+    S2CellUnion unionPlusOne = new S2CellUnion().initFromCellIds(new ArrayList<>(randomCells));
 
     assertTrue(unionPlusOne.contains(union));
     assertFalse(union.contains(unionPlusOne));
@@ -106,7 +108,7 @@ public class S2CellUnionTest extends GeometryTestCase {
       parents.add(cellId.parent());
     }
 
-    S2CellUnion parentUnion = new S2CellUnion().initFromCellIds(Lists.newArrayList(parents));
+    S2CellUnion parentUnion = new S2CellUnion().initFromCellIds(new ArrayList<>(parents));
 
     assertTrue(parentUnion.contains(union));
     assertFalse(union.contains(parentUnion));
@@ -138,7 +140,9 @@ public class S2CellUnionTest extends GeometryTestCase {
     if (!selected && !data.oneIn(S2CellId.MAX_LEVEL - id.level())) {
       // Once a cell has been selected, the expected output is predetermined. We then make sure that
       // cells are selected that will normalize to the desired output.
-      expected.add(id);
+      if (expected != null) {
+        expected.add(id);
+      }
       selected = true;
     }
 
@@ -181,8 +185,8 @@ public class S2CellUnionTest extends GeometryTestCase {
     S2CellUnion cellunion = new S2CellUnion();
     final int kIters = 2000;
     for (int i = 0; i < kIters; ++i) {
-      ArrayList<S2CellId> input = Lists.newArrayList();
-      ArrayList<S2CellId> expected = Lists.newArrayList();
+      ArrayList<S2CellId> input = new ArrayList<>();
+      ArrayList<S2CellId> expected = new ArrayList<>();
       addCells(S2CellId.none(), false, input, expected);
       cellunion.initFromCellIds(input);
       assertEquals(cellunion.size(), expected.size());
@@ -223,10 +227,10 @@ public class S2CellUnionTest extends GeometryTestCase {
       }
 
       // Test contains(S2CellUnion) and intersects(S2CellUnion)
-      ArrayList<S2CellId> x = Lists.newArrayList();
-      ArrayList<S2CellId> y = Lists.newArrayList();
-      ArrayList<S2CellId> xOrY = Lists.newArrayList();
-      ArrayList<S2CellId> xAndY = Lists.newArrayList();
+      ArrayList<S2CellId> x = new ArrayList<>();
+      ArrayList<S2CellId> y = new ArrayList<>();
+      ArrayList<S2CellId> xOrY = new ArrayList<>();
+      ArrayList<S2CellId> xAndY = new ArrayList<>();
       for (int j = 0; j < input.size(); ++j) {
         boolean inX = data.random(2) == 0;
         boolean inY = data.random(2) == 0;
@@ -282,8 +286,8 @@ public class S2CellUnionTest extends GeometryTestCase {
       xAndYCells.getIntersection(xCells, yCells);
       assertEquals(xAndYExpected, xAndYCells);
 
-      ArrayList<S2CellId> test = Lists.newArrayList();
-      ArrayList<S2CellId> dummy = Lists.newArrayList();
+      ArrayList<S2CellId> test = new ArrayList<>();
+      ArrayList<S2CellId> dummy = new ArrayList<>();
 
       addCells(S2CellId.none(), false, test, dummy);
       for (int j = 0; j < test.size(); ++j) {
@@ -518,7 +522,7 @@ public class S2CellUnionTest extends GeometryTestCase {
     S2CellUnion cellUnion = new S2CellUnion();
     assertEquals(0, cellUnion.leafCellsCovered());
 
-    ArrayList<S2CellId> ids = Lists.newArrayList();
+    ArrayList<S2CellId> ids = new ArrayList<>();
     // One leaf cell on face 0.
     ids.add(S2CellId.fromFace(0).childBegin(S2CellId.MAX_LEVEL));
     cellUnion.initFromCellIds(ids);
@@ -632,7 +636,7 @@ public class S2CellUnionTest extends GeometryTestCase {
     // empty union
     assertEquals(0.0, cellUnion.averageBasedArea(), 0.0);
 
-    ArrayList<S2CellId> ids = Lists.newArrayList();
+    ArrayList<S2CellId> ids = new ArrayList<>();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
     ids.add(S2CellId.fromFacePosLevel(5, 0, 30));
     cellUnion.initFromCellIds(ids);
@@ -648,7 +652,7 @@ public class S2CellUnionTest extends GeometryTestCase {
     // empty union
     assertEquals(0.0, cellUnion.approxArea(), 0.0);
 
-    ArrayList<S2CellId> ids = Lists.newArrayList();
+    ArrayList<S2CellId> ids = new ArrayList<>();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
     ids.add(S2CellId.fromFacePosLevel(5, 0, 30));
     cellUnion.initFromCellIds(ids);
@@ -664,7 +668,7 @@ public class S2CellUnionTest extends GeometryTestCase {
     // empty union
     assertEquals(0.0, cellUnion.exactArea(), 0.0);
 
-    ArrayList<S2CellId> ids = Lists.newArrayList();
+    ArrayList<S2CellId> ids = new ArrayList<>();
     ids.add(S2CellId.fromFacePosLevel(1, 0, 1));
     ids.add(S2CellId.fromFacePosLevel(5, 0, 30));
     cellUnion.initFromCellIds(ids);
@@ -677,8 +681,7 @@ public class S2CellUnionTest extends GeometryTestCase {
   @Test
   public void testCellUnionSerialization() {
     S2CellUnion union = new S2CellUnion();
-    union.initFromIds(
-        Lists.newArrayList(ImmutableList.of(0x33L, 0x8e3748fabL, 0x91230abcdef83427L)));
+    union.initFromIds(new ArrayList<>(ImmutableList.of(0x33L, 0x8e3748fabL, 0x91230abcdef83427L)));
     doSerializationTest(union);
   }
 
@@ -688,5 +691,110 @@ public class S2CellUnionTest extends GeometryTestCase {
     assertEquals(6 * (1L << 60), wholeSphere.leafCellsCovered());
     wholeSphere.expand(0);
     assertEquals(S2CellUnion.wholeSphere(), wholeSphere);
+  }
+
+  @GwtIncompatible("RangeSet")
+  @Test
+  public void testRanges() {
+    // Test that the 6 face cells cover the whole world range.
+    S2CellUnion sixFaces = S2CellUnion.wholeSphere();
+    RangeSet<S2CellId> ranges = sixFaces.ranges();
+    assertEquals(1, ranges.asRanges().size());
+    assertEquals(
+        Range.closedOpen(S2CellId.begin(S2CellId.MAX_LEVEL), S2CellId.end(S2CellId.MAX_LEVEL)),
+        ranges.asRanges().iterator().next());
+
+    // Test that a couple of adjacent leaf cells result in a single range.
+    S2CellId cellA = data.getRandomCellId(S2CellId.MAX_LEVEL);
+    S2CellId cellB = cellA.next();
+    S2CellUnion adjacentPair = S2CellUnion.copyFrom(ImmutableList.of(cellA, cellB));
+    ranges = adjacentPair.ranges();
+    assertEquals(1, ranges.asRanges().size());
+    assertEquals(Range.closedOpen(cellA, cellB.next()), ranges.asRanges().iterator().next());
+
+    // Test that the ranges to-and-from a CellUnion are the same as normalizing.
+    ArrayList<S2CellId> rawIds = new ArrayList<>();
+    addCells(S2CellId.none(), false, rawIds, new ArrayList<>());
+    S2CellUnion cells = new S2CellUnion();
+    cells.initFromCellIds(rawIds);
+
+    S2CellUnion fromRanges = new S2CellUnion();
+    for (Range<S2CellId> range : cells.ranges().asRanges()) {
+      S2CellUnion rangeUnion = new S2CellUnion();
+      rangeUnion.initFromBeginEnd(range.lowerEndpoint(), range.upperEndpoint());
+      fromRanges.cellIds().addAll(rangeUnion.cellIds());
+    }
+    fromRanges.normalize();
+
+    assertEquals(cells, fromRanges);
+  }
+
+  @Test
+  public void testToStringEmpty() {
+    assertEquals("Size:0 S2CellIds:", new S2CellUnion().toString());
+  }
+
+  @Test
+  public void testToStringOneCell() {
+    S2CellUnion union = new S2CellUnion();
+    union.initFromCellId(S2CellId.fromFace(1));
+    assertEquals("Size:1 S2CellIds:3", union.toString());
+  }
+
+  @Test
+  public void testToStringTwoCells() {
+    S2CellUnion union = new S2CellUnion();
+    union.initRawCellIds(Lists.newArrayList(S2CellId.fromFace(1), S2CellId.fromFace(2)));
+    assertEquals("Size:2 S2CellIds:3,5", union.toString());
+  }
+
+  @Test
+  public void testFromVerbatim() {
+    ArrayList<S2CellId> ids = Lists.newArrayList(S2CellId.fromFace(1), S2CellId.fromFace(2));
+    S2CellUnion union = S2CellUnion.fromVerbatim(ids);
+    assertEquals(ids, union.cellIds());
+  }
+
+  @Test
+  public void testFromNormalized() {
+    ArrayList<S2CellId> ids = Lists.newArrayList(S2CellId.fromFace(1), S2CellId.fromFace(2));
+    S2CellUnion union = S2CellUnion.fromNormalized(ids);
+    assertEquals(ids, union.cellIds());
+  }
+
+  @Test
+  public void testDifference() {
+    for (int i = 0; i < 200; ++i) {
+        ArrayList<S2CellId> input = new ArrayList<>();
+        addCells(S2CellId.none(), false, input, null);
+        ArrayList<S2CellId> x = new ArrayList<>();
+        ArrayList<S2CellId> y = new ArrayList<>();
+        for (S2CellId id : input) {
+          if (data.random(2) == 0) {
+            x.add(id);
+          }
+          if (data.random(2) == 0) {
+            y.add(id);
+          }
+        }
+
+        S2CellUnion xCells = new S2CellUnion().initFromCellIds(x);
+        S2CellUnion yCells = new S2CellUnion().initFromCellIds(y);
+        S2CellUnion xMinusY = S2CellUnion.difference(xCells, yCells);
+        S2CellUnion yMinusX = S2CellUnion.difference(yCells, xCells);
+
+        assertTrue(xCells.contains(xMinusY));
+        assertFalse(xMinusY.intersects(yCells));
+        assertTrue(yCells.contains(yMinusX));
+        assertFalse(yMinusX.intersects(xCells));
+        assertFalse(xMinusY.intersects(yMinusX));
+
+        S2CellUnion xAndY = S2CellUnion.intersection(xCells, yCells);
+        S2CellUnion xOrY = S2CellUnion.union(xCells, yCells);
+
+        S2CellUnion diffIntersectionUnion = S2CellUnion.union(
+            S2CellUnion.union(xMinusY, yMinusX), xAndY);
+        assertEquals(xOrY, diffIntersectionUnion);
+    }
   }
 }

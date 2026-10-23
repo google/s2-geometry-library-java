@@ -19,12 +19,9 @@ import static java.lang.Math.max;
 
 import com.google.common.geometry.primitives.Ints.IntBiConsumer;
 import com.google.common.geometry.primitives.Ints.IntComparator;
-import com.google.common.geometry.primitives.Ints.IntConsumer;
 import com.google.common.geometry.primitives.Ints.IntList;
-import com.google.common.geometry.primitives.Ints.IntPredicate;
 import com.google.common.geometry.primitives.Ints.IntSequence;
 import com.google.common.geometry.primitives.Ints.MutableIntList;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.common.primitives.Ints;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.AbstractList;
@@ -32,7 +29,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.PrimitiveIterator.OfInt;
 import java.util.Random;
+import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 /**
  * IntVector is a general purpose implementation of {@link MutableIntList}, and analogous to {@code
@@ -46,7 +46,7 @@ import java.util.Random;
  * constructing an IntVector of the appropriate size, or using {@link #ensureCapacity(int)} before
  * adding many elements.
  *
- * <p>Benchmarks in {@link IntVectorBenchmark} compare IntVector to raw arrays and to an {@code
+ * <p>Benchmarks in `IntVectorBenchmark` compare IntVector to raw arrays and to an {@code
  * ArrayList<Integer>}. IntVector is nearly as fast as a raw int[] array for many access patterns,
  * including random updates, but for simple linear loops, arrays may be twice as fast as an
  * IntVector. However, IntVector takes less than half the time as an ArrayList to grow by repeatedly
@@ -60,8 +60,8 @@ import java.util.Random;
  * provided which does exactly that, for convenience.
  *
  * <p>For sorting with a Comparator, IntVector provides a {@link #sort(IntComparator)} method
- * implemented using the fastest currently available stable sort. This is the recommended option
- * for most clients. However, the best sort performance might depend on situation details. IntVector
+ * implemented using the fastest currently available stable sort. This is the recommended option for
+ * most clients. However, the best sort performance might depend on situation details. IntVector
  * provides asList(), which provides an AbstractList that may be sorted with the highly optimized
  * List.sort(). List.sort() is also a stable sort, i.e. does not reorder elements that compare as
  * equal. The only downside is it boxes ints. The other option is to use {@link IntSorter}, which

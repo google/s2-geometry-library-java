@@ -19,7 +19,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.S2CrossingEdgeQuery.Edges.Empty;
 import com.google.common.geometry.S2EdgeUtil.FaceSegment;
 import com.google.common.geometry.S2Shape.MutableEdge;
@@ -72,7 +71,7 @@ public class S2CrossingEdgeQuery {
   private S2ShapeIndex index;
 
   /** Temporary list of cells that intersect the query edge AB. Used while processing a query. */
-  private final List<S2ShapeIndex.Cell> cells = Lists.newArrayList();
+  private final List<S2ShapeIndex.Cell> cells = new ArrayList<>();
 
   /** The following vectors are temporary storage used while processing a query. */
   private S2Iterator<S2ShapeIndex.Cell> iter;

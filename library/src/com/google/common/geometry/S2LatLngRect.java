@@ -401,7 +401,6 @@ public final class S2LatLngRect extends S2LatLngRectBase {
     encode(new LittleEndianOutput(output));
   }
 
-  @JsIgnore
   void encode(LittleEndianOutput encoder) throws IOException {
     encoder.writeByte(LOSSLESS_ENCODING_VERSION);
     encoder.writeDouble(lat().lo());
@@ -423,7 +422,6 @@ public final class S2LatLngRect extends S2LatLngRectBase {
     return decode(new LittleEndianInput(input));
   }
 
-  @JsIgnore
   static S2LatLngRect decode(LittleEndianInput decoder) throws IOException {
     byte version = decoder.readByte();
     if (version != LOSSLESS_ENCODING_VERSION) {

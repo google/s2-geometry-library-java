@@ -19,6 +19,7 @@ import static com.google.common.geometry.BufferUtils.createBytes;
 import static org.junit.Assert.assertEquals;
 
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.PrimitiveArrays.Longs;
@@ -26,6 +27,7 @@ import com.google.common.primitives.ImmutableLongArray;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -143,5 +145,16 @@ public class PrimitiveArraysTest extends GeometryTestCase {
     } catch (IllegalArgumentException e) {
       // Do nothing.
     }
+  }
+
+  @Test
+  public void testLongsTransform() {
+    assertEquals(0, Longs.transform(ImmutableList.<String>of(), Long::parseLong).length());
+    List<String> values = Arrays.asList("10", "20", "30");
+    Longs longs = Longs.transform(values, Long::parseLong);
+    assertEquals(3, longs.length());
+    assertEquals(10L, longs.get(0));
+    assertEquals(20L, longs.get(1));
+    assertEquals(30L, longs.get(2));
   }
 }

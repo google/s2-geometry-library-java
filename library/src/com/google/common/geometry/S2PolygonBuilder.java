@@ -22,11 +22,11 @@ import static java.lang.Math.sqrt;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.geometry.S2ClosestPointQuery.Result;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Stack;
@@ -77,13 +77,13 @@ public final class S2PolygonBuilder {
    * The current set of edges, grouped by origin. The set of destination vertices is a multiset so
    * that the same edge can be present more than once.
    */
-  private final Map<S2Point, Multiset<S2Point>> edges = Maps.newHashMap();
+  private final Map<S2Point, Multiset<S2Point>> edges = new HashMap<>();
 
   /**
    * Unique collection of the starting (first) vertex of all edges, in the order they are added to
    * {@code edges}.
    */
-  private final List<S2Point> startingVertices = Lists.newArrayList();
+  private final List<S2Point> startingVertices = new ArrayList<>();
 
   /** Default constructor for well-behaved polygons. Uses the DIRECTED_XOR options. */
   @JsIgnore // J2CL allows only one constructor.
@@ -624,7 +624,7 @@ public final class S2PolygonBuilder {
    */
   @CanIgnoreReturnValue
   public boolean assemblePolygon(S2Polygon polygon, @Nullable List<S2Edge> unusedEdges) {
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     boolean success = assembleLoops(loops, unusedEdges);
 
     if (options.getUndirectedEdges()) {
@@ -698,10 +698,10 @@ public final class S2PolygonBuilder {
    */
   private @Nullable S2Loop assembleLoop(S2Point v0, S2Point v1, @Nullable List<S2Edge> unusedEdges) {
     // The path so far.
-    List<S2Point> path = Lists.newArrayList();
+    List<S2Point> path = new ArrayList<>();
 
     // Maps a vertex to its index in "path".
-    Map<S2Point, Integer> index = Maps.newHashMap();
+    Map<S2Point, Integer> index = new HashMap<>();
     path.add(v0);
     path.add(v1);
 
@@ -800,7 +800,7 @@ public final class S2PolygonBuilder {
 
     // We need to copy the set of edges affected by the move, since this.edges could be reallocated
     // when we start modifying it.
-    List<S2Edge> edgesCopy = Lists.newArrayList();
+    List<S2Edge> edgesCopy = new ArrayList<>();
     for (Map.Entry<S2Point, Multiset<S2Point>> edge : this.edges.entrySet()) {
       S2Point v0 = edge.getKey();
       Multiset<S2Point> vset = edge.getValue();
@@ -862,9 +862,9 @@ public final class S2PolygonBuilder {
 
     // Next, we loop through all the vertices and attempt to grow a maximal mergeable group starting
     // from each vertex.
-    Map<S2Point, S2Point> mergeMap = Maps.newHashMap();
+    Map<S2Point, S2Point> mergeMap = new HashMap<>();
     Stack<S2Point> frontier = new Stack<>();
-    List<Result<Void>> mergeable = Lists.newArrayList();
+    List<Result<Void>> mergeable = new ArrayList<>();
     S2PointIndex<Void> index = index();
     S2ClosestPointQuery<Void> query = new S2ClosestPointQuery<>(index);
     query.setMaxDistance(snapDistance);
@@ -906,7 +906,7 @@ public final class S2PolygonBuilder {
   /** Splices vertices that are near an edge onto the edge. */
   private void spliceEdges(S1Angle spliceDistance) {
     // We keep a stack of unprocessed edges. Initially all edges are pushed onto the stack.
-    List<S2Edge> pendingEdges = Lists.newArrayList();
+    List<S2Edge> pendingEdges = new ArrayList<>();
     for (Map.Entry<S2Point, Multiset<S2Point>> edge : edges.entrySet()) {
       S2Point v0 = edge.getKey();
       for (S2Point v1 : edge.getValue().elementSet()) {

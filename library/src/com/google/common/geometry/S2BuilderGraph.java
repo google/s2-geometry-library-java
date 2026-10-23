@@ -30,10 +30,8 @@ import com.google.common.geometry.primitives.IdSetLexicon.IdSet;
 import com.google.common.geometry.primitives.IntPairVector;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.IntBiConsumer;
-import com.google.common.geometry.primitives.Ints.IntConsumer;
 import com.google.common.geometry.primitives.Ints.IntList;
 import com.google.common.geometry.primitives.Ints.IntSequence;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.common.geometry.primitives.Sorter;
 import com.google.common.primitives.Ints;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -45,6 +43,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.PrimitiveIterator.OfInt;
+import java.util.function.IntConsumer;
 
 /**
  * A collection of snapped edges that is passed to a {@link S2BuilderLayer} for assembly. (Example
@@ -837,11 +837,11 @@ public class S2BuilderGraph {
    *
    * <p>Note that loops may include both edges of a sibling pair. When several such edges are
    * connected in a chain or a spanning tree, they form a zero-area "filament". The entire loop may
-   * be a filament (i.e., a degenerate loop with an empty interior), or the loop may have have
-   * non-empty interior with several filaments that extend inside it, or the loop may consist of
-   * several "holes" connected by filaments. These filaments do not change the interior of any loop,
-   * so if you are only interested in point containment then they can safely be removed by setting
-   * the "degenerateBoundaries" parameter to DISCARD. (They can't be removed by setting
+   * be a filament (i.e., a degenerate loop with an empty interior), or the loop may have non-empty
+   * interior with several filaments that extend inside it, or the loop may consist of several
+   * "holes" connected by filaments. These filaments do not change the interior of any loop, so if
+   * you are only interested in point containment then they can safely be removed by setting the
+   * "degenerateBoundaries" parameter to DISCARD. (They can't be removed by setting
    * (options.siblingPairs() == DISCARD) because the two siblings might belong to different polygons
    * of the mesh.) Note that you can prevent multiple copies of sibling pairs by specifying
    * options.duplicateEdges() == MERGE.
@@ -859,7 +859,7 @@ public class S2BuilderGraph {
       DegenerateBoundaries degenerateBoundaries,
       List<DirectedComponent> outputComponents,
       S2Error error) {
-    // TODO(torrey): Use the new new index validation system's component detection logic instead of
+    // TODO(torrey): Use the new index validation system's component detection logic instead of
     // the current algorithm for finding DirectedComponents and UndirectedComponents.
     Preconditions.checkState(
         options.degenerateEdges() == DegenerateEdges.DISCARD
@@ -935,7 +935,7 @@ public class S2BuilderGraph {
             }
 
             // Peel off a loop from the path.
-            int[] loop = path.subList(siblingIndex + 1, path.size() - 2).toIntArray();
+            int[] loop = path.subList(siblingIndex + 1, path.size() - 1).toIntArray();
             path.size(siblingIndex);
 
             // Mark the edges that are no longer part of the path.
@@ -2094,13 +2094,13 @@ public class S2BuilderGraph {
      * must be between 0 and {@link #size()}. (This will always be the given vertex.)
      */
     public int getSrcId(int index) {
-      Preconditions.checkArgument(index >= 0 && index < size());
+      Preconditions.checkElementIndex(index, size());
       return edges.getSrcId(begin + index);
     }
 
     /** Returns the destination vertex id of the edge at the given index. */
     public int getDstId(int index) {
-      Preconditions.checkArgument(index >= 0 && index < size());
+      Preconditions.checkElementIndex(index, size());
       return edges.getDstId(begin + index);
     }
 
@@ -2109,7 +2109,7 @@ public class S2BuilderGraph {
      * given vertex at the given index.
      */
     public void get(int index, Edge edge) {
-      Preconditions.checkArgument(index >= 0 && index < size());
+      Preconditions.checkElementIndex(index, size());
       edge.set(edges.getSrcId(begin + index), edges.getDstId(begin + index));
     }
 
@@ -2118,7 +2118,7 @@ public class S2BuilderGraph {
      * from the given vertex at the given index.
      */
     public void getReverse(int index, Edge edge) {
-      Preconditions.checkArgument(index >= 0 && index < size());
+      Preconditions.checkElementIndex(index, size());
       edge.set(edges.getDstId(begin + index), edges.getSrcId(begin + index));
     }
   }

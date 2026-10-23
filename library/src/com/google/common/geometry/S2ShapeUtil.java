@@ -20,7 +20,7 @@ import static java.lang.Math.abs;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.Lists;
+import com.google.common.geometry.S2Builder.GraphOptions;
 import com.google.common.geometry.S2CrossingEdgesQuery.CrossingType;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2EdgeUtil.WedgeRelation;
@@ -37,6 +37,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.IntPredicate;
 import org.jspecify.annotations.Nullable;
 
 /** Utilities for working with S2Shape. */
@@ -90,7 +91,7 @@ public class S2ShapeUtil {
    */
   public static class S2EdgeVectorShape extends AbstractList<S2Edge> implements S2Shape {
 
-    private final List<S2Edge> edges = Lists.newArrayList();
+    private final List<S2Edge> edges = new ArrayList<>();
 
     /** Default constructor creates a vector with no edges. */
     public S2EdgeVectorShape() {}
@@ -440,12 +441,6 @@ public class S2ShapeUtil {
     return -1;
   }
 
-  /** A filter of indexes. */
-  public interface IntPredicate {
-    /** Returns whether the given value tests as true. */
-    boolean test(int index);
-  }
-
   /**
    * Returns the lowest index in the range {@code [low, high)} not smaller than a target. If every
    * value is smaller, returns {@code high}.
@@ -689,11 +684,12 @@ public class S2ShapeUtil {
    * typeTag(). Also returns true if both instances are null.
    */
   public static boolean equals(S2Shape a, S2Shape b) {
-    // Check null on either side.
-    if (a == null) {
-      return b == null;
-    } else if (b == null) {
-      return a == null;
+    // Check identity and nulls.
+    if (a == b) {
+      return true;
+    }
+    if (a == null || b == null) {
+      return false;
     }
 
     // Check geometry type properties of the shapes.
@@ -967,6 +963,64 @@ public class S2ShapeUtil {
       return null;
     } else {
       return containsSign > 0;
+    }
+  }
+
+  /**
+   * A layer that builds a polygon where the loops should be oriented such that the result polygon
+   * contains 'ref' iff ref.contained() is true. The result is available on the wrapped layer.
+   */
+  public static class EvenOddPolygonLayer implements S2BuilderLayer {
+    private final S2PolygonLayer polygonLayer;
+    private ReferencePoint ref;
+
+    /** Creates a layer that wraps the given layer and orients its loops as needed. */
+    public EvenOddPolygonLayer(S2PolygonLayer polygonLayer, ReferencePoint ref) {
+      this.polygonLayer = polygonLayer;
+      this.ref = ref;
+    }
+
+    /** Wraps 'polygonLayer' and requires {@link #init} be called prior to building with this. */
+    public EvenOddPolygonLayer(S2PolygonLayer polygonLayer) {
+      this(polygonLayer, ReferencePoint.create(false));
+    }
+
+    /** Sets the reference point to use for orienting the loops. */
+    public void init(ReferencePoint ref) {
+      this.ref = ref;
+    }
+
+    @Override public GraphOptions graphOptions() {
+      return polygonLayer.graphOptions();
+    }
+
+    @Override public boolean build(S2BuilderGraph graph, S2Error error) {
+      // Build the polygon with the underlying layer.
+      if (!polygonLayer.build(graph, error)) {
+        return false;
+      }
+
+      // Orient the loops to face away from the reference point (assume it's outside the polygon).
+      S2Polygon polygon = polygonLayer.getPolygon();
+      List<S2Loop> loops = new ArrayList<>();
+      polygon.release(loops);
+      for (S2Loop loop : loops) {
+        if (loop.contains(ref.point())) {
+          loop.invert();
+        }
+      }
+
+      // Rebuild the polygon and invert the entire set of loops if the polygon appears inverted.
+      polygon.initNested(loops);
+      if (ref.contained() != polygon.contains(ref.point())) {
+        S2Polygon inverted = new S2Polygon();
+        inverted.initToComplement(polygon);
+        polygon = inverted;
+      }
+
+      // Set the result to the oriented polygon.
+      polygonLayer.setPolygon(polygon);
+      return true;
     }
   }
 
@@ -1320,7 +1374,7 @@ public class S2ShapeUtil {
    *
    * <p>If assertions are enabled, as they normally are for unit tests, an assertion may be thrown
    * if the S2Polyline is invalid. When assertions are not enabled, callers can use {@link
-   * S2Polyline#isValid()} or {@link S2Polyline#findValidationError()} to check validity.
+   * S2Polyline#isValid()} or {@link S2Polyline#findValidationError(S2Error)} to check validity.
    */
   public static S2Polyline shapeToS2Polyline(S2Shape line) {
     Preconditions.checkState(line.dimension() == 1);

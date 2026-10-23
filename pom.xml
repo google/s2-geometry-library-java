@@ -74,7 +74,7 @@
 
   <properties>
     <revision>HEAD-SNAPSHOT</revision>
-    <maven.compiler.release>11</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <guava.version>33.4.7-jre</guava.version>
     <errorprone.version>2.19.1</errorprone.version>
     <fastutil.version>8.5.15</fastutil.version>

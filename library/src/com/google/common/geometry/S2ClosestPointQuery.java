@@ -96,7 +96,7 @@ public final class S2ClosestPointQuery<T> {
   private Predicate<Result<T>> filter;
 
   /** A small (<6) cell covering of the indexed points. */
-  private final List<S2CellId> indexCovering = Lists.newArrayList();
+  private final List<S2CellId> indexCovering = new ArrayList<>();
 
   /** Unprocessed cells for the current query being processed. */
   private final PriorityQueue<QueueEntry> queue = new PriorityQueue<>();
@@ -105,16 +105,16 @@ public final class S2ClosestPointQuery<T> {
   private S2Iterator<Entry<T>> iter;
 
   /** The covering of {@link #indexCovering}. Type is ArrayList due to {@link S2RegionCoverer}. */
-  private final ArrayList<S2CellId> regionCovering = Lists.newArrayList();
+  private final ArrayList<S2CellId> regionCovering = new ArrayList<>();
 
   /** The covering of {@link #maxDistance}. Type is ArrayList due to {@link S2RegionCoverer}. */
-  private final ArrayList<S2CellId> maxDistanceCovering = Lists.newArrayList();
+  private final ArrayList<S2CellId> maxDistanceCovering = new ArrayList<>();
 
   /** The intersection between the index and {@link #regionCovering}. */
-  private final List<S2CellId> intersectionWithRegion = Lists.newArrayList();
+  private final List<S2CellId> intersectionWithRegion = new ArrayList<>();
 
   /** The intersection between the index and {@link #maxDistance}. */
-  private final List<S2CellId> intersectionWithMaxDistance = Lists.newArrayList();
+  private final List<S2CellId> intersectionWithMaxDistance = new ArrayList<>();
 
   /** Temporary storage for index entries that are of interest during query processing. */
   @SuppressWarnings({"rawtypes", "unchecked"})

@@ -28,7 +28,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -422,7 +422,7 @@ public class S2PolygonBuilderTest extends GeometryTestCase {
       double maxPerturb,
       double minEdge,
       S2PolygonBuilder builder) {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     getVertices(chain.str, basis, vertices);
     if (chain.closed) {
       vertices.add(vertices.get(0));
@@ -457,7 +457,7 @@ public class S2PolygonBuilderTest extends GeometryTestCase {
     if (unusedEdges.size() == numExpected) {
       return "Correct number of unused edges.";
     }
-    List<String> lines = Lists.newArrayList();
+    List<String> lines = new ArrayList<>();
     // Get inverse to rotate coordinates back to starting location.
     Matrix inverse = m.transpose();
     lines.add(
@@ -628,12 +628,12 @@ public class S2PolygonBuilderTest extends GeometryTestCase {
       for (Chain chain : chainsIn) {
         addChain(chain, m, maxSplits, maxPerturb, minEdge, builder);
       }
-      List<S2Loop> loops = Lists.newArrayList();
+      List<S2Loop> loops = new ArrayList<>();
 
       // Sometimes, don't provide the optional unusedEdges list. The behavior of the method should
       // be the same, aside from not filling the list.
       boolean withoutUnusedEdges = data.oneIn(4);
-      List<S2Edge> unusedEdges = withoutUnusedEdges ? null : Lists.newArrayList();
+      List<S2Edge> unusedEdges = withoutUnusedEdges ? null : new ArrayList<>();
 
       boolean result;
       if (xorEdges < 0) {
@@ -646,9 +646,9 @@ public class S2PolygonBuilderTest extends GeometryTestCase {
           loop.normalize();
         }
       }
-      List<S2Loop> expected = Lists.newArrayList();
+      List<S2Loop> expected = new ArrayList<>();
       for (String loop : loopsOut) {
-        List<S2Point> vertices = Lists.newArrayList();
+        List<S2Point> vertices = new ArrayList<>();
         getVertices(loop, m, vertices);
         expected.add(new S2Loop(vertices));
       }
@@ -705,7 +705,7 @@ public class S2PolygonBuilderTest extends GeometryTestCase {
   }
 
   private static String loopsToString(String label, Matrix m, List<S2Loop> actual) {
-    List<String> lines = Lists.newArrayList();
+    List<String> lines = new ArrayList<>();
     for (int i = 0; i < actual.size(); i++) {
       lines.add(Platform.formatString("%s loop %d:", label, i));
       S2Loop loop = actual.get(i);

@@ -282,9 +282,7 @@ public class IntVectorBenchmark {
 
     // INT VECTOR
 
-    /**
-     * IntVector.sort() uses {@link Arrays#sort()}. About 100x faster than IntSorter.
-     */
+    /** IntVector.sort() uses {@link Arrays#sort(int[])}. About 100x faster than IntSorter. */
     @Benchmark
     public int naturalSortVectorWithArraysSort() {
       vector.sort();
@@ -298,7 +296,7 @@ public class IntVectorBenchmark {
       return vector.get(0) + vector.get(numElements - 1);
     }
 
-    /** Sorts an IntVector as an AbstractList using {@link List#sort()}. */
+    /** Sorts an IntVector as an AbstractList using {@link List#sort(java.util.Comparator)}. */
     @Benchmark
     public int naturalSortWrappedVectorWithListSort() {
       vector.asList().sort(naturalOrder());
@@ -316,7 +314,7 @@ public class IntVectorBenchmark {
     }
 
     /**
-     * Sorts an IntVector as an AbstractList using {@link List#sort()} and a
+     * Sorts an IntVector as an AbstractList using {@link List#sort(java.util.Comparator)} and a
      * LEXICOGRAPHIC_COMPARATOR.
      */
     @Benchmark
@@ -327,14 +325,14 @@ public class IntVectorBenchmark {
 
     // ARRAY LIST
 
-    /** Sorts an ArrayList with {@link ArrayList#sort()}. */
+    /** Sorts an ArrayList with {@link ArrayList#sort(java.util.Comparator)}. */
     @Benchmark
     public int naturalSortList() {
       list.sort(naturalOrder());
       return list.get(0) + list.get(numElements - 1);
     }
 
-    /** Sorts an ArrayList lexicograpically with {@link ArrayList#sort()}. */
+    /** Sorts an ArrayList lexicographically with {@link ArrayList#sort(java.util.Comparator)}. */
     @Benchmark
     public int lexicographicSortList() {
       list.sort(LEXICOGRAPHIC_COMPARATOR);

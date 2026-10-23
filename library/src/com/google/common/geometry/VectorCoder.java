@@ -106,6 +106,25 @@ public class VectorCoder<T> implements S2Coder<List<T>> {
   public static final VectorCoder<S2Shape> COMPACT_SHAPE =
       new VectorCoder<>(S2TaggedShapeCoder.COMPACT);
 
+  /** Returns a coder for nullable values, where non-null values are encoded with 'elementCoder'. */
+  public static <T> VectorCoder<T> nullableVector(S2Coder<T> elementCoder) {
+    return new VectorCoder<>(new S2Coder<>() {
+        @Override public void encode(T value, OutputStream output) throws IOException {
+          if (value != null) {
+            elementCoder.encode(value, output);
+          } // else VectorCoder captures that we wrote no bytes
+        }
+
+        @Override public T decode(Bytes data, Cursor cursor) throws IOException {
+          return cursor.remaining() == 0 ? null : elementCoder.decode(data, cursor);
+        }
+
+        @Override public boolean isLazy() {
+          return elementCoder.isLazy();
+        }
+      });
+  }
+
   private final S2Coder<T> coder;
 
   /**

@@ -324,10 +324,10 @@ public interface MutableS2Point extends Comparable<MutableS2Point> {
      * changed via the returned MutableS2Point or by other means.
      *
      * <p>NOTE: The given index is range checked when get() is first called, but if this
-     * MutableS2PointList is cleared or truncated to make size <= index, the returned MutableS2Point
-     * then refers to an entry that is beyond (size - 1). That is NOT currently checked, and
-     * operations on that MutableS2Point will not obviously fail, because the underlying array is
-     * never reduced in size.
+     * MutableS2PointList is cleared or truncated to make {@code size <= index}, the returned
+     * MutableS2Point then refers to an entry that is beyond (size - 1). That is NOT currently
+     * checked, and operations on that MutableS2Point will not obviously fail, because the
+     * underlying array is never reduced in size.
      */
     public MutableS2Point get(int index) {
       rangeCheck(index);

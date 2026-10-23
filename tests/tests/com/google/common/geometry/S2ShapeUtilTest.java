@@ -16,6 +16,7 @@
 package com.google.common.geometry;
 
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import static com.google.common.geometry.S2TextFormat.makeLaxPolygonOrDie;
 import static com.google.common.geometry.S2TextFormat.makeLoop;
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static com.google.common.geometry.S2TextFormat.makePolygon;
@@ -27,7 +28,6 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.S2Polygon.Shape;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.S2Shape.ReferencePoint;
@@ -52,7 +52,7 @@ public class S2ShapeUtilTest extends GeometryTestCase {
   public void testEdgeAccess() {
     S2EdgeVectorShape shape = new S2EdgeVectorShape();
     final int kNumEdges = 100;
-    List<S2Edge> edges = Lists.newArrayList();
+    List<S2Edge> edges = new ArrayList<>();
     for (int i = 0; i < kNumEdges; ++i) {
       S2Point a = data.getRandomPoint();
       S2Point b = data.getRandomPoint();
@@ -438,7 +438,7 @@ public class S2ShapeUtilTest extends GeometryTestCase {
   @Test
   public void fullPolygonToS2Polygon() {
     // verify that a full polygon is converted correctly
-    var laxPolygon = S2TextFormat.makeLaxPolygonOrDie("full");
+    var laxPolygon = makeLaxPolygonOrDie("full");
     var polygon = S2ShapeUtil.shapeToS2Polygon(laxPolygon);
     assertEquals(1, polygon.numLoops());
     assertEquals(1, polygon.getNumVertices());
@@ -562,5 +562,129 @@ public class S2ShapeUtilTest extends GeometryTestCase {
     // lax polyline has the same 5 points.
     var line = S2TextFormat.parsePointsOrDie("1:1, 1:3, 1:3, 3:3, 3:1");
     verifyShapeToS2LaxPolyline(line, 5);
+  }
+
+  // fromEvenOddPolygon tests
+
+  /**
+   * Verifies that the EvenOddPolygonLayer produces the expected S2Polygon for the given reference
+   * point and S2LaxPolygonShape. The input is lax, so holes face their loops. The output is legacy
+   * S2Polygon, so loops should all face away from the reference point, or toward it if contained.
+   * 
+   * @param expected the string that results from {@link S2TextFormat#toString(S2Polygon)}
+   * @param refStr the reference point that results from {@link S2TextFormat#makePointOrDie(String)}
+   * prefixed with "!" iff the reference point is outside the polygon
+   * @param polygon the string that results from {@link S2TextFormat#toString(S2LaxPolygonShape)} on
+   * the input polygon.
+   */
+  private void checkEvenOdd(String expected, String refStr, String polygon) {
+    boolean contained = true;
+    if (refStr.startsWith("!")) {
+      contained = false;
+      refStr = refStr.substring(1);
+    }
+    // Create a builder that will split, simplify, and normalize the polygon.
+    S2Builder builder = new S2Builder.Builder().setSplitCrossingEdges(true).build();
+    S2PolygonLayer polygonLayer = new S2PolygonLayer();
+    ReferencePoint ref = ReferencePoint.create(S2TextFormat.makePointOrDie(refStr), contained);
+    builder.startLayer(new S2ShapeUtil.EvenOddPolygonLayer(polygonLayer, ref));
+    builder.addShape(S2TextFormat.makeLaxPolygonOrDie(polygon));
+    assertTrue(builder.build(new S2Error()));
+    assertEquals(expected, S2TextFormat.toString(polygonLayer.getPolygon(), "; "));
+  }
+
+  @Test
+  public void testEvenOddEmpty() {
+    checkEvenOdd("empty", "!90:0", "empty");
+    checkEvenOdd("full", "90:0", "empty");
+  }
+
+  @Test
+  public void testEvenOddFull() {
+    checkEvenOdd("full", "90:0", "full");
+    checkEvenOdd("empty", "!90:0", "full");
+  }
+
+  @Test
+  public void testEvenOddTriangle() {
+    checkEvenOdd("0:0, 0:1, 1:0", "0.1:0.1", "0:0, 0:1, 1:0");
+  }
+
+  @Test
+  public void testEvenOddInvertedTriangle() {
+    checkEvenOdd("1:0, 0:1, 0:0", "!0.1:0.1", "0:0, 0:1, 1:0");
+  }
+
+  @Test
+  public void testEvenOddHourglass() {
+    // A self-crossing hourglass shape. The center point is inside the lower lobe.
+    checkEvenOdd("-1:1, 0:1, 0:0; 0:1, 0:2, 1:1", "-0.2:0.8", "0:0, 0:2, 1:1, -1:1");
+  }
+
+  @Test
+  public void testEvenOddTouchingHourglass() {
+    // Two triangles touching at a single vertex (1:1).
+    // The even-odd fill should result in the union of the two triangles.
+    checkEvenOdd("0:0, 0:2, 1:1; 1:1, 2:2, 2:0", "0.1:0.1", "0:0, 0:2, 1:1, 2:2, 2:0, 1:1");
+  }
+
+  @Test
+  public void testEvenOddConcentric() {
+    // Two concentric squares. Reference point marks the inner square as a hole.
+    // Should result in the inner square being a hole.
+    checkEvenOdd(
+        "8:2, 8:8, 2:8, 2:2; 10:0, 10:10, 0:10, 0:0",
+        "!5:5",
+        "0:0, 0:10, 10:10, 10:0; 2:2, 2:8, 8:8, 8:2");
+  }
+
+  @Test
+  public void testEvenOddConcentricRefOutsideBound() {
+    // Two concentric squares. Reference point outside the outer square.
+    // Should result in the area between the squares.
+    checkEvenOdd(
+        "0:0, 0:10, 10:10, 10:0; 2:2, 2:8, 8:8, 8:2",
+        "!11:11",
+        "0:0, 0:10, 10:10, 10:0; 2:2, 2:8, 8:8, 8:2");
+  }
+
+  @Test
+  public void testEvenOddConcentricRefBetween() {
+    // Two concentric squares. Reference point between the squares is not contained.
+    // Should result in the area not between the squares.
+    checkEvenOdd(
+        "10:0, 10:10, 0:10, 0:0; 2:2, 2:8, 8:8, 8:2",
+        "!1:1",
+        "0:0, 0:10, 10:10, 10:0; 2:2, 2:8, 8:8, 8:2");
+  }
+
+  @Test
+  public void testEvenOddOverlappingSquares() {
+    // Two overlapping rectangles. The expected result is the symmetric difference.
+    // Reference point inside the first rectangle but outside the second.
+    checkEvenOdd(
+        "0:1, 0:0, -2:0, -2:4, 0:4, 0:3, 1:3, 1:1; -1:1, -1:3, 0:3, 0:1", // split interior
+        "-1.5:0.5",
+        "-2:0, -2:4, 0:4, 0:0; -1:1, -1:3, 1:3, 1:1");
+  }
+
+  @Test
+  public void testEvenOddPolygonWithDegenerateEdge() {
+    // A triangle with a degenerate edge.
+    checkEvenOdd("0:0, 1:1, 1:0", "0.5:0.4", "0:0, 1:1, 1:1, 1:0");
+  }
+
+  @Test
+  public void testEvenOddDegenerateLinePolygonContained() {
+    // A polygon that traces a line and back, containing no area.
+    // The reference point is contained, so the result is full.
+    checkEvenOdd("full", "90:0", "0:0, 1:1, 2:2, 1:1, 0:0");
+  }
+
+  @Test
+  public void testEvenOddDegenerateLinePolygonNotContained() {
+    // A polygon that traces a line and back, containing no area.
+    // The reference point is not contained, so the result is empty.
+    checkEvenOdd("empty", "!90:0", "0:0, 1:1, 2:2, 1:1, 0:0");
   }
 }

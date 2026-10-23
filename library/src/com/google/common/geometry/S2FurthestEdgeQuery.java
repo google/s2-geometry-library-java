@@ -512,12 +512,12 @@ public abstract class S2FurthestEdgeQuery<D extends S1Distance<D>> extends S2Bes
     /**
      * A non-zero maxError specifies that edges with distance up to maxError closer than the true
      * furthest edges may be substituted in the result set, as long as such edges satisfy all the
-     * the remaining search criteria. This option only has an effect if {@link #maxResults()} is
-     * also specified; otherwise all edges that satisfy the minDistance() will be returned.
+     * remaining search criteria. This option only has an effect if {@link #maxResults()} is also
+     * specified; otherwise all edges that satisfy the minDistance() will be returned.
      *
-     * <p>Note that this does not affect how the distance between edges is computed; it simply
-     * gives the algorithm permission to stop the search early, as soon as the best possible
-     * improvement drops below {@link #maxError()}.
+     * <p>Note that this does not affect how the distance between edges is computed; it simply gives
+     * the algorithm permission to stop the search early, as soon as the best possible improvement
+     * drops below {@link #maxError()}.
      *
      * <p>This can be used to implement distance predicates efficiently. For example, to determine
      * whether the maximum distance is more than 'threshold', set {@code maxResults == 1} and {@code

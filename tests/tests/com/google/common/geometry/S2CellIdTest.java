@@ -32,10 +32,10 @@ import static org.junit.Assert.fail;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -366,8 +366,8 @@ public class S2CellIdTest extends GeometryTestCase {
   /** Test contains() and intersects(). */
   @Test
   public void testContainment() {
-    Map<S2CellId, S2CellId> parentMap = Maps.newHashMap();
-    List<S2CellId> cells = Lists.newArrayList();
+    Map<S2CellId, S2CellId> parentMap = new HashMap<>();
+    List<S2CellId> cells = new ArrayList<>();
     for (int face = 0; face < 6; ++face) {
       expandCell(S2CellId.fromFace(face), cells, parentMap);
     }
@@ -442,8 +442,8 @@ public class S2CellIdTest extends GeometryTestCase {
     // We compute appendAllNeighbors, and then add in all the children of "id" at the given level.
     // We then compare this against the result of finding all the vertex neighbors of all the
     // vertices of children of "id" at the given level. These should give the same result.
-    List<S2CellId> all = Lists.newArrayList();
-    List<S2CellId> expected = Lists.newArrayList();
+    List<S2CellId> all = new ArrayList<>();
+    List<S2CellId> expected = new ArrayList<>();
     id.getAllNeighbors(level, all);
     S2CellId end = id.childEnd(level + 1);
     for (S2CellId c = id.childBegin(level + 1); !c.equals(end); c = c.next()) {
@@ -483,7 +483,7 @@ public class S2CellIdTest extends GeometryTestCase {
     }
 
     // Check the vertex neighbors of the center of face 2 at level 5.
-    List<S2CellId> nbrs = Lists.newArrayList();
+    List<S2CellId> nbrs = new ArrayList<>();
     S2CellId.fromPoint(S2Point.Z_POS).getVertexNeighbors(5, nbrs);
     Collections.sort(nbrs);
     for (int child = 0; child < 4; child++) {
@@ -519,7 +519,7 @@ public class S2CellIdTest extends GeometryTestCase {
   public void testGetAllNeighbors() {
     // A level 3 cell at a face corner.
     S2CellId id = FACE_CELLS[1].child(1).child(1).child(1);
-    ArrayList<S2CellId> nbrs = Lists.newArrayList();
+    ArrayList<S2CellId> nbrs = new ArrayList<>();
     HashSet<S2CellId> uniqueNbrs = new HashSet<>();
 
     // Get all level 3 neighbors. Since 'id' is at the corner of a cube face, it only has 7 unique
@@ -541,22 +541,14 @@ public class S2CellIdTest extends GeometryTestCase {
     // Getting level 2 neighbors of a level 3 cell does not work.
     nbrs.clear();
     uniqueNbrs.clear();
-    try {
-      id.getAllNeighbors(2, nbrs);
-      fail("Expected exception was not thrown.");
-    } catch (IllegalArgumentException expectedException) {
-      // Test passes.
-    }
+    // Test passes.
+    assertThrows(IllegalArgumentException.class, () -> id.getAllNeighbors(2, nbrs));
   }
 
   @Test
   public void testToLoop() {
-    try {
-      S2CellId.FACE_CELLS[0].child(0).toLoop(0);
-      fail();
-    } catch (IllegalStateException e) {
-      // pass.
-    }
+    // pass.
+    assertThrows(IllegalStateException.class, () -> S2CellId.FACE_CELLS[0].child(0).toLoop(0));
 
     for (S2CellId id = S2CellId.FACE_CELLS[0]; id.level() < 30 - 3; id = id.child(id.level() % 4)) {
       for (int level = id.level(); level < id.level() + 3; level++) {

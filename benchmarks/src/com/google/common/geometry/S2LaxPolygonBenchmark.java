@@ -16,6 +16,7 @@
 package com.google.common.geometry.benchmarks;
 
 import static com.google.common.geometry.S2TextFormat.makeLoop;
+import static com.google.common.geometry.TestDataGenerator.kmToAngle;
 import static com.google.common.geometry.TestDataGenerator.makeFractal;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -23,7 +24,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.geometry.PrimitiveArrays.Bytes;
+import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S2CellId;
+import com.google.common.geometry.S2Coder;
 import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2LaxPolygonShape;
 import com.google.common.geometry.S2Loop;
@@ -32,6 +36,7 @@ import com.google.common.geometry.S2Polygon;
 import com.google.common.geometry.S2Shape;
 import com.google.common.geometry.S2ShapeIndex;
 import com.google.errorprone.annotations.CheckReturnValue;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -45,6 +50,7 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.BenchmarkParams;
 
 /** Benchmarks for S2LaxPolygon. */
 @CheckReturnValue
@@ -201,6 +207,69 @@ public class S2LaxPolygonBenchmark {
       index.add(shape);
       Preconditions.checkState(index.iterator().atBegin());
       return index;
+    }
+  }
+
+  /**
+   * Constructs a polygon with the given number of concentric loops, each having the given number of
+   * vertices. Concentric radii are scaled so all loops remain localized near the center point.
+   */
+  private static S2LaxPolygonShape makeMultiLoopPolygon(int numLoops, int verticesPerLoop) {
+    S2Point center = S2LatLng.fromDegrees(23, 16).toPoint();
+    List<List<S2Point>> loops = new ArrayList<>(numLoops);
+    for (int i = 0; i < numLoops; ++i) {
+      // Radii range from ~1 km (first loop) to 11 km (outermost loop).
+      S1Angle radius = kmToAngle(1.0 + 10.0 * (i + 1.0) / numLoops);
+      loops.add(S2Loop.makeRegularVertices(center, radius, verticesPerLoop));
+    }
+    return S2LaxPolygonShape.create(loops);
+  }
+
+  /**
+   * Benchmarks {@link S2LaxPolygonShape} decoding with varying numbers of loops to measure the
+   * overhead of loop offset decoding and validation.
+   */
+  @State(Scope.Thread)
+  @BenchmarkMode(Mode.AverageTime)
+  @OutputTimeUnit(MICROSECONDS)
+  @Warmup(iterations = 3, time = 5, timeUnit = SECONDS)
+  @Measurement(iterations = 5, time = 5, timeUnit = SECONDS)
+  public static class DecodeMultiLoop extends S2BenchmarkBaseState {
+    /** An enum for which implementation of S2Coder we are benchmarking. */
+    public enum CoderType {
+      FAST,
+      COMPACT;
+
+      public S2Coder<S2LaxPolygonShape> getCoder() {
+        return this == FAST ? S2LaxPolygonShape.FAST_CODER : S2LaxPolygonShape.COMPACT_CODER;
+      }
+    }
+
+    @Param CoderType coderType;
+
+    @Param({"4", "32"})
+    int verticesPerLoop;
+
+    @Param({"1", "10", "100", "1000", "10000"})
+    int numLoops;
+
+    private Bytes encodedData;
+
+    @Setup(Level.Trial)
+    public void setup(BenchmarkParams params) throws IOException {
+      setUnitTestModeFromParams(params);
+      if (isUnitTest()) {
+        numLoops = Math.min(numLoops, 10);
+      }
+      super.setup();
+
+      S2LaxPolygonShape polygon = makeMultiLoopPolygon(numLoops, verticesPerLoop);
+      encodedData = Bytes.fromByteArray(coderType.getCoder().encode(polygon));
+    }
+
+    @Benchmark
+    public S2LaxPolygonShape decode() throws IOException {
+      return coderType.getCoder().decode(encodedData);
     }
   }
 }

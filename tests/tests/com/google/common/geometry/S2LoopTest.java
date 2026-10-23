@@ -40,8 +40,6 @@ import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -49,6 +47,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -258,7 +258,7 @@ public class S2LoopTest extends GeometryTestCase {
 
   @Test
   public void testFastConstructor() {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     S2LatLngRect bound = parseVertices("-80:120, -80:0, -80:-120", vertices);
     S2Loop loop = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
     assertTrue(loop.isValid());
@@ -297,7 +297,7 @@ public class S2LoopTest extends GeometryTestCase {
       double maxDtheta = 2 * acos(tan(abs(phi)) / tan(abs(phi) + kMaxDist));
       maxDtheta = min(PI, maxDtheta); // At least 3 vertices.
 
-      List<S2Point> vertices = Lists.newArrayList();
+      List<S2Point> vertices = new ArrayList<>();
       for (double theta = 0; theta < 2 * PI; theta += data.nextDouble() * maxDtheta) {
 
         S2Point xCosThetaCosPhi = x.mul(cos(theta) * cos(phi));
@@ -381,7 +381,7 @@ public class S2LoopTest extends GeometryTestCase {
   }
 
   private static S2Loop rotate(S2Loop loop) {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     for (int i = 1; i <= loop.numVertices(); ++i) {
       vertices.add(loop.vertex(i));
     }
@@ -417,9 +417,9 @@ public class S2LoopTest extends GeometryTestCase {
 
     // This code checks each cell vertex is contained by exactly one of the adjacent cells.
     for (int level = 0; level < 3; ++level) {
-      List<S2Loop> loops = Lists.newArrayList();
-      List<S2Point> loopVertices = Lists.newArrayList();
-      Set<S2Point> points = Sets.newHashSet();
+      List<S2Loop> loops = new ArrayList<>();
+      List<S2Point> loopVertices = new ArrayList<>();
+      Set<S2Point> points = new HashSet<>();
       for (S2CellId id = S2CellId.begin(level); !id.equals(S2CellId.end(level)); id = id.next()) {
         S2Cell cell = new S2Cell(id);
         points.add(cell.getCenter());
@@ -516,21 +516,21 @@ public class S2LoopTest extends GeometryTestCase {
     // Construct a CCW polygon whose boundary is the union of the cell ids in the range
     // [begin, end). We add the edges one by one, removing any edges that are already present in the
     // opposite direction.
-    Map<S2Point, Set<S2Point>> edges = Maps.newHashMap();
+    Map<S2Point, Set<S2Point>> edges = new HashMap<>();
     for (S2CellId id = begin; !id.equals(end); id = id.next()) {
       S2Cell cell = new S2Cell(id);
       for (int k = 0; k < 4; ++k) {
         S2Point a = cell.getVertex(k);
         S2Point b = cell.getVertex((k + 1) & 3);
         if (edges.get(b) == null) {
-          edges.put(b, Sets.<S2Point>newHashSet());
+          edges.put(b, new HashSet<S2Point>());
         }
 
         // If a is in b's set, remove it and remove b's set if it's empty. Otherwise, add b to a's
         // set.
         if (!edges.get(b).remove(a)) {
           if (edges.get(a) == null) {
-            edges.put(a, Sets.<S2Point>newHashSet());
+            edges.put(a, new HashSet<S2Point>());
           }
           edges.get(a).add(b);
         } else if (edges.get(b).isEmpty()) {
@@ -541,7 +541,7 @@ public class S2LoopTest extends GeometryTestCase {
 
     // The remaining edges form a single loop. We simply follow it starting at an arbitrary vertex
     // and build up a list of vertices.
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     S2Point p = edges.keySet().iterator().next();
     while (!edges.isEmpty()) {
       assertEquals(1, edges.get(p).size());
@@ -881,9 +881,9 @@ public class S2LoopTest extends GeometryTestCase {
   }
 
   /**
-   * This unit test helped us find an error in {@link S2EdgeQuery#splitBound} where {@code
-   * edgeBound} was being used, instead of copies of {@code edgeBound}. This test fails at iteration
-   * 21, where {@code numVertices} = 512, if the error is reintroduced.
+   * This unit test helped us find an error in {@link S2CrossingEdgeQuery} {@code splitBound} where
+   * {@code edgeBound} was being used, instead of copies of {@code edgeBound}. This test fails at
+   * iteration 21, where {@code numVertices} = 512, if the error is reintroduced.
    */
   @Test
   public void testCompareBoundaryCrossingTestLoops() {
@@ -1232,8 +1232,17 @@ public class S2LoopTest extends GeometryTestCase {
         TestLoops.ARCTIC_80.loop.contains(S2.origin()), TestLoops.ARCTIC_80.loop.isOriginInside());
   }
 
-  // Some literals here cannot be precisely represented as doubles, but they're the same as the
-  // literals used in the C++ tests.
+  /**
+   * Tests {@link S2Loop#makeRegularLoop}.
+   *
+   * <p>Some literals here cannot be precisely represented as doubles, but they are identical to
+   * the literals used in the C++ tests.
+   *
+   * <p>Note: ULP-based assertions ({@code assertAlmostEquals}) are used throughout this test to
+   * accommodate floating-point calculation differences across platform architectures and browser
+   * versions (relevant when running J2CL tests in V8/headless Chrome), where FMA instruction
+   * selection or transcendental math approximations can vary by a few ULPs.
+   */
   @SuppressWarnings("FloatingPointLiteralPrecision")
   @Test
   public void testMakeRegularLoop() {
@@ -1265,17 +1274,15 @@ public class S2LoopTest extends GeometryTestCase {
     assertAlmostEquals(27.990890717782829, toDegrees(p2.angle(p3)));
     assertAlmostEquals(27.990890717782829, toDegrees(p3.angle(p0)));
 
-    // Check actual coordinates. This may change if we switch the algorithm intentionally. These
-    // values are exactly the same as the C++ versions, but with slight tolerances in a couple of
-    // places. TODO(torrey): Investigate why not identical to C++ now?
-    assertExactly(62.162880741097204, new S2LatLng(p0).lat().degrees());
-    assertExactly(103.11051028343408, new S2LatLng(p0).lng().degrees());
-    assertExactly(61.955157772928345, new S2LatLng(p1).lat().degrees());
-    assertExactly(165.25681963683536, new S2LatLng(p1).lng().degrees());
-    assertEquals(75.139812547718478, new S2LatLng(p2).lat().degrees(), 2e-14);
-    assertExactly(-119.13042521187423, new S2LatLng(p2).lng().degrees());
-    assertEquals(75.524190079054392, new S2LatLng(p3).lat().degrees(), 2e-14);
-    assertExactly(26.392175948257943, new S2LatLng(p3).lng().degrees());
+    // Check actual coordinates.
+    assertAlmostEquals(62.162880741097204, new S2LatLng(p0).lat().degrees());
+    assertAlmostEquals(103.11051028343408, new S2LatLng(p0).lng().degrees());
+    assertAlmostEquals(61.955157772928345, new S2LatLng(p1).lat().degrees());
+    assertAlmostEquals(165.25681963683536, new S2LatLng(p1).lng().degrees());
+    assertAlmostEquals(75.139812547718478, new S2LatLng(p2).lat().degrees());
+    assertAlmostEquals(-119.13042521187423, new S2LatLng(p2).lng().degrees());
+    assertAlmostEquals(75.524190079054392, new S2LatLng(p3).lat().degrees());
+    assertAlmostEquals(26.392175948257943, new S2LatLng(p3).lng().degrees());
   }
 
   @Test

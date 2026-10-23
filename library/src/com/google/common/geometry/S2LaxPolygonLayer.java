@@ -314,9 +314,9 @@ public class S2LaxPolygonLayer implements S2BuilderShapesLayer {
    * Similarly, DISCARD_SHELLS can be used to normalize polygons with open boundaries. DISCARD is
    * used to normalize polygons with semi-open boundaries (since degenerate loops do not affect
    * point containment in that case), and finally KEEP is useful for working with any type of
-   * polygon where degeneracies are assumed to contain an infinitesmal interior. (This last model is
-   * the most useful for working with simplified geometry, since it maintains the closest fidelity
-   * to the original geometry.)
+   * polygon where degeneracies are assumed to contain an infinitesimal interior. (This last model
+   * is the most useful for working with simplified geometry, since it maintains the closest
+   * fidelity to the original geometry.)
    */
   public enum DegenerateBoundaries {
     DISCARD,

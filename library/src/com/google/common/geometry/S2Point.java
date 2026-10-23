@@ -77,7 +77,6 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
   public static final S2Coder<S2Point> CODER =
       new S2Coder<S2Point>() {
         @Override
-        @JsIgnore // OutputStream
         public void encode(S2Point value, OutputStream output) throws IOException {
           value.encode(output);
         }
@@ -502,15 +501,15 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
 
   /**
    * Calculates hashcode based on stored coordinates. Since we want +0.0 and -0.0 to be treated the
-   * same, we ignore the sign of the coordinates.
+   * same, we add 0.0 to always use positive zero.
    */
   @Override
   public int hashCode() {
     long value = 17;
-    value += 37 * value + Double.doubleToLongBits(abs(x));
-    value += 37 * value + Double.doubleToLongBits(abs(y));
-    value += 37 * value + Double.doubleToLongBits(abs(z));
-    return (int) (value ^ (value >>> 32));
+    value += 37 * value + Double.doubleToLongBits(x + 0.0);
+    value += 37 * value + Double.doubleToLongBits(y + 0.0);
+    value += 37 * value + Double.doubleToLongBits(z + 0.0);
+    return Long.hashCode(value);
   }
 
   // S2Region implementation.
@@ -550,7 +549,6 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
   }
 
   /** Writes this point to the given little endian output stream. */
-  @JsIgnore
   void encode(LittleEndianOutput os) throws IOException {
     encode(os.output());
   }
@@ -562,7 +560,6 @@ public final class S2Point implements S2Region, Comparable<S2Point>, Serializabl
   }
 
   /** Returns a new S2Point decoded from the given little endian input stream. */
-  @JsIgnore
   static S2Point decode(LittleEndianInput is) throws IOException {
     return new S2Point(is.readDouble(), is.readDouble(), is.readDouble());
   }

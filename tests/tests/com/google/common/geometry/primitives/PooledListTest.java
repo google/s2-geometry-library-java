@@ -145,23 +145,12 @@ public final class PooledListTest {
       assertTrue(it.hasNext());
       MutableString m = it.next();
       switch (i) {
-        case 0:
-          assertEquals("bar2", m.get());
-          break;
-        case 1:
-          assertEquals("foo2", m.get());
-          break;
-        case 2:
-          assertEquals("new", m.get());
-          break;
-        case 3:
-          assertEquals("", m.get());
-          break;
-        case 4:
-          assertEquals("last", m.get());
-          break;
-        default:
-          fail("Unexpected iteration index: " + i);
+        case 0 -> assertEquals("bar2", m.get());
+        case 1 -> assertEquals("foo2", m.get());
+        case 2 -> assertEquals("new", m.get());
+        case 3 -> assertEquals("", m.get());
+        case 4 -> assertEquals("last", m.get());
+        default -> fail("Unexpected iteration index: " + i);
       }
     }
     // The iterator should have been exhausted.

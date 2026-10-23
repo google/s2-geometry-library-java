@@ -215,16 +215,9 @@ public final class S2IncidentEdgeTracker {
       }
 
       IncidentEdgeKey key = new IncidentEdgeKey(currentShapeId, nursery.get(start).vertex);
-      Set<Integer> edges = incidentEdgeMap.get(key);
       // If we don't have this key yet, create it manually with a pre-sized hash set to avoid
       // rehashes. Start with a size of 8, which is four edges with a load factor of 50%.
-      // TODO(user): When AndroidJdkLibsChecker is fixed, use computeIfAbsent() here. Until
-      // then it must be avoided to avoid breaking Android builds.
-      if (edges == null) {
-        edges = new HashSet<>(8, 0.5f);
-        incidentEdgeMap.put(key, edges);
-      }
-
+      Set<Integer> edges = incidentEdgeMap.computeIfAbsent(key, k -> new HashSet<>(8, 0.5f));
       while (start != end) {
         edges.add(nursery.get(start++).edgeId);
       }

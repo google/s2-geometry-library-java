@@ -20,8 +20,8 @@ import static com.google.common.geometry.S2TextFormat.makePointOrDie;
 import static com.google.common.geometry.S2TextFormat.makePolylineOrDie;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.geometry.S2Builder.EdgeType;
@@ -309,12 +309,12 @@ public final class S2LaxPolygonLayerTest extends GeometryTestCase {
     S2Error error = new S2Error();
     assertFalse(builder.build(error));
     assertEquals(S2Error.Code.BUILDER_EDGES_DO_NOT_FORM_LOOPS, error.code());
-    try {
-      S2LaxPolygonShape unused = layer.getPolygon();
-      fail("Expected exception was not thrown.");
-    } catch (NullPointerException expected) {
-      // test passes
-    }
+    // test passes
+    assertThrows(
+        NullPointerException.class,
+        () -> {
+          S2LaxPolygonShape unused = layer.getPolygon();
+        });
   }
 
   // TODO(user): Implement validation of S2LaxPolygonShape.

@@ -17,7 +17,7 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -51,7 +51,7 @@ public class S2CellIdVectorCoderTest {
 
   @Test
   public void testEmpty() throws IOException {
-    checkEncodeDecode(Lists.newArrayList(), 2);
+    checkEncodeDecode(new ArrayList<>(), 2);
   }
 
   @Test
@@ -329,13 +329,13 @@ public class S2CellIdVectorCoderTest {
     };
 
     PrimitiveArrays.Bytes bytes = PrimitiveArrays.Bytes.fromByteArray(overflowBytes);
-    try {
-      S2CellIdVector unused = S2CellIdVectorCoder.INSTANCE.decode(bytes, bytes.cursor());
-      fail("Expected IOException, didn't get it.");
-    } catch (IOException expected) {
-      // Expect "IOException: Decoding from 'data' with length 10 bytes, but 12884901894 bytes are
-      // required."
-    }
+    // Expect "IOException: Decoding from 'data' with length 10 bytes, but 12884901894 bytes are
+    // required."
+    assertThrows(
+        IOException.class,
+        () -> {
+          S2CellIdVector unused = S2CellIdVectorCoder.INSTANCE.decode(bytes, bytes.cursor());
+        });
   }
 
   // Encodes the given vector and checks that it has the expected size and contents.

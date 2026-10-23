@@ -325,6 +325,11 @@ public class S2PointTest extends GeometryTestCase {
     assertEquals(new S2Point(0.25, 0.3, 0.5), base); // Builder has a copy, not original
   }
 
+  @Test
+  public void hashCode_ignoresZeroSign() {
+    assertEquals(new S2Point(-0.0, .5, 0.0).hashCode(), new S2Point(0.0, .5, -0.0).hashCode());
+  }
+
   @GwtIncompatible("Javascript doesn't support Java serialization.")
   @Test
   public void testS2PointSerialization() {

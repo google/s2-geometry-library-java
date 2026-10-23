@@ -22,7 +22,6 @@ import static java.lang.Math.max;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2Iterator.ListIterator;
 import com.google.common.geometry.S2Shape.MutableEdge;
@@ -164,7 +163,7 @@ public class S2ShapeIndex implements Serializable {
   private int pendingInsertionsBegin = 0;
 
   /** The shapes that have been queued for removal but not processed yet (not yet used.) */
-  private final List<S2Shape> pendingRemovals = Lists.newArrayList();
+  private final List<S2Shape> pendingRemovals = new ArrayList<>();
 
   /**
    * If true, the index is up to date. If false the index is updating or stale and requires an
@@ -198,6 +197,18 @@ public class S2ShapeIndex implements Serializable {
     return index;
   }
 
+  /**
+   * Creates an S2ShapeIndex that uses the default options, {@link Options}, and contains the given
+   * shapes.
+   */
+  public static S2ShapeIndex of(Iterable<? extends S2Shape> shapes) {
+    S2ShapeIndex index = new S2ShapeIndex();
+    for (S2Shape shape : shapes) {
+      index.add(shape);
+    }
+    return index;
+  }
+
   /** Returns the options used for this index. */
   public Options options() {
     return options;
@@ -211,7 +222,12 @@ public class S2ShapeIndex implements Serializable {
     return Collections.unmodifiableList(shapes);
   }
 
-  /** Adds the given shape to this index. Invalidates all iterators and their associated data. */
+  /**
+   * Adds the given shape to this index. Invalidates all iterators and their associated data.
+   * 
+   * <p>The shape will have a shapeId equal to the number of shapes in the index before this shape
+   * was added. E.g. {@code shapeId = index.getShapes().size(); index.add(shape);}.
+   */
   public void add(S2Shape shape) {
     // Insertions are processed lazily by applyUpdates(). All we do now is assign a unique id to the
     // shape, sequentially starting from 0 in the order shapes are inserted.
@@ -284,7 +300,7 @@ public class S2ShapeIndex implements Serializable {
           numEdges += shapes.get(i).numEdges();
         }
 
-        // As a a pessimistic overestimate, assume we will have about 50% of the edges cross into
+        // As a pessimistic overestimate, assume we will have about 50% of the edges cross into
         // other cells, and cells end up about 50% full.
         cells = createList(3 * numEdges / options.maxEdgesPerCell / 4);
 
@@ -1624,8 +1640,9 @@ public class S2ShapeIndex implements Serializable {
 
   /**
    * FaceEdge stores temporary edge data while the index is being updated. FaceEdge represents an
-   * edge in the UV coordinates of a specific face, without any clipping. ClippedEdge, by
-   * comparison, contains the UV bound of the portion of the edge that intersects each cell.
+   * edge projected to the UV coordinates of a specific face, and clipped to that (padded) face.
+   * ClippedEdge, by comparison, contains the UV bound of the portion of the edge that intersects
+   * each cell.
    *
    * <p>While it would be possible to combine all the edge information into ClippedEdge, there will
    * be many clipped edges for each original face edge, and only the UV bound is different. Keeping
@@ -1653,7 +1670,6 @@ public class S2ShapeIndex implements Serializable {
 
     /** The edge endpoints, clipped to a given face. */
     private final double ax;
-
     private final double ay;
     private final double bx;
     private final double by;

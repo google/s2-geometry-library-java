@@ -223,7 +223,7 @@ public final class S2MaxDistanceTargetsTest extends GeometryTestCase {
 
   /**
    * Verifies the consistency of {@link S2FurthestEdgeQuery.CellTarget#getCapBound()} and {@link
-   * S2Cell#getMaxDistance()}.
+   * S2Cell#getMaxDistance(S2Point)}.
    */
   @Test
   public void testMaxDistanceGetCapBound() {

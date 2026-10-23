@@ -608,7 +608,7 @@ public class S2IndexCellData {
   }
 
   /**
-   * Tests whether a shape in the current cell contains a point. The logic here is is the same as
+   * Tests whether a shape in the current cell contains a point. The logic here is the same as
    * {@link S2ContainsPointQuery#shapeContains(int, S2Point)} but only applies to the current cell
    * and doesn't have to lookup edges or cell centers again.
    *

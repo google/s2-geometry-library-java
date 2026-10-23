@@ -19,7 +19,6 @@ package com.google.common.geometry;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.CheckReturnValue;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * Given an edge in some 2D projection (e.g., Mercator), S2EdgeTessellator converts the edge into a
@@ -89,7 +88,7 @@ import java.util.function.Consumer;
  * (-1, 1) where E1(x0) = E2(x0). This value has the very convenient property that if we evaluate
  * the actual error E(x0), then the maximum error on the entire interval [-1, 1] is bounded by
  *
- * <p>E(x) <= E(x0) / E1(x0)
+ * <p>{@code E(x) <= E(x0) / E1(x0)}
  *
  * <p>since whether the error is modeled using E1 or E2, the resulting function has the same maximum
  * value (namely E(x0) / E1(x0)). If it is modeled as some other convex combination of E1 and E2,
@@ -99,7 +98,7 @@ import java.util.function.Consumer;
  * that the error is a convex combination of E1 and -E2. This can be handled by evaluating the error
  * at E(-x0) as well, and then computing the final error bound as
  *
- * <p>E(x) <= max(E(x0), E(-x0)) / E1(x0) .
+ * <p>{@code E(x) <= max(E(x0), E(-x0)) / E1(x0)} .
  *
  * <p>Effectively, this method is simply evaluating the error at two points about 1/3 and 2/3 of the
  * way along the edges, and then scaling the maximum of these two errors by a constant factor.
@@ -179,13 +178,26 @@ public final class S2EdgeTessellator {
    * Constructs an S2EdgeTessellator using the given projection and error tolerance.
    *
    * <p>Method:
-   * <li>AppendProjected- (input: S2 geodesics, output: Planar projected edges)
-   * <li>AppendUnprojected- (input: Planar projected edges, output: S2 geodesics)
+   *
+   * <ul>
+   *   <li>AppendProjected- (input: S2 geodesics, output: Planar projected edges)
+   *   <li>AppendUnprojected- (input: Planar projected edges, output: S2 geodesics)
+   * </ul>
    */
   public S2EdgeTessellator(Projection projection, S1Angle tolerance) {
     this.projection = projection;
     this.scaledTolerance =
         S1ChordAngle.fromS1Angle(S1Angle.max(MIN_TOLERANCE, tolerance).mul(SCALE_FACTOR));
+  }
+
+  /** Returns the projection used by this tessellator. */
+  public Projection getProjection() {
+    return projection;
+  }
+
+  /** Returns the tolerance used by this tessellator. */
+  public S1ChordAngle getTolerance() {
+    return scaledTolerance;
   }
 
   /**
@@ -206,11 +218,12 @@ public final class S2EdgeTessellator {
     if (vertices.isEmpty()) {
       vertices.add(pa);
     } else {
-      pa = projection.wrapDestination(Iterables.getLast(vertices), pa);
-      assert vertices.get(vertices.size() - 1).equals(pa) : "Appended edges must form a chain";
+      R2Vector last = Iterables.getLast(vertices);
+      pa = projection.wrapDestination(last, pa);
+      assert last.equals(pa) : "Appended edges must form a chain";
     }
     R2Vector pb = projection.project(b);
-    appendProjectedHelper(pa, a, pb, b, vertices::add);
+    appendProjectedHelper(pa, a, pb, b, vertices);
   }
 
   /**
@@ -240,7 +253,7 @@ public final class S2EdgeTessellator {
       assert S2.approxEquals(vertices.get(vertices.size() - 1), a)
           : "Appended edges must form a chain";
     }
-    appendUnprojectedHelper(pa, a, pb, b, vertices::add);
+    appendUnprojectedHelper(pa, a, pb, b, vertices);
   }
 
   /**
@@ -248,28 +261,28 @@ public final class S2EdgeTessellator {
    * the first to "vertices". The maximum recursion depth is (M_PI / kMinTolerance()) < 45.
    */
   private void appendProjectedHelper(
-      R2Vector pa, S2Point a, R2Vector pbIn, S2Point b, Consumer<R2Vector> vertexAdder) {
+      R2Vector pa, S2Point a, R2Vector pbIn, S2Point b, List<R2Vector> vertices) {
     R2Vector pb = projection.wrapDestination(pa, pbIn);
     if (estimateMaxError(pa, a, pb, b).lessOrEquals(scaledTolerance)) {
-      vertexAdder.accept(pb);
+      vertices.add(pb);
     } else {
       S2Point mid = a.add(b).normalize();
       R2Vector projectedMid = projection.wrapDestination(pa, projection.project(mid));
-      appendProjectedHelper(pa, a, projectedMid, mid, vertexAdder);
-      appendProjectedHelper(projectedMid, mid, pb, b, vertexAdder);
+      appendProjectedHelper(pa, a, projectedMid, mid, vertices);
+      appendProjectedHelper(projectedMid, mid, pb, b, vertices);
     }
   }
 
   private void appendUnprojectedHelper(
-      R2Vector pa, S2Point a, R2Vector pbIn, S2Point b, Consumer<S2Point> vertexAdder) {
+      R2Vector pa, S2Point a, R2Vector pbIn, S2Point b, List<S2Point> vertices) {
     R2Vector pb = projection.wrapDestination(pa, pbIn);
     if (estimateMaxError(pa, a, pb, b).lessOrEquals(scaledTolerance)) {
-      vertexAdder.accept(b);
+      vertices.add(b);
     } else {
       R2Vector projectedMid = Projection.interpolate(0.5, pa, pb);
       S2Point mid = projection.unproject(projectedMid);
-      appendUnprojectedHelper(pa, a, projectedMid, mid, vertexAdder);
-      appendUnprojectedHelper(projectedMid, mid, pb, b, vertexAdder);
+      appendUnprojectedHelper(pa, a, projectedMid, mid, vertices);
+      appendUnprojectedHelper(projectedMid, mid, pb, b, vertices);
     }
   }
 

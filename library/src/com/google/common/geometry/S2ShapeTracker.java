@@ -57,7 +57,7 @@ import org.jspecify.annotations.Nullable;
  *   S2ShapeTracker tracker = new S2ShapeTracker(shape);
  * } or {@code
  *   tracker.reset(shape);
- * }
+ * }</pre>
  *
  * Then, as you iterate through an index, mark individual chains as seen when you come across them:
  *
@@ -173,7 +173,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>2.2 The Closure Grid
  *
- * <p>Towards this goal, let's note that that we can build a consistent notion of sign along cell
+ * <p>Towards this goal, let's note that we can build a consistent notion of sign along cell
  * boundaries. By consistent, we mean that we can assign every boundary segment of every S2 cell a
  * sign value (either +1 or -1) that is opposite across the boundary.
  *
@@ -401,7 +401,7 @@ import org.jspecify.annotations.Nullable;
  *            ←   →
  * </pre>
  *
- * <p>This will give always give us an interval that's at least one unit length, and it works
+ * <p>This will always give us an interval that's at least one unit length, and it works
  * consistently across T points and corners, so that they will properly close:
  *
  * <pre>
@@ -423,14 +423,14 @@ public class S2ShapeTracker {
   // sizes.
 
   /**
-   * Map from (face,i,j) encoded as a long, to the number of crossings at that that point, for IJ
-   * axis 0. (Which of i or j is 0 or 1 depends on the face.)
+   * Map from (face,i,j) encoded as a long, to the number of crossings at that point, for IJ axis 0.
+   * (Which of i or j is 0 or 1 depends on the face.)
    */
   private final Long2IntMap points0 = new Long2IntOpenHashMap();
 
   /**
-   * Map from (face,i,j) encoded as a long, to the number of crossings at that that point, for IJ
-   * axis 1. (Which of i or j is 0 or 1 depends on the face.)
+   * Map from (face,i,j) encoded as a long, to the number of crossings at that point, for IJ axis 1.
+   * (Which of i or j is 0 or 1 depends on the face.)
    */
   private final Long2IntMap points1 = new Long2IntOpenHashMap();
 

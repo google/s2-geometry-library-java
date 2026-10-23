@@ -22,6 +22,8 @@ import com.google.common.primitives.Ints;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
+import java.util.function.ToLongFunction;
 import jsinterop.annotations.JsIgnore;
 import jsinterop.annotations.JsType;
 
@@ -175,6 +177,14 @@ public final class PrimitiveArrays {
       }
     }
 
+    /** Writes {@code length} bytes of this array to {@code output} starting at {@code offset}. */
+    @JsIgnore // OutputStream is not usable by Javascript.
+    default void writeTo(OutputStream output, long offset, int length) throws IOException {
+      for (int i = 0; i < length; i++) {
+        output.write(get(offset + i));
+      }
+    }
+
     /** Returns a byte at {@code cursor.position} and updates the position to the next byte. */
     default byte readByte(Cursor cursor) {
       return get(cursor.position++);
@@ -273,6 +283,18 @@ public final class PrimitiveArrays {
         @Override
         public int length() {
           return immutableLongArray.length();
+        }
+      };
+    }
+
+    /** Returns a Longs view of a list, using the given function to compute each element. */
+    public static <T> Longs transform(List<T> values, ToLongFunction<T> transformer) {
+      return new Longs() {
+        @Override public int length() {
+          return values.size();
+        }
+        @Override public long get(int index) {
+          return transformer.applyAsLong(values.get(index));
         }
       };
     }

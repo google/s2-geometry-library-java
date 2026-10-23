@@ -25,10 +25,10 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
-import com.google.common.collect.Sets;
 import com.google.common.geometry.S2ClosestPointQuery.Result;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -103,7 +103,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     assertTrue(Ordering.natural().reverse().isOrdered(x));
 
     // Make sure there are no duplicate values.
-    assertEquals("Result set contains duplicates", Sets.newHashSet(x).size(), x.size());
+    assertEquals("Result set contains duplicates", new HashSet<>(x).size(), x.size());
 
     // Result set X should contain all the items from U whose distance is less than "limit" computed
     // below.
@@ -186,7 +186,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
         Matrix frame = data.getRandomFrameAt(queryCap.axis());
         double radius = queryCap.angle().radians();
         double spacing = 2 * radius / sqrtNumPoints;
-        List<S2Point> points = Lists.newArrayList();
+        List<S2Point> points = new ArrayList<>();
         for (int i = 0; i < sqrtNumPoints; ++i) {
           for (int j = 0; j < sqrtNumPoints; ++j) {
             points.add(
@@ -233,7 +233,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     @Override
     public List<Result<Integer>> findClosestPoints(S2ClosestPointQuery<Integer> query) {
       // Fill 'x' with the query results.
-      List<Result<Integer>> x = Lists.newArrayList();
+      List<Result<Integer>> x = new ArrayList<>();
       query.findClosestPoints(x, point);
       // Let the query allocate a queue for us.
       List<Result<Integer>> y = query.findClosestPoints(point);
@@ -260,7 +260,7 @@ public class S2ClosestPointQueryTest extends GeometryTestCase {
     @Override
     public List<Result<Integer>> findClosestPoints(S2ClosestPointQuery<Integer> query) {
       // Fill 'x' with the query results.
-      List<Result<Integer>> x = Lists.newArrayList();
+      List<Result<Integer>> x = new ArrayList<>();
       query.findClosestPointsToEdge(x, a, b);
       // Let the query allocate a queue for us.
       List<Result<Integer>> y = query.findClosestPointsToEdge(a, b);

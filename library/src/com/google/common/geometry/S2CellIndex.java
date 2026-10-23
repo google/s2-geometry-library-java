@@ -193,7 +193,7 @@ public class S2CellIndex {
           if (result != 0) {
             return result;
           }
-          result = -a.cellId.compareTo(b.cellId);
+          result = b.cellId.compareTo(a.cellId);
           if (result != 0) {
             return result;
           }

@@ -15,16 +15,15 @@
  */
 package com.google.common.geometry;
 
-import static com.google.common.geometry.S2CellId.isFace;
-import static com.google.common.geometry.S2CellId.parentAsLong;
-import static com.google.common.geometry.S2CellId.rangeMaxAsLong;
-import static com.google.common.geometry.S2CellId.rangeMinAsLong;
-import static com.google.common.geometry.S2CellId.unsignedLongLessThan;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Range;
+import com.google.common.collect.RangeSet;
+import com.google.common.collect.TreeRangeSet;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -67,7 +66,6 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
   /** An {@link S2Coder} of cell unions that uses {@link #encode} and {@link #decode}. */
   public static final S2Coder<S2CellUnion> FAST_CODER =
       new S2Coder<S2CellUnion>() {
-        @JsIgnore // OutputStream is not available to J2CL.
         @Override
         public void encode(S2CellUnion value, OutputStream output) throws IOException {
           value.encode(output);
@@ -99,7 +97,7 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
     cellIds.clear();
   }
 
-  /** Creates a new cell union as as copy of the given cell union 'other'. */
+  /** Creates a new cell union as a copy of the given cell union 'other'. */
   public static S2CellUnion copyFrom(S2CellUnion other) {
     S2CellUnion copy = new S2CellUnion();
     copy.initRawCellIds(new ArrayList<>(other.cellIds));
@@ -113,6 +111,37 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
     // Note that if 'cells' are an AbstractList over lazily decoded data, addAll may throw
     // NoSuchElementException.
     Iterables.addAll(result.cellIds, cells);
+    return result;
+  }
+
+  /**
+   * Constructs a cell union from S2CellIds that have already been normalized (typically because
+   * they were extracted from another S2CellUnion).
+   *
+   * <p>Requires: {@code cells} is sorted, non-overlapping, and normalized.
+   */
+  public static S2CellUnion fromNormalized(ArrayList<S2CellId> cells) {
+    S2CellUnion result = new S2CellUnion();
+    result.initRawCellIds(cells);
+    assert result.isNormalized();
+    return result;
+  }
+
+  /**
+   * Constructs a cell union from a vector of sorted, non-overlapping S2CellIds. Unlike the other
+   * constructors, fromVerbatim does not require that groups of 4 child cells have been replaced by
+   * their parent cell. In other words, "cells" must satisfy the requirements of isValid() but not
+   * necessarily isNormalized().
+   *
+   * <p>Note that if the cell union is not normalized, certain operations may return different
+   * results (e.g. {@link #contains(S2CellUnion)}).
+   *
+   * <p>Requires: {@code cells} is sorted and non-overlapping.
+   */
+  public static S2CellUnion fromVerbatim(ArrayList<S2CellId> cells) {
+    S2CellUnion result = new S2CellUnion();
+    result.initRawCellIds(cells);
+    assert result.isValid();
     return result;
   }
 
@@ -234,26 +263,14 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
     assert end.isLeaf();
     assert begin.compareTo(end) <= 0;
 
-    // We repeatedly add the largest cell we can, in sorted order.
+    // We repeatedly add the largest cell we can.
     cellIds.clear();
-    for (S2CellId nextBegin = begin; nextBegin.compareTo(end) < 0; ) {
-      assert nextBegin.isLeaf();
-
-      // Find the largest cell that starts at "nextBegin" and ends before "end". This loop uses
-      // longs rather than S2CellIds to avoid many allocations of S2CellId objects.
-      long nextId = nextBegin.id();
-      while (!isFace(nextId)
-          && rangeMinAsLong(parentAsLong(nextId)) == nextBegin.id()
-          && unsignedLongLessThan(rangeMaxAsLong(parentAsLong(nextId)), end.id())) {
-        nextId = parentAsLong(nextId);
-      }
-      S2CellId nextCellId = new S2CellId(nextId);
-      cellIds.add(nextCellId);
-      nextBegin = nextCellId.rangeMax().next();
+    for (S2CellId id = begin.maximumTile(end); !id.equals(end); id = id.next().maximumTile(end)) {
+      cellIds.add(id);
     }
 
     // The output should already be sorted and normalized.
-    assert !normalize();
+    assert isNormalized();
   }
 
   public int size() {
@@ -476,9 +493,25 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
    * you must construct a normalized cell union, or call {@link #normalize()} prior to this method.
    */
   public boolean contains(S2CellUnion that) {
-    S2CellUnion result = new S2CellUnion();
-    result.getIntersection(this, that);
-    return result.cellIds.equals(that.cellIds);
+    if (that.isEmpty()) {
+      return true;
+    }
+    if (isEmpty()) {
+      return false;
+    }
+
+    // Walk along the two sorted vectors.
+    int i = 0;
+    for (S2CellId yId : that) {
+      // If our first cell ends before the one we need to contain, advance where we start searching.
+      if (i < cellIds.size() && entirelyPrecedes(cellIds.get(i), yId)) {
+        i = lowerBound(i + 1, yId);
+      }
+      if (i == cellIds.size() || !cellIds.get(i).contains(yId)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** This is a fast operation (logarithmic in the size of the cell union). */
@@ -490,9 +523,52 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
 
   /** Return true if this cell union intersects {@code union}. */
   public boolean intersects(S2CellUnion union) {
-    S2CellUnion result = new S2CellUnion();
-    result.getIntersection(this, union);
-    return result.size() > 0;
+    // Walk along the two sorted vectors, looking for overlap.
+    int i = 0;
+    int j = 0;
+    ArrayList<S2CellId> yCells = union.cellIds;
+    while (i < cellIds.size() && j < yCells.size()) {
+      S2CellId xId = cellIds.get(i);
+      S2CellId yId = yCells.get(j);
+
+      if (entirelyPrecedes(xId, yId)) {
+        // xId is entirely before yId.
+        i = lowerBound(i + 1, yId);
+      } else if (entirelyPrecedes(yId, xId)) {
+        // yId is entirely before xId.
+        j = union.lowerBound(j + 1, xId);
+      } else {
+        // Neither cell is to the left of the other, so they must intersect.
+        assert xId.intersects(yId);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Returns true if "a" lies entirely before "b" on the Hilbert curve.
+   */
+  private static boolean entirelyPrecedes(S2CellId a, S2CellId b) {
+    return a.rangeMax().lessThan(b.rangeMin());
+  }
+
+  /**
+   * Returns the index of the first cell in {@code cellIds} at or after {@code start} that is not
+   * entirely before {@code id}. Returns {@code cellIds.size()} if no such cell exists.
+   */
+  private int lowerBound(int start, S2CellId id) {
+    int low = start;
+    int high = cellIds.size();
+    while (low < high) {
+      int mid = (low + high) >>> 1;
+      if (entirelyPrecedes(cellIds.get(mid), id)) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
   }
 
   /** Returns the union of two S2CellUnions. */
@@ -629,6 +705,13 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
         }
       }
     }
+  }
+
+  /** Returns the difference of two S2CellUnions. */
+  public static S2CellUnion difference(S2CellUnion x, S2CellUnion y) {
+    S2CellUnion result = new S2CellUnion();
+    result.getDifference(x, y);
+    return result;
   }
 
   /** Initializes this cell union to the difference of the two given cell unions. */
@@ -883,7 +966,20 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
 
   @Override
   public String toString() {
-    return cellIds.toString();
+    int kMaxCount = 500;
+    StringBuilder output = new StringBuilder();
+    output.append("Size:").append(size()).append(" S2CellIds:");
+    int limit = min(kMaxCount, size());
+    for (int i = 0; i < limit; ++i) {
+      if (i > 0) {
+        output.append(",");
+      }
+      output.append(cellId(i).toToken());
+    }
+    if (size() > kMaxCount) {
+      output.append(",...");
+    }
+    return output.toString();
   }
 
   /**
@@ -957,6 +1053,19 @@ public class S2CellUnion implements S2Region, Iterable<S2CellId>, Serializable {
       ids.remove(size);
     }
     return trimmed;
+  }
+
+  /**
+   * Returns a RangeSet representing the ranges of S2CellIds covered by this cell union. The
+   * ranges are half-open, [min, max) and all cells are at {@link S2CellId#MAX_LEVEL}.
+   */
+  @GwtIncompatible("RangeSet")
+  public RangeSet<S2CellId> ranges() {
+    RangeSet<S2CellId> rangeSet = TreeRangeSet.create();
+    for (S2CellId cellId : cellIds) {
+      rangeSet.add(Range.closedOpen(cellId.rangeMin(), cellId.rangeMax().next()));
+    }
+    return rangeSet;
   }
 
   /**

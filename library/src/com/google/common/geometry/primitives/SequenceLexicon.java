@@ -19,11 +19,9 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.geometry.primitives.Ints.ImmutableIntSequence;
 import com.google.common.geometry.primitives.Ints.IntBiConsumer;
-import com.google.common.geometry.primitives.Ints.IntConsumer;
 import com.google.common.geometry.primitives.Ints.IntSequence;
 import com.google.common.geometry.primitives.Ints.IntSequenceHasher;
 import com.google.common.geometry.primitives.Ints.MixingHasher;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -31,6 +29,8 @@ import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.List;
+import java.util.PrimitiveIterator.OfInt;
+import java.util.function.IntConsumer;
 
 /**
  * SequenceLexicon is a collection of immutable sequences of primitive ints (i.e., tuples of varying
@@ -108,8 +108,8 @@ public class SequenceLexicon {
 
   /**
    * Copy constructor. Does a deep copy of the data, and takes a reference to the IntSequenceHasher.
-   * (This is safe because {@link Ints.IntSequenceHasher#hashCode()} results should not depend on
-   * persistent state.)
+   * (This is safe because {@link Ints.IntSequenceHasher#hashCode(IntSequence)} results should not
+   * depend on persistent state.)
    */
   public SequenceLexicon(SequenceLexicon other) {
     this.data = new int[other.data.length][];

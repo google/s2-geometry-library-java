@@ -154,7 +154,6 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    * Similar to above, but takes ownership of the provided vertices without copying. Package
    * private, as the caller is not allowed to modify the array after this.
    */
-  @JsIgnore
   S2Loop(final S2Point[] vertices) {
     initIndex();
     this.numVertices = vertices.length;
@@ -169,9 +168,9 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    * <p>This constructor accepts known good values for bounds and the originInside value. This is
    * intended to be a "fast loop creation" when we already know a lot about the loop. It is
    * primarily used in combination with the fast S2Polygon initializer ( {@link
-   * S2Polygon#initWithNestedLoops(java.util.Map)}). The last vertex is implicitly connected to the
-   * first. All points should be unit length. Loops must have at least 3 vertices, except for the
-   * empty and full loops (see {@link #empty()} and {@link #full()}.)
+   * S2Polygon#initWithNestedLoops(IdentityHashMap)}). The last vertex is implicitly connected to
+   * the first. All points should be unit length. Loops must have at least 3 vertices, except for
+   * the empty and full loops (see {@link #empty()} and {@link #full()}.)
    *
    * @param vertices loop vertices
    * @param originInside true if the S2.origin() is inside the loop
@@ -216,7 +215,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    */
   @JsIgnore
   public static List<S2Point> makeRegularVertices(Matrix frame, S1Angle radius, int numVertices) {
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     // We construct the loop in the given frame coordinates, with the center at (0, 0, 1). For a
     // loop of radius "r", the loop vertices have the form (x, y, z) where x^2 + y^2 = sin(r) and
     // z = cos(r). The distance on the sphere (arc length) from each vertex to the center is
@@ -336,6 +335,9 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
    */
   @Override
   public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
     if (obj instanceof S2Loop) {
       S2Loop that = (S2Loop) obj;
       return Arrays.equals(this.vertices, that.vertices)
@@ -1049,7 +1051,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
     // solution. We handle this using a stack and backtracking. We also keep track of which states
     // have already been explored to avoid duplicating work.
 
-    List<LoopOffsets> pending = Lists.newArrayList();
+    List<LoopOffsets> pending = new ArrayList<>();
     // TODO(torrey): This doesn't need to be a multiset. The value is only ever checked against 0.
     Multiset<LoopOffsets> done = HashMultiset.create();
     pending.add(new LoopOffsets(0, 0));
@@ -1277,7 +1279,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
 
     // Merge in vertices that we should keep, if a filter was provided.
     if (vertexFilter != null) {
-      List<S2Point> toKeep = Lists.newArrayList();
+      List<S2Point> toKeep = new ArrayList<>();
       for (int i = 0, j = 0; i < numVertices(); i++) {
         S2Point p = vertex(i);
         if (simplified.get(j).equalsPoint(p)) {
@@ -1943,7 +1945,7 @@ public final class S2Loop implements S2Region, Comparable<S2Loop>, Serializable,
       aCrossingTarget = swapped ? relation.bCrossingTarget() : relation.aCrossingTarget();
       bCrossingTarget = swapped ? relation.aCrossingTarget() : relation.bCrossingTarget();
       bQuery = new S2CrossingEdgeQuery(b.index);
-      bCells = Lists.newArrayList();
+      bCells = new ArrayList<>();
     }
 
     /**

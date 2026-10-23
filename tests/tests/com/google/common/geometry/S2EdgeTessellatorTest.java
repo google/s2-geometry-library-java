@@ -463,7 +463,7 @@ public class S2EdgeTessellatorTest extends GeometryTestCase {
     double maxR2 = 0;
     double maxS2 = 0;
     for (int iter = 0; iter < iters; iter++) {
-      // TODO(user) iteration 75 and 288 are known bad seeds that causes issues with the
+      // TODO(user): iteration 75 and 288 are known bad seeds that causes issues with the
       // guarantee that unprojecting the points in a tessellated geodeic should result in points
       // that stay within the interpolation tolerance of the geodesic.
       // Seed 75:

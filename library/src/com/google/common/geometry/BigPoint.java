@@ -15,6 +15,9 @@
  */
 package com.google.common.geometry;
 
+import static java.lang.Math.abs;
+import static java.lang.Math.max;
+
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -46,9 +49,47 @@ final class BigPoint implements Comparable<BigPoint> {
     return new BigPoint(x.negate(), y.negate(), z.negate());
   }
 
-  /** Returns an S2Point by rounding 'this' to double precision. */
+  /**
+   * Returns an S2Point by rounding 'this' to double precision.
+   *
+   * <p>This can cause non-zero points to underflow to zero. See {@link #normalizedPoint()} for an
+   * implementation that avoids this underflow.
+   */
   S2Point toS2Point() {
     return new S2Point(x.doubleValue(), y.doubleValue(), z.doubleValue());
+  }
+
+  /**
+   * Returns a normalized S2Point by rounding 'this' to double precision, taking care to avoid
+   * underflow in case all components are very small.
+   */
+  S2Point normalizedPoint() {
+    // The fastest path is to convert all BigDecimals to doubles and normalize. This is safe as long
+    // as *at least one* component is large enough to avoid underflow when squared. For IEEE 754
+    // doubles, where 2^-1022 is the smallest positive normal number, this requires that the
+    // absolute value of the component is at least 2^-511.
+    double dx = x.doubleValue();
+    double dy = y.doubleValue();
+    double dz = z.doubleValue();
+    final double safeMinToSquare = 0x1.0p-511; // compile time representation of 2^-511
+    if (max(abs(dx), max(abs(dy), abs(dz))) >= safeMinToSquare) {
+      return new S2Point(dx, dy, dz).normalize();
+    }
+
+    BigDecimal maxAbs = x.abs().max(y.abs()).max(z.abs());
+    if (maxAbs.signum() == 0) {
+      return S2Point.ZERO;
+    }
+
+    // If all components of {@code this} are too small, they will underflow when squared, resulting
+    // in an incorrectly normalized S2Point. We uniformly scale the components so that the largest
+    // component is in the range [0.1, 1).
+    int numLeadingZeroesAfterDecimal = maxAbs.scale() - maxAbs.precision();
+    return new S2Point(
+            x.scaleByPowerOfTen(numLeadingZeroesAfterDecimal).doubleValue(),
+            y.scaleByPowerOfTen(numLeadingZeroesAfterDecimal).doubleValue(),
+            z.scaleByPowerOfTen(numLeadingZeroesAfterDecimal).doubleValue())
+        .normalize();
   }
 
   /** Returns the vector cross product of 'this' with 'that'. */

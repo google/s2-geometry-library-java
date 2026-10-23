@@ -17,6 +17,8 @@ package com.google.common.geometry;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Comparators.max;
+import static com.google.common.collect.Comparators.min;
 import static com.google.common.collect.ImmutableList.of;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Maps.immutableEntry;
@@ -27,20 +29,24 @@ import static java.lang.Math.ceil;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.lang.Math.round;
-import static java.util.Comparator.comparing;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Comparators;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Multimap;
+import com.google.common.collect.Lists;
+import com.google.common.geometry.PrimitiveArrays.Bytes;
+import com.google.common.geometry.PrimitiveArrays.Cursor;
+import com.google.common.geometry.PrimitiveArrays.Longs;
+import com.google.common.geometry.S2DensityTree.CellVisitor.Action;
 import com.google.common.geometry.S2DensityTree.DecodedPath;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.AbstractList;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -92,6 +98,7 @@ public class S2DensityClusterQuery {
 
   private final long minClusterWeight;
   private final long maxClusterWeight;
+  private final boolean interpolate;
 
   /** Creates a new clusterer with clusters +/- 20% of the given desired cluster weight. */
   public S2DensityClusterQuery(long desiredClusterWeight) {
@@ -105,10 +112,20 @@ public class S2DensityClusterQuery {
    * @param maxClusterWeight the largest desired cluster weight; aim for 125% of minClusterWeight
    */
   public S2DensityClusterQuery(long minClusterWeight, long maxClusterWeight) {
+    this(minClusterWeight, maxClusterWeight, true);
+  }
+
+  private S2DensityClusterQuery(long minClusterWeight, long maxClusterWeight, boolean interpolate) {
     Preconditions.checkArgument(minClusterWeight > 0);
     Preconditions.checkArgument(minClusterWeight <= maxClusterWeight);
     this.minClusterWeight = minClusterWeight;
     this.maxClusterWeight = maxClusterWeight;
+    this.interpolate = interpolate;
+  }
+
+  /** Returns a copy of this query with interpolation set to the given value. */
+  public S2DensityClusterQuery withInterpolation(boolean interpolate) {
+    return new S2DensityClusterQuery(minClusterWeight, maxClusterWeight, interpolate);
   }
 
   /** Returns the min weight of resulting clusters. */
@@ -206,138 +223,158 @@ public class S2DensityClusterQuery {
         };
   }
 
-
-  /** {@link #edits Edits} 'clusters' due to the new 'density', creating new keys with 'newKey'. */
+  /**
+   * {@link #edits Edits} 'clusters' in the range {@code [begin, end)} due to the new 'density',
+   * creating new keys with 'newKey'. Clusters outside the range are removed. Clusters that cross
+   * the range are clipped to the range.
+   */
   public <K> void edit(
-      Map<K, Cluster> clusters, S2DensityTree density, Function<Cluster, K> newKey) {
-    ArrayListMultimap<K, Cluster> multimap = ArrayListMultimap.create();
-    edits(multimap, clusters, density);
-    for (Entry<K, Cluster> edit : multimap.entries()) {
+      Collection<Entry<K, Cluster>> clusters,
+      S2DensityTree density,
+      Function<Cluster, K> newKey,
+      S2CellId begin,
+      S2CellId end) {
+    List<Entry<K, Cluster>> edits = new ArrayList<>();
+    edits(edits, clusters, density, begin, end);
+    clusters.clear();
+    for (Entry<K, Cluster> edit : edits) {
       K key = edit.getKey();
       Cluster cluster = edit.getValue();
-      if (key == null) {
-        key = newKey.apply(cluster);
-        checkState(!clusters.containsKey(key));
-        clusters.put(key, cluster);
-      } else if (cluster.weight() == 0) {
-        checkState(clusters.containsKey(key));
-        clusters.remove(key);
-      } else {
-        checkState(clusters.containsKey(key));
-        clusters.put(key, cluster);
+      if (cluster.weight() > 0) {
+        if (key == null) {
+          edit = immutableEntry(newKey.apply(cluster), cluster);
+        }
+        clusters.add(edit);
       }
     }
   }
 
   /**
-   * Adds 'edits' that will update old 'clusters' due to the new 'density'. New clusters have a null
-   * key, removed clusters have a 0 weight, and other clusters have been updated. The caller should
-   * apply these edits to the source of 'clusters' prior to calling this method again. The caller
-   * may provide these edits to {@link #regionKeys} to set keys of features in each 'edits' key.
+   * Adds 'edits' that will update old 'clusters' in the range {@code [begin, end)} due to the new
+   * 'density'. New clusters have a null key, removed clusters have a 0 weight, and other clusters
+   * have been updated. Clusters outside the range are removed, and clusters that cross the range
+   * are clipped to the range. The caller should apply these edits to the source of 'clusters' prior
+   * to calling this method again. The caller may provide these edits to {@link #regionKeys} to set
+   * keys of features in each 'edits' key.
    *
-   * <p>There will be edits to report any change to the given clusters for the new density, but it
-   * may be desirable to drop some edits. E.g. small changes in weight may not be useful to apply.
-   * E.g. the begin,end of a cluster may not be useful to apply, as when the old range intersets
-   * only the old cluster and it contains it.
+   * <p>The edits preserve the relative order of keys (but may delete or insert around that order).
+   *
+   * @param edits the collection to populate with edits
+   * @param clusters the existing clusters to update, which must be disjoint and in spatial order
+   * @param density the density tree to cluster
+   * @param begin the start of the cell range (inclusive)
+   * @param end the end of the cell range (exclusive)
    */
   public <K> void edits(
-      Multimap<K, Cluster> edits, Map<K, Cluster> clusters, S2DensityTree density) {
-    // Add clusters updated from the new density.
-    List<Entry<K, Cluster>> results = new ArrayList<>(clusters.entrySet());
-    results.sort(comparing(e -> e.getValue().begin()));
-
-    // Add clusters with a null key for each gap before, between, and after the given clusters.
-    S2CellId lastEnd = S2CellId.begin(MAX_LEVEL);
-    for (int i = 0, n = results.size(); i < n; i++) {
-      // Get the next cluster and verify disjointness.
-      Entry<K, Cluster> entry = results.get(i);
-      K key = entry.getKey();
-      Cluster cluster = entry.getValue();
-      checkArgument(lastEnd.lessOrEquals(cluster.begin()), "Clusters must be disjoint.");
-
-      // Add a cluster for the gap at the end. The order doesn't matter for splitting.
-      Cluster gap = cluster(density, lastEnd, cluster.begin());
-      if (gap.weight() > 0) {
-        results.add(immutableEntry(null, gap));
+      Collection<Entry<K, Cluster>> edits,
+      Collection<? extends Entry<K, Cluster>> clusters,
+      S2DensityTree density,
+      S2CellId begin,
+      S2CellId end) {
+    Entry<K, Cluster> tail = immutableEntry(null, new Cluster(begin, begin, 0));
+    for (Entry<K, Cluster> entry : clusters) {
+      // Delete clusters outside the range (set weight to 0).
+      Cluster c = entry.getValue();
+      if (c.end().lessOrEquals(begin) || c.begin().greaterOrEquals(end)) {
+        edits.add(immutableEntry(entry.getKey(), c.withWeight(0)));
+        continue;
       }
 
-      // Set the updated cluster. Keep the key if weight==0, since gaps might merge to it later.
-      results.set(i, immutableEntry(key, cluster(density, cluster.begin(), cluster.end())));
-      lastEnd = cluster.end();
-    }
+      // Compute the range of this interval.
+      S2CellId cBegin = max(c.begin(), begin);
+      S2CellId cEnd = min(c.end(), end);
+      checkArgument(tail.getValue().end().lessOrEquals(cBegin), "Not disjoint and sorted.");
 
-    // Add a cluster for the final gap at the end of the Hilbert curve.
-    Cluster gap = cluster(density, lastEnd, S2CellId.end(MAX_LEVEL));
-    if (gap.weight() > 0) {
-      results.add(immutableEntry(null, gap));
-    }
-
-    // Split oversized clusters.
-    for (int i = 0, n = results.size(); i < n; i++) {
-      Entry<K, Cluster> entry = results.get(i);
-      Cluster cluster = entry.getValue();
-      if (cluster.weight() > maxClusterWeight) {
-        Cluster split = next(density, cluster.begin());
-        checkState(split.end().lessOrEquals(cluster.end()));
-        results.set(i, immutableEntry(entry.getKey(), split));
-        split = next(density, split.end());
-        while (split.end().lessThan(cluster.end())) {
-          results.add(immutableEntry(null, split));
-          split = next(density, split.end());
-        }
-        split = cluster(density, split.begin(), cluster.end());
-        if (split.weight() > 0) {
-          results.add(immutableEntry(null, split));
-        }
+      // Process gap before cluster if present.
+      if (tail.getValue().end().lessThan(cBegin)) {
+        tail = processInterval(edits, density, null, tail.getValue().end(), cBegin, tail);
       }
+      // Process cluster.
+      tail = processInterval(edits, density, entry.getKey(), cBegin, cEnd, tail);
     }
 
-    // Merge undersized adjacent clusters. The input isn't sorted so we do that first. The result
-    // isn't sorted either, although order can be restored by a single pass swap if desired.
-    results.sort(Comparator.comparing(e -> e.getValue().begin()));
-    for (int i = 0; i < results.size() - 1; i++) {
-      Entry<K, Cluster> entry1 = results.get(i);
-      K k1 = entry1.getKey();
-      Cluster c1 = entry1.getValue();
-      if (c1.weight() < minClusterWeight) {
-        Entry<K, Cluster> entry2 = results.get(i + 1);
-        K k2 = entry2.getKey();
-        Cluster c2 = entry2.getValue();
-        Cluster union = cluster(density, c1.begin(), c2.end());
-        if (union.weight() <= maxClusterWeight) {
-          // Completely merge c1 and c2. Reuse a key if possible, or the larger key if we have both.
-          if (k1 != null && (k2 == null || c1.weight() > c2.weight())) {
-            // Keep k1. The union takes the place of c2, and the removal takes the place of c1.
-            results.set(i, immutableEntry(k2, new Cluster(c2.end(), c2.end(), 0)));
-            results.set(i + 1, immutableEntry(k1, union));
+    // Process trailing gap if present.
+    if (tail.getValue().end().lessThan(end)) {
+      tail = processInterval(edits, density, null, tail.getValue().end(), end, tail);
+    }
+
+    // Flush tail if active.
+    if (tail.getKey() != null || tail.getValue().weight() > 0) {
+      edits.add(immutableEntry(tail.getKey(), tail.getValue().clamp(density)));
+    }
+  }
+
+  /**
+   * Processes a single Hilbert interval {@code [begin, end)}, merging with any active {@code tail}
+   * from preceding intervals, emitting completed clusters directly to {@code edits}, splitting
+   * oversized ranges, and returning the new {@code tail}.
+   */
+  private <K> Entry<K, Cluster> processInterval(
+      Collection<Entry<K, Cluster>> edits,
+      S2DensityTree density,
+      K key,
+      S2CellId begin,
+      S2CellId end,
+      Entry<K, Cluster> tail) {
+    K tailKey = tail.getKey();
+    Cluster tailCluster = tail.getValue();
+
+    // Merge with active tail if present, deleting the smaller key if both are present.
+    if (tailKey != null || tailCluster.weight() > 0) {
+      Cluster union = cluster(density, tailCluster.begin(), end);
+      if (union.weight() <= maxClusterWeight) {
+        begin = tailCluster.begin();
+        if (tailKey != null && key != null) {
+          if (tailCluster.weight() > cluster(density, tailCluster.end(), end).weight()) {
+            edits.add(immutableEntry(key, new Cluster(begin, begin, 0)));
+            key = tailKey;
           } else {
-            // Keep k2. The union takes the place of c2, and the removal takes the place of c1.
-            results.set(i, immutableEntry(k1, new Cluster(c1.begin(), c1.begin(), 0)));
-            results.set(i + 1, immutableEntry(k2, union));
+            edits.add(immutableEntry(tailKey, new Cluster(begin, begin, 0)));
           }
-        } else {
-          // Steal the head of c2 if it doesn't make c1 overweight and doesn't make c2 underweight.
-          Cluster head = next(density, c1.begin(), c2.end(), 0);
-          if (head.end().lessThan(c2.end()) && head.weight() <= maxClusterWeight) {
-            Cluster tail = cluster(density, head.end(), c2.end());
-            if (tail.weight() >= minClusterWeight) {
-              results.set(i, immutableEntry(k1, head));
-              results.set(i + 1, immutableEntry(k2, tail));
-            }
+        } else if (tailKey != null) {
+          key = tailKey;
+        }
+        tail = immutableEntry(null, new Cluster(begin, begin, 0));
+      } else {
+        Cluster head = next(density, tailCluster.begin(), end, 0);
+        if (head.end().lessThan(end) && head.weight() <= maxClusterWeight) {
+          Cluster rem = cluster(density, head.end(), end);
+          if (rem.weight() >= minClusterWeight) {
+            edits.add(immutableEntry(tailKey, head.clamp(density)));
+            begin = head.end();
+            tail = immutableEntry(null, new Cluster(begin, begin, 0));
           }
+        }
+        if (tail.getKey() != null || tail.getValue().weight() > 0) {
+          edits.add(immutableEntry(tail.getKey(), tail.getValue().clamp(density)));
+          tail = immutableEntry(null, new Cluster(begin, begin, 0));
         }
       }
     }
 
-    // Add the edits, skipping updates that didn't change anything and inserts that have no weight.
-    // The order of 'results' does not matter, because the user's multimap determines the order.
-    for (Entry<K, Cluster> entry : results) {
-      K key = entry.getKey();
-      Cluster cluster = entry.getValue();
-      if (key != null ? !clusters.get(key).equals(cluster) : cluster.weight() > 0) {
-        edits.put(key, cluster.clamp(density));
-      }
+    // Process and split current interval.
+    Cluster cluster = cluster(density, begin, end);
+    if (cluster.weight() == 0 && key == null) {
+      return immutableEntry(null, new Cluster(end, end, 0));
     }
+    if (cluster.weight() > maxClusterWeight) {
+      S2CellId cur = begin;
+      while (cur.lessThan(end)) {
+        Cluster split = next(density, cur, end);
+        if (split.end().equals(end)) {
+          return immutableEntry(key, split);
+        }
+        edits.add(immutableEntry(key, split.clamp(density)));
+        key = null;
+        cur = split.end();
+      }
+      return immutableEntry(null, new Cluster(end, end, 0));
+    }
+    if (cluster.weight() < minClusterWeight) {
+      return immutableEntry(key, cluster);
+    }
+    edits.add(immutableEntry(key, cluster.clamp(density)));
+    return immutableEntry(null, new Cluster(end, end, 0));
   }
 
   /**
@@ -346,47 +383,53 @@ public class S2DensityClusterQuery {
    */
   @VisibleForTesting
   static Cluster cluster(S2DensityTree density, S2CellId begin, S2CellId end) {
+    return new Cluster(begin, end, weight(density, begin, end));
+  }
+
+  /** Returns the weight of tree nodes contained by the range {@code [begin, end)}. */
+  public static long weight(S2DensityTree density, S2CellId begin, S2CellId end) {
     long[] sum = {0};
     density.visitCells((cell, node) -> {
       // Skip disjoint cells.
       if (begin.greaterThan(cell.rangeMax()) || end.lessOrEquals(cell.rangeMin())) {
-        return S2DensityTree.CellVisitor.Action.SKIP_CELL;
+        return Action.SKIP_CELL;
       }
       // Use the entire weight of contained cells.
       if (begin.lessOrEquals(cell.rangeMin()) && end.greaterThan(cell.rangeMax())) {
         sum[0] += node.weight();
-        return S2DensityTree.CellVisitor.Action.SKIP_CELL;
+        return Action.SKIP_CELL;
       }
       // Recurse if we can since children may be less ambiguous.
       if (node.hasChildren()) {
-        return S2DensityTree.CellVisitor.Action.ENTER_CELL;
+        return Action.ENTER_CELL;
       }
       // Otherwise determine the portion of 'cell' that intersects the begin,end range.
       CellInterpolator range = new CellInterpolator(cell);
       double t1 = max(0, range.uninterpolate(begin));
       double t2 = end.isValid() ? min(1, range.uninterpolate(end)) : 1;
       sum[0] += round(ceil(node.weight() * (t2 - t1)));
-      return S2DensityTree.CellVisitor.Action.SKIP_CELL;
+      return Action.SKIP_CELL;
     });
-    return new Cluster(begin, end, sum[0]);
+    return sum[0];
   }
 
   /**
    * Returns a function that maps a region to the key it should be assigned to as part of cluster
    * updates. This function must be called on all inserted and updated records, as well as unedited
-   * records keyed by any key in {@code edits.keySet()}. After such records have been given keys by
-   * this function, and the cluster edits in {@code edits} have been persisted as well, the dataset
+   * records keyed by any key in {@code clusters}. After such records have been given keys by this
+   * function, and the cluster edits in {@code clusters} have been persisted as well, the dataset
    * will be in a properly clustered state except for any exceptional results added to the default
    * key, which allows further clustering.
    *
    * @param clusters the edited clusters, for updated/removed/inserted features
    * @param defaultKey a default key to use if a record has no good spatial match
    */
-  public static <K> Function<S2Region, K> regionKeys(Map<K, Cluster> clusters, K defaultKey) {
+  public static <K> Function<S2Region, K> regionKeys(
+      Iterable<Entry<K, Cluster>> clusters, K defaultKey) {
     // Make parallel lists of keys and coverings, to select the key for the best covering by index.
     List<K> keys = new ArrayList<>();
     List<S2CellUnion> coverings = new ArrayList<>();
-    for (Entry<K, Cluster> edit : clusters.entrySet()) {
+    for (Entry<K, Cluster> edit : clusters) {
       K key = edit.getKey();
       Cluster cluster = edit.getValue();
       if (cluster.weight() > 0) {
@@ -440,33 +483,47 @@ public class S2DensityClusterQuery {
     }
 
     @Override public Action visit(S2CellId cell, S2DensityTree.Cell node) {
-      if (cell.rangeMax().lessThan(begin) || cell.rangeMin().greaterOrEquals(end)) {
-        // Current node is entirely before this cluster starts, so move forward.
+      if (cell.rangeMax().lessThan(begin)) {
         return Action.SKIP_CELL;
+      }
+      if (cell.rangeMin().greaterOrEquals(end)) {
+        return Action.STOP;
       }
       CellInterpolator range = new CellInterpolator(cell);
       double ratio = node.hasChildren() ? 0 : max(0, min(1, range.uninterpolate(begin)));
       long sum = weight + (long) ceil((1 - ratio) * node.weight());
-      if (sum < minClusterWeight) {
-        // Current node is too small to finish the current cluster, so move forward.
+      if (sum < minClusterWeight && cell.rangeMax().lessThan(end)) {
         weight = sum;
         return Action.SKIP_CELL;
       }
-      if (sum <= maxClusterWeight) {
-        // Current node is large enough to finish the current cluster, so stop.
+      if (sum <= maxClusterWeight && cell.rangeMax().lessThan(end)) {
         weight = sum;
         end = cell.rangeMax().next();
         return Action.STOP;
       }
       if (node.hasChildren()) {
-        // Current node is too large but has children, so explore the children.
         return Action.ENTER_CELL;
       }
-      // Current node is too large and has no children, so prorate the Hilbert range.
-      long missingWeight = (minClusterWeight + maxClusterWeight + 1) / 2 - weight;
-      weight += missingWeight;
-      ratio += 1.0 * missingWeight / node.weight();
-      end = range.interpolate(ratio).rangeMin();
+      if (interpolate) {
+        // Current node is too large and has no children, so prorate the Hilbert range.
+        long missing = (minClusterWeight + maxClusterWeight + 1) / 2 - weight;
+        double targetRatio = ratio + 1.0 * missing / node.weight();
+        if (targetRatio < 1.0) {
+          S2CellId nextEnd = range.interpolate(targetRatio).rangeMin();
+          if (nextEnd.lessThan(end)) {
+            weight += missing;
+            end = nextEnd;
+            return Action.STOP;
+          }
+        }
+        double t = range.uninterpolate(end);
+        weight += (long) ceil((max(0.0, min(1.0, t)) - ratio) * node.weight());
+      } else if (cell.lessThan(end)) {
+        weight = sum;
+        end = cell.rangeMax().next();
+      } else {
+        end = max(begin, cell.rangeMin());
+      }
       return Action.STOP;
     }
 
@@ -510,6 +567,62 @@ public class S2DensityClusterQuery {
 
   /** A cluster is a cell range and an expected weight based on the density it was computed from. */
   public static final class Cluster {
+    /** A coder for one {@link Cluster}. */
+    public static final S2Coder<Cluster> CODER = new S2Coder<>() {
+      @Override public void encode(Cluster c, OutputStream out) throws IOException {
+        LittleEndianOutput.writeLong(out, c.begin().id());
+        EncodedInts.writeVarint64(out, c.end().distanceFromBegin() - c.begin().distanceFromBegin());
+        EncodedInts.writeVarint64(out, c.weight());
+      }
+      @Override public Cluster decode(Bytes data, Cursor cursor) throws IOException {
+        try (InputStream is = data.toInputStream(cursor)) {
+          S2CellId begin = new S2CellId(LittleEndianInput.readLong(is));
+          S2CellId end = begin.advance(EncodedInts.readVarint64(is));
+          long weight = EncodedInts.readVarint64(is);
+          return new Cluster(begin, end, weight);
+        }
+      }
+      @Override public boolean isLazy() {
+        return false;
+      }
+    };
+
+    /** A coder for {@link Cluster clusters}. Compresses much better than {@link #CODER}. */
+    public static final S2Coder<List<Cluster>> VECTOR_CODER = new S2Coder<>() {
+      @Override public void encode(List<Cluster> clusters, OutputStream out) throws IOException {
+        // Encode the begins and ends using the existing S2CellIdVectorCoder.
+        S2CellIdVectorCoder.INSTANCE.encode(Lists.transform(clusters, Cluster::begin), out);
+        S2CellIdVectorCoder.INSTANCE.encode(Lists.transform(clusters, Cluster::end), out);
+        // Clusters were created to be nearly the same size, so encode the deviation from the mean.
+        long mean = round(clusters.stream().mapToLong(Cluster::weight).average().orElse(0));
+        Longs deltas = new Longs() {
+          @Override public int length() {
+            return clusters.size();
+          }
+          @Override public long get(int index) {
+            return EncodedInts.encodeZigZag64(clusters.get(index).weight() - mean);
+          }
+        };
+        EncodedInts.writeVarint64(out, mean);
+        UintVectorCoder.UINT64.encode(deltas, out);
+      }
+      @Override public List<Cluster> decode(Bytes data, Cursor cursor) throws IOException {
+        List<S2CellId> begins = S2CellIdVectorCoder.INSTANCE.decode(data, cursor);
+        List<S2CellId> ends = S2CellIdVectorCoder.INSTANCE.decode(data, cursor);
+        long mean = data.readVarint64(cursor);
+        Longs deltas = UintVectorCoder.UINT64.decode(data, cursor);
+        return new AbstractList<>() {
+          @Override public int size() {
+            return begins.size();
+          }
+          @Override public Cluster get(int index) {
+            long weight = mean + EncodedInts.decodeZigZag64(deltas.get(index));
+            return new Cluster(begins.get(index), ends.get(index), weight);
+          }
+        };
+      }
+    };
+
     private final S2CellId begin;
     private final S2CellId end;
     private final long weight;
@@ -536,6 +649,41 @@ public class S2DensityClusterQuery {
     /** Returns the weight of this cluster. */
     public long weight() {
       return weight;
+    }
+
+    /** Returns the updated weight of this cluster. */
+    public long weight(S2DensityTree updated) {
+      return S2DensityClusterQuery.weight(updated, begin, end);
+    }
+
+    /** Returns a new cluster with the given weight. */
+    public Cluster withWeight(long weight) {
+      return new Cluster(begin, end, weight);
+    }
+
+    /** Returns whether the given cell intersects the range of this cluster. */
+    public boolean intersects(S2CellId id) {
+      return id.rangeMax().greaterOrEquals(begin) && id.rangeMin().lessThan(end);
+    }
+
+    /** Returns whether the given cluster intersects the range of this cluster. */
+    public boolean intersects(Cluster other) {
+      return this.end.greaterThan(other.begin) && this.begin.lessThan(other.end);
+    }
+
+    /** Returns true if this cluster range contains the other cluster range. */
+    public boolean contains(Cluster other) {
+      return this.begin.lessOrEquals(other.begin) && this.end.greaterOrEquals(other.end);
+    }
+
+    /** Returns true if this cluster range is contained by the other cluster range. */
+    public boolean within(Cluster other) {
+      return other.contains(this);
+    }
+
+    /** Returns true if this cluster range overlaps the other range but is neither within nor contains it. */
+    public boolean crosses(Cluster other) {
+      return intersects(other) && !within(other) && !contains(other);
     }
 
     @Override public int hashCode() {
@@ -572,8 +720,8 @@ public class S2DensityClusterQuery {
         return new Cluster(begin, begin, 0); // No density at all
       }
       assert clampedEnd.isValid(); // clampedBegin.isValid()==clampedEnd.isValid()
-      clampedBegin = Comparators.max(begin, clampedBegin.rangeMin());
-      clampedEnd = Comparators.min(end, clampedEnd.next().rangeMin());
+      clampedBegin = max(begin, clampedBegin.rangeMin());
+      clampedEnd = min(end, clampedEnd.next().rangeMin());
       checkState(clampedBegin.lessOrEquals(clampedEnd));
       return new Cluster(clampedBegin, clampedEnd, weight);
     }

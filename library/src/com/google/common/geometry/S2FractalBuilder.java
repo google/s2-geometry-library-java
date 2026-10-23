@@ -26,7 +26,7 @@ import static java.lang.Math.sin;
 import static java.lang.Math.sqrt;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -220,9 +220,9 @@ public class S2FractalBuilder {
 
   /** As {@link #makeLoop(Matrix, S1Angle)} except it returns the vertices instead of loop. */
   public List<S2Point> makeVertices(Matrix frame, S1Angle nominalRadius) {
-    List<R2Vector> r2Vertices = Lists.newArrayList();
+    List<R2Vector> r2Vertices = new ArrayList<>();
     getR2Vertices(r2Vertices);
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
     for (int i = 0; i < r2Vertices.size(); ++i) {
       // Convert each vertex to polar coordinates.
       R2Vector v = r2Vertices.get(i);

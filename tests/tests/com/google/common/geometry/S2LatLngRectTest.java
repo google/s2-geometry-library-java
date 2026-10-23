@@ -319,6 +319,14 @@ public class S2LatLngRectTest extends GeometryTestCase {
             .getCapBound()
             .approxEquals(S2Cap.fromAxisAngle(new S2Point(0, 0, -1), S1Angle.degrees(80))));
 
+    // GetCapBound(), longitude span > 180 degrees and latitude span > 90 degrees. This results
+    // in a polar cap that is larger than the "midpoint cap" (centered at the center of the rect
+    // and containing the vertices), but is nonetheless the correct result. The "midpoint cap" must
+    // not be returned since it doesn't contain the entire rect due the rect being wider than 180
+    // degrees.
+    assertTrue(rectFromDegrees(-60, -150, 70, 50).getCapBound()
+        .approxEquals(S2Cap.fromAxisAngle(new S2Point(0, 0, 1), S1Angle.degrees(150))));
+
     // GetCapBound(), ensure hemispheres are bounded conservatively:
     assertTrue(
         new S2LatLngRect(S2LatLng.fromDegrees(-10, -100), S2LatLng.fromDegrees(0, 100))

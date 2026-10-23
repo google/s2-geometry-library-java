@@ -1263,8 +1263,8 @@ public class S2PolygonTest extends GeometryTestCase {
       S2Polygon b = makeVerbatimPolygon(test.b);
       S2Polygon expectedAAndB = makeVerbatimPolygon(test.aAndB);
 
-      List<S2Point> points = Lists.newArrayList();
-      List<S2Polyline> polylines = Lists.newArrayList();
+      List<S2Point> points = new ArrayList<>();
+      List<S2Polyline> polylines = new ArrayList<>();
       for (int ab = 0; ab < 2; ab++) {
         S2Polygon tmp = (ab == 1) ? a : b;
         S2Polygon tmp2 = (ab == 1) ? b : a;
@@ -1325,8 +1325,8 @@ public class S2PolygonTest extends GeometryTestCase {
   @Test
   public void testIsValidVertexCount() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
-      List<List<S2Point>> loops = Lists.newArrayList();
-      List<S2Point> loopPoints = Lists.newArrayList();
+      List<List<S2Point>> loops = new ArrayList<>();
+      List<S2Point> loopPoints = new ArrayList<>();
       loopPoints.add(data.getRandomPoint());
       loopPoints.add(data.getRandomPoint());
       loops.add(loopPoints);
@@ -1388,7 +1388,7 @@ public class S2PolygonTest extends GeometryTestCase {
   @Test
   public void testIsValidFullLoop() {
     S2Loop fullLoop = S2Loop.full();
-    List<S2Point> fullLoopPoints = Lists.newArrayList();
+    List<S2Point> fullLoopPoints = new ArrayList<>();
     for (int i = 0; i < fullLoop.numVertices(); ++i) {
       fullLoopPoints.add(fullLoop.vertex(i));
     }
@@ -1525,10 +1525,10 @@ public class S2PolygonTest extends GeometryTestCase {
   public void testIsValidFuzz() {
     for (int iter = 0; iter < VALIDITY_ITERS; ++iter) {
       int numLoops = 1 + data.random(10);
-      List<List<S2Point>> loops = Lists.newArrayList();
+      List<List<S2Point>> loops = new ArrayList<>();
       for (int i = 0; i < numLoops; ++i) {
         int numVertices = data.random(10);
-        List<S2Point> loop = Lists.newArrayList();
+        List<S2Point> loop = new ArrayList<>();
         while (loop.size() < numVertices) {
           // Since the number of vertices is random, we automatically test empty loops, full loops,
           // and invalid vertex counts. Also, since most vertices are random, we automatically get
@@ -1795,7 +1795,7 @@ public class S2PolygonTest extends GeometryTestCase {
    * returns it.
    */
   private static S2Polygon checkValid(List<List<S2Point>> validLoops) {
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     for (int i = 0; i < validLoops.size(); ++i) {
       loops.add(new S2Loop(validLoops.get(i)));
     }
@@ -1813,7 +1813,7 @@ public class S2PolygonTest extends GeometryTestCase {
    * allowed to not be unit length. Shuffles the order of the resulting loops.
    */
   private static List<S2Loop> uncheckedLoops(List<List<S2Point>> vertices) {
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     for (int i = 0; i < vertices.size(); ++i) {
       loops.add(uncheckedLoop(vertices.get(i)));
     }
@@ -1827,7 +1827,7 @@ public class S2PolygonTest extends GeometryTestCase {
 
   /** Constructs S2Loops and shuffles their order. All vertices must at least be unit length. */
   private static List<S2Loop> loops(List<List<S2Point>> vertices) {
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     for (int i = 0; i < vertices.size(); ++i) {
       loops.add(new S2Loop(vertices.get(i)));
     }
@@ -1889,7 +1889,7 @@ public class S2PolygonTest extends GeometryTestCase {
   }
 
   private void polylineIntersectionSharedEdgeTest(S2Polygon p, int startVertex, int direction) {
-    List<S2Point> points = Lists.newArrayList();
+    List<S2Point> points = new ArrayList<>();
     points.add(p.loop(0).vertex(startVertex));
     points.add(p.loop(0).vertex(startVertex + direction));
     S2Polyline polyline = new S2Polyline(points);
@@ -1945,8 +1945,8 @@ public class S2PolygonTest extends GeometryTestCase {
       S2Polygon b = makeVerbatimPolygon(test.b);
       S2Polygon expectedAAndB = makeVerbatimPolygon(test.aAndB);
 
-      List<S2Point> points = Lists.newArrayList();
-      List<S2Polyline> polylines = Lists.newArrayList();
+      List<S2Point> points = new ArrayList<>();
+      List<S2Polyline> polylines = new ArrayList<>();
       for (int ab = 0; ab < 2; ab++) {
         S2Polygon tmp = (ab == 1) ? a : b;
         S2Polygon tmp2 = (ab == 1) ? b : a;
@@ -2051,11 +2051,11 @@ public class S2PolygonTest extends GeometryTestCase {
         new S2LatLngRect(new R1Interval(bounds.lat().getCenter(), bounds.lat().hi()), bounds.lng());
 
     // Turn the S2LatLngRect into an S2Polygon
-    List<S2Point> points = Lists.newArrayList();
+    List<S2Point> points = new ArrayList<>();
     for (int i = 0; i < 4; i++) {
       points.add(upperHalf.getVertex(i).toPoint());
     }
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     loops.add(new S2Loop(points));
     S2Polygon upperHalfPolygon = new S2Polygon(loops);
 
@@ -2256,7 +2256,7 @@ public class S2PolygonTest extends GeometryTestCase {
     S2Polygon c = new S2Polygon();
     c.initToUnion(a, b);
 
-    List<S2Polygon> polygons = Lists.newArrayList();
+    List<S2Polygon> polygons = new ArrayList<>();
     polygons.add(aCopy);
     polygons.add(bCopy);
     S2Polygon cUnion = S2Polygon.union(polygons);
@@ -2491,7 +2491,7 @@ public class S2PolygonTest extends GeometryTestCase {
     assertEquals(3, polygon.getNumVertices());
     S2LatLngRect bound1 = polygon.getRectBound();
 
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     loops.add(makeLoop("10:0, -10:-20, -10:20"));
     loops.add(makeLoop("40:30, 20:10, 20:50"));
     polygon.initNested(loops);
@@ -2556,26 +2556,26 @@ public class S2PolygonTest extends GeometryTestCase {
   public void testFastInit() {
     S2LatLngRect bound;
     IdentityHashMap<S2Loop, List<S2Loop>> nestedLoops = new IdentityHashMap<>();
-    nestedLoops.put(S2Polygon.ROOT, Lists.<S2Loop>newArrayList());
+    nestedLoops.put(S2Polygon.ROOT, new ArrayList<S2Loop>());
 
-    List<S2Point> vertices = Lists.newArrayList();
+    List<S2Point> vertices = new ArrayList<>();
 
     bound = parseVertices("-2:-2, -3:6, 6:-3", vertices);
     S2Loop loop1 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
     nestedLoops.get(S2Polygon.ROOT).add(loop1);
-    nestedLoops.put(loop1, Lists.<S2Loop>newArrayList());
+    nestedLoops.put(loop1, new ArrayList<S2Loop>());
 
-    vertices = Lists.newArrayList();
+    vertices = new ArrayList<>();
     bound = parseVertices("-1:-2, -2:5, 5:-2", vertices);
     S2Loop loop2 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
     nestedLoops.get(loop1).add(loop2);
-    nestedLoops.put(loop2, Lists.<S2Loop>newArrayList());
+    nestedLoops.put(loop2, new ArrayList<S2Loop>());
 
-    vertices = Lists.newArrayList();
+    vertices = new ArrayList<>();
     bound = parseVertices("-1:0, 0:1, 1:0, 0:-1", vertices);
     S2Loop loop3 = S2Loop.newLoopWithTrustedDetails(vertices, false, bound);
     nestedLoops.get(loop2).add(loop3);
-    nestedLoops.put(loop3, Lists.<S2Loop>newArrayList());
+    nestedLoops.put(loop3, new ArrayList<S2Loop>());
 
     S2Polygon polygon = new S2Polygon();
     polygon.initWithNestedLoops(nestedLoops);
@@ -2784,7 +2784,7 @@ public class S2PolygonTest extends GeometryTestCase {
         S2CellId.MAX_LEVEL,
         makePolygon("10:10, 30:20, 20:30", S2CellId.MAX_LEVEL).getBestSnapLevel());
     // Mixed snap levels for different loops.
-    List<S2Loop> loops = Lists.newArrayList();
+    List<S2Loop> loops = new ArrayList<>();
     loops.add(makeLoop("10:10, 20:30, 30:20", 10));
     loops.add(makeLoop("60:60, 70:80, 80:70", 12));
     assertEquals(10, new S2Polygon(loops).getBestSnapLevel());
@@ -2985,7 +2985,7 @@ public class S2PolygonTest extends GeometryTestCase {
 
     for (String str : strs) {
       List<S2LatLng> points = S2TextFormat.parseLatLngsOrDie(str); // Actually u/vs, not lat/lngs
-      List<S2Point> loopVertices = Lists.newArrayList();
+      List<S2Point> loopVertices = new ArrayList<>();
       for (S2LatLng p : points) {
         double u = p.latDegrees();
         double v = p.lngDegrees();
@@ -3023,7 +3023,7 @@ public class S2PolygonTest extends GeometryTestCase {
    * in order to prevent accidental loop crossings when one of the loops is modified.
    */
   private List<List<S2Point>> getConcentricLoops(int numLoops, int minVertices) {
-    List<List<S2Point>> loops = Lists.newArrayList();
+    List<List<S2Point>> loops = new ArrayList<>();
     // Radii decrease exponentially.
     assertTrue(numLoops <= 10);
     S2Point center = data.getRandomPoint();
@@ -3093,13 +3093,13 @@ public class S2PolygonTest extends GeometryTestCase {
               .setMaxCells(500)
               .build();
 
-      ArrayList<S2CellId> cells = Lists.newArrayList();
+      ArrayList<S2CellId> cells = new ArrayList<>();
       coverer.getCovering(polygon, cells);
       S2CellUnion covering = new S2CellUnion().initFromCellIds(cells);
       checkCovering(polygon, covering, false);
       checkCoveringIsConservative(polygon, cells);
       logger.fine(cells.size() + " cells in covering");
-      List<S2Polygon> pieces = Lists.newArrayList();
+      List<S2Polygon> pieces = new ArrayList<>();
       for (int i = 0; i < cells.size(); ++i) {
         S2Cell cell = new S2Cell(cells.get(i));
         S2Polygon window = new S2Polygon(cell);

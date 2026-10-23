@@ -16,12 +16,15 @@
 package com.google.common.geometry;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.Lists;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.io.BaseEncoding;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -44,7 +47,7 @@ public class VectorCoderTest {
 
   @Test
   public void testEmpty() throws IOException {
-    checkEncodedStringVector(Lists.newArrayList(), 1);
+    checkEncodedStringVector(new ArrayList<>(), 1);
   }
 
   @Test
@@ -70,6 +73,28 @@ public class VectorCoderTest {
   @Test
   public void testTwoBigStrings() throws IOException {
     checkEncodedStringVector(Lists.newArrayList("x".repeat(10000), "y".repeat(100000)), 110007);
+  }
+
+  @Test
+  public void testNullableVector() throws IOException {
+    VectorCoder<Long> coder = VectorCoder.nullableVector(S2Coder.UNBOXED_VARINT);
+    assertTrue(coder.isLazy());
+
+    List<Long> input = Lists.newArrayList(10L, null, 20L, null, 30L);
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    coder.encode(input, output);
+
+    PrimitiveArrays.Bytes data = PrimitiveArrays.Bytes.fromByteArray(output.toByteArray());
+    Cursor cursor = data.cursor();
+    List<Long> actual = coder.decode(data, cursor);
+    assertEquals(input, actual);
+    assertEquals(5, actual.size());
+    assertEquals(Long.valueOf(10L), actual.get(0));
+    assertNull(actual.get(1));
+    assertEquals(Long.valueOf(20L), actual.get(2));
+    assertNull(actual.get(3));
+    assertEquals(Long.valueOf(30L), actual.get(4));
+    assertEquals(output.size(), cursor.position);
   }
 
   private void checkEncodedStringVector(List<String> input, int expectedBytes) throws IOException {

@@ -112,6 +112,7 @@ import java.util.Arrays;
  * }
  * }
  */
+@SuppressWarnings("Assertion")
 public final class S2ClosedSetNormalizer {
 
   /**
@@ -148,20 +149,32 @@ public final class S2ClosedSetNormalizer {
 
   /** Intermediate data needed to normalize one dimension of the input. */
   private class NormalizedLayer {
-    public GraphOptions inputGraphOptions = null;
-    public GraphOptions outputGraphOptions = null;
-    public final EdgeList newEdges = new EdgeList();
-    public final IntArrayList newInputEdgeIds = new IntArrayList();
-    public IdSetLexicon newInputEdgeIdSetLexicon = null;
-    public S2BuilderGraph inputGraph = null;
-    public final S2BuilderLayer inputLayer = new DimensionLayer(this);
-    public S2BuilderGraph outputGraph = null;
-    public S2BuilderLayer outputLayer = null;
+    private final GraphOptions inputGraphOptions;
+    private final GraphOptions outputGraphOptions;
+    private final EdgeList newEdges = new EdgeList();
+    private final IntArrayList newInputEdgeIds = new IntArrayList();
+    private IdSetLexicon newInputEdgeIdSetLexicon = null;
+    private S2BuilderGraph inputGraph = null;
+    private final S2BuilderLayer inputLayer = new DimensionLayer(this);
+    private S2BuilderGraph outputGraph = null;
+    private final S2BuilderLayer outputLayer;
+    NormalizedLayer(GraphOptions outputGraphOptions, S2BuilderLayer outputLayer) {
+      this.inputGraphOptions = new GraphOptions(outputGraphOptions);
+      this.outputGraphOptions = outputGraphOptions;
+      this.outputLayer = outputLayer;
+    }
+    void reset() {
+      outputGraph = null;
+      newEdges.clear();
+      newInputEdgeIds.clear();
+      newInputEdgeIdSetLexicon = null;
+      inputGraph = null;
+    }
   }
 
-  private final NormalizedLayer normalizedPointLayer = new NormalizedLayer();
-  private final NormalizedLayer normalizedLineLayer = new NormalizedLayer();
-  private final NormalizedLayer normalizedPolygonLayer = new NormalizedLayer();
+  private final NormalizedLayer normalizedPointLayer;
+  private final NormalizedLayer normalizedLineLayer;
+  private final NormalizedLayer normalizedPolygonLayer;
 
   /**
    * A vector of incoming polygon edges sorted in lexicographic order. This is used to suppress
@@ -190,35 +203,20 @@ public final class S2ClosedSetNormalizer {
       S2BuilderLayer pointLayer,
       S2BuilderLayer lineLayer,
       S2BuilderLayer polygonLayer) {
-    normalizedPointLayer.outputLayer = pointLayer;
-    normalizedLineLayer.outputLayer = lineLayer;
-    normalizedPolygonLayer.outputLayer = polygonLayer;
-
-    GraphOptions pointGraphOptions = pointLayer.graphOptions();
-    GraphOptions lineGraphOptions = lineLayer.graphOptions();
-    GraphOptions polygonGraphOptions = polygonLayer.graphOptions();
-
-    assert pointGraphOptions.edgeType() == EdgeType.DIRECTED;
-    assert lineGraphOptions.siblingPairs() != SiblingPairs.CREATE;
-    assert lineGraphOptions.siblingPairs() != SiblingPairs.REQUIRE;
-    assert polygonGraphOptions.edgeType() == EdgeType.DIRECTED;
-
     this.options = options;
+    this.normalizedPointLayer = new NormalizedLayer(pointLayer.graphOptions(), pointLayer);
+    this.normalizedLineLayer = new NormalizedLayer(lineLayer.graphOptions(), lineLayer);
+    this.normalizedPolygonLayer = new NormalizedLayer(polygonLayer.graphOptions(), polygonLayer);
 
-    normalizedPointLayer.outputGraphOptions = pointGraphOptions;
-    normalizedLineLayer.outputGraphOptions = lineGraphOptions;
-    normalizedPolygonLayer.outputGraphOptions = polygonGraphOptions;
+    assert normalizedPointLayer.outputGraphOptions.edgeType() == EdgeType.DIRECTED;
+    assert normalizedLineLayer.outputGraphOptions.siblingPairs() != SiblingPairs.CREATE;
+    assert normalizedLineLayer.outputGraphOptions.siblingPairs() != SiblingPairs.REQUIRE;
+    assert normalizedPolygonLayer.outputGraphOptions.edgeType() == EdgeType.DIRECTED;
 
-    normalizedPointLayer.inputGraphOptions = new GraphOptions(pointGraphOptions);
-    normalizedLineLayer.inputGraphOptions = new GraphOptions(lineGraphOptions);
-    normalizedPolygonLayer.inputGraphOptions = new GraphOptions(polygonGraphOptions);
-
-    /*
-     * Set the GraphOptions for the input graphs to ensure that (1) they share a common set of
-     * vertices, (2) degenerate edges are kept only if they are isolated, and (3) multiple copies of
-     * siblings pairs are discarded. (Note that there may be multiple copies of isolated degenerate
-     * edges; clients can eliminate them if desired using DuplicateEdges::MERGE.)
-     */
+    // Set the GraphOptions for the input graphs to ensure that (1) they share a common set of
+    // vertices, (2) degenerate edges are kept only if they are isolated, and (3) multiple copies of
+    // siblings pairs are discarded. (Note that there may be multiple copies of isolated degenerate
+    // edges; clients can eliminate them if desired using DuplicateEdges::MERGE.)
     normalizedPointLayer.inputGraphOptions.setAllowVertexFiltering(false);
     normalizedLineLayer.inputGraphOptions.setAllowVertexFiltering(false);
     normalizedLineLayer.inputGraphOptions.setDegenerateEdges(DegenerateEdges.DISCARD_EXCESS);
@@ -254,6 +252,12 @@ public final class S2ClosedSetNormalizer {
       return;
     }
     run(error);
+    // Reset for the next run.
+    normalizedPointLayer.reset();
+    normalizedLineLayer.reset();
+    normalizedPolygonLayer.reset();
+    polygonInputEdgeIds = null;
+    excludeFromPointOutput = null;
   }
 
   private void run(S2Error error) {
@@ -489,7 +493,7 @@ public final class S2ClosedSetNormalizer {
   private class DimensionLayer implements S2BuilderLayer {
     private final NormalizedLayer layerData;
 
-    public DimensionLayer(NormalizedLayer layerData) {
+    private DimensionLayer(NormalizedLayer layerData) {
       this.layerData = layerData;
     }
 

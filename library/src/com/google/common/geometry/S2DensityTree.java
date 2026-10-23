@@ -15,23 +15,22 @@
  */
 package com.google.common.geometry;
 
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.geometry.EncodedInts.varIntSize;
 import static com.google.common.geometry.EncodedInts.writeVarint64;
 import static com.google.common.geometry.S2CellId.FACE_CELLS;
 import static com.google.common.geometry.S2CellId.MAX_LEVEL;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
-import static java.lang.Math.toIntExact;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
 import com.google.common.geometry.PrimitiveArrays.Cursor;
 import com.google.common.geometry.S2DensityTree.BreadthFirstTreeBuilder.CellWeightFunction;
-import com.google.common.geometry.S2ShapeIndexRegion.ShapeVisitor;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -40,12 +39,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
 import jsinterop.annotations.JsEnum;
@@ -77,24 +74,20 @@ import jsinterop.annotations.JsType;
  * <p>Note that the weight of a parent cell is generally not the sum of the weights of its children.
  * It may be less, as an object may intersect multiple children.
  *
- * <p>Weights have no units. Their meaning is defined by the operation that computes them. For
- * example, the weight of a shape could be the number of vertices in each shape. Generally a client
- * will compute {@link #shapeDensity} for a whole set of shapes at once by putting them in an {@link
- * S2ShapeIndex} and providing a {@link ShapeWeightFunction} to map a shape to the weight of that
- * shape. If there are multiple indices to weigh, intermediate trees may be combined with {@link
- * #sumDensity} or {@link #intersectionDensity}. The convenience function {@link #vertexDensity} is
- * useful when the measure of a shape's weight is simply the number of vertices in the shape.
+ * <p>Weights must have the same units as defined by the operation that computes them. For example,
+ * the weight of a shape could be the number of vertices in each shape. Generally a client will
+ * create a {@link FeatureDensityWeigher}, {@link FeatureDensityWeigher#add} the shapes and weight
+ * of each feature, and then {@link BreadthFirstTreeBuilder#build} the weigher into a density tree.
+ * If many density trees will be built, {@link FeatureDensityWeigher#reset} may be called to restart
+ * the set of features to weigh, with better reuse of the required memory. If there are multiple
+ * indices to weigh, intermediate trees may be combined with {@link #sumDensity} or
+ * {@link #intersectionDensity}.
  *
  * <p>As a limitation, if a shape overlaps several cells at a given level, S2DensityTree does not
  * keep track of the fact that the weights in those cells are correlated. So while it is capable of
  * accurately measuring the weight in individual cells, it can very significantly overcount the
  * weight in a collection of cells. This can cause the S2CellIds returned by {@link
  * #getPartitioning(int)} to have significantly less than the targeted weight.
- *
- * <p>It's strongly encouraged to use the bulk versions of the above methods if they will be called
- * more than once, as they involve a lot of temporary allocations that may be pooled by {@link
- * #createShapeDensityOp}, {@link #createVertexDensityOp}, {@link #createSumDensityOp}, and {@link
- * #createIntersectionDensityOp}.
  *
  * <p>Density trees are fast and cheap to initialize from a {@link Bytes buffer}, but the entries
  * are parsed lazily. If lookups will visited more often than there are entries, it may be faster to
@@ -145,10 +138,9 @@ public class S2DensityTree {
   /** An {@link S2Coder} of density trees. */
   public static final S2Coder<S2DensityTree> CODER =
       new S2Coder<S2DensityTree>() {
-        @JsIgnore // OutputStream is not available in J2CL.
         @Override
         public void encode(S2DensityTree value, OutputStream output) throws IOException {
-          value.encoded.writeTo(output);
+          value.encoded.writeTo(output, value.position, value.length);
         }
 
         @Override
@@ -166,23 +158,40 @@ public class S2DensityTree {
   private static final int CHILD_MASK = (1 << CHILD_MASK_BITS) - 1;
   private static final long MAX_WEIGHT = Long.MAX_VALUE >>> CHILD_MASK_BITS;
 
+  /** An empty density tree. */
+  public static final S2DensityTree EMPTY = new TreeEncoder().build();
+
   private final Bytes encoded;
-  private final long[] facePositions;
+  private final long position;
+  private final int length;
+  private final int[] faceOffsets = new int[6];
 
   /** Creates a new instance, where 'encoded' must have no other references. */
   private S2DensityTree(Bytes encoded, Cursor cursor) throws IOException {
+    this.position = cursor.position;
+    initHeader(encoded, cursor);
+    this.length = (int) (cursor.position - position);
     this.encoded = encoded;
-    this.facePositions = decodeHeader(encoded, cursor);
   }
 
   /** Returns the encoded size of this tree in bytes. */
-  public long size() {
-    return encoded.length();
+  public int size() {
+    return length;
   }
 
-  /** Returns the bytes underlying this tree. This is a cheap operation. */
+  /** Returns a view of the bytes underlying this tree. May be larger than {@link #size()}. */
   public Bytes encoded() {
     return encoded;
+  }
+
+  /** Returns true if this density tree contains no cells. */
+  public boolean isEmpty() {
+    for (int pos : faceOffsets) {
+      if (pos >= 0) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** As {@link #decode(Bytes, Cursor)} with a default cursor over the whole set of bytes. */
@@ -378,11 +387,11 @@ public class S2DensityTree {
    */
   @CanIgnoreReturnValue
   public boolean visitCells(CellVisitor visitor) {
-    Cursor cursor = encoded.cursor();
-    Cell cell = new Cell();
-    for (int i = 0; i < FACE_CELLS.length; i++) {
-      cursor.position = facePositions[i];
-      if (cursor.position >= 0 && !visitCells(cell, cursor, FACE_CELLS[i], visitor)) {
+    Cursor cursor = encoded.cursor(position, position + length);
+    Cell decoded = new Cell();
+    for (int i = 0; i < S2CellId.NUM_FACES; i++) {
+      int off = faceOffsets[i];
+      if (off >= 0 && !visitCells(decoded, cursor.seek(position + off), FACE_CELLS[i], visitor)) {
         return false;
       }
     }
@@ -395,21 +404,22 @@ public class S2DensityTree {
    */
   private boolean visitCells(Cell decoded, Cursor cursor, S2CellId cell, CellVisitor visitor) {
     decoded.decode(encoded, cursor);
+    long end = cursor.position;
     switch (visitor.visit(cell, decoded)) {
       case SKIP_CELL:
         return true;
       case ENTER_CELL:
-        // Copy the positions before we recurse so we can reuse one Cell.
-        int p0 = decoded.positions[0];
-        int p1 = decoded.positions[1];
-        int p2 = decoded.positions[2];
-        int p3 = decoded.positions[3];
+        // Copy the offsets before we recurse so we can reuse one Cell.
+        int p0 = decoded.offsets[0];
+        int p1 = decoded.offsets[1];
+        int p2 = decoded.offsets[2];
+        int p3 = decoded.offsets[3];
         // Visit the children. Skip unset children. Stop early if requested from child processing.
         // Rely on short-circuited logic to halt early if any visit call returns false.
-        return (p0 < 0 || visitCells(decoded, cursor.seek(p0), cell.child(0), visitor))
-            && (p1 < 0 || visitCells(decoded, cursor.seek(p1), cell.child(1), visitor))
-            && (p2 < 0 || visitCells(decoded, cursor.seek(p2), cell.child(2), visitor))
-            && (p3 < 0 || visitCells(decoded, cursor.seek(p3), cell.child(3), visitor));
+        return (p0 < 0 || visitCells(decoded, cursor.seek(end + p0), cell.child(0), visitor))
+            && (p1 < 0 || visitCells(decoded, cursor.seek(end + p1), cell.child(1), visitor))
+            && (p2 < 0 || visitCells(decoded, cursor.seek(end + p2), cell.child(2), visitor))
+            && (p3 < 0 || visitCells(decoded, cursor.seek(end + p3), cell.child(3), visitor));
       case STOP:
         return false;
       default:
@@ -464,80 +474,6 @@ public class S2DensityTree {
       @JsIgnore // J2CL has no method overloads.
       boolean visit(S2CellId cell, long weight);
     }
-  }
-
-  /**
-   * A function that returns the weight of S2Shapes.
-   *
-   * <p>See {@link S2DensityTree class comments} for the meaning of weights).
-   */
-  @JsType
-  public interface ShapeWeightFunction extends ToLongFunction<S2Shape> {
-    /**
-     * Returns the weight of the given shape, which must be in the closed range [0, {@link
-     * #MAX_WEIGHT}].
-     */
-    @Override
-    long applyAsLong(S2Shape shape);
-
-    /**
-     * Resets this weigher for the next cell. This is useful to override if multiple shapes map to
-     * the same underlying row and we want to measure the row once per cell.
-     */
-    default void reset() {}
-  }
-
-  /**
-   * Returns the density tree of a given index, with the given weigher of shapes in the index. If
-   * multiple indices must have their density computed, use {@link #createShapeDensityOp} to get a
-   * reusable {@link ShapeDensityOp} that is often much faster for repeated calls.
-   *
-   * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
-   *     level at a time until this limit is reached, so in practice the actual size may be up to 4x
-   *     this limit in the worst-case
-   * @param maxLevel the max level to create in the tree, where most paths in the tree will reach
-   *     this limit except cells contained by polygons, which can save a lot of space in polygonal
-   *     datasets
-   */
-  public static S2DensityTree shapeDensity(
-      S2ShapeIndex index, ShapeWeightFunction weigher, int approximateSizeBytes, int maxLevel) {
-    return createShapeDensityOp(approximateSizeBytes, maxLevel).apply(index, weigher);
-  }
-
-  /**
-   * As {@link #shapeDensity}, where the weigher is {@link S2ShapeUtil#numVertices}. If multiple
-   * indices must have their density computed, use {@link #createVertexDensityOp} to get a reusable
-   * {@link VertexDensityOp} that is often much faster for repeated calls.
-   *
-   * @param approximateSizeBytes an approximate limit in the tree size, which is grown an entire
-   *     level at a time until this limit is reached, so in practice the actual size may be up to 4x
-   *     this limit in the worst-case
-   * @param maxLevel the max level to create in the tree, where most paths in the tree will reach
-   *     this limit except cells contained by polygons, which can save a lot of space in polygonal
-   *     datasets
-   */
-  public static S2DensityTree vertexDensity(
-      S2ShapeIndex index, int approximateSizeBytes, int maxLevel) {
-    return createVertexDensityOp(approximateSizeBytes, maxLevel).apply(index);
-  }
-
-  /**
-   * Returns the feature density, where each feature that intersects a cell is weighed once whether
-   * it has one shape that intersects the feature or many.
-   *
-   * @param shapes an index that gets the shapes that intersect a cell to weigh
-   * @param features a lookup function that gets the feature corresponding to each shape
-   * @param weights a lookup function that gets the weight of each feature
-   * @param <F> the type of feature
-   */
-  public static <F> S2DensityTree featureDensity(
-      int approximateSizeBytes,
-      int maxLevel,
-      S2ShapeIndex shapes,
-      FeatureLookup<F> features,
-      FeatureWeigher<F> weights) {
-    FeatureDensityOp<F> op = createFeatureDensityOp(approximateSizeBytes, maxLevel);
-    return op.apply(shapes, features, weights);
   }
 
   /**
@@ -641,6 +577,28 @@ public class S2DensityTree {
   }
 
   /**
+   * Returns a {@link CellWeightFunction} that computes the edited cell density resulting from
+   * subtracting 'before' and adding 'after' to this base density tree.
+   *
+   * <p>The cell weight is {@code clamp(base - before + after, 0, MAX_WEIGHT)}, negated if all
+   * three trees have no children at the cell (indicating a uniform leaf cell).
+   */
+  public CellWeightFunction edit(S2DensityTree before, S2DensityTree after) {
+    DecodedPath basePath = new DecodedPath(this);
+    DecodedPath beforePath = new DecodedPath(before == null ? EMPTY : before);
+    DecodedPath afterPath = new DecodedPath(after == null ? EMPTY : after);
+    return id -> {
+      Cell base = basePath.cell(id);
+      Cell sub = beforePath.cell(id);
+      Cell add = afterPath.cell(id);
+      long w = base.weight() - sub.weight() + add.weight();
+      w = min(MAX_WEIGHT, max(0, w));
+      boolean contained = !base.hasChildren() && !sub.hasChildren() && !add.hasChildren();
+      return contained ? -w : w;
+    };
+  }
+
+  /**
    * Returns a new density tree that contains the summed weights across the cells in the given input
    * trees. This sum may be a lossy operation if any of the input trees are more detailed than the
    * other limit parameters allow. If this will be called multiple times, use {@link
@@ -689,40 +647,6 @@ public class S2DensityTree {
     return createIntersectionDensityOp(trees, approximateSizeBytes, maxLevel).apply(trees);
   }
 
-  /**
-   * A density function captures state needed to compute density and is not thread-safe, but greatly
-   * accelerates repeated density computations with the same settings.
-   */
-  @JsType
-  public interface ShapeDensityOp
-      extends BiFunction<S2ShapeIndex, ShapeWeightFunction, S2DensityTree> {
-    /** Returns the density of {@code index} using {@code weigher} at each cell. */
-    @Override
-    S2DensityTree apply(S2ShapeIndex index, ShapeWeightFunction weigher);
-  }
-
-  /**
-   * A vertex density function captures state needed to compute vertex density and is not thread-
-   * safe, but greatly accelerates repeated density computations with the same settings.
-   */
-  @JsType
-  public interface VertexDensityOp extends Function<S2ShapeIndex, S2DensityTree> {
-    /** Returns the density of {@code index}, weighing the number of vertices at each cell. */
-    @Override
-    S2DensityTree apply(S2ShapeIndex index);
-  }
-
-  /** A density function that collects the sum of feature weights with any shapes in each cell. */
-  @JsType
-  public interface FeatureDensityOp<F> {
-    /**
-     * Returns the density of {@code shapes}, by converting shapes that intersect each cell to
-     * features with {@code features}, and weighing each <strong>instance</strong> of the feature
-     * with {@code weights} just once.
-     */
-    S2DensityTree apply(S2ShapeIndex shapes, FeatureLookup<F> features, FeatureWeigher<F> weights);
-  }
-
   /** A density function that aggregates values in each cell in the input trees into a new tree. */
   @JsType
   public interface AggregateDensityOp extends Function<Iterable<S2DensityTree>, S2DensityTree> {
@@ -730,76 +654,26 @@ public class S2DensityTree {
     S2DensityTree apply(Iterable<S2DensityTree> trees);
   }
 
-  /**
-   * As {@link #shapeDensity} but returns a thread-unsafe function that pools its allocations, so
-   * testing many indices is faster than repeatedly calling shapeDensity.
-   */
-  public static ShapeDensityOp createShapeDensityOp(int approximateSizeBytes, int maxLevel) {
-    BreadthFirstTreeBuilder acc = new BreadthFirstTreeBuilder(approximateSizeBytes, maxLevel);
-    return (index, weigher) -> acc.build(new IndexCellWeightFunction(index, weigher));
-  }
-
-  /**
-   * As {@link #vertexDensity} but returns a thread-unsafe function that pools its allocations, so
-   * computing the density of many indices is faster than repeatedly calling vertexDensity.
-   */
-  public static VertexDensityOp createVertexDensityOp(int approximateSizeBytes, int maxLevel) {
-    BreadthFirstTreeBuilder acc = new BreadthFirstTreeBuilder(approximateSizeBytes, maxLevel);
-    IdentityHashMap<S2Shape, Integer> vertices = new IdentityHashMap<>();
-    return index -> {
-      vertices.clear();
-      for (S2Shape s : index.getShapes()) {
-        vertices.put(s, S2ShapeUtil.numVertices(s));
-      }
-      return acc.build(new IndexCellWeightFunction(index, vertices::get));
-    };
-  }
-
-  /**
-   * As {@link #featureDensity} but returns a thread-unsafe function that pools its allocations, so
-   * computing the density of many indices is faster than repeatedly calling featureDensity.
-   */
-  public static <F> FeatureDensityOp<F> createFeatureDensityOp(
-      int approximateSizeBytes, int maxLevel) {
-    BreadthFirstTreeBuilder acc = new BreadthFirstTreeBuilder(approximateSizeBytes, maxLevel);
-    FeatureDensityWeigher weigher = new FeatureDensityWeigher();
-    return (shapes, features, weights) -> {
-      weigher.init(shapes, features, weights);
-      return acc.build(weigher);
-    };
-  }
-
-  /** A lookup API that finds the feature corresponding to a shape. */
-  @JsType
-  public interface FeatureLookup<T> {
-    /** Returns the feature for {@code shape}. */
-    T feature(S2Shape shape);
-  }
-
-  /** A weigher of a given feature. */
-  @JsType
-  public interface FeatureWeigher<T> {
-    /** Returns the positive non-zero weight of {@code feature}. */
-    long weight(T feature);
-  }
-
   /** A weigher of feature weights, where each feature may have multiple shapes. */
   @JsType
   public static class FeatureDensityWeigher implements CellWeightFunction {
+    /** Maps shape IDs to the feature ID that owns the shape, i.e. {@code id = ids[shapeId]}. */
+    private final IntArrayList ids = new IntArrayList();
+
+    /** Maps feature IDs to weights, i.e. {@code weight = weights[ids[shapeId]]}. */
+    private final IntArrayList weights = new IntArrayList();
+
+    /** The last call each ID was seen in, i.e. {@code call = lastCall[ids[shapeId]]}. */
+    private final IntArrayList lastCall = new IntArrayList();
+
+    /** The index of shapes to test against each cell. */
+    private S2ShapeIndex index = new S2ShapeIndex();
+
     /** The region to test each cell against. */
     private S2ShapeIndexRegion region;
 
-    /** Maps shape IDs to the feature ID that owns the shape, i.e. {@code id = ids[shapeId]}. */
-    private int[] ids;
-
-    /** Maps feature IDs to weights, i.e. {@code weight = weights[ids[shapeId]]}. */
-    private int[] weights;
-
-    /** The last call each ID was seen in, i.e. {@code call = lastCall[ids[shapeId]]}. */
-    private int[] lastCall;
-
     /** The next call number. Increment to separate previous results from new results. */
-    private int nextCall;
+    private int nextCall = 1;
 
     /** The sum of weight seen in the current cell. */
     private long sum;
@@ -807,49 +681,61 @@ public class S2DensityTree {
     /** If true then all features contained the current cell. */
     private boolean allContained;
 
-    /**
-     * Initialize this weigher.
-     *
-     * @param shapes an index that gets the shapes that intersect a cell to weigh
-     * @param featureLookup a lookup function that gets the features corresponding to each shape
-     * @param weightLookup a lookup function that gets the weight of each feature
-     */
-    public <T> void init(
-        S2ShapeIndex shapes, FeatureLookup<T> featureLookup, FeatureWeigher<T> weightLookup) {
-      int[] ids = new int[shapes.shapes.size()];
-      // Assign consecutive integer ids to features in shape ID order.
-      IdentityHashMap<T, Integer> map = Maps.newIdentityHashMap();
-      for (int i = 0; i < ids.length; i++) {
-        T feature = featureLookup.feature(shapes.shapes.get(i));
-        ids[i] = map.computeIfAbsent(feature, s -> map.size());
-      }
-      // Compute the weights of each feature.
-      int[] weights = new int[map.size()];
-      map.forEach(
-          (feature, id) -> {
-            weights[id] = toIntExact(weightLookup.weight(feature));
-          });
-      initFromArrays(shapes, ids, weights);
+    /** Resets this weigher to its initial state. */
+    public void reset() {
+      ids.clear();
+      weights.clear();
+      lastCall.clear();
+      nextCall = 1;
+      index = new S2ShapeIndex();
+      region = null;
     }
 
     /**
-     * Inits this weigher to the given literal values. This allows minimizing copying but is more
-     * difficult to use, so consider {@link #init} if such inputs are already available.
+     * Adds a feature with one shape and the given weight to this weigher.
      *
-     * @param shapes the shapes to test against each weighted cell
-     * @param ids {@code ids[shapeID]} contains the row ID of each shape in 'shapes'
-     * @param weights {@code weights[rowID]} contains the weight of each row ID in 'ids'
+     * @throws IllegalStateException if {@link #applyAsLong} has already been called.
      */
-    public void initFromArrays(S2ShapeIndex shapes, int[] ids, int[] weights) {
-      this.region = new S2ShapeIndexRegion(shapes);
-      this.ids = ids;
-      this.weights = weights;
-      this.lastCall = new int[weights.length];
-      this.nextCall = 1;
+    @CanIgnoreReturnValue
+    public FeatureDensityWeigher add(S2Shape shape, int weight) {
+      checkState(index.getShapes().isEmpty() || !index.isFresh(), "Add after applyAsLong");
+      index.add(shape);
+      region = null;
+      ids.add(weights.size());
+      weights.add(weight);
+      lastCall.add(0);
+      return this;
+    }
+
+    /**
+     * Adds a feature's shapes and an index along with the weight to this weigher.
+     *
+     * @throws IllegalStateException if {@link #applyAsLong} has already been called.
+     */
+    // TODO(user): Use S2ShapeIndexBuilder to minimize reindexing.
+    @CanIgnoreReturnValue
+    public FeatureDensityWeigher addIndexed(S2ShapeIndex shapes, int weight) {
+      checkState(index.getShapes().isEmpty() || !index.isFresh(), "Add after applyAsLong");
+      for (var shape : shapes.getShapes()) {
+        index.add(shape);
+        ids.add(weights.size());
+      }
+      weights.add(weight);
+      lastCall.add(0);
+      region = null;
+      return this;
+    }
+
+    /** Returns the index of shapes to test against each cell given to {@link #add} so far. */
+    public S2ShapeIndex index() {
+      return index;
     }
 
     @Override
     public long applyAsLong(S2CellId cell) {
+      if (region == null) {
+        region = new S2ShapeIndexRegion(index);
+      }
       sum = 0;
       allContained = true;
       region.visitIntersectingShapes(new S2Cell(cell), this::sumFeatures);
@@ -860,17 +746,20 @@ public class S2DensityTree {
       // call to this method, rolling over the nextCall should be incredibly rare.
       if (++nextCall == Integer.MAX_VALUE) {
         nextCall = 1;
-        Arrays.fill(lastCall, 0);
+        lastCall.clear();
+        for (int i = 0; i < weights.size(); i++) {
+          lastCall.add(0);
+        }
       }
       return allContained ? -sum : sum;
     }
 
     /** Adds the weight of this shape if it belongs to a feature we haven't yet seen. */
     private boolean sumFeatures(int shapeId, boolean containsTarget) {
-      int featureId = ids[shapeId];
-      if (lastCall[featureId] != nextCall) {
-        lastCall[featureId] = nextCall;
-        sum += weights[featureId];
+      int featureId = ids.getInt(shapeId);
+      if (lastCall.getInt(featureId) != nextCall) {
+        lastCall.set(featureId, nextCall);
+        sum += weights.getInt(featureId);
         allContained &= containsTarget;
       }
       return true;
@@ -907,62 +796,6 @@ public class S2DensityTree {
       intersection.set(trees);
       return acc.build(intersection);
     };
-  }
-
-  /**
-   * A reusable measurer of shape index density that computes the weight at each cell the index
-   * intersects, as the sum of the weigher for each shape in the index that intersects a cell.
-   *
-   * <p>This class is not thread safe, but reusing an instance saves a lot of allocation.
-   */
-  public static class IndexCellWeightFunction
-      implements BreadthFirstTreeBuilder.CellWeightFunction {
-    private final S2ShapeIndex index;
-    private final S2ShapeIndexRegion region;
-    private final ShapeWeightFunction weigher;
-
-    /**
-     * @param index The index to locate shapes within that intersect cells being weighed
-     * @param weigher The weigher of each shape in the given index
-     */
-    public IndexCellWeightFunction(S2ShapeIndex index, ShapeWeightFunction weigher) {
-      this.index = index;
-      this.region = new S2ShapeIndexRegion(index);
-      this.weigher = weigher;
-    }
-
-    /**
-     * Returns the total weight of all shapes that intersect the given cell. Negates the returned
-     * total if the cell is fully contained by all shapes that intersect it.
-     */
-    @Override
-    public long applyAsLong(S2CellId cell) {
-      class IntersectingVisitor implements ShapeVisitor {
-        long sum = 0;
-        long limit = MAX_WEIGHT;
-        boolean allContained = true;
-
-        @Override
-        public boolean test(int shapeId, boolean containsTarget) {
-          long weight = weigher.applyAsLong(index.getShapes().get(shapeId));
-          Preconditions.checkState(weight >= 0, "Weight must not be negative.");
-          limit -= weight;
-          Preconditions.checkState(limit >= 0, "Weight must be at most " + MAX_WEIGHT);
-          sum += weight;
-          allContained &= containsTarget;
-          return true;
-        }
-
-        /** Returns the sum of the shape weights, negated if all shapes contained the cell. */
-        long finalWeight() {
-          return allContained ? -sum : sum;
-        }
-      }
-      IntersectingVisitor visitor = new IntersectingVisitor();
-      region.visitIntersectingShapes(new S2Cell(cell), visitor);
-      weigher.reset();
-      return visitor.finalWeight();
-    }
   }
 
   /** A weigher of features described by cells. */
@@ -1151,7 +984,8 @@ public class S2DensityTree {
   public static class DecodedPath implements CellWeightFunction {
     private S2DensityTree tree;
     private Cursor cursor;
-    private final List<Cell> stack = new ArrayList<>();
+    private final Cell[] cells = new Cell[MAX_LEVEL + 1];
+    private final long[] headerEnds = new long[MAX_LEVEL + 1];
 
     /** The id of the cell last actually decoded, or null. Not an empty cell. */
     private S2CellId lastDecoded;
@@ -1174,7 +1008,7 @@ public class S2DensityTree {
     /** Sets the tree to decode from. Must be called before {@link #weight} or {@link #cell}. */
     public void set(S2DensityTree tree) {
       this.tree = tree;
-      this.cursor = tree.encoded.cursor();
+      this.cursor = tree.encoded.cursor(tree.position, tree.position + tree.length);
       this.lastDecoded = null;
     }
 
@@ -1186,7 +1020,7 @@ public class S2DensityTree {
 
     /**
      * Returns the weight of the Cell at 'cell' or the weight of the leaf containing 'cell', if
-     * present in the tree. Otherwise returns weight 0. The stack remembers the path to the last
+     * present in the tree. Otherwise returns weight 0. This object remembers the path to the last
      * decoded cell in order to skip decoding unchanged parents.
      */
     public long weight(S2CellId id) {
@@ -1226,20 +1060,21 @@ public class S2DensityTree {
     }
 
     /**
-     * Returns a decoded face cell from the stack for the given face, in [0..5]. If the face cell is
-     * not present in the tree, an {@link Cell#isEmpty() empty cell} is returned.
+     * Returns a decoded face cell from the cells array for the given face, in [0..5]. If the face
+     * cell is not present in the tree, an {@link Cell#isEmpty() empty cell} is returned.
      */
     private Cell loadFace(int face) {
       Cell cell = get(0);
-      if (tree.facePositions[face] < 0) {
+      int offset = tree.faceOffsets[face];
+      if (offset < 0) {
         // The face cell isn't present in this tree, so return no weight or children.
         cell.weight = 0;
         cell.setNoChildren();
         lastDecoded = null;
       } else {
-        // The face cell is present so load the weight and child positions.
-        cursor.position = tree.facePositions[face];
-        cell.decode(tree.encoded, cursor);
+        // The face cell is present so load the weight and child offsets.
+        cell.decode(tree.encoded, cursor.seek(tree.position + offset));
+        headerEnds[0] = cursor.position;
         lastDecoded = FACE_CELLS[face];
       }
       return cell;
@@ -1253,27 +1088,27 @@ public class S2DensityTree {
     private Cell loadCell(int decodedLevel, S2CellId cell) {
       Cell decodedCell = get(decodedLevel);
       for (int i = decodedLevel + 1; i <= cell.level(); i++) {
-        cursor.position = decodedCell.positions[cell.childPosition(i)];
-        if (cursor.position < 0) {
+        int offset = decodedCell.offsets[cell.childPosition(i)];
+        if (offset < 0) {
           // This tree doesn't contain the requested cell. Return the last available ancestor, if
           // that ancestor is a leaf, otherwise an empty cell.
           return decodedCell.hasChildren() ? EMPTY_CELL : decodedCell;
         }
         decodedCell = get(i);
         // We have a child to decode, so decode it.
-        decodedCell.decode(tree.encoded, cursor);
+        decodedCell.decode(tree.encoded, cursor.seek(headerEnds[i - 1] + offset));
+        headerEnds[i] = cursor.position;
         lastDecoded = cell.parent(i);
       }
       return decodedCell;
     }
 
-    /** Returns the cell at the given level in the stack. */
+    /** Returns the cell at the given level in the cells array. */
     private Cell get(int level) {
-      // Breadth-first processing should only ever increase the level 1 at a time.
-      if (stack.size() == level) {
-        stack.add(new Cell());
+      if (cells[level] == null) {
+        cells[level] = new Cell();
       }
-      return stack.get(level);
+      return cells[level];
     }
   }
 
@@ -1402,8 +1237,11 @@ public class S2DensityTree {
     }
   }
 
-  /** Loads face positions. The cursor must be positioned at the start of the version string. */
-  static long[] decodeHeader(Bytes encoded, Cursor cursor) throws IOException {
+  /**
+   * Loads face offsets. The cursor must be positioned at the start of the version string. The
+   * resulting cursor position will be just after the last byte of the encoded tree.
+   */
+  void initHeader(Bytes encoded, Cursor cursor) throws IOException {
     // Verify the version string.
     try {
       for (byte expected : VERSION_BYTES) {
@@ -1417,32 +1255,48 @@ public class S2DensityTree {
     }
 
     // Read the lengths of each cube face except the last.
-    long[] offsets = new long[6];
     long faceMask = encoded.readVarint64(cursor);
     // There are faceBits-1 lengths to read.
     int lengthsRemaining = Long.bitCount(faceMask) - 1;
     int offset = 0;
     for (int i = 0; i < FACE_CELLS.length; i++) {
       if ((faceMask & (1L << i)) == 0) {
-        offsets[i] = -1;
+        faceOffsets[i] = -1;
       } else {
-        offsets[i] = offset;
+        faceOffsets[i] = offset;
         if (lengthsRemaining-- > 0) {
           offset += checkLength(encoded.readVarint64(cursor));
         }
       }
     }
 
-    for (int i = 0; i < FACE_CELLS.length; i++) {
-      if (offsets[i] >= 0) {
-        offsets[i] += cursor.position;
-      }
+    // Find the end of the tree by following the rightmost branch.
+    int headerSize = (int) (cursor.position - position);
+    Cell cell = new Cell();
+    for (int last = lastOffset(faceOffsets); last >= 0; last = lastOffset(cell.offsets)) {
+      cursor.position += last;
+      cell.decode(encoded, cursor);
     }
 
-    return offsets;
+    // Rather than store the headerSize, just add it to the face offsets for later decode calls.
+    for (int i = 0; i < FACE_CELLS.length; i++) {
+      if (faceOffsets[i] >= 0) {
+        faceOffsets[i] = checkLength(headerSize + faceOffsets[i]);
+      }
+    }
   }
 
-  /** The decoded weight and positions of encoded child cells. */
+  /** Returns the first positive value from the end of the array, or -1 if none. */
+  private static int lastOffset(int[] array) {
+    for (int i = array.length - 1; i >= 0; i--) {
+      if (array[i] >= 0) {
+        return array[i];
+      }
+    }
+    return -1;
+  }
+
+  /** The decoded weight and offsets of encoded child cells. */
   @JsType
   public static class Cell {
     private static final int[] NO_CHILDREN = {-1, -1, -1, -1};
@@ -1450,8 +1304,8 @@ public class S2DensityTree {
     /** The weight of this cell. */
     long weight;
 
-    /** The position of each child in {@link S2CellId#childPosition} order, or -1 if child unset. */
-    final int[] positions = new int[4];
+    /** The offset of each child in {@link S2CellId#childPosition} order, or -1 if child unset. */
+    final int[] offsets = new int[4];
 
     /**
      * Returns true iff this cell is empty. Empty cells are used to indicate nodes that are not
@@ -1463,15 +1317,15 @@ public class S2DensityTree {
 
     /** Unsets all children. */
     public void setNoChildren() {
-      System.arraycopy(NO_CHILDREN, 0, positions, 0, positions.length);
+      System.arraycopy(NO_CHILDREN, 0, offsets, 0, offsets.length);
     }
 
     /** Returns true iff there is a child available under this node. */
     public boolean hasChildren() {
-      return !Arrays.equals(positions, NO_CHILDREN);
+      return !Arrays.equals(offsets, NO_CHILDREN);
     }
 
-    /** Loads this cell with the weight and child positions at the given cursor position. */
+    /** Loads this cell with the weight and child offsets at the given cursor position. */
     public void decode(Bytes encoded, Cursor cursor) {
       long bits = encoded.readVarint64(cursor);
       weight = bits >>> CHILD_MASK_BITS;
@@ -1482,24 +1336,17 @@ public class S2DensityTree {
       for (int i = 0; i < 4; i++) {
         if ((childMask & 1) != 0) {
           // Child is set. Set the current offset.
-          positions[i] = offset;
+          offsets[i] = offset;
           if (childMask > 1) {
             // There's another child, so increment the cumulative offset by its offset.
             offset += checkLength(encoded.readVarint64(cursor));
           }
         } else {
           // Child is unset.
-          positions[i] = -1;
+          offsets[i] = -1;
         }
         // Slide the child mask down to test the next child.
         childMask >>>= 1;
-      }
-
-      // Offsets are relative to the position right after them, so increment them by that position.
-      for (int i = 0; i < 4; i++) {
-        if (positions[i] >= 0) {
-          positions[i] = checkLength(positions[i] + cursor.position);
-        }
       }
     }
 
@@ -1512,7 +1359,7 @@ public class S2DensityTree {
     @Override
     public String toString() {
       return Platform.formatString(
-          "Cell[weight=%d, positions=%s]", weight, Arrays.toString(positions));
+          "Cell[weight=%d, offsets=%s]", weight, Arrays.toString(offsets));
     }
   }
 

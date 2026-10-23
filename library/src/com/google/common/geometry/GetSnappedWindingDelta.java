@@ -24,7 +24,6 @@ import com.google.common.geometry.S2EdgeUtil.EdgeCrosser;
 import com.google.common.geometry.S2Shape.MutableEdge;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IdSetLexicon.IdSet;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -36,6 +35,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.PrimitiveIterator.OfInt;
 import java.util.function.IntPredicate;
 
 /**

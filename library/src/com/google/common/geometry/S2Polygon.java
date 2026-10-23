@@ -31,7 +31,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
 import com.google.common.geometry.PrimitiveArrays.Bytes;
@@ -55,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -99,7 +99,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>When Java assertions are enabled, initNested(), initOriented(), and other public constructors
  * and factory methods will assert that the resulting polygon is valid. To deliberately construct
- * invalid polygons for testing, use {@link GeometryTestCase#uncheckedCreate(Supplier)} or {@link
+ * invalid polygons for testing, use {@code GeometryTestCase#uncheckedCreate(Supplier)} or {@code
  * GeometryTestCase#uncheckedInitialize(Runnable)}.
  *
  * <p>Most clients will not call these init methods directly; instead they should use {@link
@@ -179,7 +179,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * follows its containing loop, and all loops between parent and child are nested somewhere under
    * the parent.
    */
-  private final List<S2Loop> loops = Lists.newArrayList();
+  private final List<S2Loop> loops = new ArrayList<>();
 
   /**
    * {@code bound} is a conservative bound on all points contained by this polygon: If
@@ -557,7 +557,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     clearLoops();
 
     // There are multiple loops, so nesting must be computed.
-    IdentityHashMap<S2Loop, List<S2Loop>> loopMap = Maps.newIdentityHashMap();
+    IdentityHashMap<S2Loop, List<S2Loop>> loopMap = new IdentityHashMap<>();
     // Add an entry for the root of the map.
     loopMap.put(ROOT, new ArrayList<>());
     // Insert each loop into the loop map, reorganizing as needed at each step so that every loop is
@@ -800,7 +800,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   @JsIgnore
   public static boolean isValid(List<S2Loop> loops) {
     S2Polygon maybeValid = new S2Polygon();
-    maybeValid.uncheckedInitNested(Lists.newArrayList(loops));
+    maybeValid.uncheckedInitNested(new ArrayList<>(loops));
     return maybeValid.isValid();
   }
 
@@ -1095,7 +1095,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * to the arclength along the unit sphere. The given point must be normalized (unit length).
    *
    * <p>If the point is contained by the polygon, the distance returned is 0. If the polygon is
-   * empty, returns {@link S1Angle.INFINITY}.
+   * empty, returns {@link S1Angle#INFINITY}.
    */
   public S1Angle getDistance(S2Point p) {
     if (contains(p)) {
@@ -1106,7 +1106,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /**
    * Returns the distance from the given point to the polygon boundary. If the polygon is empty or
-   * full, returns {@link S1Angle.INFINITY}, since the polygon has no boundary. The given point must
+   * full, returns {@link S1Angle#INFINITY}, since the polygon has no boundary. The given point must
    * be unit length.
    */
   public S1Angle getDistanceToBoundary(S2Point p) {
@@ -1382,7 +1382,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
       boolean addSharedEdges,
       S2PolygonBuilder builder) {
     EdgeClipper clipper = new EdgeClipper(b.index, addSharedEdges, S2Polygon::reverseHoles);
-    List<ParametrizedS2Point> intersections = Lists.newArrayList();
+    List<ParametrizedS2Point> intersections = new ArrayList<>();
     for (S2Loop aLoop : a.loops) {
       int n = aLoop.numVertices();
       int dir = (aLoop.isHole() ^ reverseA) ? -1 : 1;
@@ -1679,8 +1679,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * output polygon are automatically removed (i.e., regions that do not contain any points) since
    * S2Polygon does not allow such regions.
    *
-   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
-   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * <p>See {@link S2Builder} and {@link S2BuilderSnapFunctions} for more details on snap functions.
+   * For example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
    * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
    *
    * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
@@ -1707,7 +1707,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * necessary to increase the merge radius. See {@link #initToIntersectionSloppy(S2Polygon,
    * S2Polygon, S1Angle)} below.
    *
-   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon) or one of the variants above.
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon)} or one of the variants above.
    */
   @Deprecated
   public void initToIntersectionOld(final S2Polygon a, final S2Polygon b) {
@@ -1726,8 +1726,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * geostore.PolygonProto} format, then {@code S1Angle.e7(1)} is a good value for {@code
    * vertexMergeRadius}.
    *
-   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon, SnapFunction) or one of the
-   * variants above. An IdentitySnapFunction(vertexMergeRadius) will produce similar results.
+   * @deprecated Use {@link #initToIntersection(S2Polygon, S2Polygon, SnapFunction)} or one of the
+   *     variants above. An IdentitySnapFunction(vertexMergeRadius) will produce similar results.
    */
   @Deprecated
   public void initToIntersectionSloppy(
@@ -1858,8 +1858,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * output polygon are automatically removed (i.e., regions that do not contain any points) since
    * S2Polygon does not allow such regions.
    *
-   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
-   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * <p>See {@link S2Builder} and {@link S2BuilderSnapFunctions} for more details on snap functions.
+   * For example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
    * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
    *
    * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
@@ -1876,7 +1876,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
   /**
    * Initializes this polygon to the union of the given two polygons, and snaps the result so that
    * vertices within "vertexMergeRadius" of each other are merged together. The provided polygons
-   * must be valid, which is is checked when assertions are enabled.
+   * must be valid, which is checked when assertions are enabled.
    *
    * @throws IllegalArgumentException if initToUnion fails, which should only happen if an input
    *     polygon is invalid.
@@ -1999,8 +1999,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * output polygon are automatically removed (i.e., regions that do not contain any points) since
    * S2Polygon does not allow such regions.
    *
-   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
-   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * <p>See {@link S2Builder} and {@link S2BuilderSnapFunctions} for more details on snap functions.
+   * For example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
    * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
    *
    * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
@@ -2129,8 +2129,8 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    * output polygon are automatically removed (i.e., regions that do not contain any points) since
    * S2Polygon does not allow such regions.
    *
-   * <p>See {@link S2Builder} and {@link S2SnapFunctions} for more details on snap functions. For
-   * example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
+   * <p>See {@link S2Builder} and {@link S2BuilderSnapFunctions} for more details on snap functions.
+   * For example, you can snap to E7 coordinates by setting "snapFunction" to {@code new
    * S2BuilderSnapFunctions.IntLatLngSnapFunction(7)}.
    *
    * <p>Returns true on success, or returns false and sets "error" appropriately otherwise. However,
@@ -2452,7 +2452,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     // addSharedEdges ("true" below) can be false or true: it makes no difference due to the way we
     // call ClipEdge.
     EdgeClipper clipper = new EdgeClipper(index, true, S2Polygon::reverseNone);
-    List<ParametrizedS2Point> intersections = Lists.newArrayList();
+    List<ParametrizedS2Point> intersections = new ArrayList<>();
     MutableEdge edge = new MutableEdge();
     for (S2Shape shape : index.getShapes()) {
       int numEdges = shape.numEdges();
@@ -2541,11 +2541,11 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
 
   /**
    * Returns a polygon that is the union of the given polygons; combines vertices that form edges
-   * that are within {@link S2EdgeUtil.DEFAULT_INTERSECTION_TOLERANCE} of each other.
+   * that are within {@link S2EdgeUtil#DEFAULT_INTERSECTION_TOLERANCE} of each other.
    *
    * @deprecated Use {@link #union(Iterable<S2Polygon>)} instead. Note that the new implementation
-   * is built on S2Builder and S2BooleanOperation, instead of S2PolygonBuilder, and the results are
-   * not identical.
+   *     is built on S2Builder and S2BooleanOperation, instead of S2PolygonBuilder, and the results
+   *     are not identical.
    */
   @JsIgnore
   @Deprecated
@@ -2772,10 +2772,10 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
    */
   @Deprecated
   private List<S2Polyline> internalClipPolyline(boolean invert, S2Polyline a, S1Angle mergeRadius) {
-    List<S2Polyline> out = Lists.newArrayList();
+    List<S2Polyline> out = new ArrayList<>();
     EdgeClipper clipper = new EdgeClipper(index(), true, S2Polygon::reverseNone);
-    List<ParametrizedS2Point> intersections = Lists.newArrayList();
-    List<S2Point> vertices = Lists.newArrayList();
+    List<ParametrizedS2Point> intersections = new ArrayList<>();
+    List<S2Point> vertices = new ArrayList<>();
     int n = a.numVertices();
     boolean inside = contains(a.vertex(0)) ^ invert;
     for (int j = 0; j < n - 1; j++) {
@@ -2841,7 +2841,7 @@ public final class S2Polygon implements S2Region, Comparable<S2Polygon>, Seriali
     // condition is that each *connected component* of child loops can share at most one vertex
     // with their parent loop. Example: suppose loop A has children B, C, D, and the following pairs
     // are connected: AB, BC, CD, DA. Then the polygon is not normalized.
-    Set<S2Point> vertices = Sets.newHashSet();
+    Set<S2Point> vertices = new HashSet<>();
     S2Loop lastParent = null;
     for (int i = 0; i < numLoops(); ++i) {
       S2Loop child = loop(i);

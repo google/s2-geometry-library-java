@@ -43,12 +43,12 @@ import com.google.common.geometry.S2BuilderUtil.GraphCloningLayer;
 import com.google.common.geometry.primitives.IdSetLexicon;
 import com.google.common.geometry.primitives.IntVector;
 import com.google.common.geometry.primitives.Ints.ImmutableIntSequence;
-import com.google.common.geometry.primitives.Ints.OfInt;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntComparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.PrimitiveIterator.OfInt;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -292,6 +292,170 @@ public final class S2BuilderGraphTest extends GeometryTestCase {
     assertEquals(2, components.get(1).size());
     assertEquals(4, components.get(1).get(0).length);
     assertEquals(4, components.get(1).get(1).length);
+  }
+
+  /**
+   * Tests S2BuilderGraph.getDirectedComponents() with DegenerateBoundaries.DISCARD on an outer
+   * square connected by a filament bridge to an inner triangle.
+   */
+  @Test
+  public void testGetDirectedComponentsDiscardDegenerateBoundaries() {
+    GraphClone graphClone = new GraphClone();
+    S2Builder.Builder options = new S2Builder.Builder();
+    S2Builder builder = options.build();
+    GraphOptions graphOptions =
+        new GraphOptions(
+            EdgeType.DIRECTED, DegenerateEdges.DISCARD, DuplicateEdges.KEEP, SiblingPairs.CREATE);
+
+    builder.startLayer(new GraphCloningLayer(graphOptions, graphClone));
+    // Outer square (4 edges)
+    builder.addShape(makeLaxPolylineOrDie("0:0, 0:10, 10:10, 10:0, 0:0"));
+    // Filament bridge connecting outer square vertex 0:0 to inner triangle vertex 2:2 (1 edge)
+    builder.addShape(makeLaxPolylineOrDie("0:0, 2:2"));
+    // Inner triangle (3 edges)
+    builder.addShape(makeLaxPolylineOrDie("2:2, 2:5, 5:2, 2:2"));
+
+    S2Error error = new S2Error();
+    assertTrue(error.toString(), builder.build(error));
+
+    S2BuilderGraph graph = graphClone.graph();
+    ArrayList<DirectedComponent> components = new ArrayList<>();
+    assertTrue(
+        error.toString(),
+        graph.getDirectedComponents(DegenerateBoundaries.DISCARD, components, error));
+
+    // All edges are connected via the filament bridge, so there is 1 DirectedComponent.
+    // After discarding the filament pair (0:0 <-> 2:2), 4 closed loops should remain:
+    // the CCW and CW outer squares (4 edges each) and the CCW and CW inner triangles (3 edges
+    // each).
+    assertEquals(1, components.size());
+    DirectedComponent component = components.get(0);
+    assertEquals(4, component.size());
+
+    int totalEdges = 0;
+    for (int[] loop : component) {
+      assertTrue("Loop must have at least 3 edges, got " + loop.length, loop.length >= 3);
+      for (int i = 0; i < loop.length; i++) {
+        int currEdge = loop[i];
+        int nextEdge = loop[(i + 1) % loop.length];
+        assertEquals(
+            "Loop is not closed: dst of edge " + i + " != src of edge " + ((i + 1) % loop.length),
+            graph.edgeDstId(currEdge),
+            graph.edgeSrcId(nextEdge));
+      }
+      totalEdges += loop.length;
+    }
+    assertEquals(14, totalEdges);
+  }
+
+  /**
+   * Tests S2BuilderGraph.getDirectedComponents() with DegenerateBoundaries.DISCARD when the sibling
+   * of the peeled loop's closing edge is visited before the peel-off walk.
+   */
+  @Test
+  public void testGetDirectedComponentsDiscardDegenerateBoundariesSilentTruncation() {
+    GraphClone graphClone = new GraphClone();
+    S2Builder.Builder options = new S2Builder.Builder();
+    S2Builder builder = options.build();
+    GraphOptions graphOptions =
+        new GraphOptions(
+            EdgeType.DIRECTED, DegenerateEdges.DISCARD, DuplicateEdges.KEEP, SiblingPairs.CREATE);
+
+    builder.startLayer(new GraphCloningLayer(graphOptions, graphClone));
+    // Outer square (4 edges)
+    builder.addShape(makeLaxPolylineOrDie("0:0, 0:10, 10:10, 10:0, 0:0"));
+    // Filament bridge connecting outer square vertex 0:0 to inner triangle vertex 2:2 (1 edge)
+    builder.addShape(makeLaxPolylineOrDie("0:0, 2:2"));
+    // Inner triangle (3 edges)
+    builder.addShape(makeLaxPolylineOrDie("2:2, 2:5, 5:2, 2:2"));
+    // Non-filament loop connecting the interior sector of vertex 5:2 to the exterior sector of
+    // vertex 0:10, starting at -10:-10 so Walk 1 visits 2:2->2:5 before the outer square.
+    builder.addShape(makeLaxPolylineOrDie("-10:-10, 2:4, 5:2, 2:3, 0:12, 0:10, -2:10, -10:-10"));
+
+    S2Error error = new S2Error();
+    assertTrue(error.toString(), builder.build(error));
+
+    S2BuilderGraph graph = graphClone.graph();
+    ArrayList<DirectedComponent> components = new ArrayList<>();
+    assertTrue(
+        error.toString(),
+        graph.getDirectedComponents(DegenerateBoundaries.DISCARD, components, error));
+
+    assertEquals(1, components.size());
+    int totalEdges = 0;
+    for (int[] loop : components.get(0)) {
+      assertTrue("Loop must have at least 3 edges, got " + loop.length, loop.length >= 3);
+      for (int i = 0; i < loop.length; i++) {
+        int currEdge = loop[i];
+        int nextEdge = loop[(i + 1) % loop.length];
+        assertEquals(
+            "Loop is not closed: dst of edge " + i + " != src of edge " + ((i + 1) % loop.length),
+            graph.edgeDstId(currEdge),
+            graph.edgeSrcId(nextEdge));
+      }
+      totalEdges += loop.length;
+    }
+    // 4 outer square (x2) + 3 inner triangle (x2) + 7 connector loop (x2) = 28 non-filament edges.
+    assertEquals(28, totalEdges);
+  }
+
+  /**
+   * Tests S2BuilderGraph.getDirectedComponents() with DegenerateBoundaries.DISCARD on chained
+   * filament bridges (nested loop peel-offs with siblingIndex > 0) combined with a dead-end
+   * filament spike (adjacent sibling removal at siblingIndex == path.size() - 2).
+   */
+  @Test
+  public void testGetDirectedComponentsDiscardDegenerateBoundariesChainedAndSpikes() {
+    GraphClone graphClone = new GraphClone();
+    S2Builder.Builder options = new S2Builder.Builder();
+    S2Builder builder = options.build();
+    GraphOptions graphOptions =
+        new GraphOptions(
+            EdgeType.DIRECTED, DegenerateEdges.DISCARD, DuplicateEdges.KEEP, SiblingPairs.CREATE);
+
+    builder.startLayer(new GraphCloningLayer(graphOptions, graphClone));
+    // Outer square (4 edges -> 8 directed edges)
+    builder.addShape(makeLaxPolylineOrDie("0:0, 0:10, 10:10, 10:0, 0:0"));
+    // Dead-end filament spike from outer square vertex 0:10 into interior 2:8 (2 directed edges)
+    builder.addShape(makeLaxPolylineOrDie("0:10, 2:8"));
+    // Filament bridge 1 from outer square vertex 10:10 to middle square vertex 8:8
+    builder.addShape(makeLaxPolylineOrDie("10:10, 8:8"));
+    // Middle square (4 edges -> 8 directed edges)
+    builder.addShape(makeLaxPolylineOrDie("3:3, 3:8, 8:8, 8:3, 3:3"));
+    // Filament bridge 2 from middle square vertex 3:3 to inner triangle vertex 4:4
+    builder.addShape(makeLaxPolylineOrDie("3:3, 4:4"));
+    // Inner triangle (3 edges -> 6 directed edges)
+    builder.addShape(makeLaxPolylineOrDie("4:4, 4:6, 6:4, 4:4"));
+
+    S2Error error = new S2Error();
+    assertTrue(error.toString(), builder.build(error));
+
+    S2BuilderGraph graph = graphClone.graph();
+    ArrayList<DirectedComponent> components = new ArrayList<>();
+    assertTrue(
+        error.toString(),
+        graph.getDirectedComponents(DegenerateBoundaries.DISCARD, components, error));
+
+    // All 3 loops (outer square, middle square, inner triangle) are connected via filament bridges
+    // into 1 component with 6 directed loops (CCW + CW for each of the 3 polygons) and 22 edges.
+    assertEquals(1, components.size());
+    DirectedComponent component = components.get(0);
+    assertEquals(6, component.size());
+
+    int totalEdges = 0;
+    for (int[] loop : component) {
+      assertTrue("Loop must have at least 3 edges, got " + loop.length, loop.length >= 3);
+      for (int i = 0; i < loop.length; i++) {
+        int currEdge = loop[i];
+        int nextEdge = loop[(i + 1) % loop.length];
+        assertEquals(
+            "Loop is not closed: dst of edge " + i + " != src of edge " + ((i + 1) % loop.length),
+            graph.edgeDstId(currEdge),
+            graph.edgeSrcId(nextEdge));
+      }
+      totalEdges += loop.length;
+    }
+    assertEquals(22, totalEdges);
   }
 
   @Test

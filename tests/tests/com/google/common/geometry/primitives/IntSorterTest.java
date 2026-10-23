@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.geometry.primitives.Ints.IntComparator;
-import com.google.common.geometry.primitives.Ints.OfInt;
+import java.util.PrimitiveIterator.OfInt;
 import java.util.Random;
 import org.junit.Test;
 import org.junit.runner.RunWith;

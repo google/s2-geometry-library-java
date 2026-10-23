@@ -782,7 +782,7 @@ public abstract class S2LatLngRectBase implements S2Region, Serializable {
     // For bounding rectangles that span 180 degrees or less in longitude, the maximum cap size is
     // achieved at one of the rectangle vertices. For rectangles that are larger than 180 degrees,
     // we punt and always return a bounding cap centered at one of the two poles.
-    if (lng.getLength() < 2 * PI) {
+    if (lng.getLength() <= PI) {
       S2Cap midCap = S2Cap.fromAxisAngle(getCenter().toPoint(), S1Angle.ZERO);
       for (int k = 0; k < 4; ++k) {
         midCap = midCap.addPoint(getVertex(k).toPoint());

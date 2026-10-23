@@ -63,7 +63,6 @@ public final class S2Cap implements S2Region, Serializable {
   /** An {@link S2Coder} that uses {@link #encode} and {@link #decode}. */
   public static final S2Coder<S2Cap> CODER =
       new S2Coder<S2Cap>() {
-        @JsIgnore // OutputStream is not available to J2CL.
         @Override
         public void encode(S2Cap value, OutputStream output) throws IOException {
           value.encode(output);
@@ -266,8 +265,25 @@ public final class S2Cap implements S2Region, Serializable {
    * relationship is not symmetric, since only the interior of this cap is used.)
    */
   public boolean interiorIntersects(S2Cap other) {
-    // Interior(X) intersects Y if and only if Complement(Interior(X)) does not contain Y.
-    return !complement().contains(other);
+    // Make sure this cap has an interior and the other cap is non-empty.
+    if (radius.getLength2() <= 0 || other.isEmpty()) {
+      return false;
+    }
+    // S1ChordAngle.add saturates at STRAIGHT (length2 == 4), so the strict comparison below
+    // never exceeds STRAIGHT and would return false whenever the center distance is STRAIGHT
+    // (antipodal or nearly antipodal centers). Handle the two regimes where interior
+    // intersection holds even for antipodal centers:
+    //  1. A full cap's interior is the entire sphere, so if either cap is full it intersects
+    //     every cap with a non-empty interior (including a singleton cap at -axis when isFull(),
+    //     or a tiny cap with r^2 <= 2^-51 at -other.axis when other.isFull() where r^2 + 4.0
+    //     rounds to 4.0 in IEEE 754 double).
+    //  2. Since 4 - b^2 = 4*cos^2(B/2) = 4*sin^2((pi - B)/2), a^2 + b^2 > 4 holds iff the
+    //     angular radii satisfy A + B > pi, in which case the caps overlap for all center
+    //     positions.
+    if (isFull() || other.isFull() || radius.getLength2() + other.radius.getLength2() > 4) {
+      return true;
+    }
+    return S1ChordAngle.add(radius, other.radius).greaterThan(new S1ChordAngle(axis, other.axis));
   }
 
   /**

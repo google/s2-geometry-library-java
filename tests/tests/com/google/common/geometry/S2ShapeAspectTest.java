@@ -17,7 +17,7 @@ package com.google.common.geometry;
 
 import static com.google.common.geometry.S2TextFormat.makePoint;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -129,18 +129,15 @@ public class S2ShapeAspectTest extends GeometryTestCase {
   @Test
   public void testOpenMultiEmptyChain() {
     // JUnit's assertThrows would be nice, but it isn't supported on GWT.
-    try {
-      new LineMultiArray(new S2Point[][]{{}});
-      fail();
-    } catch (IllegalArgumentException e) {
-      assertEquals("Must have at least 1 edge.", e.getMessage());
-    }
-    try {
-      new LineMultiPacked(new S2Point[][]{{A, B}, {}});
-      fail();
-    } catch (IllegalArgumentException e) {
-      assertEquals("Must have at least 1 edge.", e.getMessage());
-    }
+    IllegalArgumentException e =
+        assertThrows(
+            IllegalArgumentException.class, () -> new LineMultiArray(new S2Point[][] {{}}));
+    assertEquals("Must have at least 1 edge.", e.getMessage());
+    IllegalArgumentException e2 =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new LineMultiPacked(new S2Point[][] {{A, B}, {}}));
+    assertEquals("Must have at least 1 edge.", e2.getMessage());
   }
 
   @Test

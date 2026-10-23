@@ -37,6 +37,7 @@ import com.google.errorprone.annotations.Immutable;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.nio.charset.Charset;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -160,7 +161,6 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
 
   /** A coder of S2CellId instances as an 8 byte little-endian long. */
   public static final S2Coder<S2CellId> CODER = new S2Coder<S2CellId>() {
-    @JsIgnore // OutputStream is not available to J2CL.
     @Override public void encode(S2CellId value, OutputStream output) throws IOException {
       LittleEndianOutput.writeLong(output, value.id());
     }
@@ -178,12 +178,12 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
     }
   };
 
+  // TODO(eengle): Use StandardCharsets.UTF_8 when Android supports it.
+  private static final Charset CHARSET = Charset.forName("UTF-8");
+
   /** A coder of S2CellId instances as an ASCII-encoded {@link S2CellId#toToken() token}. */
   public static final S2Coder<S2CellId> TOKEN_CODER = new S2Coder<S2CellId>() {
-    // TODO(eengle): Use StandardCharsets when Android supports it.
-    private static final String CHARSET = "UTF-8";
 
-    @JsIgnore // OutputStream is not available to J2CL.
     @Override public void encode(S2CellId value, OutputStream output) throws IOException {
       byte[] data = value.toToken().getBytes(CHARSET);
       output.write(data.length);
@@ -261,9 +261,9 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
 
   /**
    * Return a leaf cell containing the given point (a direction vector, not necessarily unit
-   * length). Usually there is is exactly one such cell, but for points along the edges of cells,
-   * any adjacent cell may be (deterministically) chosen. This is because S2CellIds are considered
-   * to be closed sets. The returned cell will always contain the given point, i.e.
+   * length). Usually there is exactly one such cell, but for points along the edges of cells, any
+   * adjacent cell may be (deterministically) chosen. This is because S2CellIds are considered to be
+   * closed sets. The returned cell will always contain the given point, i.e.
    *
    * {@snippet :
    *    new S2Cell(S2CellId.fromPoint(p)).contains(p)
@@ -1153,10 +1153,10 @@ public final class S2CellId implements S2Iterator.Entry, Comparable<S2CellId>, S
   }
 
   /**
-   * Return the largest cell with the same rangeMin() and such that rangeMax() < limit.rangeMin().
-   * Returns "limit" if no such cell exists. This method can be used to generate a small set of
-   * S2CellIds that covers a given range (a "tiling"). This example shows how to generate a tiling
-   * for a semi-open range of leaf cells [start, limit):
+   * Return the largest cell with the same rangeMin() and such that {@code rangeMax() <
+   * limit.rangeMin()}. Returns "limit" if no such cell exists. This method can be used to generate
+   * a small set of S2CellIds that covers a given range (a "tiling"). This example shows how to
+   * generate a tiling for a semi-open range of leaf cells [start, limit):
    *
    * <pre>{@code
    * for (S2CellId id = start.maximumTile(limit);

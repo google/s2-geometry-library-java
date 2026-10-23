@@ -55,10 +55,10 @@ public class S2PointVectorCoderTest extends GeometryTestCase {
 
   @Test
   public void testEmpty() throws IOException {
-    checkEncodeDecode(Lists.newArrayList(), S2PointVectorCoder.FAST, 1);
+    checkEncodeDecode(new ArrayList<>(), S2PointVectorCoder.FAST, 1);
 
     // Test that an empty vector uses the FAST encoding.
-    checkEncodeDecode(Lists.newArrayList(), S2PointVectorCoder.COMPACT, 1);
+    checkEncodeDecode(new ArrayList<>(), S2PointVectorCoder.COMPACT, 1);
   }
 
   @Test

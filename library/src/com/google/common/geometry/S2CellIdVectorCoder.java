@@ -42,8 +42,8 @@ public class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
    *   <li>byte 0, bits 3-7: shift
    *   <li>byte 1: extended shift (only written for odd shift {@code >= 5})
    *   <li>0-7 bytes: base
-   *   <li>values.size() bytes: encoded uint64s of deltas, encoded by {@link
-   *       UintVectorCoder.UINT64#encode(Longs, OutputStream)}.
+   *   <li>values.size() bytes: encoded uint64s of deltas, encoded by UINT64 {@link
+   *       UintVectorCoder#encode(Longs, OutputStream)}.
    * </ul>
    *
    * Where {@code base} is the baseBytes most-significant bytes of the minimum S2CellId. It is 0-7
@@ -54,7 +54,7 @@ public class S2CellIdVectorCoder implements S2Coder<List<S2CellId>> {
    * level, in which case the bit at position (shift - 1) in base is automatically set to 1.
    *
    * <p>{@code base} (3 bits) and {@code shift} (6 bits) are encoded in either one or two bytes as
-   * follows: If (shift <= 4 or shift is even), then 1 byte, else 2 bytes.
+   * follows: If {@code (shift <= 4 or shift is even)}, then 1 byte, else 2 bytes.
    *
    * <p>(shift == 1) means that all S2CellIds are leaf cells, and (shift == 2) means that all
    * S2CellIds are at level 29.

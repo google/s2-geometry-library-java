@@ -46,7 +46,7 @@ import org.jspecify.annotations.Nullable;
  *    S2Cap cap = S2Cap.fromAxisAngle(...);
  *    S2CellUnion covering;
  *    coverer.getCovering(cap, covering);
- * }
+ * }</pre>
  *
  * <p>This yields a cell union of at most 5 cells that is guaranteed to cover the given cap (a
  * disc-shaped region on the sphere).

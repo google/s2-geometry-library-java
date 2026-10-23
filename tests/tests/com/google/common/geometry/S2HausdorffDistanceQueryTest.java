@@ -56,7 +56,7 @@ public final class S2HausdorffDistanceQueryTest extends GeometryTestCase {
     assertEquals(result12.distance(), directedResult2.distance());
   }
 
-  /** Test the constructors and accessors of the Options & Builder. */
+  /** Test the constructors and accessors of the Options and Builder. */
   @Test
   public void testOptionsConstructorsAndAccessorsWork() {
     S2HausdorffDistanceQuery.Builder builder = new S2HausdorffDistanceQuery.Builder();
